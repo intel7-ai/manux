@@ -1,0 +1,49 @@
+{
+  "purpose": "Official MediaPipe reference images for local model smoke tests. These fixtures do not establish webcam accuracy.",
+  "retrieved": "2026-10-29",
+  "upstreamManifest": "https://github.com/google-ai-edge/mediapipe/blob/master/third_party/external_files.bzl",
+  "upstreamTestdata": "https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/tasks/testdata/vision/BUILD",
+  "files": [
+    {
+      "file": "pointing_up.jpg",
+      "expectedGesture": "Pointing_Up",
+      "personalPose": "None",
+      "url": "https://storage.googleapis.com/mediapipe-assets/tasks/testdata/vision/pointing_up.jpg?generation=1782185079090086",
+      "sha256": "ecf8ca2611d08fa25948a4fc10710af9120e88243a54da6356bacea17ff3e36e",
+      "hashVerified": true,
+      "note": "One raised index finger, visually verified. Used as an explicitly enrolled neutral pose (None) in the personalization reference probe; this is not a claim that arbitrary neutral hands are recognized."
+    },
+    {
+      "file": "fist.jpg",
+      "expectedGesture": "Closed_Fist",
+      "url": "https://storage.googleapis.com/mediapipe-assets/tasks/testdata/vision/fist.jpg?generation=1782184710240231",
+      "sha256": "43fa1cabf3f90d574accc9a56986e2ee48638ce59fc65af1846487f73bb2ef24",
+      "hashVerified": true,
+      "note": "One closed fist. Expected pose visually verified; run recognizer to verify prediction."
+    },
+    {
+      "file": "thumb_up.jpg",
+      "expectedGesture": "Thumb_Up",
+      "url": "https://storage.googleapis.com/mediapipe-assets/tasks/testdata/vision/thumb_up.jpg?generation=1782185354353621",
+      "sha256": "5d673c081ab13b8a1812269ff57047066f9c33c07db5f4178089e8cb3fdc0291",
+      "hashVerified": true,
+      "note": "One upright thumb. Expected pose visually verified; run recognizer to verify prediction."
+    },
+    {
+      "file": "victory.jpg",
+      "expectedGesture": "Victory",
+      "url": "https://storage.googleapis.com/mediapipe-assets/tasks/testdata/vision/victory.jpg?generation=1782185383577587",
+      "sha256": "84cb8853e3df614e0cb5c93a25e3e2f38ea5e4f92fd428ee7d867ed3479d5764",
+      "hashVerified": true,
+      "note": "One V-shaped hand. Expected pose visually verified; run recognizer to verify prediction."
+    },
+    {
+      "file": "right_hands.jpg",
+      "expectedGesture": "Open_Palm",
+      "url": "https://storage.googleapis.com/mediapipe-assets/tasks/testdata/vision/right_hands.jpg?generation=1782185275057115",
+      "sha256": "4b5134daa4cb60465535239535f9f74c2842aba3aa5fd30bf04ef5678f93d87f",
+      "hashVerified": true,
+      "note": "Two open hands shown from their backs, one rotated 180 degrees. Open_Palm is a visual expectation, not an upstream asserted label. Run the recognizer; numHands=1 chooses one hand. No image cropping or transformation was performed."
+    }
+  ]
+}

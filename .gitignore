@@ -1,0 +1,15 @@
+node_modules/
+.npm-cache/
+logs/
+test-results/
+public/models/*.task
+public/media/*.webm
+public/media/*.mp4
+.tools/
+.local/
+tests/fixtures/*.jpg
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,413 @@
+{
+  "purpose": "MANUX source handoff baseline. Not a release or verified usability result.",
+  "preparedAt": "2026-10-29T16:00:22.6786505+09:00",
+  "source": "MANUX app working-file snapshot; Git publication is managed separately",
+  "exclusions": [
+    ".git",
+    "node_modules",
+    ".npm-cache",
+    ".tools",
+    "logs",
+    "test-results",
+    "raw camera recordings",
+    "user profiles",
+    "*.task",
+    "public/media videos",
+    "tests/fixtures/*.jpg",
+    ".local",
+    "TLS certificates and private keys"
+  ],
+  "fileCount": 78,
+  "files": [
+    {
+      "path": ".github/PULL_REQUEST_TEMPLATE.md",
+      "bytes": 1422,
+      "sha256": "cfa1d0b088c31761fd8bd8c85cf36da023f4c5ad3527ecef7a5adbc6f4146e60"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "bytes": 415,
+      "sha256": "95c9b08be3506d94832700b0971b00a446f2e4b71c9a4a8c15719818275e9247"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 181,
+      "sha256": "7f79ffb63babd0ff77c4d9ac69a9fb7838e65c7be90347d60ae5468b03d9e2a0"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 5096,
+      "sha256": "8debe1c481e0e2279441ba6c0080cad94d534e557e0067c6829a59b835428337"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "bytes": 6285,
+      "sha256": "1eb7ed25733e43443587b21570b15590cdef84ff34c3437c4c6bc934c0432189"
+    },
+    {
+      "path": "docs/career-skills.md",
+      "bytes": 9756,
+      "sha256": "379ec3e0002cfd6c48b3a8f661ac7e4de131d0cbc786e2f6730d6d8ed70ac89b"
+    },
+    {
+      "path": "docs/contracts.md",
+      "bytes": 10680,
+      "sha256": "105347401ee6568bd02ea5a58114f132a3d00b1eb0d1d96eb4ee114503222cf4"
+    },
+    {
+      "path": "docs/desktop-hmi.md",
+      "bytes": 11773,
+      "sha256": "35018cd1983cfda2ee5cc678ceda96a2f488e53eefcaea44e555d421600b6131"
+    },
+    {
+      "path": "docs/github-handoff.md",
+      "bytes": 7972,
+      "sha256": "0c29456cf57e18b964a88f6bc3ace770fc6271b667a018e0a7891383ddd188ad"
+    },
+    {
+      "path": "docs/jira-change-proposal.md",
+      "bytes": 6008,
+      "sha256": "a7078e64b8db8c080c0598a90d7c6bd2d2c215bf89cd50fa5675d4a4c849e69d"
+    },
+    {
+      "path": "docs/jira-snapshot-20261029.json",
+      "bytes": 20426,
+      "sha256": "9616f85daf232fe96469aa9ac5cdc988e999dce6252d17659435a98c7423539d"
+    },
+    {
+      "path": "docs/jira-sprint-20261029.json",
+      "bytes": 365,
+      "sha256": "654a16c815b7ff2d1d875493549c8775f0ac17520ad377ce0e8127b1d07f30a4"
+    },
+    {
+      "path": "docs/lan-demo.md",
+      "bytes": 6908,
+      "sha256": "b9a9971b466611787bb4ae5a3e2274eb725a23dd0ef7becbc21fee822b2ab3b0"
+    },
+    {
+      "path": "docs/master-plan.md",
+      "bytes": 12472,
+      "sha256": "e1516c795f719ea996332de0e00fe9d1f10b9016668d964890249c2e04a4cfa5"
+    },
+    {
+      "path": "docs/presentation/assets/enrollment-evidence.png",
+      "bytes": 189319,
+      "sha256": "effcea9cd85317b8e53ef45fb0865178d6ad0df3557bcab5689da435ae1cb819"
+    },
+    {
+      "path": "docs/presentation/assets/logitech-spotlight.png",
+      "bytes": 9572,
+      "sha256": "c6aae75f10e4805387c0d43b04cdc37858dc23ce6b36ebd7f10a9fe8aa59862f"
+    },
+    {
+      "path": "docs/presentation/assets/manux-logo.png",
+      "bytes": 58955,
+      "sha256": "d1fc4b6de7c5445ebfd208b1f9c3917bb5fa23d35f58f98ae1b01706057328bf"
+    },
+    {
+      "path": "docs/presentation/assets/meta-rayban-display.jpg",
+      "bytes": 127828,
+      "sha256": "bcf341d7736f2591fef15efb759fe4cfcf0ba44f61d995babe25e4529dcf5254"
+    },
+    {
+      "path": "docs/presentation/assets/player-evidence.png",
+      "bytes": 80769,
+      "sha256": "3d94e81e3ce7f3890a1a9d6a719897cecf253b646d84f3d5d57161a3fca10f5a"
+    },
+    {
+      "path": "docs/presentation/assets/product-photo-sources.json",
+      "bytes": 703,
+      "sha256": "6165940d30368f2033077b4ac0eb8fb74a4f4d8669e55188f8c6ab6666cbb4af"
+    },
+    {
+      "path": "docs/presentation/assets/README.md",
+      "bytes": 982,
+      "sha256": "7d268ca0a63b658b271a9e87418f39d6bdeeead9f7bb9347911f2f181ad6921b"
+    },
+    {
+      "path": "docs/presentation/assets/ultraleap-controller-2.jpg",
+      "bytes": 75261,
+      "sha256": "efa5e61399fc2773baf17b82127c3099e91bc7978a671f7d0e96d3f6aebbef9c"
+    },
+    {
+      "path": "docs/presentation/build-deck.mjs",
+      "bytes": 12291,
+      "sha256": "8d6d499e4dc589e24a76d33dd8ca615d7f77a24ee99b07dbf89507817db9f50d"
+    },
+    {
+      "path": "docs/presentation/business-research.md",
+      "bytes": 16413,
+      "sha256": "fc70c14c269a54de9fa5c32a12160104c9375fe93072f8bd2e1265e71591f5d3"
+    },
+    {
+      "path": "docs/presentation/deck-content.json",
+      "bytes": 11687,
+      "sha256": "447e0323c34f8a1c48f6f585b4eebb4ffee9d3a0d51928833e257f6aec801f51"
+    },
+    {
+      "path": "docs/presentation/demo-runbook.md",
+      "bytes": 3403,
+      "sha256": "657720466ea191897f04faa0e2b0f7107e9b83d0cd55674431d587be55dadf74"
+    },
+    {
+      "path": "docs/presentation/MANUX_착수보고_20261029.pptx",
+      "bytes": 399682,
+      "sha256": "0843a8786f06c1be50f4268ea98f7810f0816928733a5ba9714ded07586bb96f"
+    },
+    {
+      "path": "docs/presentation/qa.md",
+      "bytes": 7751,
+      "sha256": "68c3dc60a9e594e76c085bb0335a63515e4a62f3b233c52def54bc9c2dac6b77"
+    },
+    {
+      "path": "docs/presentation/README.md",
+      "bytes": 3858,
+      "sha256": "f7243ae9f36cd1d03ef9b31c7d7cf959113271d7fff3e375bf34e6ea6fee1b8d"
+    },
+    {
+      "path": "docs/presentation/speaker-script.md",
+      "bytes": 7411,
+      "sha256": "bab14bc2dca5bf088ec940d4767d397c517f57f473b812a25d95366be2a673a7"
+    },
+    {
+      "path": "docs/team-plan.md",
+      "bytes": 25115,
+      "sha256": "c2b4ced565e2f801760dd6d2e42622ca0bcb516886a210cea5bbc98a97c3f9e7"
+    },
+    {
+      "path": "docs/verification.md",
+      "bytes": 5135,
+      "sha256": "5126842296c7a3ec80afa97d9bffe7bc9454c61971a5401f914640c5ddbe30e0"
+    },
+    {
+      "path": "docs/workstreams/r1-camera.md",
+      "bytes": 4959,
+      "sha256": "8df212c9a6cc30a016c67a98d0c942d9c4f7ace3852cf33ffdac9c792a883057"
+    },
+    {
+      "path": "docs/workstreams/r2-control.md",
+      "bytes": 4553,
+      "sha256": "f3fa718f8d93c1321988e9d02ec0ffacdd24c94c94096c6a44ee8075ff6c37f4"
+    },
+    {
+      "path": "docs/workstreams/r3-personalization.md",
+      "bytes": 5644,
+      "sha256": "c259cc607b4c40678b4443c2d718f21ab66b7e4437f9518a43c17c8a29c22bbc"
+    },
+    {
+      "path": "docs/workstreams/r4-enrollment.md",
+      "bytes": 5065,
+      "sha256": "8c61d6c1e2605e37f38f1227d3d01f4dd7c429e6ddb4cb63f87e4fc88076e1a0"
+    },
+    {
+      "path": "docs/workstreams/r5-integration.md",
+      "bytes": 5564,
+      "sha256": "b30ec5f775745489bc83ffdf1f9e0ed5beb8947e8be0ac501b0629ef2048df6f"
+    },
+    {
+      "path": "MANUX 실행.cmd",
+      "bytes": 125,
+      "sha256": "bfc42789a1b9e27cd21c4ca58e1452bd8dfe3b23979e04846760e7976bfaff6e"
+    },
+    {
+      "path": "package-lock.json",
+      "bytes": 1892,
+      "sha256": "ba99e5dbeabdb83cb1fd609a488c63c2a9185407a5df8c3fd0009b87fe1145f8"
+    },
+    {
+      "path": "package.json",
+      "bytes": 412,
+      "sha256": "ba6fd220d4e9e6680b53dded93b6fcc5720294bbd93e7f5842ca59c797bc7b74"
+    },
+    {
+      "path": "public/assets/manux.svg",
+      "bytes": 860,
+      "sha256": "79998e452675d70540e21e68a4f5e506975649486e033c042178d04fb4daa46a"
+    },
+    {
+      "path": "public/index.html",
+      "bytes": 10220,
+      "sha256": "b735bc122bf7ffb2630a1cc4089ef3fc7644e9e69c8890c7f33aad62e42456a3"
+    },
+    {
+      "path": "public/models/model-source.json",
+      "bytes": 234,
+      "sha256": "f488f911302bc72d5234c584ddc264f02399ce1373ab2b89bfa22dab06f98774"
+    },
+    {
+      "path": "public/styles.css",
+      "bytes": 19967,
+      "sha256": "f6d99de742c28ee070b1c5d7debb8b0d65b40a21c930871ab173ad266ddbce9b"
+    },
+    {
+      "path": "README.md",
+      "bytes": 10593,
+      "sha256": "92eb5bd97e9edc07e4cb95d8f8b10b22ecfe18002eaf49aa817511c923a3d971"
+    },
+    {
+      "path": "scripts/benchmark-vision.mjs",
+      "bytes": 11951,
+      "sha256": "c504fcf4010dc86599bc680ecd5320688e4129ceb5867718876187a78607beb4"
+    },
+    {
+      "path": "scripts/prepare-handoff.ps1",
+      "bytes": 5811,
+      "sha256": "3bff170403425d7150a9014f7d730e16d3820ba85e9e7852972e426a7f2fe708"
+    },
+    {
+      "path": "scripts/probe-personalization.mjs",
+      "bytes": 6952,
+      "sha256": "2ef85a72d3b20b450670e4ac4e4b3577978eaf7ed294bd29e27ebfc6da40192f"
+    },
+    {
+      "path": "scripts/setup-test-fixtures.mjs",
+      "bytes": 1942,
+      "sha256": "74695ccda47af3e9be0b8eec66d21ff671a78c2e945b1ff3f0b9f168f97957a5"
+    },
+    {
+      "path": "scripts/setup.mjs",
+      "bytes": 1184,
+      "sha256": "caafe11860744794629b250ff8a26bb72bccdb0ccbc5f6d3b2bca469b7fab9ce"
+    },
+    {
+      "path": "scripts/test-browser.mjs",
+      "bytes": 8182,
+      "sha256": "3e3d562dd7bb81831460f08036486974912efdfcdb7649359abe2fded9854e92"
+    },
+    {
+      "path": "scripts/test-enrollment-browser.mjs",
+      "bytes": 21915,
+      "sha256": "865b1ee03612dfdaf9a84706a54c91d511d4c429dca73fda9498403a13ee81e1"
+    },
+    {
+      "path": "server.js",
+      "bytes": 7958,
+      "sha256": "a1e9525d8e357a7f94dde68faf65bd19598894b1e40013e2f5ee2d89c338f71a"
+    },
+    {
+      "path": "src/app.js",
+      "bytes": 29283,
+      "sha256": "1c5e6dd2b1e25fdc4700e6d2cab6371809b2290826ba439898d5f1b6f7143627"
+    },
+    {
+      "path": "src/camera.js",
+      "bytes": 825,
+      "sha256": "1b10346bd9fe19a8e26bb93f3ff466946ba86156dbf01d4a7da93aca0de0b2ad"
+    },
+    {
+      "path": "src/enrollment-view.js",
+      "bytes": 5710,
+      "sha256": "296135e6307a14742982da4a305a121f14fd5831ac1d085d62b7d9b8ba6f3d31"
+    },
+    {
+      "path": "src/enrollment.js",
+      "bytes": 16027,
+      "sha256": "6e82925a2f0289ed0de7c4041f020e90ecec67444449d06fe96900ad6b7838f9"
+    },
+    {
+      "path": "src/gesture-controller.js",
+      "bytes": 10364,
+      "sha256": "8a41fef4ac30abfc6106dc333a89b963d8a5d90dc3e275ce1767ad1ca3d25c37"
+    },
+    {
+      "path": "src/media-controller.js",
+      "bytes": 1038,
+      "sha256": "c2f34f3d254c692dd8a21ea5c6c905c3f93e1d5ff120255fb2879c0e117fe156"
+    },
+    {
+      "path": "src/orientation.js",
+      "bytes": 4440,
+      "sha256": "42e859702f1d5afddfd14d9294457204ab743e757dfb381b442150229a74644e"
+    },
+    {
+      "path": "src/personalization.js",
+      "bytes": 19344,
+      "sha256": "260f72e27d445212c12597e7da90c3adf5f35820bc616801e62585e5d7492edd"
+    },
+    {
+      "path": "src/profile-store.js",
+      "bytes": 1400,
+      "sha256": "fcf97e590938e7be98e773dfa74f3018b973937f25927eaf880c98ec413cd2f8"
+    },
+    {
+      "path": "src/vision-client.js",
+      "bytes": 4414,
+      "sha256": "42c68f8aa49c600c7854d72e4972254c24e791e4af84de5bd344c0a9a332f7a4"
+    },
+    {
+      "path": "src/vision-worker.js",
+      "bytes": 1203,
+      "sha256": "01963c5f2dd2d2c7e8547f303717a290e34da5acadeba2e630cf92f2b0b3ecc8"
+    },
+    {
+      "path": "start-manux-lan.ps1",
+      "bytes": 3657,
+      "sha256": "86855ed00b95027815b4b2699bebe22112a7c6ca61fdbbd530e30016ca626c78"
+    },
+    {
+      "path": "start-manux.ps1",
+      "bytes": 1976,
+      "sha256": "c9c2dfbcf33fd52e92ee268785c7bd7e47ece4a51599cb5ca4f3764506850d46"
+    },
+    {
+      "path": "stop-manux-lan.ps1",
+      "bytes": 1163,
+      "sha256": "6843967b9f9b7b91aac35e9372dff5f52f73a755cf04f48912fff029e2866fa3"
+    },
+    {
+      "path": "tests/camera.test.js",
+      "bytes": 852,
+      "sha256": "fb6a7a196ec2ea0031c3557e445f6abc4b0c13647d5f09d39b3c982a0493a7b7"
+    },
+    {
+      "path": "tests/enrollment.test.js",
+      "bytes": 14010,
+      "sha256": "21d49693496cdabfe17a342e5a3947e78dc4f876aab219599b15d4cd2be6fd36"
+    },
+    {
+      "path": "tests/fixtures/personalization-reference.json",
+      "bytes": 336042,
+      "sha256": "4e4064a85a4b0def97acf0cf5337b644017fd91d239f4cdb6e24ee1b74ce4f1a"
+    },
+    {
+      "path": "tests/fixtures/sources.json",
+      "bytes": 2819,
+      "sha256": "2b68f84f4ecca553ce158e47a89f41d33e9ab59c67991f72ecfb8e2c26dae9c8"
+    },
+    {
+      "path": "tests/gesture-controller.test.js",
+      "bytes": 21301,
+      "sha256": "8f17922ca14124d75d97509441827694c5d30d7a96931578f7cd86d79a95fd91"
+    },
+    {
+      "path": "tests/media-controller.test.js",
+      "bytes": 1844,
+      "sha256": "222575869ce2a68bcd380869f9dca5c6a0e02076e1e76893f20cead30efd4ac0"
+    },
+    {
+      "path": "tests/orientation.test.js",
+      "bytes": 4856,
+      "sha256": "a8028ba301299211376363e181e0f41f971d1a47d38d845080b1fa56ab8ce38d"
+    },
+    {
+      "path": "tests/personalization.test.js",
+      "bytes": 16811,
+      "sha256": "a437481661389937677e0d6ae390cdefb78185b4d5907b49c27530bbc00943f6"
+    },
+    {
+      "path": "tests/profile-store.test.js",
+      "bytes": 4076,
+      "sha256": "aa2431f6b9585c3a0d0c00b3342a439a573be3d216a33b566c34094c479707dc"
+    },
+    {
+      "path": "tests/server.test.js",
+      "bytes": 6797,
+      "sha256": "f814897e5a6737361aed7cc32f1957cb11d697a84fdabd8d3811617add78044a"
+    },
+    {
+      "path": "tests/vision-client.test.js",
+      "bytes": 9477,
+      "sha256": "6e9b9624d8529f747ee461375975f81807f5b14c69769ecec9665224a5624858"
+    }
+  ]
+}

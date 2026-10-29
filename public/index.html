@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MANUX · 손으로 영상 제어</title><link rel="stylesheet" href="/styles.css"></head>
+<body>
+<header><img class="brand" src="/assets/manux.svg" alt="MANUX"><span class="header-note">손으로 영상 제어</span><span class="local-tag">LOCAL DEMO · 02</span></header>
+<main>
+  <section class="intro"><div><p class="eyebrow">YOUR HANDS, YOUR SPACE</p><h1>내 손에 맞게.<br><span>내 자리에서 편하게.</span></h1></div><p class="intro-copy">책상과 소파에서 각각 동작을 등록하세요.<br>짧게 유지하면 한 번, 다른 동작으로 바로 전환.</p></section>
+  <div class="workspace">
+    <section class="player-panel" aria-labelledby="player-title">
+      <div class="section-heading"><h2 id="player-title">영상 플레이어</h2><label class="file-button" for="video-file">영상 파일 열기<input id="video-file" type="file" accept="video/*"></label></div>
+      <div class="video-wrap"><video id="player" controls playsinline preload="metadata" aria-label="제어할 영상"></video><div class="video-empty" id="video-empty"><span class="empty-symbol">▶</span><strong>제어할 영상을 선택하세요</strong><p>MP4 · WebM 등 브라우저가 지원하는 파일</p><button id="demo-load" class="secondary">90초 테스트 영상 열기</button></div></div>
+      <div class="video-details"><span id="video-name">선택한 영상 없음</span><span id="time-display">00:00 / 00:00</span></div>
+      <div class="manual-controls" aria-label="영상 직접 조작"><button data-action="backward" disabled><span>−10</span>10초 뒤로</button><button data-action="play" disabled><span>▶</span>재생</button><button data-action="pause" disabled><span>Ⅱ</span>일시정지</button><button data-action="forward" disabled><span>+10</span>10초 앞으로</button></div>
+      <p id="media-message" class="message" role="status">파일은 이 브라우저에서만 재생됩니다.</p>
+    </section>
+    <section class="camera-panel" aria-labelledby="camera-title">
+      <div class="section-heading"><h2 id="camera-title">손동작 인식</h2><span class="status-pill" id="camera-badge">카메라 꺼짐</span></div>
+      <div id="camera-preview-home"><div class="camera-wrap"><video id="camera" playsinline muted autoplay aria-label="웹캠 미리보기"></video><canvas id="landmarks" aria-hidden="true"></canvas><div id="camera-empty"><span>✋</span><p>손 전체가 화면에 들어오게<br>카메라를 배치하세요.</p></div><div class="camera-overlay"><span id="recognition-label">대기 중</span><span id="confidence"></span></div></div></div>
+      <div class="hold-track" aria-hidden="true"><div id="hold-progress"></div></div>
+      <div class="camera-options"><label for="resolution">요청 해상도</label><select id="resolution"><option value="1080">1080p · 권장</option><option value="720">720p</option><option value="480">480p · 성능 비교</option></select></div>
+      <p id="camera-stats" class="small-note">연결 후 실제 입력 해상도를 표시합니다.</p>
+      <div class="camera-actions"><button id="camera-start" class="primary">카메라 시작</button><button id="camera-stop" class="secondary" disabled>카메라 끄기</button></div>
+      <label class="control-toggle"><input id="gesture-enabled" type="checkbox" disabled><span>손동작 제어 켜기</span><kbd>Esc</kbd></label>
+      <label class="control-toggle repeat-toggle"><input id="repeat-enabled" type="checkbox"><span>동작 유지 시 10초 이동 반복<small>앞으로·뒤로만 · 첫 실행 후 약 1초마다</small></span></label>
+      <p id="camera-message" class="message" role="status">카메라 시작 후 브라우저의 카메라 접근을 허용하세요.</p>
+      <details><summary>인식 설정 · 반응 조절</summary><label>동작 유지 시간 <output id="hold-output">0.30초</output><input type="range" id="hold-time" min="150" max="1000" step="50" value="300"></label><label>공통 모델 진입 점수 <output id="confidence-output">70%</output><input type="range" id="min-confidence" min="55" max="95" step="5" value="70"></label><p>점수는 정확도 백분율이 아닙니다. 개인 등록은 손 관절 특징으로 별도 판정합니다. 짧은 흔들림은 허용하며, 반복 옵션이 꺼져 있다면 같은 명령을 다시 쓰기 전에 중립 자세로 쉬거나 손을 0.5초 이상 내려주세요. 설정을 바꾸면 제어가 꺼집니다.</p></details>
+    </section>
+  </div>
+  <section class="personal-panel" aria-labelledby="personal-title">
+    <div class="section-heading"><div><p class="eyebrow">PERSONAL SETUP</p><h2 id="personal-title">사용자별 동작 등록</h2></div><span id="profile-mode" class="status-pill">공통 모델</span></div>
+    <div class="profile-grid">
+      <div><label class="field-label" for="profile-select">사용자</label><div class="field-row"><select id="profile-select"><option value="">공통 모델 사용</option></select><button id="profile-delete" class="text-button" disabled>삭제</button></div><form id="profile-form" class="field-row"><input id="profile-name" aria-label="새 사용자 이름" placeholder="새 사용자 이름" maxlength="32" required><button class="secondary" id="profile-add">추가</button></form></div>
+      <div><label class="field-label" for="environment">사용할 위치</label><select id="environment"><option value="desk">책상 앞</option><option value="sofa">소파 거리</option></select><p id="profile-status" class="small-note">사용자를 추가한 뒤 두 위치에서 각각 등록하세요.</p></div>
+      <div class="profile-actions"><label class="control-toggle"><input id="personal-enabled" type="checkbox" disabled><span>선택한 위치의 개인 등록 사용</span></label><button id="enroll-start" class="primary" disabled>이 위치에서 동작 등록</button></div>
+    </div>
+    <p id="profile-message" class="message" role="status">각 위치에서 네 동작과 중립 자세를 정면·좌·우·상·하로 등록합니다. 각도별 표본 수집과 별도 확인에 약 3분 이상 걸립니다.</p>
+    <dialog id="enrollment" class="enrollment" aria-labelledby="enroll-dialog-title" aria-describedby="enroll-dialog-note" hidden>
+      <div class="enroll-dialog-header"><div><p class="eyebrow">PERSONAL SETUP</p><h2 id="enroll-dialog-title">내 손동작 등록</h2></div><span class="status-pill">영상 제어 잠시 멈춤</span></div>
+      <p id="enroll-dialog-note" class="small-note">손 모양과 위치는 유지하고 손목을 천천히 돌리세요. 실제로 수집한 각도만 초록색으로 채워집니다.</p>
+      <div class="enroll-workspace">
+        <div class="enroll-preview-pane">
+          <div class="enroll-orbit"><svg id="enroll-ring" viewBox="0 0 400 400" role="img" aria-label="현재 동작의 각도별 수집 진행"><g id="enroll-ring-ticks"></g></svg><span id="enroll-orbit-title">정면 기준 준비</span><div id="enroll-preview-host"></div><span id="enroll-orbit-progress">0 / 5 각도</span></div>
+          <ol id="enroll-views" class="enroll-views" aria-label="각도별 진행"></ol>
+          <p id="enroll-quality" class="small-note">손 전체가 보이도록 위치를 맞춰주세요.</p>
+        </div>
+        <div class="enroll-guide">
+          <div class="enrollment-top"><span id="enroll-stage">등록 준비</span><span id="enroll-step"></span></div>
+          <div class="enrollment-target"><span id="enroll-icon" aria-hidden="true">✋</span><div><h3 id="enroll-pose">손바닥</h3><p id="enroll-instruction"></p></div><strong id="enroll-countdown"></strong></div>
+          <div class="enroll-tilt-row"><div id="enroll-aim" class="enroll-aim" aria-hidden="true"><span id="enroll-aim-target"></span><span id="enroll-aim-current"></span></div><div><strong id="enroll-angle-title">정면 기준 잡기</strong><p id="enroll-angle-hint">편한 정면 자세로 손을 잠시 고정하세요.</p><span id="enroll-angle-feedback"></span></div></div>
+          <progress id="enroll-progress" max="1" value="0" aria-label="현재 등록 단계 진행률"></progress>
+          <p id="enroll-samples" class="small-note">수집을 준비하고 있습니다.</p>
+          <p id="enroll-overall" class="small-note">전체 0 / 25 각도</p>
+        </div>
+      </div>
+      <div class="enroll-dialog-actions"><span class="small-note">Esc로 등록 취소</span><button id="enroll-retry" class="primary" hidden>이 단계 다시 시도</button><button id="enroll-cancel" class="secondary">등록 취소</button></div>
+    </dialog>
+    <p class="small-note">카메라 영상은 저장하지 않습니다. 관절 특징만 이 브라우저에 저장됩니다. 위치는 직접 선택하며, 손이 너무 작거나 화면 밖으로 잘리면 실행을 보류합니다.</p>
+  </section>
+  <section class="gestures" aria-label="네 가지 손동작"><article data-gesture="Open_Palm"><span class="gesture-icon">✋</span><div><h3>손바닥</h3><p>일시정지</p></div><span class="key">PAUSE</span></article><article data-gesture="Thumb_Up"><span class="gesture-icon">👍</span><div><h3>엄지척</h3><p>재생</p></div><span class="key">PLAY</span></article><article data-gesture="Victory"><span class="gesture-icon">✌️</span><div><h3>V 모양</h3><p>10초 앞으로</p></div><span class="key">+10 SEC</span></article><article data-gesture="Closed_Fist"><span class="gesture-icon">✊</span><div><h3>주먹</h3><p>10초 뒤로</p></div><span class="key">−10 SEC</span></article></section>
+  <section class="activity"><div class="section-heading"><h2>최근 실행</h2><button id="clear-log" class="text-button">기록 지우기</button></div><ol id="event-log"><li class="empty-log">동작을 실행하면 시간과 결과가 표시됩니다.</li></ol></section>
+  <footer><span>웹캠 영상은 서버로 전송하거나 저장하지 않습니다.</span><span>Esc: 손동작 제어 끄기 · 이 창의 영상만 제어</span></footer>
+</main><script type="module" src="/src/app.js"></script></body></html>

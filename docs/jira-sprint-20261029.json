@@ -1,0 +1,17 @@
+{
+  "source": "Atlassian getJiraBoardSprintData",
+  "retrievedDate": "2026-10-29",
+  "timezone": "Asia/Seoul",
+  "board": {
+    "id": 1,
+    "name": "SCRUM board"
+  },
+  "sprint": {
+    "id": 2,
+    "name": "SCRUM Sprint 0",
+    "state": "active",
+    "startDate": "2026-10-29T00:07:33.750Z",
+    "endDate": "2026-11-12T00:07:33.750Z",
+    "originBoardId": 1
+  }
+}

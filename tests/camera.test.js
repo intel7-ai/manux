@@ -1,0 +1,4 @@
+import test from'node:test';import assert from'node:assert/strict';import{cameraConstraints,describeCamera}from'../src/camera.js';
+test('1080p is requested by default without requesting microphone',()=>{const c=cameraConstraints();assert.equal(c.audio,false);assert.deepEqual(c.video.width,{ideal:1920});assert.deepEqual(c.video.height,{ideal:1080});});
+test('fallback resolution and explicit device retain their choices',()=>{const c=cameraConstraints('720','chosen');assert.equal(c.video.width.ideal,1280);assert.deepEqual(c.video.deviceId,{exact:'chosen'});assert.equal(c.video.facingMode,undefined);});
+test('reports actual settings instead of claiming requested resolution',()=>{const a=describeCamera({getSettings:()=>({width:640,height:480,frameRate:30})},{},'1080');assert.equal(a.reduced,true);assert.equal(a.label,'640 × 480 · 30 fps');});
