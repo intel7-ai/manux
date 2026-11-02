@@ -14,11 +14,11 @@ flowchart TD
   C --> T[task.json\n목표 · 완료 기준 · 범위 · 기준 커밋]
   T --> W[최대 5개 worker\n각자 독립 worktree]
   W --> V[npm run verify\n필요한 브라우저 · Windows 검사]
-  V --> P[본인 브랜치 push\nproduction 대상 PR]
+  V --> P[본인 브랜치 push\npreview 대상 PR]
   L[개인 PC + 원하는 AI\n같은 브랜치·검사 규칙] --> P
   P --> CI[자동 검사 · 시험용 Windows 설치파일]
-  CI --> R[다른 리뷰어 1명 승인]
-  R --> M[production 머지]
+  CI --> R[preview 머지 · 실제 앱 시험]
+  R --> M[preview → production 머지]
   M --> D[Windows 릴리스\n설치된 앱 자동 업데이트]
   P --> O[task:report → 전송 전 검사\nPR 링크 · 검사 · 다음 단계]
   O --> U
@@ -73,7 +73,7 @@ Discord의 최종 답변은 `task:report`가 만든 본문을 그대로 사용�
 
 PR에는 목표, 실제 검사 결과, 리뷰할 한계와 Jira 번호(있는 경우)를 적는다. 다른 사람의 파일을 삭제하거나 자신의 변경으로 묶지 않는다. 코드는 본인 브랜치에서 바로 production 대상 PR로 전달한다. 공유 checkout에는 Discord 전송용 보고 기록만 모은다. 로컬 성공과 GitHub CI 성공을 구분한다.
 
-PR workflow는 자동 검사와 **시험용 Windows 설치파일**을 제공한다. production은 필수 검사와 다른 리뷰어 승인을 거쳐 머지하며, 릴리스 workflow가 해당 production 커밋을 검증·패키징하여 GitHub Release에 게시한다. 설치된 앱은 게시된 정식 버전을 확인한다. 릴리스 상세와 서명 상태는 [데스크톱 배포](desktop-release.md)를 따른다. 기존 source handoff는 별도의 소스 전달 보조 도구다. workflow 파일이 머지되기 전에는 새 배포 흐름이 원격에서 활성화된 것으로 보고하지 않는다.
+PR workflow는 자동 검사와 **시험용 Windows 설치파일**을 제공한다. PR은 필수 검사 통과 후 preview에 머지하고(리뷰어 승인 없음) preview에서 시험한 뒤 `preview → production` PR로 production에 머지하며, 릴리스 workflow가 해당 production 커밋을 검증·패키징하여 GitHub Release에 게시한다. 설치된 앱은 게시된 정식 버전을 확인한다. 릴리스 상세와 서명 상태는 [데스크톱 배포](desktop-release.md)를 따른다. 기존 source handoff는 별도의 소스 전달 보조 도구다. workflow 파일이 머지되기 전에는 새 배포 흐름이 원격에서 활성화된 것으로 보고하지 않는다.
 
 ## 호스트와 팀원 환경
 

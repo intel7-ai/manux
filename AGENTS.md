@@ -5,7 +5,7 @@
 ## 현재 상태
 
 - 현재 마일스톤·담당·마감은 최신 [SCRUM-5](https://se4nchoi.atlassian.net/browse/SCRUM-5)·[SCRUM-11](https://se4nchoi.atlassian.net/browse/SCRUM-11)과 세부 태스크를 조회한다. 2026-11-02 승인된 M1은 11/04 PoC·11/06 Windows 제품 후보이며 5인·20개 작업이다. 오래된 역할표·10/29 계획과 충돌하면 현재 Jira와 사용자 요청을 따른다.
-- 개발 경로는 개인 PC의 원하는 AI 또는 Discord worker → 작업별 브랜치 → production 대상 PR → 자동 검사·다른 리뷰어 승인 → production 머지 → Windows 설치본 릴리스다. Jira 번호가 없는 개선도 목표·범위를 기록하여 시작할 수 있다.
+- 개발 경로는 개인 PC의 원하는 AI 또는 Discord worker → 작업별 브랜치 → preview 대상 PR → 자동 검사 → preview 머지·시험 → `preview → production` PR → production 머지 → Windows 설치본 릴리스다. 리뷰어 승인은 요구하지 않는다([브랜치 흐름](docs/branch-flow.md)). Jira 번호가 없는 개선도 목표·범위를 기록하여 시작할 수 있다.
 
 - 2026-11-02 손 전체 이동 기반 마우스 모드와 Electron/Windows 입력 경로를 추가했다. 현재 계약·실행법은 `docs/air-mouse.md`와 `desktop/README.md`를 확인한다. 실제 웹캠 사용성과 실제 OS 클릭 검증은 별도다.
 
@@ -17,6 +17,8 @@
 ## 브랜치와 담당 경계
 
 작업을 시작할 때 `git status --short`, `git branch --show-current`, `git remote -v`로 실제 상태를 확인한다. 다른 사람의 변경을 되돌리거나 깨끗하게 만들기 위해 삭제하지 않는다. 신규 작업은 최신 `origin/production`에서 작업 단위 `codex/<이슈>-<설명>` 브랜치를 만든다. 아래 역할 브랜치는 과거 범위 참고이며 한 사람의 모든 작업을 한 브랜치에 모으지 않는다. 기존 진행 중 브랜치·미커밋 파일·worker는 그대로 보존하고 재생성하거나 강제로 production에 맞추지 않는다.
+
+통합 흐름은 [브랜치 흐름](docs/branch-flow.md)을 따른다. 작업 브랜치는 `origin/preview`에서 만들고 PR 대상은 `preview`다. 리뷰어 승인은 필요 없다. `production`에는 preview에서 시험한 뒤 `preview` 브랜치 PR로만 병합한다.
 
 | 역할 | 담당 | 권장 브랜치 | 주 담당 파일 |
 | --- | --- | --- | --- |
@@ -36,7 +38,7 @@
 2. 실패를 재현한다. 환경, 입력 순서, 예상/실제 결과를 기록하고 원인 가설을 사실과 분리한다.
 3. 본인 브랜치에서 작은 변경을 구현하고 앱을 실행하여 확인한다. Discord worker는 최대 5개 독립 worktree에서 병렬 진행한다. 신규 worktree는 원격 production의 정확한 SHA에서 시작하며 공유 checkout의 미커밋 변경을 복제하지 않는다. worker는 다른 worker나 공유 checkout을 수정하지 않는다.
 4. `npm run verify`와 변경에 필요한 브라우저/Windows 검사를 실행한다. 실패를 숨기기 위해 테스트를 삭제하거나 기대값만 맞추지 않는다. 수정 뒤에는 관련 검증을 다시 실행한다.
-5. `harness/result.schema.json` 형식으로 실제 증거·한계를 기록하고 `npm run task:report -- TASK.json RESULT.json`으로 보고서를 만든다. 본인 브랜치를 push하여 `production` 대상 PR을 연다. PR의 필수 검사·시험용 Windows 설치파일을 확인하고 다른 리뷰어 1명의 승인을 거쳐 머지한다. 공유 checkout에 코드를 먼저 통합하는 절차는 두지 않는다. 로컬 리뷰가 필요한 복잡한 변경만 별도 reviewer를 사용한다.
+5. `harness/result.schema.json` 형식으로 실제 증거·한계를 기록하고 `npm run task:report -- TASK.json RESULT.json`으로 보고서를 만든다. 본인 브랜치를 push하여 `preview` 대상 PR을 연다. PR의 필수 검사·시험용 Windows 설치파일을 확인하고 머지한 뒤 preview에서 시험한다. production에는 `preview → production` PR로만 반영한다. 공유 checkout에 코드를 먼저 통합하는 절차는 두지 않는다. 로컬 리뷰가 필요한 복잡한 변경만 별도 reviewer를 사용한다.
 
 작업 기록은 `.local/harness/<requestId>/task.json`, `result.json`에 둔다. 폴더와 ID는 일치시킨다. 신규 Discord worker는 조정자가 절대 경로로 전달한 task.json을 자기 작업 폴더에 복사하고, 구현 전에 `baselineCommit`을 `.local/discord-baseline.json`의 `sourceHead`로 확정한다. 생성 훅이 접수 때보다 최신 production을 조회할 수 있기 때문이다. 기존 진행 중 작업의 기준은 변경하지 않는다. 완료 후 조정자는 확정된 task.json과 result.json 둘 다 공유 checkout의 같은 위치에 복사하고 worker의 원본 기록을 보존한다. 코드는 작업 브랜치에 둔다. Git에 올릴 PR에는 민감정보를 제거한 보고서와 검사 증거만 첨부한다.
 
@@ -63,4 +65,4 @@
 
 같은 손 자세의 인접 프레임은 독립적인 사용자 시도가 아니다. 등록과 평가 수행을 분리하고 성공률과 함께 오실행·지연·등록 실패를 기록한다. 테스트 수나 프레임 점수를 제품 정확도로 설명하지 않는다. 실행하지 않은 검사와 아직 측정하지 않은 수치를 완료로 표시하지 않는다.
 
-개발 요청의 기본 전달 범위는 본인 작업 브랜치의 push와 production 대상 PR 생성까지다. 사용자가 로컬 작업만 지정하면 그 범위를 따른다. production 직접 push·강제 push·필수 검사나 리뷰 우회는 하지 않는다. Jira 담당자 변경·이슈 완료는 별도 요청과 실제 완료 기준에 따른다. production 머지 뒤 배포는 검증된 릴리스 workflow가 수행한다.
+개발 요청의 기본 전달 범위는 본인 작업 브랜치의 push와 preview 대상 PR 생성까지다. 사용자가 로컬 작업만 지정하면 그 범위를 따른다. preview·production 직접 push·강제 push·필수 검사 우회는 하지 않는다. Jira 담당자 변경·이슈 완료는 별도 요청과 실제 완료 기준에 따른다. production 머지 뒤 배포는 검증된 릴리스 workflow가 수행한다.

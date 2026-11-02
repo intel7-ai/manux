@@ -88,14 +88,14 @@ npm run verify
 
 빨간 결과가 나오면 실패한 단계와 오류 문구를 그대로 공유하세요. 검사 통과와 실제 사용성, GitHub 반영 여부를 구분합니다. [검사 선택·PR·소스 전달 절차](CONTRIBUTING.md)를 따라 변경을 검토합니다.
 
-PR은 Windows/Linux 검사, 브라우저 검사와 Windows 시험용 설치파일 빌드를 통과해야 합니다. `production`은 다른 리뷰어 1명 승인과 필수 검사 통과 후 병합합니다. 병합되면 GitHub Actions가 정식 버전의 Windows 설치파일·업데이트 메타데이터를 검증하고 GitHub Release로 게시합니다. `release:prepare`는 별도의 소스 전달 도구이며 앱 배포와 구분합니다.
+PR은 Windows/Linux 검사, 브라우저 검사와 Windows 시험용 설치파일 빌드를 통과해야 합니다. PR은 `preview`로 열고 필수 검사 통과 후 병합합니다(리뷰어 승인 없음). preview에서 시험한 뒤 `preview → production` PR로 `production`에 병합하며, 병합되면 GitHub Actions가 정식 버전의 Windows 설치파일·업데이트 메타데이터를 검증하고 GitHub Release로 게시합니다. `release:prepare`는 별도의 소스 전달 도구이며 앱 배포와 구분합니다.
 
 ## 구조와 다음 문서
 
 ```text
 웹캠 → MediaPipe Worker → 손동작 판정 → 영상 / 마우스 연습
                                       └→ Electron → Windows 입력
-개인 AI / Discord worker → 작업 브랜치 → PR 검사·승인 → production → Windows Release
+개인 AI / Discord worker → 작업 브랜치 → PR 검사 → preview 시험 → production → Windows Release
 ```
 
 | 문서 | 용도 |

@@ -116,18 +116,18 @@ node --max-old-space-size=512 scripts/test-enrollment-browser.mjs
 
 ## 5. PR과 CI
 
-한 PR에는 재현 가능한 문제 또는 합의된 작은 기능을 담습니다. [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)에 따라 문제·변경·검증·미실행 이유·남은 한계를 기록하고, 지정 리뷰어가 실제 diff와 재현 증거를 확인합니다. 계약·프로필 형식·다른 담당 영역에 영향이 있으면 소비 모듈 담당자를 연결합니다.
+한 PR에는 재현 가능한 문제 또는 합의된 작은 기능을 담습니다. [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)에 따라 문제·변경·검증·미실행 이유·남은 한계를 기록합니다. PR 대상은 `preview`이며 리뷰어 승인 없이 MANUX required 통과 후 병합합니다. `production`에는 preview에서 시험한 뒤 `preview` PR로만 병합합니다([브랜치 흐름](docs/branch-flow.md)). 계약·프로필 형식·다른 담당 영역에 영향이 있으면 소비 모듈 담당자를 연결합니다.
 
 GitHub Actions의 **MANUX CI**는 Windows와 Ubuntu의 공통 검사, 브라우저 검사, Windows native 검사와 패키징 검사를 실행하고 PR별 시험용 Windows 설치파일을 artifact로 제공합니다. 집계 검사 이름은 **MANUX required**입니다. **로컬 검사 통과와 원격 CI 통과를 각각 기록**합니다. 자동 검사는 실제 웹캠·사용성 검사를 대신하지 않습니다.
 
-PR의 base는 **production**으로 지정합니다. production은 필수 검사 통과, 최신 코드에 대한 다른 리뷰어 1명의 승인, 대화 해결을 요구하며 직접 push·force push로 우회하지 않습니다. 새 커밋을 올리면 이전 승인이 무효화될 수 있으므로 최종 diff를 다시 검토받습니다. 충돌은 본인 브랜치에서 해결하며 다른 사람의 브랜치를 재작성하지 않습니다.
+PR의 base는 **preview**로 지정합니다. preview·production은 필수 검사 통과와 대화 해결을 요구하고 리뷰어 승인은 요구하지 않습니다. 직접 push·force push로 우회하지 않습니다. 충돌은 본인 브랜치에서 해결하며 다른 사람의 브랜치를 재작성하지 않습니다.
 
 ```powershell
 git push -u origin HEAD
-gh pr create --base production
+gh pr create --base preview
 ```
 
-PR의 Actions artifact에서 시험용 앱을 내려받아 확인합니다. production 머지 후 릴리스 workflow가 검사·버전 발행·Windows 설치파일 게시를 수행하며, 정식 설치본의 업데이터가 새 버전을 확인합니다. 로컬 개발 실행과 PR 시험본이 정식 업데이트를 받는 것처럼 설명하지 않습니다. 자세한 설치·업데이트 동작은 [데스크톱 배포](docs/desktop-release.md)를 확인하세요.
+PR과 preview push의 Actions artifact에서 시험용 Preview 앱을 내려받아 확인합니다. preview에서 시험한 뒤 `preview → production` PR로 병합하면 릴리스 workflow가 검사·버전 발행·Windows 설치파일 게시를 수행하며, 정식 설치본의 업데이터가 새 버전을 확인합니다. 로컬 개발 실행과 PR 시험본이 정식 업데이트를 받는 것처럼 설명하지 않습니다. 자세한 설치·업데이트 동작은 [데스크톱 배포](docs/desktop-release.md)를 확인하세요.
 
 사용자 프로필·원시 영상·토큰·계정 정보·로컬 산출물을 커밋하지 않습니다. 다른 사람의 Node·Chrome·Claude 프로세스를 일괄 종료하지 않습니다. GitHub/Jira 게시와 이슈 완료는 요청 범위와 실제 완료 기준에 따라 수행합니다.
 
