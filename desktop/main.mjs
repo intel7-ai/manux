@@ -1,12 +1,27 @@
-import {app, BrowserWindow, ipcMain, globalShortcut, powerMonitor, dialog} from 'electron';
+import {app, BrowserWindow, ipcMain, globalShortcut, powerMonitor, dialog, Menu} from 'electron';
 import {fileURLToPath} from 'node:url';
+import {readFileSync, mkdirSync} from 'node:fs';
+import path from 'node:path';
 import {createServer} from '../server.js';
 import {MouseBridge} from './mouse-bridge.mjs';
 import {isAppDocument, canRequestCamera, canCheckCamera, readDesktopPort} from './security.mjs';
 import {createUpdateManager} from './updater.mjs';
 
+const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+const buildChannel = manifest.manuxBuildChannel ?? 'stable';
+const isPreview = buildChannel === 'preview';
+if (isPreview) {
+  app.setName('MANUX Preview');
+  // A PR build must not share profiles, storage, or the instance lock with the release app.
+  const previewData = app.commandLine.getSwitchValue('user-data-dir')
+    || path.join(app.getPath('appData'), 'MANUX Preview');
+  mkdirSync(previewData, {recursive: true});
+  app.setPath('userData', previewData);
+  app.setPath('sessionData', previewData);
+}
+
 let window, server, origin, bridge, updates, shortcutReady = false;
-const baseTitle = 'MANUX · Air Mouse';
+const baseTitle = isPreview ? 'MANUX Preview · Air Mouse' : 'MANUX · Air Mouse';
 const emergencyKey = 'Control+Alt+M';
 const appStatus = () => ({...bridge.status(), available:bridge.status().available && shortcutReady,
   error:shortcutReady ? bridge.status().error : 'Ctrl+Alt+M 정지 키를 등록하지 못했습니다. 다른 앱의 단축키 설정을 확인하세요.'});
@@ -14,8 +29,18 @@ const trusted = event => Boolean(window && !window.isDestroyed() && event.sender
   && event.senderFrame === window.webContents.mainFrame && isAppDocument(event.senderFrame.url, origin));
 const statusToWindow = () => {
   if (window && !window.isDestroyed()) window.webContents.send('manux:mouse-status', appStatus());
+  refreshUpdateMenu();
+};
+const refreshUpdateMenu = () => {
+  const menu = Menu.getApplicationMenu();
+  const status = updates?.status();
+  const check = menu?.getMenuItemById('manux-update-check');
+  const install = menu?.getMenuItemById('manux-update-install');
+  if (check) check.enabled = Boolean(status?.enabled && !['checking', 'downloading', 'downloaded'].includes(status.state));
+  if (install) install.enabled = Boolean(status?.state === 'downloaded' && !bridge?.status().enabled);
 };
 const updateToWindow = status => {
+  refreshUpdateMenu();
   if (!window || window.isDestroyed()) return;
   window.webContents.send('manux:update-status', status);
   window.setTitle(status.state === 'downloaded' ? `${baseTitle} · 업데이트 ${status.version ?? ''} 준비됨` : baseTitle);
@@ -25,7 +50,8 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.focus(); } });
   app.whenReady().then(async () => {
-    const port = readDesktopPort();
+    const port = readDesktopPort({...process.env,
+      MANUX_DESKTOP_PORT: process.env.MANUX_DESKTOP_PORT ?? (isPreview ? '4176' : '4175')});
     server = createServer();
     await new Promise((resolve, reject) => {
       server.once('error', error => reject(error.code === 'EADDRINUSE'
@@ -38,7 +64,7 @@ else {
     shortcutReady = globalShortcut.register(emergencyKey, () => bridge.disable('Ctrl+Alt+M으로 마우스 제어를 멈췄습니다.'));
     window = new BrowserWindow({width:1460, height:1040, minWidth:760, minHeight:620,
       show:process.env.MANUX_MOUSE_DRY_RUN !== '1',
-      title:baseTitle, backgroundColor:'#F5F7F3', autoHideMenuBar:true,
+      title:baseTitle, backgroundColor:'#F5F7F3', autoHideMenuBar:false,
       webPreferences:{preload:fileURLToPath(new URL('./preload.cjs', import.meta.url)),
         nodeIntegration:false, contextIsolation:true, sandbox:true, webSecurity:true,
         backgroundThrottling:false, spellcheck:false}});
@@ -81,6 +107,7 @@ else {
     // Updates are checked only in a packaged run; the user approves every install.
     updates = createUpdateManager({
       isPackaged: app.isPackaged,
+      buildChannel,
       loadUpdater: async () => (await import('electron-updater')).default.autoUpdater,
       isMouseActive: () => bridge.status().enabled,
       onStatus: updateToWindow,
@@ -91,6 +118,22 @@ else {
     ipcMain.handle('manux:update-status', event => { if (!trusted(event)) throw new Error('Untrusted sender.'); return updates.status(); });
     ipcMain.handle('manux:update-check', async event => { if (!trusted(event)) throw new Error('Untrusted sender.'); return updates.check(); });
     ipcMain.handle('manux:update-install', async event => { if (!trusted(event)) throw new Error('Untrusted sender.'); return updates.install(); });
+    Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'MANUX', submenu:[
+      {label:`버전 ${app.getVersion()}${isPreview ? ' · 시험용' : ''}`, enabled:false},
+      {type:'separator'},
+      {id:'manux-update-check', label:'업데이트 확인', enabled:updates.enabled,
+        click:async () => {
+          const status = await updates.check();
+          if (window && !window.isDestroyed() && ['not-available', 'error'].includes(status.state)) {
+            await dialog.showMessageBox(window, {type:status.state === 'error' ? 'warning' : 'info',
+              title:'MANUX 업데이트', message:status.state === 'error' ? '업데이트를 확인하지 못했습니다. 나중에 다시 확인해 주세요.' : '현재 최신 버전을 사용하고 있습니다.'});
+          }
+        }},
+      {id:'manux-update-install', label:'준비된 업데이트 설치', enabled:false,
+        click:() => { void updates.install(); }},
+      {type:'separator'},
+      {label:'종료', role:'quit'},
+    ]}]));
     powerMonitor.on('suspend', () => bridge.disable('절전 모드에서 마우스 제어를 해제했습니다.'));
     powerMonitor.on('lock-screen', () => bridge.disable('화면이 잠겨 마우스 제어를 해제했습니다.'));
     void bridge.start().catch(error => { console.error(`MANUX mouse: ${error.message}`); statusToWindow(); });

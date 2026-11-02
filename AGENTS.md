@@ -4,6 +4,9 @@
 
 ## 현재 상태
 
+- 현재 마일스톤·담당·마감은 최신 [SCRUM-5](https://se4nchoi.atlassian.net/browse/SCRUM-5)·[SCRUM-11](https://se4nchoi.atlassian.net/browse/SCRUM-11)과 세부 태스크를 조회한다. 2026-11-02 승인된 M1은 11/04 PoC·11/06 Windows 제품 후보이며 5인·20개 작업이다. 오래된 역할표·10/29 계획과 충돌하면 현재 Jira와 사용자 요청을 따른다.
+- 개발 경로는 개인 PC의 원하는 AI 또는 Discord worker → 작업별 브랜치 → production 대상 PR → 자동 검사·다른 리뷰어 승인 → production 머지 → Windows 설치본 릴리스다. Jira 번호가 없는 개선도 목표·범위를 기록하여 시작할 수 있다.
+
 - 2026-11-02 손 전체 이동 기반 마우스 모드와 Electron/Windows 입력 경로를 추가했다. 현재 계약·실행법은 `docs/air-mouse.md`와 `desktop/README.md`를 확인한다. 실제 웹캠 사용성과 실제 OS 클릭 검증은 별도다.
 
 - 기본 네 명령, 선택적 ±10초 반복, 카메라·Worker, 사용자·환경 프로필, 여러 각도 등록 코드가 있다.
@@ -13,7 +16,7 @@
 
 ## 브랜치와 담당 경계
 
-작업을 시작할 때 `git status --short`, `git branch --show-current`, `git remote -v`로 실제 상태를 확인한다. 다른 사람의 변경을 되돌리거나 깨끗하게 만들기 위해 삭제하지 않는다. 담당 브랜치는 아래 권장 이름을 사용하되 사람의 지시와 실제 원격 기본 브랜치를 따른다.
+작업을 시작할 때 `git status --short`, `git branch --show-current`, `git remote -v`로 실제 상태를 확인한다. 다른 사람의 변경을 되돌리거나 깨끗하게 만들기 위해 삭제하지 않는다. 신규 작업은 최신 `origin/production`에서 작업 단위 `codex/<이슈>-<설명>` 브랜치를 만든다. 아래 역할 브랜치는 과거 범위 참고이며 한 사람의 모든 작업을 한 브랜치에 모으지 않는다. 기존 진행 중 브랜치·미커밋 파일·worker는 그대로 보존하고 재생성하거나 강제로 production에 맞추지 않는다.
 
 | 역할 | 담당 | 권장 브랜치 | 주 담당 파일 |
 | --- | --- | --- | --- |
@@ -31,15 +34,15 @@
 
 1. 현재 Git 상태를 확인하고 요청을 `harness/task.schema.json` 형식으로 정리한다. 비전공자에게 JSON 작성을 요구하지 않는다. 목표·완료 기준·허용 파일·기준 커밋을 기록하고, Jira가 없다는 이유만으로 진행을 막지 않는다.
 2. 실패를 재현한다. 환경, 입력 순서, 예상/실제 결과를 기록하고 원인 가설을 사실과 분리한다.
-3. 작은 변경을 구현한다. 독립 작업은 최대 5개 worktree에서 병렬 진행하며 같은 파일의 통합은 조정자가 순서대로 처리한다. worker는 다른 worker를 만들거나 공유 checkout을 수정하지 않는다.
+3. 본인 브랜치에서 작은 변경을 구현하고 앱을 실행하여 확인한다. Discord worker는 최대 5개 독립 worktree에서 병렬 진행한다. 신규 worktree는 원격 production의 정확한 SHA에서 시작하며 공유 checkout의 미커밋 변경을 복제하지 않는다. worker는 다른 worker나 공유 checkout을 수정하지 않는다.
 4. `npm run verify`와 변경에 필요한 브라우저/Windows 검사를 실행한다. 실패를 숨기기 위해 테스트를 삭제하거나 기대값만 맞추지 않는다. 수정 뒤에는 관련 검증을 다시 실행한다.
-5. `harness/result.schema.json` 형식으로 실제 결과·완료 기준별 증거·한계를 기록한다. `npm run task:report -- TASK.json RESULT.json`으로 검증된 보고서를 만들고 독립 리뷰 후 공유 checkout에 통합한다. 통합 뒤 다시 검증한다.
+5. `harness/result.schema.json` 형식으로 실제 증거·한계를 기록하고 `npm run task:report -- TASK.json RESULT.json`으로 보고서를 만든다. 본인 브랜치를 push하여 `production` 대상 PR을 연다. PR의 필수 검사·시험용 Windows 설치파일을 확인하고 다른 리뷰어 1명의 승인을 거쳐 머지한다. 공유 checkout에 코드를 먼저 통합하는 절차는 두지 않는다. 로컬 리뷰가 필요한 복잡한 변경만 별도 reviewer를 사용한다.
 
-작업 기록은 `.local/harness/<requestId>/task.json`, `result.json`에 둔다. 폴더와 ID는 일치시킨다. worker 결과는 조정자가 공유 checkout의 같은 위치로 검토하여 옮긴다. Git에 올릴 PR에는 민감정보를 제거한 보고서와 검사 증거만 첨부한다.
+작업 기록은 `.local/harness/<requestId>/task.json`, `result.json`에 둔다. 폴더와 ID는 일치시킨다. 신규 Discord worker는 조정자가 절대 경로로 전달한 task.json을 자기 작업 폴더에 복사하고, 구현 전에 `baselineCommit`을 `.local/discord-baseline.json`의 `sourceHead`로 확정한다. 생성 훅이 접수 때보다 최신 production을 조회할 수 있기 때문이다. 기존 진행 중 작업의 기준은 변경하지 않는다. 완료 후 조정자는 확정된 task.json과 result.json 둘 다 공유 checkout의 같은 위치에 복사하고 worker의 원본 기록을 보존한다. 코드는 작업 브랜치에 둔다. Git에 올릴 PR에는 민감정보를 제거한 보고서와 검사 증거만 첨부한다.
 
 ## 모든 사용자에게 같은 응답
 
-- 최종 보고서는 renderer가 만든 `상태 → 요약 → 변경 → 검증 → 다음` 순서를 그대로 사용한다. `complete`는 해당 요청의 검증 완료이며 공유 checkout 통합·GitHub 게시와 별개다. 통합/게시 여부는 사실대로 표시한다.
+- 최종 보고서는 renderer가 만든 `상태 → 요약 → 변경 → 검증 → 다음` 순서를 그대로 사용한다. `complete`는 해당 요청의 검증 완료이며 PR 게시·production 머지·릴리스와 별개다. `delivery.integrated`는 production에 반영됐을 때만 true다. PR·배포 링크와 상태를 사실대로 표시한다.
 - 완료 기준이 충족되지 않았거나 검사를 실행하지 못했으면 `needs_review` 또는 `blocked`로 기록한다. 결과 계약의 검사는 형식과 증거 유무를 확인하며 내용의 진실성을 대신 보증하지 않는다.
 - 질문·인사·접수·진행도 같은 다섯 항목을 쓴다. 예: `상태: 정보`, `요약: ...`, `변경: 없음`, `검증: 미실행(안내 답변)`, `다음: ...`. 간단한 안내에는 작업 JSON을 만들지 않는다.
 - Discord의 `reply`와 `edit_message`는 `.claude/settings.json`의 전송 전 검사 훅을 거친다. 종료 상태는 기록과 renderer 출력이 일치해야 전송된다. 막히면 원인을 수정하고 재시도하며 HTTP·다른 도구로 우회하지 않는다. Discord 전송은 원래 사용자의 요청에 대한 답변만 한다.
@@ -60,4 +63,4 @@
 
 같은 손 자세의 인접 프레임은 독립적인 사용자 시도가 아니다. 등록과 평가 수행을 분리하고 성공률과 함께 오실행·지연·등록 실패를 기록한다. 테스트 수나 프레임 점수를 제품 정확도로 설명하지 않는다. 실행하지 않은 검사와 아직 측정하지 않은 수치를 완료로 표시하지 않는다.
 
-GitHub/Jira 게시, 담당자 변경, 이슈 완료 처리, 배포는 사람의 요청 범위에서 수행한다. 코드가 있다는 이유만으로 Jira 이슈를 완료 처리하지 않는다.
+개발 요청의 기본 전달 범위는 본인 작업 브랜치의 push와 production 대상 PR 생성까지다. 사용자가 로컬 작업만 지정하면 그 범위를 따른다. production 직접 push·강제 push·필수 검사나 리뷰 우회는 하지 않는다. Jira 담당자 변경·이슈 완료는 별도 요청과 실제 완료 기준에 따른다. production 머지 뒤 배포는 검증된 릴리스 workflow가 수행한다.

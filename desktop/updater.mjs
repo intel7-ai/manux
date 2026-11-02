@@ -14,22 +14,23 @@ export const UPDATE_STATES = Object.freeze(['disabled', 'idle', 'checking', 'ava
 const DAY_MS = 24 * 60 * 60 * 1000;
 const shortMessage = error => String(error?.message ?? error ?? '알 수 없는 오류').split('\n')[0].slice(0, 200);
 
-export function updateDisabledReason({isPackaged, platform, env}) {
+export function updateDisabledReason({isPackaged, platform, env, buildChannel = 'stable'}) {
   if (!isPackaged) return '개발 실행에서는 자동 업데이트를 사용하지 않습니다.';
   if (platform !== 'win32') return '자동 업데이트는 Windows 설치본에서만 지원합니다.';
+  if (buildChannel !== 'stable') return '시험용 앱은 정식 배포 업데이트를 받지 않습니다.';
   if (env?.MANUX_AUTO_UPDATE === '0') return 'MANUX_AUTO_UPDATE=0 설정으로 자동 업데이트가 꺼져 있습니다.';
   return null;
 }
 
 export function createUpdateManager({
-  loadUpdater, isPackaged, platform = process.platform, env = process.env,
+  loadUpdater, isPackaged, platform = process.platform, env = process.env, buildChannel = 'stable',
   isMouseActive = () => false, promptInstall = async () => false, onStatus = () => {},
   setTimer = setTimeout, clearTimer = clearTimeout, now = Date.now,
   firstCheckDelayMs = 20_000, intervalMs = DAY_MS / 4,
 } = {}) {
-  const reason = updateDisabledReason({isPackaged, platform, env});
+  const reason = updateDisabledReason({isPackaged, platform, env, buildChannel});
   const enabled = reason === null;
-  let updater = null, timer = null, started = false, stopped = false;
+  let updater = null, timer = null, started = false, starting = null, stopped = false;
   let promptedVersion = null, promptPending = false, prompting = false;
   const state = {enabled, state: enabled ? 'idle' : 'disabled', version: null, percent: null,
     error: null, checkedAt: null, reason: reason ?? null};
@@ -50,7 +51,7 @@ export function createUpdateManager({
   }
 
   async function install() {
-    if (!enabled || state.state !== 'downloaded') return {ok: false, ...snapshot(), error: '설치할 업데이트가 준비되지 않았습니다.'};
+    if (!enabled || stopped || !updater || state.state !== 'downloaded') return {ok: false, ...snapshot(), error: '설치할 업데이트가 준비되지 않았습니다.'};
     if (isMouseActive()) {
       promptPending = true;
       set({error: '마우스 제어를 끈 뒤 설치할 수 있습니다.'});
@@ -69,7 +70,8 @@ export function createUpdateManager({
   async function check() {
     if (!enabled || stopped) return snapshot();
     if (!updater) await start();
-    if (!updater || state.state === 'checking' || state.state === 'downloading') return snapshot();
+    // Keep a verified download available even if the network later goes offline.
+    if (!updater || ['checking', 'downloading', 'downloaded'].includes(state.state)) return snapshot();
     set({state: 'checking', error: null});
     try {
       await updater.checkForUpdates();
@@ -81,22 +83,26 @@ export function createUpdateManager({
 
   function schedule(delay) {
     if (stopped) return;
-    timer = setTimer(async () => { await check(); schedule(intervalMs); }, delay);
+    if (timer) clearTimer(timer);
+    timer = setTimer(async () => { timer = null; await check(); schedule(intervalMs); }, delay);
     timer?.unref?.();
   }
 
   async function start() {
     if (!enabled || started || stopped) return snapshot();
-    started = true;
-    try {
-      updater = await loadUpdater();
+    if (starting) return starting;
+    starting = (async () => {
+      try {
+      const loaded = await loadUpdater();
+      if (stopped) return snapshot();
+      updater = loaded;
       updater.autoDownload = true;           // Downloading is not installing.
       updater.autoInstallOnAppQuit = false;  // Never install without an explicit approval.
       updater.allowDowngrade = false;
       updater.allowPrerelease = false;
-      updater.on('checking-for-update', () => set({state: 'checking', error: null}));
+      updater.on('checking-for-update', () => { if (state.state !== 'downloaded') set({state: 'checking', error: null}); });
       updater.on('update-available', info => set({state: 'downloading', version: info?.version ?? null, percent: 0}));
-      updater.on('update-not-available', () => set({state: 'not-available', checkedAt: now(), percent: null}));
+      updater.on('update-not-available', () => { if (state.state !== 'downloaded') set({state: 'not-available', checkedAt: now(), percent: null}); });
       updater.on('download-progress', progress => {
         if (state.state === 'downloading') set({percent: Number.isFinite(progress?.percent) ? Math.round(progress.percent) : null});
       });
@@ -104,14 +110,20 @@ export function createUpdateManager({
         set({state: 'downloaded', version: info?.version ?? state.version, percent: 100, checkedAt: now()});
         void maybePrompt();
       });
-      updater.on('error', error => set({state: 'error', error: shortMessage(error), checkedAt: now()}));
-    } catch (error) {
-      updater = null;
-      set({state: 'error', error: shortMessage(error)});
+      updater.on('error', error => set({state: state.state === 'downloaded' ? 'downloaded' : 'error', error: shortMessage(error), checkedAt: now()}));
+      started = true;
+      set({state: 'idle', error: null});
+      schedule(firstCheckDelayMs);
+      } catch (error) {
+        updater = null;
+        set({state: 'error', error: shortMessage(error)});
+        // Failed initialization is retryable, both manually and on the next timer.
+        schedule(intervalMs);
+      }
       return snapshot();
-    }
-    schedule(firstCheckDelayMs);
-    return snapshot();
+    })();
+    try { return await starting; }
+    finally { starting = null; }
   }
 
   return {

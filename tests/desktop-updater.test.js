@@ -32,6 +32,7 @@ function manager(overrides = {}) {
 test('updates stay off in development, tests, other platforms and when opted out, and never load the updater', async () => {
   for (const [input, pattern] of [[{isPackaged: false, platform: 'win32', env: {}}, /개발/],
     [{isPackaged: true, platform: 'linux', env: {}}, /Windows/],
+    [{isPackaged: true, platform: 'win32', env: {}, buildChannel: 'preview'}, /시험용/],
     [{isPackaged: true, platform: 'win32', env: {MANUX_AUTO_UPDATE: '0'}}, /MANUX_AUTO_UPDATE/]]) {
     assert.match(updateDisabledReason(input), pattern);
     let loaded = 0;
@@ -71,7 +72,7 @@ test('status follows the updater events from checking to downloaded', async () =
   assert.deepEqual([instance.status().state, instance.status().percent], ['downloaded', 100]);
   assert.ok(statuses.length >= 4);
   updater.emit('update-not-available');
-  assert.equal(instance.status().state, 'not-available');
+  assert.equal(instance.status().state, 'downloaded', 'a later status event cannot discard a verified download');
 });
 
 test('failed checks never throw and are shown as a short status; the next check still works', async () => {
@@ -99,6 +100,61 @@ test('overlapping checks are ignored while checking or downloading', async () =>
   updater.emit('update-available', {version: '1.0.0'});
   await instance.check();
   assert.equal(updater.checks, 0);
+});
+
+test('a deferred downloaded update remains installable when subsequent checks or network events fail', async () => {
+  const updater = fakeUpdater({checkResult: async () => { throw new Error('offline'); }});
+  const {instance, timers, prompts} = manager({updater, approve: false});
+  await instance.start();
+  updater.emit('update-downloaded', {version: '0.3.0'});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(prompts, ['0.3.0']);
+  assert.equal(updater.installs.length, 0, 'Later must leave the app running');
+  await instance.check();
+  await timers[0].fn();
+  assert.equal(updater.checks, 0, 'a pending download needs no network recheck');
+  updater.emit('error', new Error('offline'));
+  updater.emit('checking-for-update');
+  updater.emit('update-not-available');
+  assert.equal(instance.status().state, 'downloaded');
+  assert.equal(instance.status().version, '0.3.0');
+  assert.equal((await instance.install()).ok, true, 'explicit Install remains available after Later/offline');
+  assert.deepEqual(updater.installs, [[false, true]]);
+});
+
+test('initial updater loading failure can recover and replaces its retry timer', async () => {
+  let loads = 0;
+  const updater = fakeUpdater({checkResult: async function () { this.emit('update-not-available'); }});
+  const {instance, timers} = manager({updater, loadUpdater: async () => {
+    if (++loads === 1) throw new Error('temporary loader error');
+    return updater;
+  }});
+  await instance.start();
+  assert.equal(instance.status().state, 'error');
+  assert.equal(timers.length, 1, 'failed initialization schedules a retry');
+  await instance.check();
+  assert.equal(loads, 2);
+  assert.equal(instance.status().state, 'not-available');
+  assert.equal(instance.status().error, null);
+  assert.equal(updater.checks, 1);
+  assert.equal(timers[0].cleared, true, 'the old retry timer is replaced');
+  assert.equal(updater.listenerCount('update-downloaded'), 1);
+});
+
+test('concurrent starts share one initialization and stopping it prevents later activation', async () => {
+  let resolveLoad, loads = 0;
+  const updater = fakeUpdater();
+  const pending = new Promise(resolve => { resolveLoad = resolve; });
+  const {instance, timers} = manager({updater, loadUpdater: () => { loads++; return pending; }});
+  const first = instance.start();
+  const second = instance.start();
+  instance.stop();
+  resolveLoad(updater);
+  await Promise.all([first, second]);
+  assert.equal(loads, 1);
+  assert.equal(timers.length, 0);
+  assert.equal(updater.listenerCount('update-downloaded'), 0);
+  assert.equal((await instance.install()).ok, false);
 });
 
 test('install requires a downloaded update and is refused while mouse control is on', async () => {

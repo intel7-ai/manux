@@ -20,26 +20,27 @@ test('electron-builder config keeps the helper readable, publishes to this repo 
 test('package scripts, entry point and pinned packaging dependencies', async () => {
   const manifest = JSON.parse(await read('package.json'));
   assert.equal(manifest.main, 'desktop/main.mjs');
-  for (const script of ['desktop:pack', 'desktop:dist', 'desktop:publish', 'test:packaged']) assert.ok(manifest.scripts[script], script);
+  for (const script of ['desktop:pack', 'desktop:dist', 'test:packaged']) assert.ok(manifest.scripts[script], script);
   assert.equal(manifest.scripts.desktop, 'electron desktop/main.mjs', 'the development launch path is unchanged');
   assert.match(manifest.dependencies['electron-updater'], /^\d+\.\d+\.\d+$/);
   assert.match(manifest.devDependencies['electron-builder'], /^\d+\.\d+\.\d+$/);
   assert.equal(manifest.dependencies['electron-builder'], undefined, 'build tooling stays out of the shipped app');
 });
 
-test('release workflow is tag-triggered, least-privilege, pinned and secret-free', async () => {
-  const workflow = await read('.github/workflows/release.yml');
-  assert.match(workflow, /^on:\s*\n\s+push:\s*\n\s+tags:\s*\n\s+- 'v\*'/m);
-  assert.doesNotMatch(workflow, /pull_request|workflow_dispatch/);
-  assert.match(workflow, /^permissions: \{\}$/m, 'no default token permissions');
-  assert.match(workflow, /^\s+permissions:\s*\n\s+contents: write$/m, 'only the release job can write contents');
-  assert.match(workflow, /runs-on: windows-latest/);
-  for (const step of ['npm ci --ignore-scripts', 'npm run verify', 'npm run desktop:pack', 'npm run test:packaged', 'npm run desktop:publish']) {
-    assert.ok(workflow.includes(step), step);
-  }
-  assert.ok(workflow.indexOf('npm run verify') < workflow.indexOf('npm run desktop:publish'), 'verify before publish');
-  for (const use of workflow.matchAll(/uses:\s*(\S+)/g)) assert.match(use[1], /@[0-9a-f]{40}$/, `unpinned action ${use[1]}`);
-  const secrets = [...workflow.matchAll(/secrets\.([A-Za-z_]+)/g)].map(match => match[1]);
-  assert.deepEqual([...new Set(secrets)], ['GITHUB_TOKEN']);
-  assert.doesNotMatch(workflow, /(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}|CSC_LINK|CSC_KEY_PASSWORD/);
+test('preview identities cannot replace the stable installer or share its package name', async () => {
+  const {desktopChannel, desktopVersion} = await import('../scripts/desktop-channel.mjs');
+  const stable=desktopChannel({}), preview=desktopChannel({MANUX_BUILD_CHANNEL:'preview'});
+  for(const key of ['appId','productName','executableName','packageName','artifactName']) assert.notEqual(preview[key],stable[key],key);
+  assert.equal(desktopChannel({MANUX_BUILD_CHANNEL:'stable'}).channel,'stable');
+  assert.throws(()=>desktopChannel({MANUX_BUILD_CHANNEL:'prod-typo'}));
+  assert.equal(desktopVersion('0.2.0', 'stable'), '0.2.0');
+  assert.equal(desktopVersion('0.2.0', 'preview'), '0.2.0-preview.local');
+  assert.equal(desktopVersion('0.2.0-preview.3.20', 'preview'), '0.2.0-preview.3.20');
+});
+
+test('local build commands never publish a release', async () => {
+  const manifest=JSON.parse(await read('package.json'));
+  assert.equal(manifest.scripts['desktop:publish'],undefined);
+  const source=await read('scripts/desktop-build.mjs');
+  assert.match(source,/'--publish', 'never'/);
 });

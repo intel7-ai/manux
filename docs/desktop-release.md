@@ -1,55 +1,65 @@
-# 데스크톱 앱 패키징·배포·자동 업데이트
+# Windows 앱 배포와 자동 업데이트
 
-각자 PC에서 개발 환경 없이 최신 MANUX를 설치해 확인하기 위한 Windows 설치본 경로다. **서명되지 않은 빌드**이며, 실제 웹캠·실제 OS 클릭·실제 업데이트 설치는 이 문서의 자동 검사로 확인하지 않았다.
+개인 PC의 AI와 Discord worker가 각각 작업 브랜치에서 개발하고 PR로 제출한다. `production`은 검사와 리뷰를 통과한 코드만 받으며, 병합 뒤 Windows 설치본과 업데이트를 자동 게시한다.
 
-## 구성
+## 팀원이 사용하는 흐름
 
-| 구분 | 내용 |
-| --- | --- |
-| 패키징 | `electron-builder` 26.18.0, 설정은 `electron-builder.yml` (x64 NSIS, 사용자 단위 설치 `oneClick`) |
-| 업데이트 | `electron-updater` 6.8.11, GitHub Releases(`intel7-ai/manux`), 정책은 `desktop/updater.mjs` |
-| 릴리스 | `.github/workflows/release.yml`: `v*` 태그 푸시 → 검증 → 빌드 → **초안(draft) 릴리스** 업로드 |
-| 대상 | Windows x64만. 다른 OS는 지원하지 않는다. |
+1. 최신 `origin/production`에서 `codex/scrum-23-gesture-enrollment` 같은 작업 브랜치를 만든다. 이미 진행 중인 브랜치는 그 자리에서 계속 작업한다.
+2. `npm run desktop`으로 직접 확인하고 관련 검사를 실행한다. 다른 사람의 checkout이나 공유 Claude의 코드 통합을 기다리지 않는다.
+3. 브랜치를 푸시하고 `production` 대상 PR을 만든다. PR에는 목적·변경·검증·남은 한계를 적는다.
+4. PR의 `MANUX CI`가 Windows/Linux, 합성 브라우저, Windows helper, 실제 패키지 실행·업데이트 다운로드를 검사한다. `manux-preview-...` artifact에는 시험용 설치파일이 있다.
+5. 리뷰어가 시험용 앱과 diff를 확인한다. `MANUX required` 통과와 다른 리뷰어 1명 승인이 있어야 병합할 수 있다. 새 커밋은 기존 승인을 만료시키며 마지막 푸시 작성자는 자신의 변경을 승인할 수 없다.
+6. `production`에 병합되면 `MANUX production release`가 검증·빌드하고 [GitHub Releases](https://github.com/intel7-ai/manux/releases)에 정식 버전을 게시한다.
 
-`asar`는 껐다(`asar: false`). 마우스 PowerShell 도우미(`desktop/windows-mouse.ps1`)는 외부 프로세스가 읽는 실제 파일이어야 하고, 서버(`server.js`)가 `src/`, `public/`, `node_modules`를 파일 경로로 서비스하기 때문이다. 대가로 설치 폴더의 앱 파일을 사용자가 수정할 수 있고 코드 위변조 방지 효과는 없다.
+검사 실패, 승인 대기, 머지 완료, 정식 Release 게시는 다른 상태다. 첫 Release가 게시되기 전에는 설치된 사용자 앱으로 전달할 정식 업데이트가 없다.
 
-## 로컬 빌드와 확인
+## 정식 앱과 PR 시험용 앱
+
+| 항목 | 정식 앱 | PR 시험용 앱 |
+| --- | --- | --- |
+| 표시 이름 | MANUX | MANUX Preview |
+| 설치 ID | `ai.intel7.manux` | `ai.intel7.manux.preview` |
+| 기본 포트 | 4175 | 4176 |
+| 설정 저장 | 정식 앱의 기존 userData/localStorage | 별도의 MANUX Preview userData/localStorage |
+| 자동 업데이트 | 게시된 정식 GitHub Release | 꺼짐 |
+| 받는 곳 | GitHub Releases | 해당 PR의 Actions artifact |
+
+두 앱의 설치 ID와 설정 폴더를 분리해서 PR 설치본이 정식 앱을 덮어쓰지 않게 한다. 모델·WASM·Electron·Windows 입력 도우미를 패키지에 포함하므로 사용하는 PC에 Node/npm을 설치할 필요가 없다. 시험용 앱끼리는 같은 Preview 설치를 교체한다. 두 앱이 동시에 실행되면 전역 정지 단축키를 먼저 등록한 앱만 실제 마우스 제어를 사용할 수 있다.
+
+## 빌드·검증 명령
 
 ```powershell
 npm ci --ignore-scripts
-npm run desktop:pack      # dist/win-unpacked/MANUX.exe (설치 없이 실행 가능)
-npm run test:packaged     # 패키지된 앱 시작 검사 (dry-run, 실제 마우스 입력 없음)
-npm run desktop:dist      # dist/MANUX-Setup-<버전>.exe + latest.yml (업로드 없음)
+npm run desktop:setup
+npm run verify
+npm run desktop:dist
+npm run test:packaged
+npm run test:update-download
 ```
 
-- 첫 빌드는 Electron(약 130 MB), NSIS 도구, 제스처 모델(8.4 MB, `npm run setup`)을 내려받는다. 모델은 `public/models/model-source.json`의 SHA-256과 다르면 빌드를 중단한다.
-- `dist/`는 Git에 올리지 않는다.
-- `npm run test:packaged`는 창 생성, 로컬 서버(`/health`, 화면, MediaPipe wasm, 모델 해시), 패키지 안의 도우미 시작(dry-run), 마우스 제어 기본 꺼짐, 렌더러의 Node 접근 차단, 업데이트 API 범위를 확인한다. 설치 파일을 설치하거나 업데이트를 내려받지는 않는다.
+로컬 시험용 앱은 빌드 전에 `$env:MANUX_BUILD_CHANNEL = 'preview'`를 설정한다. 기본은 정식 앱 형태이며 위 명령은 파일을 업로드하거나 설치하지 않는다. `dist/`는 Git 제외 대상이다. CI가 버전을 부여하며 로컬 빌드는 package.json의 버전을 사용한다.
 
-## 자동 업데이트 동작
+- `desktop:dist`: Windows x64 사용자 단위 NSIS 설치파일과 업데이트 메타데이터 생성.
+- `test:packaged`: 실제 unpacked 앱을 별도 프로필로 열어 모델·WASM·helper(dry-run), IPC 범위, 메뉴, 재실행 후 설정 보존을 확인한다.
+- `test:update-download`: 실제 electron-updater가 루프백 서버의 설치파일을 다운로드하고 해시를 검증하며, 잘못된 해시를 거부하는지 확인한다. 이전 버전은 시험 adapter로 모사하며 실제 설치·교체는 하지 않는다.
+- 실제 웹캠 인식·OS 클릭·기존 설치본의 버전 간 업그레이드는 별도 Windows 인수 시험이다. 합성 검사와 구분해서 PR에 기록한다.
 
-- **패키지된 Windows 실행에서만** 켜진다. `npm run desktop`, 시험, 다른 OS에서는 꺼진다. `MANUX_AUTO_UPDATE=0`으로 끌 수 있다.
-- 시작 20초 뒤 한 번, 이후 6시간마다 GitHub의 **게시된(draft 아님)** 최신 릴리스를 확인한다. 새 버전은 내려받기만 하고 `autoInstallOnAppQuit`을 꺼서 종료 시 몰래 설치하지 않는다. 다운그레이드·사전 릴리스는 허용하지 않는다.
-- 내려받기가 끝나면 설치 여부를 묻는 창이 뜬다("지금 설치"/"나중에"). **승인 없이 설치하거나 재시작하지 않는다.** 창 제목에도 "업데이트 x.y.z 준비됨"이 표시된다.
-- **마우스 제어가 켜져 있으면** 설치를 거절하고, 확인 창도 제어가 꺼진 뒤에 띄운다. 재시작한 앱은 항상 마우스 제어가 꺼진 상태로 시작한다(기존 계약).
-- 확인 실패(오프라인, 404, 서명·해시 불일치)는 앱 사용을 막지 않고 `getUpdateStatus()`의 `error`로만 나타난다.
-- 렌더러에는 `getUpdateStatus`, `checkForUpdates`, `installUpdate`, `onUpdateStatus`만 추가했다. URL·경로·채널을 받지 않으며 main에서 기존과 같은 송신자·origin 검사를 한다.
+`asar: false`로 패키징하여 PowerShell helper와 로컬 파일 서버가 필요한 파일을 실제 경로로 읽는다. 모델은 저장된 SHA-256·크기와 일치해야 빌드된다. 빌드 도구는 고정 버전 electron-builder 26.18.0, 런타임 업데이트는 electron-updater 6.8.11이다.
 
-## 릴리스하는 방법 (사람이 수행)
+## 자동 배포의 경계
 
-1. `package.json`의 `version`을 올려 PR로 병합한다(예: `0.3.0`).
-2. 병합된 커밋에 태그를 만들어 푸시한다: `git tag v0.3.0` → `git push origin v0.3.0`. 태그는 `v` + `package.json` 버전과 같아야 한다.
-3. Actions의 "MANUX desktop release"가 `npm run verify`, 패키지 시작 검사, 빌드를 거쳐 **초안 릴리스**에 `MANUX-Setup-0.3.0.exe`, `.blockmap`, `latest.yml`을 올린다.
-4. 사람이 초안을 확인하고 **Publish release**를 누르면 그때부터 설치된 앱이 업데이트를 발견한다. 즉시 공개하려면 `electron-builder.yml`의 `releaseType`을 `release`로 바꾼다.
+PR job은 읽기 권한만 가진다. 설치파일을 만들지만 정식 Release를 게시하지 않는다. 태그를 푸시하는 것만으로 배포되지 않는다.
 
-이 workflow는 아직 한 번도 실행하지 않았다. 태그를 푸시하는 첫 릴리스에서 처음 동작을 확인하게 된다.
+정식 workflow는 `production` push에서 동작한다. 읽기 권한의 build job이 테스트와 패키징을 완료한 다음, 별도의 publish job이 그 **동일 artifact**의 SHA-256·업데이트 SHA-512·원본 커밋을 확인해 게시한다. publish job만 `contents: write`를 가지며 GitHub Actions의 기본 `GITHUB_TOKEN`을 사용한다. 사용자 앱에 토큰을 넣지 않는다.
 
-## 알아둘 한계
+정식 빌드 버전은 package.json의 major/minor를 유지하고 patch에 workflow run number를 더한다. 소스 버전을 매번 커밋하지 않아도 각 배포의 버전이 증가한다. PR은 `-preview.<PR>.<run>` 버전이다. 각 정식 태그는 해당 production 커밋을 가리키고 설치파일·blockmap·latest.yml·release-manifest.json을 Release에 함께 게시한다.
 
-- **코드 서명이 없다.** 처음 설치할 때 Windows SmartScreen이 "알 수 없는 게시자" 경고를 보일 수 있고, 업데이트도 서명 대신 `latest.yml`의 SHA-512로만 무결성을 확인한다. 릴리스 계정이나 저장소가 침해되면 악성 설치본이 배포될 수 있다. 신뢰할 수 있는 배포가 필요하면 서명 인증서가 필요하다(이 저장소에는 인증서를 넣지 않는다).
-- 저장소는 확인 시점(2026-11-02, `gh repo view`)에 **공개(PUBLIC)** 였다. 공개 저장소의 게시된 릴리스는 토큰 없이 업데이트할 수 있다. 비공개로 바꾸면 업데이트 확인이 실패하며, 팀원 PC에 토큰을 넣는 방식은 쓰지 않는다.
-- 업데이트 롤백 기능은 없다. 문제가 생기면 이전 버전 설치 파일을 직접 설치해야 하고, 다운그레이드는 자동으로 허용되지 않는다.
-- 프로필은 앱 origin(`http://127.0.0.1:4175`)별 localStorage에 있다. 설치본을 새 포트나 다른 사용자 계정에서 실행하면 개발 실행과 프로필이 공유되지 않는다.
-- 아이콘은 기본 Electron 아이콘이다. 서명을 끄면서 실행 파일의 아이콘·버전 메타데이터 편집도 건너뛰었다.
-- 설치 프로그램 실행, 설치본에서의 실제 웹캠·마우스 동작, 실제 업데이트 다운로드·설치는 사람이 별도로 확인해야 한다.
-- `npm audit`는 개발 의존성에서 moderate 15건을 보고한다(배포 앱에 들어가는 의존성은 0건). 이번 작업에서 처리하지 않았다.
+부분 업로드는 draft 상태로 남아 사용자 앱에 노출되지 않는다. 기존 태그나 게시된 파일을 덮어쓰지 않는다. 실패 원인을 해결한 PR을 production에 병합하여 새 workflow 실행·새 버전을 만든다. 이미 게시된 버전보다 낮은 버전은 거부한다. 이전 정상 코드로 복구할 때도 새 버전으로 배포한다.
+
+## 앱에서 업데이트 적용
+
+패키지된 정식 Windows 앱은 시작 20초 뒤, 이후 6시간마다 업데이트를 확인한다. 메뉴의 **MANUX → 업데이트 확인**으로도 확인할 수 있다. 새 버전은 자동 다운로드하고, 준비되면 **지금 설치 / 나중에**를 선택한다. 나중에 설치하려면 메뉴의 **준비된 업데이트 설치**를 사용한다.
+
+마우스 제어 중에는 설치·재시작하지 않는다. 설치 후 재실행해도 제어는 기본 꺼짐이다. 같은 앱 ID·userData·포트를 유지하여 커스텀 설정을 보존한다. 오프라인이나 업데이트 서버 오류는 앱 사용을 막지 않으며 이미 다운로드한 설치본도 유지한다. 개발 실행과 Preview는 정식 자동 업데이트를 사용하지 않는다.
+
+현재 빌드는 코드 서명 인증서가 없어 Windows에서 알 수 없는 게시자 경고가 나올 수 있다. 공개 `intel7-ai/manux`의 Release를 토큰 없이 받는다. 저장소를 비공개로 바꾸려면 별도의 공개 배포 위치를 마련해야 한다. 코드 서명은 인증서를 저장소에 넣지 않고 CI 비밀 설정으로 추가할 수 있다.

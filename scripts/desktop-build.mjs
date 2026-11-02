@@ -3,25 +3,25 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {desktopChannel, desktopVersion} from './desktop-channel.mjs';
 
-// Usage: node scripts/desktop-build.mjs dir|dist|publish
+// Usage: node scripts/desktop-build.mjs dir|dist
 //   dir     unpacked Windows app in dist/win-unpacked (fast; used by test:packaged)
 //   dist    NSIS installer in dist/, nothing uploaded
-//   publish NSIS installer + upload to a GitHub *draft* release (needs GH_TOKEN)
+// Releases publish these exact artifacts in a separate protected CI job.
 const root = fileURLToPath(new URL('..', import.meta.url));
 const mode = process.argv[2];
-if (!['dir', 'dist', 'publish'].includes(mode)) {
-  console.error('사용법: node scripts/desktop-build.mjs dir|dist|publish');
+if (!['dir', 'dist'].includes(mode)) {
+  console.error('사용법: node scripts/desktop-build.mjs dir|dist');
   process.exit(2);
 }
 if (process.platform !== 'win32') {
   console.error('FAIL 데스크톱 패키지는 Windows에서만 만듭니다.');
   process.exit(1);
 }
-if (mode === 'publish' && !process.env.GH_TOKEN) {
-  console.error('FAIL publish에는 GH_TOKEN 환경 변수가 필요합니다. 토큰 값을 파일이나 명령줄에 쓰지 마세요.');
-  process.exit(1);
-}
+const channel = desktopChannel();
+const packageManifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+const version = desktopVersion(packageManifest.version, channel.channel);
 
 // The model is not committed. Fetch it and refuse to package anything but the pinned file.
 const modelDirectory = path.join(root, 'public/models');
@@ -36,7 +36,11 @@ if (actual !== expected.sha256 || model.length !== expected.bytes) {
 }
 
 const builder = path.join(root, 'node_modules/electron-builder/cli.js');
-const args = [builder, '--win', '--x64', '--config', 'electron-builder.yml', '--publish', mode === 'publish' ? 'always' : 'never'];
+const args = [builder, '--win', '--x64', '--config', 'electron-builder.yml', '--publish', 'never',
+  `--config.appId=${channel.appId}`, `--config.productName=${channel.productName}`,
+  `--config.win.executableName=${channel.executableName}`, `--config.nsis.artifactName=${channel.artifactName}`,
+  `--config.extraMetadata.name=${channel.packageName}`, `--config.extraMetadata.manuxBuildChannel=${channel.channel}`,
+  `--config.extraMetadata.version=${version}`];
 if (mode === 'dir') args.push('--dir');
 const result = spawnSync(process.execPath, args, {cwd: root, stdio: 'inherit', windowsHide: true,
   env: {...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false'}});
