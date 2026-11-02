@@ -84,7 +84,7 @@ test('reruns accept only identical published assets and never overwrite a draft 
 });
 
 test('PR checks require the isolated preview package and cannot access a release write token', async () => {
-  const workflow = await fs.readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const workflow = (await fs.readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
   assert.match(workflow, /needs: \[verify, browser, windows-package\]/);
   assert.match(workflow, /PACKAGE_RESULT.*needs\.windows-package\.result/);
   assert.match(workflow, /test "\$PACKAGE_RESULT" = success/);
@@ -96,7 +96,7 @@ test('PR checks require the isolated preview package and cannot access a release
 });
 
 test('production only deploys successful immutable artifacts with a separate publishing job', async () => {
-  const workflow = await fs.readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
+  const workflow = (await fs.readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
   assert.match(workflow, /branches: \[production\]/);
   assert.doesNotMatch(workflow, /tags:|workflow_dispatch:|pull_request_target|desktop:publish/);
   assert.match(workflow, /^permissions: \{\}$/m);

@@ -7,7 +7,7 @@
 1. 최신 `origin/production`에서 `codex/scrum-23-gesture-enrollment` 같은 작업 브랜치를 만든다. 이미 진행 중인 브랜치는 그 자리에서 계속 작업한다.
 2. `npm run desktop`으로 직접 확인하고 관련 검사를 실행한다. 다른 사람의 checkout이나 공유 Claude의 코드 통합을 기다리지 않는다.
 3. 브랜치를 푸시하고 `production` 대상 PR을 만든다. PR에는 목적·변경·검증·남은 한계를 적는다.
-4. PR의 `MANUX CI`가 Windows/Linux, 합성 브라우저, Windows helper, 실제 패키지 실행·업데이트 다운로드를 검사한다. `manux-preview-...` artifact에는 시험용 설치파일이 있다.
+4. PR의 `MANUX CI`가 Windows/Linux, 합성 브라우저, Windows helper, 실제 패키지 실행·업데이트 다운로드·설치본 교체를 검사한다. `MANUX-preview-...` artifact에는 시험용 설치파일이 있다.
 5. 리뷰어가 시험용 앱과 diff를 확인한다. `MANUX required` 통과와 다른 리뷰어 1명 승인이 있어야 병합할 수 있다. 새 커밋은 기존 승인을 만료시키며 마지막 푸시 작성자는 자신의 변경을 승인할 수 없다.
 6. `production`에 병합되면 `MANUX production release`가 검증·빌드하고 [GitHub Releases](https://github.com/intel7-ai/manux/releases)에 정식 버전을 게시한다.
 
@@ -42,7 +42,8 @@ npm run test:update-download
 - `desktop:dist`: Windows x64 사용자 단위 NSIS 설치파일과 업데이트 메타데이터 생성.
 - `test:packaged`: 실제 unpacked 앱을 별도 프로필로 열어 모델·WASM·helper(dry-run), IPC 범위, 메뉴, 재실행 후 설정 보존을 확인한다.
 - `test:update-download`: 실제 electron-updater가 루프백 서버의 설치파일을 다운로드하고 해시를 검증하며, 잘못된 해시를 거부하는지 확인한다. 이전 버전은 시험 adapter로 모사하며 실제 설치·교체는 하지 않는다.
-- 실제 웹캠 인식·OS 클릭·기존 설치본의 버전 간 업그레이드는 별도 Windows 인수 시험이다. 합성 검사와 구분해서 PR에 기록한다.
+- `test:installed-update`: 일회용 GitHub-hosted Windows VM에서만 실행한다. Preview를 이전 버전 번호로 재패키징해 실제 설치한 뒤, 기본 ElectronAppAdapter로 업데이트를 다운로드하고 NSIS로 교체한다. 같은 프로필의 설정 보존과 재시작 후 마우스 제어 꺼짐을 확인한다. 개인 PC나 self-hosted runner에서는 실행을 거부한다.
+- 실제 웹캠 인식·OS 클릭, 과거 출시 버전에서의 데이터 이전, 공개 Release를 통한 정식 앱 업데이트는 별도 Windows 인수 시험이다. CI의 Preview 설치 시험과 구분해서 PR에 기록한다.
 
 `asar: false`로 패키징하여 PowerShell helper와 로컬 파일 서버가 필요한 파일을 실제 경로로 읽는다. 모델은 저장된 SHA-256·크기와 일치해야 빌드된다. 빌드 도구는 고정 버전 electron-builder 26.18.0, 런타임 업데이트는 electron-updater 6.8.11이다.
 

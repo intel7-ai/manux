@@ -107,6 +107,8 @@ jobs:
       - run: npm run desktop:dist
       - run: npm run test:packaged
       - run: npm run test:update-download
+      - name: Installed Preview upgrade preserves settings (disposable Windows VM)
+        run: npm run test:installed-update
       - name: Download the PR's preview app (never a stable update)
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
@@ -122,5 +124,6 @@ jobs:
           path: |
             test-results/packaged-app.json
             test-results/update-download.json
+            test-results/installed-update.json
           if-no-files-found: ignore
           retention-days: 7

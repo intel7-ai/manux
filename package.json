@@ -14,6 +14,7 @@
     "desktop:dist": "node scripts/desktop-build.mjs dist",
     "test:packaged": "node scripts/test-packaged-app.mjs",
     "test:update-download": "node scripts/test-update-download.mjs",
+    "test:installed-update": "node scripts/test-installed-update.mjs",
     "test:mouse": "node scripts/test-mouse-browser.mjs",
     "test:browser": "node scripts/test-mouse-browser.mjs",
     "test:native": "node scripts/test-desktop-mouse.mjs",
