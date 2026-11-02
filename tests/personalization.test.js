@@ -327,9 +327,36 @@ test('malformed gesture input and stored registrations fail closed', () => {
 
 test('the number of stored gestures is bounded', () => {
   let registrations = {};
-  for (let i = 0; i < MAX_REGISTERED_GESTURES; i++) registrations = registerGesture(registrations, trainOk(`custom:g${i}`, 0.05 + i * 0.07).candidate);
+  for (let i = 0; i < MAX_REGISTERED_GESTURES; i++) registrations = registerGesture(registrations, trainOk(`custom:g${i}`, 0.05 + i * 0.25).candidate);
   assert.equal(Object.keys(registrations).length, MAX_REGISTERED_GESTURES);
-  const extra = trainGesture({gestureId: 'custom:extra', viewSamples: gestureViews(0.99), existingRegistrations: registrations});
+  const extra = trainGesture({gestureId: 'custom:extra', viewSamples: gestureViews(3.05), existingRegistrations: registrations});
   assert.equal(extra.usable, false);
   assert.equal(extra.reason, 'too-many-gestures');
+});
+
+test('registerGesture rejects a stale candidate that now conflicts, and keeps existing registrations', () => {
+  const a = trainOk('custom:a', 1).candidate;
+  // Both candidates were trained while nothing else was registered.
+  const stale = trainOk('custom:copy', 1).candidate;
+  const existing = registerGesture({}, a);
+  const before = JSON.stringify(existing);
+  assert.throws(() => registerGesture(existing, stale), /conflicts with registered gesture custom:a/);
+  assert.equal(JSON.stringify(existing), before);
+  assert.equal(classifyRegisteredGesture({features: vector(1, 100), registrations: existing}).gestureId, 'custom:a');
+  // A distinct gesture and a same-ID replacement are still accepted.
+  const distinct = trainOk('custom:b', 3).candidate;
+  assert.deepEqual(Object.keys(registerGesture(existing, distinct)).sort(), ['custom:a', 'custom:b']);
+  const replacement = trainOk('custom:a', 1.02).candidate;
+  assert.equal(registerGesture(existing, replacement)['custom:a'].gestureId, 'custom:a');
+  assert.throws(() => registerGesture({'custom:a': {}}, distinct), /existing registrations/);
+});
+
+test('removeGesture rejects malformed IDs and treats an unregistered valid ID as a no-op copy', () => {
+  const registrations = registerGesture({}, trainOk('custom:a', 1).candidate);
+  for (const id of ['rock', '', undefined, null, '__proto__', 'media.play', 5]) assert.throws(() => removeGesture(registrations, id), /gesture id/, String(id));
+  const same = removeGesture(registrations, 'custom:never-registered');
+  assert.deepEqual(same, registrations);
+  assert.notEqual(same, registrations, 'a copy is returned, not the input');
+  assert.deepEqual(Object.keys(removeGesture(registrations, 'custom:a')), []);
+  assert.deepEqual(Object.keys(registrations), ['custom:a']);
 });

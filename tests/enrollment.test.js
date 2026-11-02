@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {EnrollmentController} from '../src/enrollment.js';
+import {EnrollmentController, commandsSuppressed} from '../src/enrollment.js';
 import {POSES, FEATURE_COUNT, trainGesture, registerGesture, classifyRegisteredGesture} from '../src/personalization.js';
 import {VIEWS} from '../src/orientation.js';
 
@@ -263,4 +263,32 @@ test('captured examples of one gesture train a candidate that classifies without
  assert.equal(accepted.accepted, true);
  assert.equal(accepted.gestureId, CUSTOM);
  assert.equal(classifyRegisteredGesture({features: vector(.9), registrations}).accepted, false);
+});
+
+test('commandsSuppressed blocks commands for the whole registration session and fails closed', () => {
+ const controller = create();
+ assert.equal(commandsSuppressed(controller.snapshot()), false, 'idle controller');
+ for (const bad of [undefined, null, {}, {phase: 'bogus'}, 'active', {phase: undefined}]) assert.equal(commandsSuppressed(bad), true, JSON.stringify(bad));
+ const phases = [];
+ const track = () => {const state = controller.snapshot(); phases.push(state.phase); assert.equal(commandsSuppressed(state), true, state.phase);};
+ controller.start({now: 0, environment: 'desk', gestureId: CUSTOM}); track();
+ let now = calibrate(controller, 0, {yaw: 2, pitch: 1}); track();
+ for (const view of VIEWS) {now = captureView(controller, now); track();}
+ assert.equal(controller.snapshot().phase, 'captured');
+ controller.startVerification({now}); track();
+ for (let view = 0; view < VIEWS.length; view++) now = verifyView(controller, now);
+ assert.equal(controller.snapshot().phase, 'verified');
+ track();
+ assert.ok(['prepare', 'capture', 'captured', 'verify-prepare', 'verified'].every(phase => phases.includes(phase)), phases.join());
+ assert.equal(commandsSuppressed(controller.cancel()), false, 'commands resume only after the session is ended');
+});
+
+test('a failed or timed-out session keeps commands suppressed until it is cancelled', () => {
+ const controller = create();
+ controller.start({now: 0, environment: 'desk', gestureId: CUSTOM});
+ controller.update({now: 100});
+ const failed = controller.update({now: 100 + options.captureTimeoutMs});
+ assert.equal(failed.phase, 'failed');
+ assert.equal(commandsSuppressed(failed), true);
+ assert.equal(commandsSuppressed(controller.cancel()), false);
 });

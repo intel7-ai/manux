@@ -435,21 +435,42 @@ export function trainGesture({gestureId, viewSamples, existingRegistrations = {}
   return {candidate: JSON.parse(JSON.stringify(candidate)), usable: true, conflicts: [], reason: 'ok', diagnostics};
 }
 
+// Smallest template distance between two registrations over every view pair.
+function registrationSeparation(a, b) {
+  let nearest = Infinity;
+  for (const viewA of ENROLLMENT_VIEWS) for (const viewB of ENROLLMENT_VIEWS) {
+    for (const x of a.model.views[viewA].templates) for (const y of b.model.views[viewB].templates) nearest = Math.min(nearest, featureDistance(x, y));
+  }
+  return nearest;
+}
+
 /** Return a new registrations record in which only candidate.gestureId is added
- * or replaced. Throws for an invalid candidate; the input is never modified.
+ * or replaced. Throws for an invalid candidate, for invalid existing records and
+ * for a candidate that conflicts with a DIFFERENT registered gesture (same
+ * minimum-separation rule as trainGesture), so a stale candidate trained before
+ * another gesture was added cannot be stored. The input is never modified.
  */
 export function registerGesture(registrations, candidate) {
   if (!recordValid(registrations)) throw new TypeError('registrations must be an object');
   if (!registrationValid(candidate)) throw new TypeError('invalid gesture candidate');
+  if (!validateRegistrations(registrations).valid) throw new TypeError('invalid existing registrations');
+  for (const [id, registration] of Object.entries(registrations)) {
+    if (id !== candidate.gestureId && registrationSeparation(candidate, registration) < MIN_SEPARATION) throw new RangeError(`candidate conflicts with registered gesture ${id}`);
+  }
   const next = JSON.parse(JSON.stringify(registrations));
   if (!Object.hasOwn(next, candidate.gestureId) && Object.keys(next).length >= MAX_REGISTERED_GESTURES) throw new RangeError('too many registered gestures');
   next[candidate.gestureId] = JSON.parse(JSON.stringify(candidate));
   return next;
 }
 
-/** Return a new registrations record without gestureId. Other entries are untouched. */
+/** Return a new registrations record without gestureId. Other entries are
+ * untouched. A malformed ID throws; a well-formed ID that is not registered is
+ * an idempotent no-op that returns an equal copy (callers detect it with
+ * Object.hasOwn on the input if they need to report "nothing to delete").
+ */
 export function removeGesture(registrations, gestureId) {
   if (!recordValid(registrations)) throw new TypeError('registrations must be an object');
+  if (!validGestureId(gestureId)) throw new TypeError('invalid gesture id');
   const next = JSON.parse(JSON.stringify(registrations));
   delete next[gestureId];
   return next;

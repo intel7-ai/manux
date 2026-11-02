@@ -151,8 +151,8 @@ P0는 기존 네 명령 동작을 보존한다. P1에서는 수락된 동작 ID�
 | --- | --- |
 | `validGestureId(id)` | `builtin.<slug>` 또는 `custom:<영문숫자_-, 최대 48자>`만 허용. 표시 이름·액션과 무관한 불투명 ID. |
 | `trainGesture({gestureId, viewSamples, existingRegistrations, rejectionExamples})` | **동작 하나**의 후보를 학습. 입력 형식 오류는 예외. 불안정·충돌·거부 예시 근접은 `{candidate:null, usable:false, reason, conflicts, diagnostics}`로 반환하고 기존 등록은 변경하지 않음. 5개 각도(`front/left/right/up/down`)마다 12개 이상 표본 필요. |
-| `registerGesture(registrations, candidate)` | 선택한 `gestureId` 하나만 추가·교체한 **새 레코드**를 반환(입력 불변). 최대 `MAX_REGISTERED_GESTURES`(12)개. |
-| `removeGesture(registrations, gestureId)` | 해당 ID만 제거한 새 레코드. 바인딩 삭제는 호출자가 같은 트랜잭션에서 처리. |
+| `registerGesture(registrations, candidate)` | 선택한 `gestureId` 하나만 추가·교체한 **새 레코드**를 반환(입력 불변). 최대 `MAX_REGISTERED_GESTURES`(12)개. 등록 시점에 `trainGesture`와 같은 최소 거리(`0.035`) 규칙으로 **다른** 등록과의 충돌을 다시 검사해, 후보 학습 뒤 다른 동작이 추가된 경우의 오래된 후보는 `RangeError`로 거절한다(기존 등록 불변). 기존 레코드가 유효하지 않으면 `TypeError`. 같은 ID의 재등록은 충돌로 보지 않는다. |
+| `removeGesture(registrations, gestureId)` | 해당 ID만 제거한 새 레코드. 형식이 잘못된 ID는 `TypeError`. 형식이 맞지만 등록돼 있지 않은 ID는 **오류 없이 같은 내용의 복사본을 반환**(멱등). 삭제 여부를 사용자에게 알려야 하면 호출자가 입력에서 `Object.hasOwn`으로 확인한다. 바인딩 삭제는 호출자가 같은 트랜잭션에서 처리. |
 | `validateRegistrations(registrations)` | 저장/불러오기 데이터 검사. 키와 `gestureId` 일치, 모델 버전 3, `actionId` 필드 금지. |
 | `classifyRegisteredGesture({features, registrations})` | 등록된 동작만 대상으로 개방 집합 판정. 결과 `kind`: `match`/`unknown`/`invalid`. 한 동작만 있으면 `margin: null`이며 허용 반경만으로 수락. 이유: `outside-enrollment`, `ambiguous-gesture`, `no-registrations`, `invalid-features`, `invalid-model`. 수락되지 않으면 `gestureId: null`. |
 
@@ -162,7 +162,9 @@ P0는 기존 네 명령 동작을 보존한다. P1에서는 수락된 동작 ID�
 
 ### 9.2 구현됨 — `src/enrollment.js`
 
-`EnrollmentController.start({now, environment, gestureId})`에서 `gestureId`를 주면 **그 동작 하나**를 5개 각도로 수집한다(`totalSteps: 5`). 이때 `snapshot().pose`와 `samplesByPose`/`sampleGroupsByPose`/`verification`의 키는 `gestureId`이고 `snapshot().gestureId`로도 노출된다. 생략하면 기존 5개 고정 자세 흐름 그대로다. `verify`는 `classifyRegisteredGesture` 결과(`gestureId`) 또는 기존 `classifyPersonal` 결과(`gesture`)를 `match`로 받는다. 컨트롤러는 저장된 등록을 갖지 않으므로 취소·실패·시간 초과가 다른 등록을 바꾸지 않는다. 등록 세션 중(`snapshot().active === true`) 영상·마우스 명령을 실행하지 않는 것은 호출자(`app.js`)의 책임이다.
+`EnrollmentController.start({now, environment, gestureId})`에서 `gestureId`를 주면 **그 동작 하나**를 5개 각도로 수집한다(`totalSteps: 5`). 이때 `snapshot().pose`와 `samplesByPose`/`sampleGroupsByPose`/`verification`의 키는 `gestureId`이고 `snapshot().gestureId`로도 노출된다. 생략하면 기존 5개 고정 자세 흐름 그대로다. `verify`는 `classifyRegisteredGesture` 결과(`gestureId`) 또는 기존 `classifyPersonal` 결과(`gesture`)를 `match`로 받는다. 컨트롤러는 저장된 등록을 갖지 않으므로 취소·실패·시간 초과가 다른 등록을 바꾸지 않는다.
+
+**등록 중 명령 차단.** 구현된 것은 순수 함수 `commandsSuppressed(snapshot)`이다. `idle`과 `cancelled`일 때만 `false`이고, 수집·확인·`captured`·`verified`·`failed` 등 나머지 단계는 모두 `true`이며 스냅샷이 없거나 형식·단계를 알 수 없어도 `true`(안전 쪽)다. 이 함수는 판단만 하며 명령을 직접 막지 않는다. 호출자(`app.js`, R5)의 의무(미구현·제안): ① 모든 인식 결과마다 최신 `snapshot()`으로 이 함수를 호출하고 `true`이면 영상·마우스 명령, 반복 타이머, 잠금 후보를 만들지 않는다. ② 저장하거나 버린 뒤에는 `cancel()`로 세션을 끝낸다(그때까지 `captured`/`verified`/`failed`도 차단 상태다). ③ 등록을 시작할 때 진행 중인 반복·잠금을 초기화한다. 시험은 컨트롤러 단계별 반환값만 확인하며 실제 `app.js` 연결은 확인하지 않았다.
 
 ### 9.3 제안 — 다른 파트에서 필요한 연결 (미구현, 담당자 확인 필요)
 

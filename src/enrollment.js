@@ -9,6 +9,19 @@ const emptyGroups = (poses = POSES) => Object.fromEntries(poses.map(pose => [pos
 const emptyInfo = (poses = POSES) => Object.fromEntries(poses.map(pose => [pose,{}]));
 const validHand = hand => hand === 'Left' || hand === 'Right';
 
+/** True while video/mouse commands must NOT run because registration owns the
+ * hand: any session that has started and not been ended by cancel() (this
+ * includes capture, verification, 'captured', 'verified' and 'failed' waiting
+ * for retry or save). Fails closed: a missing, malformed or unknown-phase
+ * snapshot also suppresses commands. Only 'idle' and 'cancelled' allow them.
+ * The caller (app.js) must consult it for every recognition result and end a
+ * finished session with cancel() after saving or discarding the candidate.
+ */
+export function commandsSuppressed(snapshot) {
+  const phase = snapshot?.phase;
+  return !(phase === 'idle' || phase === 'cancelled');
+}
+
 /** Angle-aware registration, independent of rendering, storage and media.
  * Fresh observations carry features, quality, orientation and handedness.
  * Timer-only update({now}) calls never manufacture sample/angle coverage.
