@@ -3,6 +3,9 @@ const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 const MAX_GAP_MS = 250;
 const RELEASE_MS = 120;
 const MIN_OBSERVATIONS = 3;
+// Two-hand PoC: anchors closer than this (video-width units) are treated as crossed or overlapping.
+const CROSS_DISTANCE = 0.2;
+const HAND_LABELS = ['Left', 'Right'];
 
 function straight(a, b, c) {
   const u = {x:a.x - b.x, y:a.y - b.y, z:a.z - b.z};
@@ -46,20 +49,29 @@ function observation(landmarks, width, height, previousPinch) {
 
 /** Pure landmark-to-input controller. It never sends OS events or stores camera data. */
 export class AirMouseController {
-  constructor({sensitivity = 1800, smoothing = 0.45, holdMs = 160} = {}) {
+  constructor({sensitivity = 1800, smoothing = 0.45, holdMs = 160, twoHand = false, primaryHand = 'Right'} = {}) {
     if (!Number.isFinite(sensitivity) || sensitivity < 100 || sensitivity > 6000 ||
         !Number.isFinite(smoothing) || smoothing <= 0 || smoothing > 1 ||
         !Number.isFinite(holdMs) || holdMs < 0 || holdMs > 2000) {
       throw new RangeError('Invalid air mouse sensitivity, smoothing, or hold time.');
     }
+    if (typeof twoHand !== 'boolean' || !HAND_LABELS.includes(primaryHand)) {
+      throw new RangeError('Invalid two-hand option or primary hand label.');
+    }
     this.sensitivity = sensitivity;
     this.smoothing = smoothing;
     this.holdMs = holdMs;
+    // Experimental, off by default: the auxiliary hand must hold an open palm before the primary hand may move the cursor.
+    this.twoHand = twoHand;
+    this.primaryHand = primaryHand;
     this.reset();
   }
 
   state(phase, events = [], progress = 0) {
-    return {mode:this.mode, phase, progress:clamp(progress, 0, 1), events};
+    const result = {mode:this.mode, phase, progress:clamp(progress, 0, 1), events};
+    // The extra field exists only in two-hand mode so single-hand output keeps its exact shape.
+    if (this.twoHand) result.auxActive = this.auxActive;
+    return result;
   }
 
   reset() {
@@ -77,6 +89,10 @@ export class AirMouseController {
     this.leftDown = false;
     this.armed = false;
     this.releaseSince = null;
+    this.auxActive = false;
+    this.auxSince = null;
+    this.auxObservations = 0;
+    this.handOrder = null;
     return this.state('disabled', [{type:'release'}]);
   }
 
@@ -95,7 +111,18 @@ export class AirMouseController {
     return this.state(phase, events);
   }
 
-  update({landmarks, now, enabled, quality = true, handedness = null, width = 1280, height = 720} = {}) {
+  /** Interrupts and requires the auxiliary hand to be held again before the primary hand may move. */
+  interruptTwoHand(phase) {
+    this.lastHand = null;
+    this.auxActive = false;
+    this.auxSince = null;
+    this.auxObservations = 0;
+    this.handOrder = null;
+    // interrupt() builds the returned state, so the auxiliary flag must already be cleared.
+    return this.interrupt(phase);
+  }
+
+  update({landmarks, now, enabled, quality = true, handedness = null, width = 1280, height = 720, hands} = {}) {
     if (!enabled) {
       if (this.enabled) return this.reset();
       return this.state('disabled');
@@ -105,11 +132,63 @@ export class AirMouseController {
     if (this.lastTime !== null && now <= this.lastTime) return this.state('stale');
     const gap = this.lastTime !== null && now - this.lastTime > MAX_GAP_MS;
     this.lastTime = now;
+    if (this.twoHand) return this.updateTwoHand({hands, now, gap, width, height});
     const observed = quality === true ? observation(landmarks, width, height, this.pinch) : null;
     if (!observed) {
       this.lastHand = null;
       return this.interrupt('invalid');
     }
+    return this.step(observed, handedness, gap, now);
+  }
+
+  /**
+   * Two-hand PoC input: hands = [{landmarks, handedness:'Left'|'Right', quality?}]. Both hands must be
+   * visible with distinct labels. The auxiliary hand must hold an open palm to enable the primary hand.
+   */
+  updateTwoHand({hands, now, gap, width, height}) {
+    if (!Array.isArray(hands) || hands.length < 2) {
+      this.lastHand = null;
+      return this.interruptTwoHand('invalid');
+    }
+    const auxLabel = this.primaryHand === 'Right' ? 'Left' : 'Right';
+    const primary = hands.filter(h => h?.handedness === this.primaryHand);
+    const aux = hands.filter(h => h?.handedness === auxLabel);
+    if (hands.length !== 2 || primary.length !== 1 || aux.length !== 1) {
+      return this.interruptTwoHand('role-confusion');
+    }
+    const view = hand => hand.quality === undefined || hand.quality === true ?
+      observation(hand.landmarks, width, height, hand === primary[0] ? this.pinch : null) : null;
+    const primaryObs = view(primary[0]), auxObs = view(aux[0]);
+    if (!primaryObs || !auxObs) return this.interruptTwoHand('invalid');
+    // Anchors are in x = video-width units; the camera image is mirrored consistently for both hands.
+    const apart = Math.hypot(primaryObs.anchor.x - auxObs.anchor.x, (primaryObs.anchor.y - auxObs.anchor.y) * height / width);
+    if (apart < CROSS_DISTANCE) return this.interruptTwoHand('hands-crossed');
+    const order = Math.sign(primaryObs.anchor.x - auxObs.anchor.x);
+    if (this.handOrder !== null && order !== this.handOrder) return this.interruptTwoHand('role-confusion');
+    this.handOrder = order;
+    if (gap) return this.interruptTwoHand('tracking-reset');
+
+    if (auxObs.mode !== 'move') {
+      if (this.auxActive) return this.interruptTwoHand('aux-released');
+      this.auxSince = null;
+      this.auxObservations = 0;
+      return this.interrupt('aux-required');
+    }
+    if (!this.auxActive) {
+      this.auxSince ??= now;
+      this.auxObservations++;
+      const progress = this.holdMs === 0 ? 1 : (now - this.auxSince) / this.holdMs;
+      if (progress < 1 || this.auxObservations < MIN_OBSERVATIONS) {
+        const result = this.interrupt('holding-aux', false);
+        result.progress = clamp(progress, 0, 1);
+        return result;
+      }
+      this.auxActive = true;
+    }
+    return this.step(primaryObs, primary[0].handedness, false, now);
+  }
+
+  step(observed, handedness, gap, now) {
     const changedHand = handedness && this.lastHand && handedness !== this.lastHand;
     this.lastHand = handedness;
     if (gap || changedHand) return this.interrupt('tracking-reset');

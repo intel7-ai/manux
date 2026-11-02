@@ -376,3 +376,175 @@ test('a lost hand during a held right pinch or scroll leaves nothing pressed and
     assert.equal(lost.mode, 'idle', pose);
   }
 });
+
+// Two-hand PoC (SCRUM-21). Constructed geometry exercises state transitions only; it is not a tracker accuracy or ergonomics result.
+function pair(options = {}) {
+  const controller = new AirMouseController({smoothing:1, twoHand:true, ...options});
+  let now = -60;
+  const feed = (primaryPose = 'move', auxPose = 'move', {primary = {x:.2}, aux = {x:-.2}, step = 60, hands = null, at = null} = {}) => {
+    now = at ?? now + step;
+    return controller.update({
+      hands:hands ?? [{landmarks:hand(primaryPose, primary), handedness:'Right'}, {landmarks:hand(auxPose, aux), handedness:'Left'}],
+      now, enabled:true, width:1000, height:1000,
+    });
+  };
+  const hold = (...args) => [feed(...args), feed(...args), feed(...args), feed(...args)];
+  // Auxiliary dwell, then the existing primary-hand movement dwell.
+  const ready = () => { hold(); return hold(); };
+  return {controller, feed, hold, ready};
+}
+const released = states => events(states).some(e => e.type === 'button' && e.button === 'left' && !e.down);
+
+test('two-hand mode is off by default, validated, and leaves single-hand output unchanged', () => {
+  const controller = new AirMouseController({smoothing:1});
+  assert.equal(controller.twoHand, false);
+  const result = controller.update({hands:[], landmarks:hand('move'), now:0, enabled:true, width:1000, height:1000});
+  assert.deepEqual(Object.keys(result), ['mode', 'phase', 'progress', 'events']);
+  assert.equal(result.phase, 'holding');
+  assert.throws(() => new AirMouseController({twoHand:'yes'}), RangeError);
+  assert.throws(() => new AirMouseController({twoHand:true, primaryHand:'Both'}), RangeError);
+  assert.equal(new AirMouseController({twoHand:true}).update({now:0, enabled:true}).auxActive, false);
+});
+
+test('primary hand cannot move until the auxiliary open palm is held, and the result reports it', () => {
+  const s = pair();
+  const first = s.feed();
+  assert.equal(first.phase, 'holding-aux');
+  assert.equal(first.auxActive, false);
+  assert.deepEqual(first.events, []);
+  const rest = [s.feed(), s.feed(), s.feed()];
+  assert.equal(rest.at(-1).auxActive, true);
+  assert.equal(events([first, ...rest]).length, 0);
+  s.hold();
+  const moved = s.feed('move', 'move', {primary:{x:.22, y:.01}});
+  assert.equal(moved.auxActive, true);
+  assert.ok(moved.events.some(e => e.type === 'move' && e.dx < 0 && e.dy > 0));
+});
+
+test('an auxiliary hand that is not an open palm never enables the primary hand', () => {
+  for (const pose of ['index', 'left', 'right', 'scroll']) {
+    const s = pair();
+    const states = [...s.hold('move', pose), ...s.hold('move', pose), s.feed('move', pose, {primary:{x:.25}})];
+    assert.equal(states.every(state => state.auxActive === false), true, pose);
+    assert.equal(states.at(-1).phase, 'aux-required', pose);
+    assert.equal(events(states).length, 0, pose);
+  }
+});
+
+test('releasing the auxiliary pose stops movement at once, releases the button, and requires holding again', () => {
+  const s = pair(); s.ready();
+  const entry = s.hold('left', 'move');
+  assert.equal(downs(entry).length, 1);
+  const release = s.feed('left', 'index');
+  assert.equal(release.phase, 'aux-released');
+  assert.equal(release.auxActive, false);
+  assert.equal(release.mode, 'idle');
+  assert.ok(released([release]));
+  assert.deepEqual(release.events.at(-1), {type:'release'});
+  const again = s.feed('move', 'move');
+  assert.equal(again.phase, 'holding-aux');
+  assert.equal(events([again]).length, 0);
+  assert.equal(events(s.hold('move', 'move')).some(e => e.type === 'move' || e.type === 'button'), false);
+});
+
+test('losing, degrading, or invalidating either hand interrupts, releases, and requires reactivation', () => {
+  const cases = {
+    'primary lost':s => s.feed('left', 'move', {hands:[{landmarks:hand('move', {x:-.2}), handedness:'Left'}]}),
+    'auxiliary lost':s => s.feed('left', 'move', {hands:[{landmarks:hand('left', {x:.2}), handedness:'Right'}]}),
+    'no hands':s => s.feed('left', 'move', {hands:[]}),
+    'primary quality':s => s.feed('left', 'move', {hands:[{landmarks:hand('left', {x:.2}), handedness:'Right', quality:false},
+      {landmarks:hand('move', {x:-.2}), handedness:'Left'}]}),
+    'auxiliary landmarks':s => s.feed('left', 'move', {hands:[{landmarks:hand('left', {x:.2}), handedness:'Right'},
+      {landmarks:null, handedness:'Left'}]}),
+  };
+  for (const [name, lose] of Object.entries(cases)) {
+    const s = pair(); s.ready(); s.hold('left', 'move');
+    const result = lose(s);
+    assert.equal(result.phase, 'invalid', name);
+    assert.equal(result.auxActive, false, name);
+    assert.ok(released([result]), name);
+    const back = s.feed('left', 'move');
+    assert.equal(back.phase, 'holding-aux', name);
+    assert.equal(downs([back]).length, 0, name);
+  }
+});
+
+test('crossed or overlapping hands interrupt and do not resume while still too close', () => {
+  const s = pair(); s.ready(); s.hold('left', 'move');
+  const close = s.feed('left', 'move', {primary:{x:.05}, aux:{x:-.05}});
+  assert.equal(close.phase, 'hands-crossed');
+  assert.equal(close.auxActive, false);
+  assert.ok(released([close]));
+  const still = [s.feed('move', 'move', {primary:{x:.05}, aux:{x:-.05}}), s.feed('move', 'move', {primary:{x:.05}, aux:{x:-.05}})];
+  assert.equal(still.every(state => state.phase === 'hands-crossed'), true);
+  assert.equal(events(still).length, 0);
+  assert.equal(s.feed('move', 'move').phase, 'holding-aux');
+});
+
+test('swapped roles, duplicate labels, and extra hands are treated as role confusion', () => {
+  const swapped = pair(); swapped.ready(); swapped.hold('left', 'move');
+  const crossedOver = swapped.feed('left', 'move', {primary:{x:-.2}, aux:{x:.2}});
+  assert.equal(crossedOver.phase, 'role-confusion');
+  assert.ok(released([crossedOver]));
+
+  for (const [name, hands] of Object.entries({
+    'both Right':[{landmarks:hand('move', {x:.2}), handedness:'Right'}, {landmarks:hand('move', {x:-.2}), handedness:'Right'}],
+    'missing label':[{landmarks:hand('move', {x:.2}), handedness:'Right'}, {landmarks:hand('move', {x:-.2}), handedness:null}],
+    'three hands':[{landmarks:hand('move', {x:.2}), handedness:'Right'}, {landmarks:hand('move', {x:-.2}), handedness:'Left'},
+      {landmarks:hand('move', {x:0}), handedness:'Left'}],
+  })) {
+    const s = pair(); s.ready(); s.hold('left', 'move');
+    const result = s.feed('left', 'move', {hands});
+    assert.equal(result.phase, 'role-confusion', name);
+    assert.equal(result.auxActive, false, name);
+    assert.ok(released([result]), name);
+  }
+});
+
+test('the primary label can be Left and then the Right hand is the auxiliary hand', () => {
+  const controller = new AirMouseController({smoothing:1, twoHand:true, primaryHand:'Left'});
+  let now = -60;
+  const feed = () => controller.update({
+    hands:[{landmarks:hand('move', {x:-.2}), handedness:'Left'}, {landmarks:hand('move', {x:.2}), handedness:'Right'}],
+    now:(now += 60), enabled:true, width:1000, height:1000,
+  });
+  const states = Array.from({length:8}, feed);
+  assert.equal(states.at(-1).auxActive, true);
+  assert.equal(states.at(-1).mode, 'move');
+});
+
+test('stale frames, long gaps, disabling, and bad timestamps keep two-hand safety', () => {
+  const stale = pair(); stale.ready(); stale.hold('left', 'move');
+  const repeated = stale.feed('left', 'move', {at:stale.controller.lastTime});
+  assert.equal(repeated.phase, 'stale');
+  assert.deepEqual(repeated.events, []);
+  assert.equal(repeated.auxActive, true);
+  assert.equal(stale.feed('left', 'move').auxActive, true);
+
+  const gap = pair(); gap.ready(); gap.hold('left', 'move');
+  const late = gap.feed('left', 'move', {step:400});
+  assert.equal(late.phase, 'tracking-reset');
+  assert.equal(late.auxActive, false);
+  assert.ok(released([late]));
+
+  const off = pair(); off.ready(); off.hold('left', 'move');
+  const disabled = off.controller.update({hands:[], now:1e6, enabled:false});
+  assert.deepEqual(disabled.events, [{type:'release'}]);
+  assert.equal(disabled.auxActive, false);
+  assert.equal(off.controller.update({hands:[], now:1e6 + 1, enabled:false}).phase, 'disabled');
+  assert.equal(off.feed('move', 'move').phase, 'holding-aux');
+
+  const bad = pair(); bad.ready(); bad.hold('left', 'move');
+  const invalid = bad.controller.update({hands:[], now:Number.NaN, enabled:true});
+  assert.equal(invalid.phase, 'invalid');
+  assert.ok(released([invalid]));
+});
+
+test('legacy single-hand fields never move the cursor while two-hand mode is on', () => {
+  const controller = new AirMouseController({smoothing:1, twoHand:true});
+  for (let now = 0; now < 600; now += 60) {
+    const result = controller.update({landmarks:hand('move'), now, enabled:true, width:1000, height:1000, handedness:'Right'});
+    assert.equal(result.phase, 'invalid');
+    assert.deepEqual(result.events, []);
+  }
+});
