@@ -28,7 +28,9 @@ function bounded(promise, milliseconds, label, cancel = () => {}) {
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
-const metadataName = channel.channel === 'preview' ? 'preview.yml' : 'latest.yml';
+// The GitHub publishing provider writes latest.yml even for prerelease builds.
+// Preview metadata is only a CI artifact and is never sent to the stable feed.
+const metadataName = 'latest.yml';
 const metadata = loadYaml(await fs.readFile(path.join(root, 'dist', metadataName), 'utf8'));
 const artifact = metadata.files?.find(file => typeof file.url === 'string' && /\.exe$/i.test(file.url));
 assert.ok(artifact, 'installer entry is required in the generated update metadata');
@@ -153,7 +155,7 @@ try {
       };
       const abortRequests = () => { for (const request of pendingRequests) request.abort(); };
       updater.httpExecutor = executor;
-      updater.setFeedURL({provider:'generic', url:input.feedUrl, channel:input.channel === 'preview' ? 'preview' : 'latest'});
+      updater.setFeedURL({provider:'generic', url:input.feedUrl, channel:'latest'});
       let downloadedEvents = 0, errorCode = null, errorMessage = null;
       updater.on('update-downloaded', () => { downloadedEvents++; });
       const observedErrors = [];
