@@ -1,12 +1,12 @@
-import {POSES, FEATURE_COUNT} from './personalization.js';
+import {POSES, FEATURE_COUNT, validGestureId} from './personalization.js';
 import {VIEWS, VIEW_LABELS, validOrientation, orientationFeedback} from './orientation.js';
 
 const finite = Number.isFinite;
 const activePhases = new Set(['prepare','calibrate','capture','verify-prepare','verify']);
 const validVector = value => Array.isArray(value) && value.length === FEATURE_COUNT && Array.from(value).every(x => finite(x) && x >= 0 && x <= 1);
 const clone = value => JSON.parse(JSON.stringify(value));
-const emptyGroups = () => Object.fromEntries(POSES.map(pose => [pose,Object.fromEntries(VIEWS.map(view => [view,[]]))]));
-const emptyInfo = () => Object.fromEntries(POSES.map(pose => [pose,{}]));
+const emptyGroups = (poses = POSES) => Object.fromEntries(poses.map(pose => [pose,Object.fromEntries(VIEWS.map(view => [view,[]]))]));
+const emptyInfo = (poses = POSES) => Object.fromEntries(poses.map(pose => [pose,{}]));
 const validHand = hand => hand === 'Left' || hand === 'Right';
 
 /** Angle-aware registration, independent of rendering, storage and media.
@@ -15,6 +15,13 @@ const validHand = hand => hand === 'Left' || hand === 'Right';
  * Each pose obtains a stable front reference, then all five measured views.
  * The caller trains at 'captured' and stores only after separate verification
  * of every pose/view reaches 'verified'. Verification never alters training.
+ *
+ * start({gestureId}) registers exactly ONE custom gesture (all five views) and
+ * leaves every other registration untouched; the controller holds no stored
+ * registrations, so cancel/failure cannot alter them. In that mode `pose` and
+ * the keys of samplesByPose are the gesture ID, and verification takes a
+ * classifyRegisteredGesture result as `match`. Callers must not execute video
+ * or mouse commands while snapshot().active is true.
  */
 export class EnrollmentController {
   constructor({prepareMs = 3000, viewPrepareMs = 1200, calibrationMs = 1000, calibrationSamples = 6,
@@ -30,15 +37,18 @@ export class EnrollmentController {
       captureTimeoutMs <= Math.max(calibrationMs,captureMs) || verifyTimeoutMs <= verifyHoldMs || calibrationSpreadDeg > 10) throw new TypeError('invalid angle enrollment timing or sample settings');
     this.options = {prepareMs,viewPrepareMs,calibrationMs,calibrationSamples,calibrationSpreadDeg,captureMs,sampleIntervalMs,minSamplesPerView,maxSamplesPerView,captureTimeoutMs,maxGapMs,verifySamples,verifyHoldMs,verifyMaxGapMs,verifyTimeoutMs};
     this.phase = 'idle'; this.mode = 'enroll'; this.environment = null;
+    this.poses = POSES; this.gestureId = null;
     this.step = 0; this.phaseStarted = 0; this.lastNow = null; this.lastObservationAt = null;
     this.groups = emptyGroups(); this.captureInfo = emptyInfo(); this.baselines = {}; this.verification = {};
     this.calibrationRows = []; this.candidateHand = null; this.reason = null; this.failurePhase = null;
     this.feedback = orientationFeedback(null,null,'front'); this.clearStreak();
   }
-  start({now,environment} = {}) {
+  start({now,environment,gestureId} = {}) {
     if (!['desk','sofa'].includes(environment)) throw new TypeError('environment must be desk or sofa');
+    if (gestureId !== undefined && !validGestureId(gestureId)) throw new TypeError('invalid gesture id');
     this.checkTime(now,true); this.environment = environment; this.mode = 'enroll'; this.step = 0;
-    this.groups = emptyGroups(); this.captureInfo = emptyInfo(); this.baselines = {}; this.verification = {};
+    this.gestureId = gestureId ?? null; this.poses = gestureId === undefined ? POSES : Object.freeze([gestureId]);
+    this.groups = emptyGroups(this.poses); this.captureInfo = emptyInfo(this.poses); this.baselines = {}; this.verification = {};
     this.lastObservationAt = null; this.calibrationRows = []; this.candidateHand = null; this.prepare(now,true);
     return this.snapshot();
   }
@@ -58,7 +68,7 @@ export class EnrollmentController {
     return this.snapshot();
   }
   cancel() {
-    this.phase = 'cancelled';this.groups = emptyGroups();this.captureInfo = emptyInfo();this.baselines = {};this.verification = {};
+    this.phase = 'cancelled';this.groups = emptyGroups(this.poses);this.captureInfo = emptyInfo(this.poses);this.baselines = {};this.verification = {};
     this.calibrationRows = [];this.candidateHand = null;this.clearStreak();this.reason = 'cancelled';
     return this.snapshot();
   }
@@ -140,7 +150,7 @@ export class EnrollmentController {
     return this.snapshot();
   }
   verify(now,match) {
-    if (match?.accepted !== true || match.gesture !== this.pose) return this.rejectObservation('verification-mismatch');
+    if (match?.accepted !== true || (match.gestureId ?? match.gesture) !== this.pose) return this.rejectObservation('verification-mismatch');
     if (this.lastSampleAt !== null && now - this.lastSampleAt > this.options.verifyMaxGapMs) this.clearStreak();
     this.streakStarted ??= now;this.streakCount++;this.lastSampleAt = now;this.validDurationMs = now-this.streakStarted;this.reason = null;
     if (this.streakCount >= this.options.verifySamples && this.validDurationMs >= this.options.verifyHoldMs) {
@@ -158,11 +168,11 @@ export class EnrollmentController {
     this.step++;this.prepare(now,this.viewIndex === 0);
   }
   get poseIndex() {return Math.floor(this.step / VIEWS.length);}
-  get pose() {return POSES[this.poseIndex];}
+  get pose() {return this.poses[this.poseIndex];}
   get viewIndex() {return this.step % VIEWS.length;}
   get targetView() {return VIEWS[this.viewIndex];}
-  get totalSteps() {return POSES.length * VIEWS.length;}
-  getSamples() {return Object.fromEntries(POSES.map(pose => [pose,VIEWS.flatMap(view => this.groups[pose][view].map(row => [...row]))]));}
+  get totalSteps() {return this.poses.length * VIEWS.length;}
+  getSamples() {return Object.fromEntries(this.poses.map(pose => [pose,VIEWS.flatMap(view => this.groups[pose][view].map(row => [...row]))]));}
   getSampleGroups() {return clone(this.groups);}
   snapshot() {
     const active = activePhases.has(this.phase),now = this.lastNow ?? 0;
@@ -179,12 +189,12 @@ export class EnrollmentController {
         progress:done ? 1 : current ? Math.min(1,count/required,effectiveDuration/neededDuration) : 0}];
     }));
     const completedViews = this.mode === 'verify'
-      ? POSES.reduce((sum,pose) => sum+VIEWS.filter(view => this.verification[pose]?.views[view]?.passed).length,0)
-      : POSES.reduce((sum,pose) => sum+VIEWS.filter(view => this.captureInfo[pose][view]?.complete).length,0);
+      ? this.poses.reduce((sum,pose) => sum+VIEWS.filter(view => this.verification[pose]?.views[view]?.passed).length,0)
+      : this.poses.reduce((sum,pose) => sum+VIEWS.filter(view => this.captureInfo[pose][view]?.complete).length,0);
     const calibrationProgress = this.phase === 'calibrate' ? Math.min(1,this.calibrationRows.length/this.options.calibrationSamples,effectiveDuration/this.options.calibrationMs) : this.baselines[this.pose] ? 1 : 0;
     const atBoundary = ['captured','verified'].includes(this.phase);
     return {
-      phase:this.phase,mode:this.mode,environment:this.environment,active,pose:this.pose,poseIndex:this.poseIndex,targetView:this.targetView,viewIndex:this.viewIndex,
+      phase:this.phase,mode:this.mode,environment:this.environment,gestureId:this.gestureId,active,pose:this.pose,poseIndex:this.poseIndex,targetView:this.targetView,viewIndex:this.viewIndex,
       round:1,rounds:1,step:this.step+1,totalSteps:this.totalSteps,views,
       progress:atBoundary ? 1 : this.phase === 'calibrate' ? calibrationProgress : preparation ? Math.min(1,(now-this.phaseStarted)/Math.max(1,this.prepareDuration)) : views[this.targetView].progress,
       totalProgress:Math.min(1,(completedViews+(views[this.targetView].complete ? 0 : views[this.targetView].progress))/this.totalSteps),

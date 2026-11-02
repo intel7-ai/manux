@@ -318,3 +318,165 @@ export function validateProfile(profile) {
   }
   return {valid: errors.length === 0, errors};
 }
+
+/* ---------------------------------------------------------------------------
+ * Single custom gesture registration (SCRUM-23 / G1).
+ *
+ * A gesture is one static hand shape identified by an opaque gesture ID that is
+ * independent of its display name and of any action. A registration never
+ * carries an action ID; bindings are a separate record owned by the control
+ * layer. All functions below are pure: they never mutate their inputs, so a
+ * failed, cancelled or rejected candidate cannot damage existing registrations.
+ * Registrations replace only the selected gesture ID.
+ * ------------------------------------------------------------------------ */
+export const GESTURE_MODEL_VERSION = 3;
+export const GESTURE_FEATURES_VERSION = 1;
+export const MAX_REGISTERED_GESTURES = 12;
+const MAX_REJECTION_EXAMPLES = 600;
+const GESTURE_ID = /^(?:builtin\.[a-z0-9]+(?:-[a-z0-9]+)*|custom:[A-Za-z0-9][A-Za-z0-9_-]{0,47})$/;
+
+export const validGestureId = id => typeof id === 'string' && GESTURE_ID.test(id);
+
+function gestureSampleErrors(viewSamples) {
+  if (!recordValid(viewSamples)) return ['viewSamples must be an object'];
+  const errors = [];
+  let total = 0;
+  for (const view of ENROLLMENT_VIEWS) {
+    const rows = viewSamples[view];
+    if (!Array.isArray(rows) || rows.length < MIN_SAMPLES_PER_VIEW) errors.push(`${view}: require at least ${MIN_SAMPLES_PER_VIEW} samples`);
+    else if (!Array.from(rows).every(vectorValid)) errors.push(`${view}: invalid feature vector`);
+    else total += rows.length;
+  }
+  if (total > MAX_SAMPLES_PER_POSE) errors.push(`too many combined view samples (max ${MAX_SAMPLES_PER_POSE})`);
+  return errors;
+}
+
+function registrationValid(registration, key) {
+  if (!recordValid(registration) || Object.hasOwn(registration, 'actionId')) return false;
+  if (!validGestureId(registration.gestureId) || (key !== undefined && registration.gestureId !== key)) return false;
+  if (registration.modelVersion !== GESTURE_MODEL_VERSION || registration.featuresVersion !== GESTURE_FEATURES_VERSION || registration.featureCount !== FEATURE_COUNT) return false;
+  const views = registration.model?.views;
+  return recordValid(views) && ENROLLMENT_VIEWS.every(view => groupValid(views[view], {
+    usable: true, minSamples: MIN_SAMPLES_PER_VIEW, maxTemplates: MAX_VIEW_TEMPLATES,
+  }));
+}
+
+/** Structure check for a gesture ID -> registration record from storage/import. */
+export function validateRegistrations(registrations) {
+  if (!recordValid(registrations)) return {valid: false, errors: ['registrations must be an object']};
+  const errors = [];
+  const keys = Object.keys(registrations);
+  if (keys.length > MAX_REGISTERED_GESTURES) errors.push(`at most ${MAX_REGISTERED_GESTURES} registered gestures`);
+  for (const key of keys) if (!registrationValid(registrations[key], key)) errors.push(`${key}: invalid registration`);
+  return {valid: errors.length === 0, errors};
+}
+
+function nearestToTemplates(group, vectors) {
+  let best = Infinity;
+  for (const template of group.templates) for (const vector of vectors) best = Math.min(best, featureDistance(template, vector));
+  return best;
+}
+
+/** Train a CANDIDATE for exactly one gesture. Malformed input throws. A noisy,
+ * too-similar or conflicting candidate returns usable:false with a reason code
+ * and candidate:null; existing registrations are never changed or disabled.
+ * rejectionExamples are optional feature vectors that must NOT be accepted
+ * (rest pose, typing, other shapes); they shrink acceptance radii. Without them
+ * only the radius limits acceptance and diagnostics.rejectionEvidence is 'none'.
+ * Verification and storing the candidate are separate caller steps.
+ */
+export function trainGesture({gestureId, viewSamples, existingRegistrations = {}, rejectionExamples = []} = {}) {
+  if (!validGestureId(gestureId)) throw new TypeError('invalid gesture id');
+  const errors = gestureSampleErrors(viewSamples);
+  if (errors.length) throw new TypeError(errors.join('; '));
+  if (!recordValid(existingRegistrations)) throw new TypeError('existingRegistrations must be an object');
+  if (!Array.isArray(rejectionExamples) || rejectionExamples.length > MAX_REJECTION_EXAMPLES || !Array.from(rejectionExamples).every(vectorValid)) throw new TypeError('invalid rejection examples');
+  const diagnostics = {rejectionEvidence: rejectionExamples.length ? 'provided' : 'none', rejectionExamples: rejectionExamples.length, views: {}};
+  const unusable = (reason, conflicts = []) => ({candidate: null, usable: false, conflicts, reason, diagnostics});
+
+  const others = Object.entries(existingRegistrations).filter(([id]) => id !== gestureId);
+  if (!others.every(([id, registration]) => registrationValid(registration, id))) return unusable('invalid-existing-registration');
+  if (others.length + 1 > MAX_REGISTERED_GESTURES) return unusable('too-many-gestures');
+
+  const views = {};
+  for (const view of ENROLLMENT_VIEWS) {
+    views[view] = trainView(viewSamples[view]);
+    diagnostics.views[view] = {enabled: views[view].enabled, sampleCount: views[view].sampleCount, inlierCount: views[view].inlierCount, spread: views[view].spread};
+  }
+  if (!ENROLLMENT_VIEWS.every(view => views[view].enabled)) return unusable('unstable-samples');
+
+  const conflicts = [];
+  for (const [id, registration] of others) {
+    let nearest = Infinity;
+    for (const view of ENROLLMENT_VIEWS) for (const other of ENROLLMENT_VIEWS) {
+      const distanceToOther = Math.min(...views[view].templates.flatMap(x => registration.model.views[other].templates.map(y => featureDistance(x, y))));
+      nearest = Math.min(nearest, distanceToOther);
+      views[view].radius = Math.min(views[view].radius, distanceToOther * 0.44);
+    }
+    if (nearest < MIN_SEPARATION) conflicts.push({gestureId: id, distance: nearest});
+  }
+  if (conflicts.length) return unusable('conflicts-with-registered-gesture', conflicts);
+
+  if (rejectionExamples.length) {
+    for (const view of ENROLLMENT_VIEWS) {
+      const nearest = nearestToTemplates(views[view], rejectionExamples);
+      if (nearest < MIN_SEPARATION) return unusable('rejection-example-too-close', [{gestureId: null, view, distance: nearest}]);
+      views[view].radius = Math.min(views[view].radius, nearest * 0.44);
+    }
+  }
+  if (!ENROLLMENT_VIEWS.every(view => views[view].radius >= 0.012)) return unusable('acceptance-radius-too-small');
+
+  const candidate = {
+    gestureId, modelVersion: GESTURE_MODEL_VERSION, featuresVersion: GESTURE_FEATURES_VERSION, featureCount: FEATURE_COUNT,
+    model: {views},
+    viewCoverage: Object.fromEntries(ENROLLMENT_VIEWS.map(view => [view, {sampleCount: views[view].sampleCount, inlierCount: views[view].inlierCount}])),
+    rejection: {examples: rejectionExamples.length},
+  };
+  return {candidate: JSON.parse(JSON.stringify(candidate)), usable: true, conflicts: [], reason: 'ok', diagnostics};
+}
+
+/** Return a new registrations record in which only candidate.gestureId is added
+ * or replaced. Throws for an invalid candidate; the input is never modified.
+ */
+export function registerGesture(registrations, candidate) {
+  if (!recordValid(registrations)) throw new TypeError('registrations must be an object');
+  if (!registrationValid(candidate)) throw new TypeError('invalid gesture candidate');
+  const next = JSON.parse(JSON.stringify(registrations));
+  if (!Object.hasOwn(next, candidate.gestureId) && Object.keys(next).length >= MAX_REGISTERED_GESTURES) throw new RangeError('too many registered gestures');
+  next[candidate.gestureId] = JSON.parse(JSON.stringify(candidate));
+  return next;
+}
+
+/** Return a new registrations record without gestureId. Other entries are untouched. */
+export function removeGesture(registrations, gestureId) {
+  if (!recordValid(registrations)) throw new TypeError('registrations must be an object');
+  const next = JSON.parse(JSON.stringify(registrations));
+  delete next[gestureId];
+  return next;
+}
+
+/** Open-set decision over registered gestures only. Unknown/ambiguous/invalid
+ * input never yields a gestureId, so the caller issues no command and must not
+ * fall back to the common model. With one registration there is no competitor:
+ * margin is null and acceptance depends on the registration radius alone.
+ * `neutral` is not produced here; a rest pose is a rejection example.
+ */
+export function classifyRegisteredGesture({features, registrations} = {}) {
+  const result = (kind, reason, distance = null, margin = null, gestureId = null, extra = {}) => ({gestureId, accepted: kind === 'match', kind, reason, distance, margin, ...extra});
+  if (!vectorValid(features)) return result('invalid', 'invalid-features');
+  if (!validateRegistrations(registrations).valid) return result('invalid', 'invalid-model');
+  const entries = Object.values(registrations);
+  if (!entries.length) return result('unknown', 'no-registrations');
+  const scores = entries.map(registration => {
+    const nearest = ENROLLMENT_VIEWS.map(view => {
+      const group = registration.model.views[view];
+      return {view, group, distance: Math.min(...group.templates.map(template => featureDistance(features, template)))};
+    }).sort((a, b) => a.distance - b.distance)[0];
+    return {gestureId: registration.gestureId, ...nearest};
+  }).sort((a, b) => a.distance - b.distance);
+  const first = scores[0], second = scores[1];
+  const margin = second ? second.distance - first.distance : null;
+  if (!first.group.enabled || first.distance > first.group.radius) return result('unknown', 'outside-enrollment', first.distance, margin);
+  if (second && (margin < 0.012 || (second.distance > 0 && first.distance / second.distance > 0.72))) return result('unknown', 'ambiguous-gesture', first.distance, margin);
+  return result('match', 'matched', first.distance, margin, first.gestureId, {view: first.view});
+}
