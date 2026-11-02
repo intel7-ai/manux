@@ -3,7 +3,7 @@ name: MANUX CI
 on:
   pull_request:
   push:
-    branches: [main, master]
+    branches: [main, master, preview, production]
   workflow_dispatch:
 
 permissions:
@@ -84,3 +84,15 @@ jobs:
           VERIFY_RESULT: ${{ needs.verify.result }}
           BROWSER_RESULT: ${{ needs.browser.result }}
         run: test "$VERIFY_RESULT" = success && test "$BROWSER_RESULT" = success
+      # production takes changes only after they were merged and tested on preview (docs/branch-flow.md).
+      - name: production accepts PRs from preview only
+        if: github.event_name == 'pull_request' && github.base_ref == 'production'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REF" != preview ] || [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "::error::production에는 preview 브랜치 PR만 병합합니다. 이 PR의 대상 브랜치를 preview로 바꾸세요."
+            exit 1
+          fi

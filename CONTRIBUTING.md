@@ -107,11 +107,11 @@ node --max-old-space-size=512 scripts/test-enrollment-browser.mjs
 
 ## 5. PR과 CI
 
-한 PR에는 재현 가능한 문제 또는 합의된 작은 기능을 담습니다. [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)에 따라 문제·변경·검증·미실행 이유·남은 한계를 기록하고, 지정 리뷰어가 실제 diff와 재현 증거를 확인합니다. 계약·프로필 형식·다른 담당 영역에 영향이 있으면 소비 모듈 담당자를 연결합니다.
+한 PR에는 재현 가능한 문제 또는 합의된 작은 기능을 담습니다. [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)에 따라 문제·변경·검증·미실행 이유·남은 한계를 기록합니다. PR 대상은 `preview`이며 리뷰어 승인 없이 MANUX required 통과 후 병합합니다. `production`에는 preview에서 시험한 뒤 `preview` PR로만 병합합니다([브랜치 흐름](docs/branch-flow.md)). 계약·프로필 형식·다른 담당 영역에 영향이 있으면 소비 모듈 담당자를 연결합니다.
 
 GitHub Actions의 **MANUX CI**는 워크플로가 원격에 반영된 후 Windows와 Ubuntu의 공통 검사, 브라우저 검사, Windows native 검사를 실행합니다. 집계 검사 이름은 **MANUX required**입니다. **로컬 검사 통과와 원격 CI 통과를 각각 기록**합니다. 자동 검사는 실제 웹캠·사용성 검사를 대신하지 않습니다.
 
-기본 브랜치에는 직접 push하지 않고 PR로 통합합니다. 필수 검사·리뷰를 강제하는 브랜치 보호는 GitHub 저장소 관리자가 별도로 설정해야 합니다. 워크플로 파일만으로 보호 규칙이 켜지지는 않습니다. 충돌은 본인 브랜치에서 해결하며 다른 사람의 브랜치를 강제 push하거나 재작성하지 않습니다.
+`preview`·`production`에는 직접 push하지 않고 PR로 통합합니다. 필수 검사를 강제하는 브랜치 보호는 GitHub 저장소 관리자가 별도로 설정해야 합니다. 워크플로 파일만으로 보호 규칙이 켜지지는 않습니다. 충돌은 본인 브랜치에서 해결하며 다른 사람의 브랜치를 강제 push하거나 재작성하지 않습니다.
 
 사용자 프로필·원시 영상·토큰·계정 정보·로컬 산출물을 커밋하지 않습니다. 다른 사람의 Node·Chrome·Claude 프로세스를 일괄 종료하지 않습니다. GitHub/Jira 게시와 이슈 완료는 요청 범위와 실제 완료 기준에 따라 수행합니다.
 

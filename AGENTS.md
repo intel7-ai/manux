@@ -15,6 +15,8 @@
 
 작업을 시작할 때 `git status --short`, `git branch --show-current`, `git remote -v`로 실제 상태를 확인한다. 다른 사람의 변경을 되돌리거나 깨끗하게 만들기 위해 삭제하지 않는다. 담당 브랜치는 아래 권장 이름을 사용하되 사람의 지시와 실제 원격 기본 브랜치를 따른다.
 
+통합 흐름은 [브랜치 흐름](docs/branch-flow.md)을 따른다. 작업 브랜치는 `origin/preview`에서 만들고 PR 대상은 `preview`다. 리뷰어 승인은 필요 없다. `production`에는 preview에서 시험한 뒤 `preview` 브랜치 PR로만 병합한다.
+
 | 역할 | 담당 | 권장 브랜치 | 주 담당 파일 |
 | --- | --- | --- | --- |
 | R1 / SCRUM-6 | 김동혁 | `codex/scrum-6-camera` | `src/camera.js`, `src/vision-client.js`, `src/vision-worker.js`, `src/orientation.js` |
