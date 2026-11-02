@@ -2,7 +2,7 @@ import {GestureController} from './gesture-controller.js';
 import {applyMediaAction, ACTION_NAMES, formatTime} from './media-controller.js';
 import {VisionClient} from './vision-client.js';
 import {cameraConstraints, describeCamera} from './camera.js';
-import {extractFeatures, getHandQuality, trainEnvironment, classifyPersonal} from './personalization.js';
+import {extractFeatures, getHandQuality, trainEnvironment, classifyPersonal, validateRegistrations} from './personalization.js';
 import {readProfiles, writeProfiles} from './profile-store.js';
 import {EnrollmentController} from './enrollment.js';
 import {extractOrientation, VIEW_LABELS} from './orientation.js';
@@ -30,8 +30,8 @@ let cameraInfo = null, lastResultAt = null, fps = 0, lastStatsAt = 0;
 let enrollment = null, enrollmentModel = null, enrollmentContext = null, enrollmentError = null;
 let previewMoveId = 0;
 let controlMode = 'media';
-// Gesture registrations stay closed until G1's validateRegistrations is passed in (docs/settings-store.md).
-const settingsStore = new SettingsStore();
+// Registrations are checked with G1's validator. Bindings stay closed until C3 passes allowedActions (docs/settings-store.md).
+const settingsStore = new SettingsStore({validateRegistrations});
 const mouse = new MouseWorkspace({sensitivity:settingsStore.settings.mouse.sensitivity, onSensitivityChange:sensitivity => {
   try { settingsStore.setMouse({sensitivity}); }
   catch (error) { mouse.status(`감도를 저장하지 못했습니다. ${error.message}`, true); }
