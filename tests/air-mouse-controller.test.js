@@ -4,6 +4,8 @@ import {readFileSync} from 'node:fs';
 import {AirMouseController} from '../src/air-mouse-controller.js';
 
 import {hand} from './helpers/mouse-hand.js';
+import {MouseWorkspace} from '../src/mouse-workspace.js';
+import {workspaceRoot, fakeBridge} from './helpers/mouse-workspace-stub.js';
 
 function session(options = {}) {
   const controller = new AirMouseController({smoothing:1,...options});
@@ -256,4 +258,85 @@ test('non-finite, incomplete, out-of-frame and degenerate landmarks cannot creat
     assert.deepEqual(events(s.hold('left')),[]);
   }
   assert.throws(()=>new AirMouseController({sensitivity:Infinity}),RangeError);
+});
+
+test('a non-finite timestamp releases a held button and the next valid frame must settle again', () => {
+  for (const bad of [NaN, Infinity, undefined]) {
+    const s = session(); s.hold('move'); s.hold('left');
+    const result = s.controller.update({landmarks:hand('left'), now:bad, enabled:true, width:1000, height:1000});
+    assert.equal(result.phase, 'invalid');
+    assert.deepEqual(result.events, [{type:'button',button:'left',down:false},{type:'release'}]);
+    assert.deepEqual(events(s.hold('left')), []);
+    assert.equal(s.feed('move').phase, 'holding');
+  }
+});
+
+test('after an explicit pause the same hand must dwell again and cannot move or click on re-enable', () => {
+  for (const pose of ['move', 'left']) {
+    const s = session(); s.hold('move'); s.hold(pose);
+    assert.deepEqual(s.feed(pose, {}, {enabled:false}).events, [{type:'release'}], pose);
+    assert.equal(s.feed(pose, {}, {enabled:false}).phase, 'disabled', pose);
+    const first = s.feed(pose, {x:.1});
+    assert.equal(first.phase, pose === 'move' ? 'holding' : 'release-required', pose);
+    assert.deepEqual(first.events, [], pose);
+    const rest = events(s.hold(pose, {x:.1}));
+    assert.equal(rest.some(e => e.type === 'move' || (e.type === 'button' && e.down)), false, pose);
+  }
+});
+
+function enabledWorkspace(t, target = 'desktop') {
+  const bridge = fakeBridge();
+  const workspace = new MouseWorkspace({root:workspaceRoot({target}), bridge});
+  t.after(() => clearInterval(workspace.watchdog));
+  Object.assign(workspace, {active:true, ready:true, enabled:true, available:true});
+  workspace.lastFrame = performance.now();
+  return {workspace, bridge};
+}
+const frame = (now, overrides = {}) => ({landmarks:hand('move'), now, quality:true, handedness:'Right', width:1000, height:1000, ...overrides});
+
+test('a repeated or older timestamp is not a fresh inference: it neither feeds the native lease nor the stall watchdog', t => {
+  const {workspace, bridge} = enabledWorkspace(t);
+  workspace.update(frame(100));
+  const sent = bridge.calls.send.length;
+  workspace.lastFrame = performance.now() - 600; // Camera is stalling; only a genuinely new frame may renew this.
+  const before = workspace.lastFrame;
+  for (const now of [100, 90, 100]) assert.equal(workspace.update(frame(now)).phase, 'stale');
+  assert.equal(bridge.calls.send.length, sent);
+  assert.equal(workspace.lastFrame, before);
+  workspace.update(frame(160));
+  assert.equal(bridge.calls.send.length, sent + 1);
+  assert.ok(workspace.lastFrame > before);
+});
+
+test('the stall watchdog turns control off and releases practice buttons and the native lease', t => {
+  t.mock.timers.enable({apis:['setInterval']});
+  const {workspace, bridge} = enabledWorkspace(t, 'practice');
+  workspace.pressed = true; workspace.drag = {x:1, y:1};
+  workspace.lastFrame = performance.now() - 800;
+  t.mock.timers.tick(100);
+  assert.equal(workspace.enabled, false);
+  assert.equal(workspace.pressed, false);
+  assert.equal(workspace.drag, null);
+  assert.ok(bridge.calls.stop >= 1);
+  assert.equal(workspace.update(frame(500)).phase, 'disabled'); // Never re-enables on its own.
+  assert.equal(workspace.enabled, false);
+});
+
+test('very late tracking results turn control off before any event is forwarded', t => {
+  const {workspace, bridge} = enabledWorkspace(t);
+  const state = workspace.update(frame(100, {latency:451}));
+  assert.equal(workspace.enabled, false);
+  assert.equal(state.phase, 'disabled');
+  assert.deepEqual(bridge.calls.send, []);
+  assert.ok(bridge.calls.stop >= 1);
+});
+
+test('a lost hand during a held right pinch or scroll leaves nothing pressed and the cursor still', () => {
+  for (const pose of ['right', 'scroll']) {
+    const s = session(); s.hold('move'); s.hold(pose);
+    const lost = s.feed(pose, {x:.03}, {landmarks:null});
+    assert.equal(lost.phase, 'invalid', pose);
+    assert.equal(lost.events.some(e => e.type === 'move' || e.type === 'scroll' || (e.type === 'button' && e.down)), false, pose);
+    assert.equal(lost.mode, 'idle', pose);
+  }
 });

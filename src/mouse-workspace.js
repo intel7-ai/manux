@@ -101,7 +101,9 @@ export class MouseWorkspace {
     if (!this.active) return null;
     if (this.enabled && latency > 450) this.stop('추적 결과가 늦어 제어를 껐습니다. 해상도를 낮추고 다시 켜보세요.');
     const state = this.controller.update({landmarks, now, quality, handedness, width, height, enabled:this.enabled});
-    if (this.enabled) {
+    // A repeated or older timestamp is not fresh inference. It must not renew the stall watchdog
+    // or the native input lease, so a frozen frame source still stops control and releases buttons.
+    if (this.enabled && state.phase !== 'stale') {
       this.lastFrame = performance.now();
       if (this.desktop) this.bridge.send(state.events);
       else this.applyPractice(state.events);
