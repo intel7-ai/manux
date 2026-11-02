@@ -39,7 +39,7 @@
 
 ## 모든 사용자에게 같은 응답
 
-- 최종 보고서는 renderer가 만든 `상태 → 요약 → 변경 → 검증 → 다음` 순서와 각 항목 아래 `- ` 목록 줄을 그대로 사용한다. 같은 기록의 브라우저용 보고서는 `npm run task:report -- TASK.json RESULT.json --html 경로.html`로 만든다. `complete`는 해당 요청의 검증 완료이며 공유 checkout 통합·GitHub 게시와 별개다. 통합/게시 여부는 사실대로 표시한다.
+- 최종 보고서는 renderer가 만든 `상태 → 요약 → 변경 → 검증 → 다음` 순서와 각 항목 아래 `- ` 목록 줄을 그대로 사용한다. 같은 기록의 브라우저용 보고서는 `npm run task:report -- TASK.json RESULT.json --html .local/보고서.html`로 만든다(`.local/` 또는 `reports/` 아래만 허용). `complete`는 해당 요청의 검증 완료이며 공유 checkout 통합·GitHub 게시와 별개다. 통합/게시 여부는 사실대로 표시한다.
 - 완료 기준이 충족되지 않았거나 검사를 실행하지 못했으면 `needs_review` 또는 `blocked`로 기록한다. 결과 계약의 검사는 형식과 증거 유무를 확인하며 내용의 진실성을 대신 보증하지 않는다.
 - 질문·인사·접수·진행도 같은 다섯 항목을 쓴다. 예: `상태: 정보`, `요약: ...`, `변경: 없음`, `검증: 미실행(안내 답변)`, `다음: ...`. 간단한 안내에는 작업 JSON을 만들지 않는다.
 - Discord의 `reply`와 `edit_message`는 `.claude/settings.json`의 전송 전 검사 훅을 거친다. 종료 상태는 기록과 renderer 출력이 일치해야 전송된다. 막히면 원인을 수정하고 재시도하며 HTTP·다른 도구로 우회하지 않는다. Discord 전송은 원래 사용자의 요청에 대한 답변만 한다.

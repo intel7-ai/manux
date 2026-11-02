@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -320,30 +320,68 @@ test('HTML report keeps full evidence that the Discord text shortens and does no
 test('CLI --html writes inside the workspace only, prints the same Discord text and rejects other targets', async t => {
   const { root } = await fixture(t);
   const messages = []; const notices = []; const errors = [];
-  assert.equal(await runTaskReport(['task.json', 'result.json', '--html', 'out/report.html'], { root, output: text => messages.push(text), notice: text => notices.push(text), error: text => errors.push(text) }), 0);
+  assert.equal(await runTaskReport(['task.json', 'result.json', '--html', '.local/out/report.html'], { root, output: text => messages.push(text), notice: text => notices.push(text), error: text => errors.push(text) }), 0);
   assert.deepEqual(messages, [renderTaskReport(result, task)]);
-  assert.deepEqual(notices, ['HTML 보고서를 저장했습니다: out/report.html']);
-  assert.equal(await readFile(join(root, 'out', 'report.html'), 'utf8'), renderTaskReportHtml(result, task));
-  for (const target of ['../escape.html', 'out/report.txt', 'out', join(tmpdir(), 'manux-outside.html')]) {
+  assert.deepEqual(notices, ['HTML 보고서를 저장했습니다: .local/out/report.html']);
+  assert.equal(await readFile(join(root, '.local', 'out', 'report.html'), 'utf8'), renderTaskReportHtml(result, task));
+  assert.equal(await runTaskReport(['task.json', 'result.json', '--html', 'reports/report.html'], { root, output: () => {}, notice: text => notices.push(text), error: text => errors.push(text) }), 0);
+  assert.ok((await readFile(join(root, 'reports', 'report.html'), 'utf8')).startsWith('<!doctype html>'));
+  await mkdir(join(root, '.local', 'folder.html'));
+  for (const target of ['../escape.html', '.local/out/report.txt', '.local', '.local/folder.html', 'out/report.html', 'report.html', 'reports.html', 'public/index.html', 'src/app.js.html', join(tmpdir(), 'manux-outside.html')]) {
     assert.equal(await runTaskReport(['task.json', 'result.json', '--html', target], { root, output: () => {}, notice: () => {}, error: text => errors.push(text) }), 1, target);
   }
   assert.equal(await runTaskReport(['task.json', 'result.json', '--html'], { root, output: () => {}, error: text => errors.push(text) }), 1);
   assert.equal(await runTaskReport(['task.json', 'result.json', '--check', 'x'], { root, output: () => {}, error: text => errors.push(text) }), 1);
   await assert.rejects(access(join(root, '..', 'escape.html')));
+  for (const folder of ['out', 'public', 'src']) await assert.rejects(access(join(root, folder)), folder);
   assert.ok(errors.every(text => !text.includes(root)));
+});
+
+test('CLI --html never overwrites an existing project file outside the report folders', async t => {
+  const { root } = await fixture(t);
+  await mkdir(join(root, 'public'));
+  await writeFile(join(root, 'public', 'index.html'), 'original page');
+  await writeFile(join(root, 'README.html'), 'original readme');
+  for (const target of ['public/index.html', 'README.html', './public/../public/index.html']) {
+    assert.equal(await runTaskReport(['task.json', 'result.json', '--html', target], { root, output: () => {}, notice: () => {}, error: () => {} }), 1, target);
+  }
+  assert.equal(await readFile(join(root, 'public', 'index.html'), 'utf8'), 'original page');
+  assert.equal(await readFile(join(root, 'README.html'), 'utf8'), 'original readme');
+  // A report inside an allowed folder may be regenerated.
+  for (let run = 0; run < 2; run += 1) assert.equal(await runTaskReport(['task.json', 'result.json', '--html', '.local/again.html'], { root, output: () => {}, notice: () => {}, error: () => {} }), 0);
+});
+
+test('a rendering failure leaves no HTML report behind and still reports the error', async t => {
+  const { root } = await fixture(t);
+  const errors = []; const messages = [];
+  const failing = () => { throw new ContractValidationError(['보고서를 만들지 못했습니다']); };
+  assert.equal(await runTaskReport(['task.json', 'result.json', '--html', '.local/failed.html'], { root, output: text => messages.push(text), notice: () => messages.push('notice'), error: text => errors.push(text), renderText: failing }), 1);
+  assert.equal(await runTaskReport(['task.json', 'result.json', '--html', '.local/failed-page.html'], { root, output: text => messages.push(text), notice: () => messages.push('notice'), error: text => errors.push(text), renderPage: failing }), 1);
+  await assert.rejects(access(join(root, '.local')));
+  assert.deepEqual(messages, []);
+  assert.equal(errors.length, 2);
 });
 
 test('CLI --html does not write through a link that leaves the workspace', async t => {
   const { base, root } = await fixture(t);
   const outside = join(base, 'outside');
   await mkdir(outside);
+  await mkdir(join(root, '.local'));
   try {
-    await symlink(outside, join(root, 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
+    await symlink(outside, join(root, '.local', 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
   } catch (error) {
     if (!['EPERM', 'EACCES', 'ENOSYS'].includes(error.code)) throw error;
     t.skip('This environment does not permit creating symbolic links/junctions.');
     return;
   }
-  assert.equal(await runTaskReport(['task.json', 'result.json', '--html', 'escape/report.html'], { root, output: () => {}, notice: () => {}, error: () => {} }), 1);
-  await assert.rejects(access(join(outside, 'report.html')));
+  for (const target of ['.local/escape/report.html', '.local/escape/new/deeper/report.html']) {
+    assert.equal(await runTaskReport(['task.json', 'result.json', '--html', target], { root, output: () => {}, notice: () => {}, error: () => {} }), 1, target);
+  }
+  // The link target stays empty: no report and no directory is created outside the workspace.
+  assert.deepEqual(await readdir(outside), []);
+  // A link that leaves the project folders for another project folder is refused as well.
+  await mkdir(join(root, 'src'));
+  await symlink(join(root, 'src'), join(root, '.local', 'to-src'), process.platform === 'win32' ? 'junction' : 'dir');
+  assert.equal(await runTaskReport(['task.json', 'result.json', '--html', '.local/to-src/report.html'], { root, output: () => {}, notice: () => {}, error: () => {} }), 1);
+  assert.deepEqual(await readdir(join(root, 'src')), []);
 });
