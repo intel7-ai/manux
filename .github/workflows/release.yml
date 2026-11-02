@@ -1,0 +1,58 @@
+name: MANUX desktop release
+
+# Pushing a tag such as v0.3.0 builds the unsigned Windows installer and uploads it to a
+# DRAFT GitHub Release. A person reviews the draft and publishes it; installed apps only
+# see published releases. The tag must equal package.json "version" with a leading "v".
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: {}
+
+concurrency:
+  group: manux-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: build and draft release
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Tag must match package.json version
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          test "$TAG" = "v$version" || { echo "Tag $TAG does not match package.json version $version"; exit 1; }
+      - run: npm ci --ignore-scripts
+      - run: npm run verify
+      - run: npm run desktop:pack
+      - run: npm run test:packaged
+      - name: Build installer and upload to a draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run desktop:publish
+      - name: Build evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: release-evidence
+          path: |
+            .local/verification/latest.json
+            .local/verification/verify.log
+            test-results/packaged-app.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7

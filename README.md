@@ -100,6 +100,7 @@ Discord → 공유 Claude 세션 → 작업별 Git 폴더 → 검사 → 리뷰�
 | [에이전트 규칙](AGENTS.md) | 저장소 작업 규칙의 원본; `CLAUDE.md`에서 참조 |
 | [모듈 계약](docs/contracts.md) · [작업 문서](docs/workstreams/) | 담당 영역과 연결 변경 |
 | [영상 사용법](docs/usage-video.md) · [마우스 사용법](docs/air-mouse.md) | 기능별 상세 사용 |
+| [데스크톱 설치본·자동 업데이트](docs/desktop-release.md) | Windows 설치 파일 빌드, GitHub 릴리스, 자동 업데이트 (서명 없음, 첫 릴리스 미실행) |
 | [LAN 데모](docs/lan-demo.md) | 같은 네트워크에서 브라우저 데모. 주소는 현재 호스트에 확인 |
 | [마스터 플랜](docs/master-plan.md) | 기존 요구사항·후속 개발 계획 |
 
