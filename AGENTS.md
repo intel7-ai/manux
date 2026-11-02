@@ -4,6 +4,10 @@
 
 ## 현재 상태
 
+- 현재 마일스톤·담당·마감의 기준은 최신 [SCRUM-5](https://se4nchoi.atlassian.net/browse/SCRUM-5)와 [SCRUM-11](https://se4nchoi.atlassian.net/browse/SCRUM-11), 본인 세부 태스크다. 2026-11-02 승인된 M1은 11/04 PoC·11/06 Windows 책상 마우스 제품 후보이며 5인·20개 작업이다. 10/29의 팀 계획·마스터 플랜은 과거 계획이므로 현재 Jira 범위와 충돌할 때 따르지 않는다.
+- 팀원 개인 PC의 AI 에이전트 개발/브랜치 푸시와 Discord Claude의 독립 worktree 개발을 모두 지원한다. 공유된 기준 커밋을 확인하고 `codex/scrum-23-gesture-enrollment`처럼 세부 태스크 번호를 브랜치·PR에 명시한다. 외부 푸시는 로컬 작업 폴더에 자동 반영되지 않으며 최신 원격 조회와 PR 리뷰·통합은 별개다.
+- Discord의 할 일 질문은 Jira를, 원격 개발 현황은 GitHub를 새로 조회한다. OAuth 인증 계정이나 Git 작성자를 Discord 질문자로 간주하지 않는다. Jira/원격 조회 실패를 작업 없음이나 완료로 바꾸지 않는다.
+
 - 2026-11-02 손 전체 이동 기반 마우스 모드와 Electron/Windows 입력 경로를 추가했다. 현재 계약·실행법은 `docs/air-mouse.md`와 `desktop/README.md`를 확인한다. 실제 웹캠 사용성과 실제 OS 클릭 검증은 별도다.
 
 - 기본 네 명령, 선택적 ±10초 반복, 카메라·Worker, 사용자·환경 프로필, 여러 각도 등록 코드가 있다.
