@@ -1,0 +1,94 @@
+name: MANUX production release
+
+# A protected production merge is the release decision. Tags alone cannot deploy.
+on:
+  push:
+    branches: [production]
+
+permissions: {}
+
+concurrency:
+  group: manux-production-release
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  build:
+    name: Verify and build Windows release
+    if: github.ref == 'refs/heads/production' && github.repository == 'intel7-ai/manux'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.release_artifact.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run desktop:setup
+      - run: npm run verify
+      - run: npm run browser:install
+      - run: npm run test:browser
+      - run: npm run test:native
+      - run: node scripts/release-version.mjs prepare stable
+      - run: npm run desktop:dist
+      - run: npm run test:packaged
+      - run: npm run test:update-download
+      - run: node scripts/release-version.mjs manifest dist
+      - name: Preserve exactly the verified installer and update metadata
+        id: release_artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: production-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest.yml
+            dist/release-manifest.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Build evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: release-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .local/verification/latest.json
+            .local/verification/verify.log
+            test-results/packaged-app.json
+            test-results/update-download.json
+            test-results/air-mouse-*
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14
+
+  publish:
+    name: Publish verified stable update
+    needs: build
+    if: github.ref == 'refs/heads/production' && github.repository == 'intel7-ai/manux'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          merge-multiple: true
+          path: release-artifact
+      - name: Verify artifact hashes, create immutable tag, publish completed release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release-version.mjs publish release-artifact
