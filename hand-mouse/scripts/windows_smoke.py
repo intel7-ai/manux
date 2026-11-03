@@ -28,6 +28,10 @@ FRAME_MAX_MS = 750.0       # any single frame this slow counts as a freeze
 
 
 def main() -> int:
+    # A Windows console is often cp1252/cp949; Korean status text must not crash a print
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "smoke-out")
     out.mkdir(parents=True, exist_ok=True)
     mouse = MouseController(dry_run=True)

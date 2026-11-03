@@ -735,8 +735,20 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
     return 0
 
 
+def _safe_console() -> None:
+    """Never crash on print(): Korean status text on a console that cannot encode it
+    (an English Windows console is cp1252) becomes '?' instead of UnicodeEncodeError."""
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main() -> int:
     _log_to_file_without_console()
+    _safe_console()
     args = parse_args()
     perf = keep_responsive_in_background()
 
