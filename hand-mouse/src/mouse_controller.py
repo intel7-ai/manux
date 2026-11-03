@@ -29,10 +29,12 @@ try:
     from src.cursor_interp import CursorInterpolator
     from src.filters import TremorStabilizer
     from src.gesture_engine import GestureResult
+    from src.screens import Monitor, ScreenLayout
 except ImportError:
     from cursor_interp import CursorInterpolator
     from filters import TremorStabilizer
     from gesture_engine import GestureResult
+    from screens import Monitor, ScreenLayout
 
 # Configure PyAutoGUI for zero-latency real-time control
 pyautogui.FAILSAFE = False
@@ -46,21 +48,30 @@ class MouseController:
         self,
         dry_run: bool = False,
         screen_size: Optional[Tuple[int, int]] = None,
+        screens: Optional[ScreenLayout] = None,
     ) -> None:
         pyautogui.FAILSAFE = False
         pyautogui.PAUSE = 0
 
         self.dry_run: bool = dry_run
-        if screen_size is not None:
-            self.screen_w, self.screen_h = int(screen_size[0]), int(screen_size[1])
-        else:
-            try:
-                sz = pyautogui.size()
-                self.screen_w, self.screen_h = int(sz[0]), int(sz[1])
-            except Exception:
-                self.screen_w, self.screen_h = 1920, 1080
+        if screens is None:
+            if screen_size is not None:
+                screens = ScreenLayout.single(int(screen_size[0]), int(screen_size[1]))
+            else:
+                try:
+                    sz = pyautogui.size()
+                    fallback = (int(sz[0]), int(sz[1]))
+                except Exception:
+                    fallback = (1920, 1080)
+                screens = ScreenLayout.detect(fallback)
+        # All monitors (cursor bounds). screen_w / screen_h stay the PRIMARY monitor's size:
+        # they scale hand motion into pixels, so a second monitor does not double the speed.
+        self.screens: ScreenLayout = screens
+        self.screen_w, self.screen_h = screens.primary.width, screens.primary.height
+        # Absolute mode maps the camera onto one monitor at a time (see cycle_monitor)
+        self._abs_monitor: Optional[Monitor] = None
 
-        self.last_screen_pos: Tuple[int, int] = (self.screen_w // 2, self.screen_h // 2)
+        self.last_screen_pos: Tuple[int, int] = screens.primary.center
         self._smoothed_pos: Optional[Tuple[float, float]] = None
 
         self.is_dragging: bool = False
@@ -150,7 +161,7 @@ class MouseController:
     ) -> Tuple[float, float]:
         """
         Map normalized camera coordinates [active_margin, 1 - active_margin]
-        to full screen coordinates [0, screen_w - 1] x [0, screen_h - 1].
+        to the absolute-mode monitor (the primary one until cycle_monitor() picks another).
         With clamp=False, points in the margin map beyond the screen edges.
         """
         margin = max(0.0, min(0.45, float(active_margin)))
@@ -163,8 +174,9 @@ class MouseController:
             nx = max(0.0, min(1.0, nx))
             ny = max(0.0, min(1.0, ny))
 
-        sx = nx * (self.screen_w - 1)
-        sy = ny * (self.screen_h - 1)
+        m = self.absolute_monitor
+        sx = m.left + nx * (m.width - 1)
+        sy = m.top + ny * (m.height - 1)
         return sx, sy
 
     def _relative_step(
@@ -204,8 +216,8 @@ class MouseController:
         t = max(0.0, min(1.0, (speed - v_lo) / (v_hi - v_lo)))
         gain = (g_min + (g_max - g_min) * t) * self.dpi_multiplier
 
-        px = max(0.0, min(float(self.screen_w - 1), self._rel_pos[0] + dx * self.screen_w * gain))
-        py = max(0.0, min(float(self.screen_h - 1), self._rel_pos[1] + dy * self.screen_w * gain))
+        px, py = self.screens.clamp(self._rel_pos[0] + dx * self.screen_w * gain,
+                                    self._rel_pos[1] + dy * self.screen_w * gain)
         self._rel_pos = (px, py)
         self._smoothed_pos = self._rel_pos
         return int(round(px)), int(round(py))
@@ -250,8 +262,7 @@ class MouseController:
                     self.abs_offset[1] + (my - self._abs_prev[1]) * k,
                 )
             self._abs_prev = (mx, my)
-            raw_x = max(0.0, min(float(self.screen_w - 1), mx + self.abs_offset[0]))
-            raw_y = max(0.0, min(float(self.screen_h - 1), my + self.abs_offset[1]))
+            raw_x, raw_y = self.absolute_monitor.clamp(mx + self.abs_offset[0], my + self.abs_offset[1])
         self._after_grab = False
 
         if config.get("tremor_filter", False):
@@ -263,8 +274,8 @@ class MouseController:
             sm_y = self._smoothed_pos[1] + smoothing * (raw_y - self._smoothed_pos[1])
 
         self._smoothed_pos = (sm_x, sm_y)
-        final_x = int(round(max(0.0, min(float(self.screen_w - 1), sm_x))))
-        final_y = int(round(max(0.0, min(float(self.screen_h - 1), sm_y))))
+        fx, fy = (self.absolute_monitor if mode != "relative" else self.screens).clamp(sm_x, sm_y)
+        final_x, final_y = int(round(fx)), int(round(fy))
         return final_x, final_y
 
     # ------------------------------------------------------------------ task switcher
@@ -602,8 +613,8 @@ class MouseController:
             dt = max(1e-4, tb - ta)
             t = max(0.0, min(1.0, (seg / dt - v_lo) / (v_hi - v_lo)))
             g = (g_min + (g_max - g_min) * t) * strength
-            x = max(0.0, min(float(self.screen_w - 1), x + dx * self.screen_w * g * gain_x))
-            y = max(0.0, min(float(self.screen_h - 1), y + dy * self.screen_w * g * gain_y))
+            x, y = self.screens.clamp(x + dx * self.screen_w * g * gain_x,
+                                      y + dy * self.screen_w * g * gain_y)
             pts.append((tb - path[0][0], x, y))
         if total_len < min_len:
             return None
@@ -732,6 +743,22 @@ class MouseController:
         else:
             pyautogui.moveTo(x, y, _pause=False)
 
+    @property
+    def absolute_monitor(self) -> Monitor:
+        if self._abs_monitor is None or self._abs_monitor not in self.screens.monitors:
+            self._abs_monitor = self.screens.nearest(*self.last_screen_pos)
+        return self._abs_monitor
+
+    def cycle_monitor(self) -> Monitor:
+        """Jump to the centre of the next monitor; absolute mode maps onto it from now on."""
+        target = self.screens.next_after(*self.last_screen_pos)
+        self._abs_monitor = target
+        self.abs_offset = (0.0, 0.0)
+        self._after_grab = False
+        self.warp_to(*target.center)
+        self.event_log.append("next_monitor")
+        return target
+
     def warp_to(self, x: int, y: int) -> None:
         """Put the cursor at (x, y) now and re-anchor relative movement there.
 
@@ -785,6 +812,7 @@ class MouseController:
         self._prev_action = "none"
         self._pointer_source = None
         self._tremor.reset()
+        self._abs_monitor = None  # absolute mode re-picks the monitor under the cursor
 
     def apply(
         self,

@@ -170,7 +170,7 @@ def draw_hud(
     )
 
     help_line = (
-        "[O/F2] SETTINGS  [SPACE] Pause  [M] Mode  [+/-] Pinch  [ [ / ] ] Fling  "
+        "[O/F2] SETTINGS  [SPACE] Pause  [M] Mode  [N] Monitor  [+/-] Pinch  [ [ / ] ] Fling  "
         "[P] Phone  [C] Cam  [R] Reload  [S] Save  [Q] Quit"
     )
     cv2.putText(
@@ -350,6 +350,7 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
     print("  Thumb+Middle = Left Click, Thumb+Ring = Right Click.")
     print("  Press 'O' (or '0', or F2 from any window) to open the SETTINGS window.")
     print("  Press 'P' in window to switch to Smartphone Browser mode, 'C' for USB Webcam, 'Q' to quit.")
+    print(f"  Monitors: {len(mouse.screens)} (cursor can cross to any of them, [N] = jump to next)")
 
     try:
         while not dashboard.closed:
@@ -591,6 +592,11 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                 mouse.release_all()
                 status_msg = f"Switched Movement Mode -> {new_mode.upper()}"
                 status_expire = now + 2.0
+            elif key in (ord("n"), ord("N")):
+                mouse.release_all()
+                target = mouse.cycle_monitor()
+                status_msg = f"Monitor {mouse.screens.monitors.index(target) + 1}/{len(mouse.screens)}"
+                status_expire = now + 2.0
             elif key in (ord("+"), ord("=")):
                 thr = min(0.12, float(engine.config.get("pinch_threshold", 0.055)) + 0.005)
                 engine.config["pinch_threshold"] = round(thr, 4)
@@ -731,6 +737,7 @@ def main() -> int:
     print("  Thumb+Middle = Left Click, Thumb+Ring = Right Click.")
     print("  Press 'O' (or '0', or F2 from any window) to open the SETTINGS window.")
     print("  Press 'P' in window to switch to Smartphone Browser mode, 'C' for USB Webcam, 'Q' to quit.")
+    print(f"  Monitors: {len(mouse.screens)} (cursor can cross to any of them, [N] = jump to next)")
     if tray is not None:
         print("  System tray icon: pause / camera window / status overlay / settings / quit.")
     if args.headless:
@@ -754,6 +761,13 @@ def main() -> int:
     def toggle_settings() -> None:
         opened = settings.toggle()
         say("Settings window OPEN (sliders apply live, [S] to save)" if opened else "Settings window closed")
+
+    def next_monitor() -> None:
+        def task() -> str:
+            mouse.release_all()
+            target = mouse.cycle_monitor()
+            return f"Monitor {mouse.screens.monitors.index(target) + 1}/{len(mouse.screens)}"
+        pipeline.post(task)
 
     def switch_mode() -> None:
         def task() -> str:
@@ -856,6 +870,8 @@ def main() -> int:
                 set_paused(not pipeline.paused)
             elif key in (ord("m"), ord("M")):
                 switch_mode()
+            elif key in (ord("n"), ord("N")):
+                next_monitor()
             elif key in (ord("+"), ord("=")):
                 thr = min(0.12, float(engine.config.get("pinch_threshold", 0.055)) + 0.005)
                 engine.config["pinch_threshold"] = round(thr, 4)
