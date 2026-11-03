@@ -248,3 +248,69 @@ class ThumbTrigger:
             return "pointer_wait"
         self.state = "idle"
         return "move_cursor" if pointing else "pointer_wait"
+
+
+class MoveLatch:
+    """Keep "move cursor" while the index tip is moving, until it has been still a while.
+
+    Reported 2026-11-03: while moving with the index finger, a resting thumb contact (or a
+    blurred frame) switched the pointer into the pre-click state and froze the cursor.
+    While latched, the caller moves the cursor and runs no click detection at all; a
+    frame that fails the pointing check or a short hand loss does not end the latch.
+
+    Speed is the index tip's displacement over `window` seconds, in frame widths per
+    second (y scaled by the frame aspect). Over `pointer_move_speed` starts the latch;
+    under `pointer_still_speed` counts as still; `pointer_move_latch` seconds of being
+    still ends it. All three are starting guesses to tune on a real webcam.
+    """
+
+    DEFAULTS = {
+        "pointer_move_latch": .75,
+        "pointer_move_speed": .20,
+        "pointer_still_speed": .08,
+    }
+
+    def __init__(self, window: float = .10, **settings):
+        self.window = window
+        self.settings = dict(self.DEFAULTS)
+        self.configure(settings)
+        self.reset()
+
+    def configure(self, config):
+        for key in self.DEFAULTS:
+            try:
+                value = float(config.get(key, self.settings[key]))
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(value) and value >= 0:
+                self.settings[key] = value
+
+    def reset(self):
+        self.latched = False
+        self.last_motion = None
+        self.samples = []
+        self.speed = 0.0
+
+    def update(self, now, tip, aspect):
+        """Feed the index tip (normalized x, y); return True while the move latch holds."""
+        s = self.settings
+        point = (float(tip[0]), float(tip[1]) * aspect)
+        if not all(map(math.isfinite, point)):
+            return self.expire(now)
+        self.samples.append((now, point))
+        while len(self.samples) > 2 and self.samples[1][0] <= now - self.window:
+            self.samples.pop(0)
+        then, old = self.samples[0]
+        self.speed = math.dist(point, old) / (now - then) if now - then >= self.window / 2 else 0.0
+        if self.speed >= s["pointer_move_speed"]:
+            self.latched = True
+            self.last_motion = now
+        elif self.latched and self.speed >= s["pointer_still_speed"]:
+            self.last_motion = now  # still moving, just slower
+        return self.expire(now)
+
+    def expire(self, now):
+        """End the latch after `pointer_move_latch` s without movement (also during hand loss)."""
+        if self.latched and now - self.last_motion >= self.settings["pointer_move_latch"]:
+            self.latched = False
+        return self.latched
