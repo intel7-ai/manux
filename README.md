@@ -11,7 +11,7 @@
 | 코드를 바꾸고 검사·리뷰받기 | [개발 참여 안내](CONTRIBUTING.md) |
 | 설치 오류나 빨간 검사 결과 해결하기 | [첫날 온보딩과 문제 해결](docs/onboarding.md) |
 
-팀이 공유한 **검증된 브랜치·PR·배포 후보**를 기준으로 시작하세요. `main`이나 다른 팀원의 로컬 폴더가 항상 최신인 것은 아닙니다. 최신 상태는 현재 브랜치·커밋·미커밋 변경을 함께 확인합니다.
+새 작업은 최신 `origin/production`에서 작업별 브랜치를 만듭니다. 개인 PC의 원하는 AI와 Discord worker 모두 같은 PR 검증·리뷰·배포 흐름을 사용합니다. 이미 작업 중인 브랜치는 그대로 보존하고 해당 브랜치에서 PR을 만듭니다.
 
 ## Discord로 참여하기
 
@@ -25,14 +25,20 @@
 
 전문 용어나 코드를 쓸 필요는 없습니다. **하려는 일·현재 문제·완료를 확인할 방법**을 알려주세요. 오류는 발생 순서와 오류 문구를 함께 보내면 재현하기 쉽습니다. 에이전트는 [공통 작업·결과 규칙](docs/harness.md)에 따라 요청을 정리하고 검증 결과를 보고합니다.
 
-- 독립적인 작업은 최대 **5개**까지 별도 Git 작업 폴더에서 진행합니다. 결과는 검토 후 순서대로 통합합니다.
+- Discord의 독립 작업은 최대 **5개**까지 별도 Git 작업 폴더에서 진행합니다. 각자 로컬 실행·검사를 마친 브랜치로 PR을 만듭니다. 개인 PC에서의 작업은 이 대기열을 사용하지 않습니다.
 - “작업 완료”, “공유 코드에 통합”, “GitHub 게시”는 서로 다른 상태입니다. 결과 보고에서 확인하세요.
 - 채널 대화는 팀의 공유 맥락입니다. 토큰·계정 비밀번호·개인 영상을 올리지 않습니다.
 - Discord 요청은 **협업 호스트 PC**에서 실행됩니다. 팀원 PC의 앱을 원격 설치하거나 팀원 PC의 마우스를 자동 제어하는 연결은 아닙니다.
 
 봇 운영자는 별도 봇 프로젝트의 `discord_bot.bat`를 실행하고 창을 유지해야 합니다. 팀원 모두가 봇을 설치할 필요는 없습니다. 응답이 없으면 호스트 운영자에게 실행 상태를 확인해 달라고 알려주세요.
 
-## Windows에서 처음 실행하기
+## 설치파일로 사용하기
+
+[GitHub Releases](https://github.com/intel7-ai/manux/releases)의 정식 `MANUX-Setup-<버전>.exe`를 설치합니다. 모델과 실행 환경을 포함하므로 Node·Git은 필요 없습니다. 첫 정식 Release가 게시되기 전에는 아래 개발 실행을 사용합니다. 이후 앱이 새 정식 버전을 내려받고 사용자가 설치를 선택하면 재시작합니다.
+
+PR 검토용 `MANUX Preview` 설치파일은 해당 PR의 Actions artifact에서 받습니다. 정식 앱과 설치 ID·설정 폴더·포트가 다르며 자동 업데이트는 꺼져 있습니다. [설치·PR 시험·자동 배포 상세](docs/desktop-release.md)
+
+## Windows 개발 환경에서 실행하기
 
 준비물은 **Windows, Node.js 24, Git for Windows, 웹캠**, 그리고 팀이 공유한 이 프로젝트 폴더입니다. 명령은 `package.json`이 있는 `manux` 폴더에서 실행합니다.
 
@@ -82,14 +88,14 @@ npm run verify
 
 빨간 결과가 나오면 실패한 단계와 오류 문구를 그대로 공유하세요. 검사 통과와 실제 사용성, GitHub 반영 여부를 구분합니다. [검사 선택·PR·소스 전달 절차](CONTRIBUTING.md)를 따라 변경을 검토합니다.
 
-CI/CD 설정은 GitHub Actions에 있습니다. 저장소에 반영된 워크플로가 PR 검사를 수행하며, 수동 전달 흐름은 **검증된 소스 묶음**을 만듭니다. 설치 프로그램이나 자동 배포 서비스가 아닙니다. 로컬 검사 성공은 GitHub Actions 실행 성공을 뜻하지 않습니다.
+PR은 Windows/Linux 검사, 브라우저 검사와 Windows 시험용 설치파일 빌드를 통과해야 합니다. PR은 `preview`로 열고 필수 검사 통과 후 병합합니다(리뷰어 승인 없음). preview에서 시험한 뒤 `preview → production` PR로 `production`에 병합하며, 병합되면 GitHub Actions가 정식 버전의 Windows 설치파일·업데이트 메타데이터를 검증하고 GitHub Release로 게시합니다. `release:prepare`는 별도의 소스 전달 도구이며 앱 배포와 구분합니다.
 
 ## 구조와 다음 문서
 
 ```text
 웹캠 → MediaPipe Worker → 손동작 판정 → 영상 / 마우스 연습
                                       └→ Electron → Windows 입력
-Discord → 공유 Claude 세션 → 작업별 Git 폴더 → 검사 → 리뷰·통합
+개인 AI / Discord worker → 작업 브랜치 → PR 검사 → preview 시험 → production → Windows Release
 ```
 
 | 문서 | 용도 |
@@ -100,6 +106,7 @@ Discord → 공유 Claude 세션 → 작업별 Git 폴더 → 검사 → 리뷰�
 | [에이전트 규칙](AGENTS.md) | 저장소 작업 규칙의 원본; `CLAUDE.md`에서 참조 |
 | [모듈 계약](docs/contracts.md) · [작업 문서](docs/workstreams/) | 담당 영역과 연결 변경 |
 | [영상 사용법](docs/usage-video.md) · [마우스 사용법](docs/air-mouse.md) | 기능별 상세 사용 |
+| [데스크톱 설치본·자동 업데이트](docs/desktop-release.md) | Windows 설치파일, PR 시험용 앱, production 자동 배포·업데이트 |
 | [LAN 데모](docs/lan-demo.md) | 같은 네트워크에서 브라우저 데모. 주소는 현재 호스트에 확인 |
 | [마스터 플랜](docs/master-plan.md) | 기존 요구사항·후속 개발 계획 |
 
