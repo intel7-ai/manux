@@ -4,8 +4,10 @@
 
 ## 현재 상태
 
-- 현재 마일스톤·담당·마감은 최신 [SCRUM-5](https://se4nchoi.atlassian.net/browse/SCRUM-5)·[SCRUM-11](https://se4nchoi.atlassian.net/browse/SCRUM-11)과 세부 태스크를 조회한다. 2026-11-02 승인된 M1은 11/04 PoC·11/06 Windows 제품 후보이며 5인·20개 작업이다. 오래된 역할표·10/29 계획과 충돌하면 현재 Jira와 사용자 요청을 따른다.
+- 현재 마일스톤·담당·마감의 기준은 최신 [SCRUM-5](https://se4nchoi.atlassian.net/browse/SCRUM-5)와 [SCRUM-11](https://se4nchoi.atlassian.net/browse/SCRUM-11), 본인 세부 태스크다. 2026-11-02 승인된 M1은 11/04 PoC·11/06 Windows 책상 마우스 제품 후보이며 5인·20개 작업이다. 10/29의 팀 계획·마스터 플랜은 과거 계획이므로 현재 Jira 범위와 충돌할 때 따르지 않는다.
 - 개발 경로는 개인 PC의 원하는 AI 또는 Discord worker → 작업별 브랜치 → preview 대상 PR → 자동 검사 → preview 머지·시험 → `preview → production` PR → production 머지 → Windows 설치본 릴리스다. 리뷰어 승인은 요구하지 않는다([브랜치 흐름](docs/branch-flow.md)). Jira 번호가 없는 개선도 목표·범위를 기록하여 시작할 수 있다.
+- 팀원 개인 PC의 AI 에이전트 개발/브랜치 푸시와 Discord Claude의 독립 worktree 개발을 모두 지원한다. 공유된 기준 커밋을 확인하고 `codex/scrum-23-gesture-enrollment`처럼 세부 태스크 번호를 브랜치·PR에 명시한다. 외부 푸시는 로컬 작업 폴더에 자동 반영되지 않으며 최신 원격 조회와 PR 리뷰·통합은 별개다.
+- Discord의 할 일 질문은 Jira를, 원격 개발 현황은 GitHub를 새로 조회한다. OAuth 인증 계정이나 Git 작성자를 Discord 질문자로 간주하지 않는다. Jira/원격 조회 실패를 작업 없음이나 완료로 바꾸지 않는다.
 
 - 2026-11-02 손 전체 이동 기반 마우스 모드와 Electron/Windows 입력 경로를 추가했다. 현재 계약·실행법은 `docs/air-mouse.md`와 `desktop/README.md`를 확인한다. 실제 웹캠 사용성과 실제 OS 클릭 검증은 별도다.
 
@@ -44,7 +46,7 @@
 
 ## 모든 사용자에게 같은 응답
 
-- 최종 보고서는 renderer가 만든 `상태 → 요약 → 변경 → 검증 → 다음` 순서를 그대로 사용한다. `complete`는 해당 요청의 검증 완료이며 PR 게시·production 머지·릴리스와 별개다. `delivery.integrated`는 production에 반영됐을 때만 true다. PR·배포 링크와 상태를 사실대로 표시한다.
+- 최종 보고서는 renderer가 만든 `상태 → 요약 → 변경 → 검증 → 다음` 순서와 각 항목 아래 `- ` 목록 줄을 그대로 사용한다. 같은 기록의 브라우저용 보고서는 `npm run task:report -- TASK.json RESULT.json --html .local/보고서.html`로 만든다(`.local/` 또는 `reports/` 아래만 허용). `complete`는 해당 요청의 검증 완료이며 PR 게시·production 머지·릴리스와 별개다. `delivery.integrated`는 production에 반영됐을 때만 true다. PR·배포 링크와 상태를 사실대로 표시한다.
 - 완료 기준이 충족되지 않았거나 검사를 실행하지 못했으면 `needs_review` 또는 `blocked`로 기록한다. 결과 계약의 검사는 형식과 증거 유무를 확인하며 내용의 진실성을 대신 보증하지 않는다.
 - 질문·인사·접수·진행도 같은 다섯 항목을 쓴다. 예: `상태: 정보`, `요약: ...`, `변경: 없음`, `검증: 미실행(안내 답변)`, `다음: ...`. 간단한 안내에는 작업 JSON을 만들지 않는다.
 - Discord의 `reply`와 `edit_message`는 `.claude/settings.json`의 전송 전 검사 훅을 거친다. 종료 상태는 기록과 renderer 출력이 일치해야 전송된다. 막히면 원인을 수정하고 재시도하며 HTTP·다른 도구로 우회하지 않는다. Discord 전송은 원래 사용자의 요청에 대한 답변만 한다.
