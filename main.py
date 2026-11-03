@@ -25,6 +25,7 @@ import argparse
 from pathlib import Path
 import sys
 import time
+import math
 from typing import Union
 
 import cv2
@@ -38,6 +39,10 @@ from src.settings_panel import SettingsPanel
 from src.hotkeys import VK_0, VK_F2, VK_NUMPAD0, VK_O, KeyPoller
 from src.win_perf import keep_responsive_in_background
 from src.perf_log import PerfLog
+from src.dashboard import Dashboard
+from src.pointer_workspace import (
+    FINGERTIPS, IndexTipGuard, PointerPose, is_pointing_pose, thumb_contacts, thumb_distances,
+)
 
 
 def draw_cursor_anchor(
@@ -259,6 +264,7 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Exit automatically after N frames (0 = run indefinitely)",
     )
+    parser.add_argument("--ui", choices=("tk", "qt"), default="tk", help="Desktop UI toolkit")
     return parser.parse_args()
 
 
@@ -286,13 +292,26 @@ def main() -> int:
         )
         return 1
 
-    tracker = HandTracker(num_hands=1)
+    tracker = HandTracker(num_hands=2 if args.ui == "qt" else 1)
     mouse = MouseController(dry_run=args.dry_run)
     settings = SettingsPanel(engine)
     keys = KeyPoller()
     perf_log = PerfLog(Path(__file__).resolve().parent / "logs" / "perf_latest.csv")
 
-    paused = False
+    if args.ui == "qt":
+        from src.qt_dashboard import QtDashboard
+        dashboard = QtDashboard(dry_run=args.dry_run)
+    else:
+        dashboard = Dashboard(dry_run=args.dry_run)
+    paused = True
+    had_selected_hand = False
+    pointer_engine = GestureEngine(config_path=args.config) if args.ui == "qt" else None
+    index_tip_guard = IndexTipGuard()
+    pointer_pose = PointerPose()
+    pointer_gestures = {
+        "thumb_middle_pinch": {"enabled": True, "action": "left_click", "cooldown": .35},
+        "thumb_ring_pinch": {"enabled": True, "action": "right_click", "cooldown": .45},
+    }
     status_msg = ""
     status_expire = 0.0
     frame_count = 0
@@ -321,10 +340,24 @@ def main() -> int:
     print("  Press 'P' in window to switch to Smartphone Browser mode, 'C' for USB Webcam, 'Q' to quit.")
 
     try:
-        while True:
+        while not dashboard.closed:
+            key = dashboard.poll()
+            if dashboard.closed:
+                break
+            if key == 27:
+                paused = True
+                mouse.close_switcher(confirm=False)
+                mouse.release_all()
+                engine.reset()
+                recent_action_until = 0.0
+                key = -1
             ok, frame = camera.read()
             loop_t0 = time.perf_counter()
             if not ok or frame is None:
+                index_tip_guard.reset()
+                pointer_pose.reset()
+                if pointer_engine is not None:
+                    pointer_engine.reset()
                 time.sleep(0.03)
                 continue
 
@@ -338,19 +371,104 @@ def main() -> int:
             else:
                 detections = []
 
+            if args.ui == "qt":
+                selected = dashboard.select_hand(detections, camera.config.mirror)
+                detections = [selected] if selected is not None else []
+                if dashboard.stage_name != "main" and not paused:
+                    paused = True
+                    mouse.close_switcher(confirm=False)
+                    mouse.release_all()
+                    engine.reset()
+                if had_selected_hand and not detections:
+                    mouse.close_switcher(confirm=False)
+                    mouse.release_all()
+                    engine.reset()
+                had_selected_hand = bool(detections)
+
             fh, fw = frame.shape[:2]
             mouse.frame_aspect = fh / max(1, fw)
 
-            if detections:
+            index_mode = args.ui == "qt" and dashboard.use_index_pointer
+            contacts = ()
+            if not index_mode or not detections or paused or dashboard.calibrating:
+                index_tip_guard.reset()
+                pointer_pose.reset()
+            if pointer_engine is not None:
+                if not index_mode or paused or dashboard.calibrating or not should_detect:
+                    pointer_engine.reset()
+                elif not detections:
+                    pointer_engine.process(None, timestamp=loop_t0)
+            if index_mode:
+                tip = detections[0].landmarks[GestureEngine.INDEX_TIP] if detections else None
+                dashboard.update_pointer((tip.x, tip.y) if tip else None, camera.config.source,
+                                         camera.config.mirror, mouse.frame_aspect)
+            if detections and index_mode:
+                points = detections[0].landmarks
+                tip = points[GestureEngine.INDEX_TIP]
+                ratios = thumb_distances(points, mouse.frame_aspect)
+                contacts = thumb_contacts(ratios)
+                result = GestureResult()
+                preview_point = (tip.x, tip.y)
+                if not paused and not dashboard.calibrating:
+                    pointer_engine.config.update(engine.config)
+                    pointer_engine.config.update(
+                        gestures=pointer_gestures, record_fling_enabled=False,
+                        grab_scroll_enabled=False, long_press_drag=False,
+                    )
+                    gesture = pointer_engine.process(points, timestamp=loop_t0)
+                    released = False
+                    if pointer_pose.pending:
+                        finger_tip = 12 if pointer_pose.pending == "left_click" else 16
+                        thumb = points[4]
+                        release_distance = (
+                            float(pointer_engine.config.get("click_threshold", .052))
+                            + float(pointer_engine.config.get("click_release_margin", .02))
+                        )
+                        released = all(
+                            math.hypot(thumb.x - p.x, thumb.y - p.y) > release_distance
+                            for p in (points[finger_tip], points[finger_tip - 1])
+                        )
+                    curls = pointer_engine.finger_curl_ratios(points)
+                    action = pointer_pose.update(
+                        loop_t0, pointing=is_pointing_pose(points, curls, mouse.frame_aspect),
+                        click=gesture.action, released=released,
+                        pinching=gesture.active_gesture in pointer_gestures,
+                    )
+                    if action == "move_cursor":
+                        if not index_tip_guard.accept(points, mouse.frame_aspect):
+                            action = "pointer_wait"
+                    else:
+                        index_tip_guard.reset()
+                    point = dashboard.pointer_position(preview_point)
+                    moving = action == "move_cursor"
+                    result = GestureResult(action=action, cursor_point=point if moving else None,
+                                           is_moving=moving)
+                    mouse.apply(result, engine.config, index_tip=point,
+                                index_sensitivity=dashboard.pointer_sensitivity / 100)
+                    if action in ("left_click", "right_click"):
+                        recent_action, recent_action_until = action, time.perf_counter() + .5
+                x, y = preview_point
+                if not dashboard.show_fingertips and 0 <= x <= 1 and 0 <= y <= 1:
+                    cv2.circle(frame, (int(x * fw), int(y * fh)), 6,
+                               (189, 229, 70), -1, cv2.LINE_AA)
+                numbered_tips = FINGERTIPS if dashboard.show_fingertips else ()
+                for number, landmark_id in enumerate(numbered_tips):
+                    point = points[landmark_id]
+                    if not (0 <= point.x <= 1 and 0 <= point.y <= 1):
+                        continue
+                    x, y = int(point.x * fw), int(point.y * fh)
+                    color = (189, 229, 70) if number == 1 or number in contacts else (245, 245, 245)
+                    cv2.circle(frame, (x, y), 10, (49, 35, 17), -1, cv2.LINE_AA)
+                    cv2.putText(frame, str(number), (x - 5, y + 5), cv2.FONT_HERSHEY_SIMPLEX,
+                                .46, color, 1, cv2.LINE_AA)
+            elif detections:
                 hand = detections[0]
                 result = engine.process(hand.landmarks)
                 if not paused:
-                    screen_pos = mouse.apply(result, engine.config)
-                if result.action in ("left_click", "right_click", "drag_toggle", "alt_tab",
+                    mouse.apply(result, engine.config)
+                if not paused and result.action in ("left_click", "right_click", "drag_toggle", "alt_tab",
                                      "show_desktop", "task_switcher"):
                     recent_action, recent_action_until = result.action, time.perf_counter() + 0.8
-                else:
-                    screen_pos = mouse.last_screen_pos
 
                 HandTracker.draw_hand(
                     frame,
@@ -371,61 +489,56 @@ def main() -> int:
                     status_msg = f"FLING! ~{mouse.last_fling_distance:.0f}px"
                     status_expire = time.perf_counter() + 0.8
             else:
-                result = engine.process(None)
-                screen_pos = mouse.hand_lost(engine.config)  # a thrown cursor keeps gliding
+                result = GestureResult() if index_mode else engine.process(None)
+                if not paused and args.ui != "qt":
+                    mouse.hand_lost(engine.config)
 
             now = time.perf_counter()
             if now > status_expire:
                 status_msg = ""
-
-            if should_detect:
-                draw_hud(
-                    frame=frame,
-                    fps=camera.fps,
-                    source=camera.phone_server.url if (camera.is_phone_web and camera.phone_server) else camera.config.source,
-                    result=result,
-                    screen_pos=screen_pos,
-                    engine=engine,
-                    paused=paused,
-                    status_msg=status_msg,
-                    grab_speed=mouse.grab_speed,
-                    switcher_open=mouse.switcher_open,
-                    detect_ms=tracker.last_detect_ms,
-                    recent_action=recent_action if time.perf_counter() < recent_action_until else "",
-                )
-
-            cv2.imshow("Hand-Mouse (MediaPipe)", frame)
+            action = recent_action if now < recent_action_until else result.action
+            if args.ui == "qt":
+                dashboard.show(frame, bool(detections), paused, action, camera.fps,
+                               tracker.last_detect_ms, status_msg, contacts=contacts)
+            else:
+                dashboard.show(frame, bool(detections), paused, action, camera.fps,
+                               tracker.last_detect_ms, status_msg)
             frame_count += 1
             if args.max_frames > 0 and frame_count >= args.max_frames:
                 break
 
             settings.update()
-            key = cv2.waitKey(1) & 0xFF
             perf_log.frame(tracker.last_detect_ms if should_detect else None,
                            (time.perf_counter() - loop_t0) * 1000.0)
             perf_log.tick(camera.fps, camera.dropped_frames)
 
             # Settings window: physical-key polling works in Korean IME mode too.
             # O / 0 while a Hand-Mouse window is focused, F2 from anywhere.
-            toggle_settings = False
+            toggle_settings = key in (ord("o"), ord("O"), ord("0"))
             if keys.available:
-                toggle_settings = keys.pressed([VK_F2]) or keys.pressed(
+                toggle_settings = toggle_settings or keys.pressed([VK_F2]) or keys.pressed(
                     [VK_O, VK_0, VK_NUMPAD0], require_focus=True
                 )
             elif key in (ord("o"), ord("O"), ord("0")):
                 toggle_settings = True
-            if toggle_settings:
+            if toggle_settings and (args.ui != "qt" or dashboard.stage_name == "main"):
+                paused = True
+                mouse.close_switcher(confirm=False)
+                mouse.release_all()
+                engine.reset()
                 opened = settings.toggle()
                 status_msg = (
                     "Settings window OPEN (sliders apply live, [S] to save)" if opened else "Settings window closed"
                 )
                 status_expire = time.perf_counter() + 2.0
-            if key in (27, ord("q"), ord("Q")):
+            if key in (ord("q"), ord("Q")):
                 break
-            elif key == ord(" "):
-                paused = not paused
-                if paused:
-                    mouse.release_all()
+            elif key in (27, ord(" ")):
+                paused = key == 27 or not paused or (args.ui == "qt" and dashboard.stage_name != "main")
+                mouse.close_switcher(confirm=False)
+                mouse.release_all()
+                engine.reset()
+                recent_action_until = 0.0
                 status_msg = "Mouse Control PAUSED" if paused else "Mouse Control RESUMED"
                 status_expire = now + 2.0
             elif key in (ord("m"), ord("M")):
@@ -486,6 +599,7 @@ def main() -> int:
         mouse.release_all()
         tracker.close()
         camera.release()
+        dashboard.close()
         cv2.destroyAllWindows()
 
     return 0

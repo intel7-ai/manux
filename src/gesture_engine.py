@@ -733,6 +733,10 @@ class GestureEngine:
             - while held, the finger's DIP joint counts too (tip hidden by the camera angle)
             - dropouts shorter than click_release_grace are bridged
             """
+            if not self._is_enabled(f"thumb_{finger}_pinch"):
+                self._secondary_since.pop(finger, None)
+                self._secondary_off.pop(finger, None)
+                return False
             if finger not in self._secondary_since:
                 # Next to the index only matters when thumb+index has a job (Record & Fling on).
                 # (A curled index is NOT a reason to refuse: people fold it out of the way to

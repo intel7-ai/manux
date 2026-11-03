@@ -22,6 +22,9 @@
 
 본 프로젝트는 `uv` 패키지 관리자를 사용합니다.
 
+MANUX Qt Quick 화면을 시험하려면 `uv run --locked --extra qt python main.py --ui qt --source 0`을 실행하세요. Tkinter 화면은 `--ui tk`로 선택할 수 있습니다. 두 화면 모두 시작할 때 OS 입력은 일시정지되어 있습니다.
+
+
 ```bash
 # 1. USB 웹캠으로 실행 (SNAP U2 등 기본 0번 카메라)
 uv run python main.py --source 0

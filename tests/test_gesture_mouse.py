@@ -1779,3 +1779,31 @@ def test_long_press_drag_survives_a_short_hand_loss():
     for i in range(10):                      # gone for good: drop it
         ctrl.hand_lost({}, now=1.3 + i / 30)
     assert not ctrl.is_dragging
+
+def test_index_preset_moves_gently_and_reanchors_after_click():
+    mouse = MouseController(dry_run=True)
+    config = {"movement_mode": "absolute", "smoothing": 1.0}
+    move = GestureResult(action="move_cursor", is_moving=True, cursor_point=(.5, .5))
+    try:
+        initial = mouse.apply(move, config, now=1.0, index_tip=(.5, .5))
+        moved = mouse.apply(move, config, now=1.04, index_tip=(.52, .5))
+        assert 0 < moved[0] - initial[0] <= .02 * mouse.screen_w
+        assert mouse.apply(GestureResult(action="left_click"), config,
+                           now=1.10, index_tip=(.52, .5)) == moved
+        assert mouse.apply(move, config, now=1.14, index_tip=(.65, .5)) == moved
+        assert mouse.event_log[-1] == "left_click"
+    finally:
+        mouse.close()
+
+
+def test_pointer_source_change_does_not_move_cursor_between_landmarks():
+    mouse = MouseController(dry_run=True)
+    move = GestureResult(action="move_cursor", is_moving=True, cursor_point=(.5, .5))
+    try:
+        initial = mouse.apply(move, now=1.0, index_tip=(.4, .5), pointer_source="palm")
+        assert mouse.apply(move, now=1.04, index_tip=(.65, .3), pointer_source="index") == initial
+        moved = mouse.apply(move, now=1.08, index_tip=(.68, .3), pointer_source="index")
+        assert moved[0] > initial[0]
+        assert mouse.apply(move, now=1.12, index_tip=(.43, .5), pointer_source="palm") == moved
+    finally:
+        mouse.close()

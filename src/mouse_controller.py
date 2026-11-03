@@ -134,6 +134,7 @@ class MouseController:
         # Screen-pixel offset added to absolute mapping (set when leaving grab)
         self.abs_offset: Tuple[float, float] = (0.0, 0.0)
         self._abs_prev: Optional[Tuple[float, float]] = None  # last mapped point (fist boost)
+        self._pointer_source = None
         self.dpi_multiplier: float = 1.0  # set per frame from GestureResult
 
         self.event_log: List[str] = []
@@ -768,12 +769,18 @@ class MouseController:
         self.recorded_path = []
         self._cancel_playback()
         self._prev_action = "none"
+        self._pointer_source = None
+        self._tremor.reset()
 
     def apply(
         self,
         result: GestureResult,
         config: Optional[Dict[str, Any]] = None,
         now: Optional[float] = None,
+        *,
+        index_tip: Optional[Tuple[float, float]] = None,
+        index_sensitivity: float = 1.0,
+        pointer_source: str = "index",
     ) -> Tuple[int, int]:
         """
         Execute the action described in `result` and return `(screen_x, screen_y)`.
@@ -806,6 +813,9 @@ class MouseController:
             if action in ("left_click", "right_click", "drag_hold", "drag_toggle", "task_switcher"):
                 self._stop_scroll_inertia()
             self._tick_scroll_inertia(cfg, now)
+        if (index_tip is not None and action == "pointer_wait"
+                and self._prev_action == "move_cursor"):
+            self._flush_cursor()
         self._prev_action = action
 
         # If drag_hold was active in previous frame(s) and is no longer active, release mouse button
@@ -837,10 +847,33 @@ class MouseController:
         elif self.is_playing:
             # Replaying the recorded path: hand movement is ignored until it finishes
             self._tick_playback(now)
-        elif result.is_moving and result.cursor_point is not None and self._double_click_hold(result, cfg, now):
+        elif (
+            index_tip is None and result.is_moving and result.cursor_point is not None
+            and self._double_click_hold(result, cfg, now)
+        ):
             pass  # cursor held for a possible second click
         elif result.is_moving and result.cursor_point is not None:
-            target_x, target_y = self._compute_target_screen_pos(result.cursor_point, cfg, now)
+            use_tip = index_tip is not None and action == "move_cursor" and result.active_gesture != "fist"
+            source = pointer_source if use_tip else None
+            if source != self._pointer_source:
+                self.anchor_hand_pos = None
+                self._tremor.reset()
+                self._pointer_source = source
+            if use_tip:
+                if self.anchor_hand_pos is None and not self.dry_run:
+                    x, y = pyautogui.position()
+                    self.last_screen_pos = (x, y)
+                min_gain, max_gain = (.85, 2.5) if source == "palm" else (1.5, 5.0)
+                pointer_config = {
+                    **cfg, "movement_mode": "relative",
+                    "tremor_filter": True, "tremor_min_cutoff": 2.0, "tremor_beta": 7.0,
+                    "relative_gain_min": min_gain * index_sensitivity,
+                    "relative_gain_max": max_gain * index_sensitivity,
+                    "relative_accel_speed_low": .08, "relative_accel_speed_high": .40,
+                }
+                target_x, target_y = self._compute_target_screen_pos(index_tip, pointer_config, now)
+            else:
+                target_x, target_y = self._compute_target_screen_pos(result.cursor_point, cfg, now)
             if action == "drag_hold":
                 self._hold_dragging = True
                 self._mouse_down()
@@ -851,7 +884,10 @@ class MouseController:
             if self.is_dragging:
                 self._mouse_up()
             self.event_log.append("left_click")
-            self._dbl_until = now + max(0.0, float(cfg.get("double_click_window", 0.45)))
+            self._dbl_until = (
+                now + max(0.0, float(cfg.get("double_click_window", 0.45)))
+                if index_tip is None else now
+            )
             self._dbl_hand = result.cursor_point
             if not self.dry_run:
                 self._flush_cursor()
