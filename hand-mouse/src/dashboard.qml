@@ -86,6 +86,7 @@ ApplicationWindow {
     Shortcut { sequence: "Q"; onActivated: dashboard.command(81) }
     Shortcut { sequence: "O"; onActivated: dashboard.command(111) }
     Shortcut { sequence: "M"; onActivated: dashboard.command(109) }
+    Shortcut { sequence: "N"; onActivated: dashboard.command(110) }
     Shortcut { sequence: "C"; onActivated: dashboard.command(99) }
     Shortcut { sequence: "P"; onActivated: dashboard.command(112) }
 

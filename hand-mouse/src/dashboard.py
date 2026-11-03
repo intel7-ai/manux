@@ -105,7 +105,7 @@ class Dashboard:
             self.commands.append(27)
         elif event.keysym == "space":
             self.commands.append(32)
-        elif event.char and event.char.lower() in "qom+-=_[]rspc0":
+        elif event.char and event.char.lower() in "qomn+-=_[]rspc0":
             self.commands.append(ord(event.char))
 
     def poll(self):

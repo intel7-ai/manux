@@ -181,3 +181,52 @@ def test_trigger_reads_thresholds_from_config_and_ignores_bad_values():
     assert trig.settings["trigger_rewind"] == ThumbTrigger.DEFAULTS["trigger_rewind"]
     assert trig.update(1.0, _trigger_hand(PRESSED), 1.0, pointing=True) == "pointer_wait"
     assert trig.state == "approach"  # .17 is above the stricter .1 press ratio
+
+
+def _feed(latch, xs, t0=0.0, dt=1 / 30):
+    out = []
+    for i, x in enumerate(xs):
+        out.append(latch.update(t0 + i * dt, (x, .5), .5625))
+    return out
+
+
+def test_move_latch_starts_on_real_motion_and_ignores_tremor():
+    from src.pointer_workspace import MoveLatch
+
+    latch = MoveLatch()
+    jitter = [.5 + (.002 if i % 2 else -.002) for i in range(30)]  # ~0.12 fw/s frame-to-frame
+    assert not any(_feed(latch, jitter))
+    moving = [.5 + .015 * i for i in range(10)]                     # ~0.45 fw/s
+    assert _feed(latch, moving, t0=1.0)[-1] is True
+
+
+def test_move_latch_holds_until_still_for_the_latch_time():
+    from src.pointer_workspace import MoveLatch
+
+    latch = MoveLatch()
+    _feed(latch, [.3 + .015 * i for i in range(10)])               # moving until t = 0.3
+    still = _feed(latch, [.435] * 40, t0=10 / 30)                  # then perfectly still
+    times = [10 / 30 + i / 30 for i in range(40)]
+    released_at = times[still.index(False)]
+    assert .75 <= released_at - 9 / 30 <= .75 + .1 + 2 / 30        # 0.75 s after the last motion (+window)
+
+
+def test_move_latch_survives_a_short_hand_loss_but_not_a_long_one():
+    from src.pointer_workspace import MoveLatch
+
+    latch = MoveLatch()
+    _feed(latch, [.3 + .015 * i for i in range(10)])
+    assert latch.expire(.6) is True                                 # 0.3 s without the hand
+    assert latch.expire(1.2) is False                               # > 0.75 s
+
+
+def test_move_latch_slow_continuation_keeps_it_and_config_is_read():
+    from src.pointer_workspace import MoveLatch
+
+    latch = MoveLatch()
+    _feed(latch, [.3 + .015 * i for i in range(10)])
+    slow = [.435 + .004 * i for i in range(60)]                    # ~0.12 fw/s: above "still"
+    assert all(_feed(latch, slow, t0=10 / 30))
+    latch.configure({"pointer_move_latch": .2, "pointer_still_speed": "bad"})
+    assert latch.settings["pointer_move_latch"] == .2
+    assert latch.settings["pointer_still_speed"] == MoveLatch.DEFAULTS["pointer_still_speed"]
