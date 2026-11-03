@@ -1,6 +1,6 @@
 # R2 동작 판정·영상 명령 작업 지침
 
-담당 **박현규**, 검토 **Sean Choi**. Jira [SCRUM-7](https://se4nchoi.atlassian.net/browse/SCRUM-7), 공동 검증 [SCRUM-13](https://se4nchoi.atlassian.net/browse/SCRUM-13). 권장 브랜치 `codex/scrum-7-control`. 이 문서는 구현 전 작업 계획이다. 인수인계 준비에서는 앱 코드를 바꾸지 않았으며, 아래 내용은 담당자가 자기 브랜치에서 수행할 과제다.
+담당 **박현규**, 검토 **Sean Choi**. Jira [SCRUM-7](https://se4nchoi.atlassian.net/browse/SCRUM-7), 공동 검증 [SCRUM-13](https://se4nchoi.atlassian.net/browse/SCRUM-13). 권장 브랜치 `scrum-7-control`. 이 문서는 구현 전 작업 계획이다. 인수인계 준비에서는 앱 코드를 바꾸지 않았으며, 아래 내용은 담당자가 자기 브랜치에서 수행할 과제다.
 
 ## 목표
 
@@ -47,7 +47,7 @@ node --test tests/gesture-controller.test.js tests/media-controller.test.js
 ```text
 MANUX의 R2를 담당한다. AGENTS.md, docs/master-plan.md, docs/contracts.md,
 docs/workstreams/r2-control.md, Jira SCRUM-7/13의 확인된 내용을 읽어라.
-내 브랜치는 codex/scrum-7-control이다. gesture-controller.js와
+내 브랜치는 scrum-7-control이다. gesture-controller.js와
 media-controller.js 및 해당 테스트를 우선 담당한다. 현재 기본 동작을 재현한 뒤
 부분 등록의 거부·중립과 상태 변경 시 반복 중단을 계약에 맞게 검증하라.
 인식률 점수만 낮추어 문제를 해결했다고 주장하지 마라. 지연과 오실행의

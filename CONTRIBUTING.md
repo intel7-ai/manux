@@ -21,7 +21,7 @@ git status --short
 
 ```powershell
 git fetch origin production
-git switch --no-track -c codex/scrum-23-gesture-enrollment origin/production
+git switch --no-track -c scrum-23-gesture-enrollment origin/production
 ```
 
 진행 중인 작업은 기존 브랜치에서 계속합니다. 이 전환을 위해 기존 worktree·미커밋 파일·worker를 삭제하거나 reset/checkout -f 하지 않습니다. 다른 작업의 코드가 필요하면 의존 PR을 명시하고 승인된 변경을 통합합니다.
@@ -35,7 +35,7 @@ git rev-parse HEAD
 git remote -v
 ```
 
-미커밋 변경이 있으면 소유자와 내용을 먼저 확인합니다. 브랜치 전환·초기화·파일 삭제로 다른 작업을 덮어쓰지 않습니다. 확인한 기준에서 `codex/<이슈>-<짧은-설명>` 이름의 작업 브랜치를 만들고, PR에는 **기준 브랜치·기준 커밋·담당자**를 남깁니다. 기존 본인 브랜치가 있다면 그대로 이어갑니다.
+미커밋 변경이 있으면 소유자와 내용을 먼저 확인합니다. 브랜치 전환·초기화·파일 삭제로 다른 작업을 덮어쓰지 않습니다. 확인한 기준에서 `<이슈>-<짧은-설명>` 이름의 작업 브랜치를 만들고, PR에는 **기준 브랜치·기준 커밋·담당자**를 남깁니다. 기존 본인 브랜치가 있다면 그대로 이어갑니다.
 
 ## 2. 한 번 준비하고 같은 명령으로 검사
 

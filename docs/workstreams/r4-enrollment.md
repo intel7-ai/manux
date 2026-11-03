@@ -1,6 +1,6 @@
 # R4 동작별 등록·제품 UI 작업 지침
 
-담당 **Paul Dan**, 검토 **Sean Choi**. Jira [SCRUM-9](https://se4nchoi.atlassian.net/browse/SCRUM-9), 공동 검증 [SCRUM-15](https://se4nchoi.atlassian.net/browse/SCRUM-15). 권장 브랜치 `codex/scrum-9-onboarding`. 이 문서는 구현 전 작업 계획이다. 인수인계 준비에서는 앱 코드를 바꾸지 않았으며, 아래 내용은 담당자가 자기 브랜치에서 수행할 과제다.
+담당 **Paul Dan**, 검토 **Sean Choi**. Jira [SCRUM-9](https://se4nchoi.atlassian.net/browse/SCRUM-9), 공동 검증 [SCRUM-15](https://se4nchoi.atlassian.net/browse/SCRUM-15). 권장 브랜치 `scrum-9-onboarding`. 이 문서는 구현 전 작업 계획이다. 인수인계 준비에서는 앱 코드를 바꾸지 않았으며, 아래 내용은 담당자가 자기 브랜치에서 수행할 과제다.
 
 ## 목표
 
@@ -50,7 +50,7 @@ node scripts/test-enrollment-browser.mjs
 ```text
 MANUX의 R4를 담당한다. AGENTS.md, docs/master-plan.md, docs/contracts.md,
 docs/workstreams/r4-enrollment.md, Jira SCRUM-9/15의 확인된 내용을 읽어라.
-내 브랜치는 codex/scrum-9-onboarding이다. 현재 일괄 등록 부담과 실패를
+내 브랜치는 scrum-9-onboarding이다. 현재 일괄 등록 부담과 실패를
 재현해 단계/이유를 기록한 뒤 기본 동작 하나를 선택해 수집·확인하는 흐름을
 만들어라. UI만 바꾸지 말고 R3의 부분 모델·R5의 부분 저장 계약을 함께 맞춰라.
 다른 세 동작을 등록해야 저장되게 만들지 마라. 카메라 미리보기, 실패 이유,

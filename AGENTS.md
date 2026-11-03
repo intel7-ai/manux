@@ -6,7 +6,7 @@
 
 - 현재 마일스톤·담당·마감의 기준은 최신 [SCRUM-5](https://se4nchoi.atlassian.net/browse/SCRUM-5)와 [SCRUM-11](https://se4nchoi.atlassian.net/browse/SCRUM-11), 본인 세부 태스크다. 2026-11-02 승인된 M1은 11/04 PoC·11/06 Windows 책상 마우스 제품 후보이며 5인·20개 작업이다. 10/29의 팀 계획·마스터 플랜은 과거 계획이므로 현재 Jira 범위와 충돌할 때 따르지 않는다.
 - 개발 경로는 개인 PC의 원하는 AI 또는 Discord worker → 작업별 브랜치 → preview 대상 PR → 자동 검사 → preview 머지·시험 → `preview → production` PR → production 머지 → Windows 설치본 릴리스다. 리뷰어 승인은 요구하지 않는다([브랜치 흐름](docs/branch-flow.md)). Jira 번호가 없는 개선도 목표·범위를 기록하여 시작할 수 있다.
-- 팀원 개인 PC의 AI 에이전트 개발/브랜치 푸시와 Discord Claude의 독립 worktree 개발을 모두 지원한다. 공유된 기준 커밋을 확인하고 `codex/scrum-23-gesture-enrollment`처럼 세부 태스크 번호를 브랜치·PR에 명시한다. 외부 푸시는 로컬 작업 폴더에 자동 반영되지 않으며 최신 원격 조회와 PR 리뷰·통합은 별개다.
+- 팀원 개인 PC의 AI 에이전트 개발/브랜치 푸시와 Discord Claude의 독립 worktree 개발을 모두 지원한다. 공유된 기준 커밋을 확인하고 `scrum-23-gesture-enrollment`처럼 세부 태스크 번호를 브랜치·PR에 명시한다. 외부 푸시는 로컬 작업 폴더에 자동 반영되지 않으며 최신 원격 조회와 PR 리뷰·통합은 별개다.
 - Discord의 할 일 질문은 Jira를, 원격 개발 현황은 GitHub를 새로 조회한다. OAuth 인증 계정이나 Git 작성자를 Discord 질문자로 간주하지 않는다. Jira/원격 조회 실패를 작업 없음이나 완료로 바꾸지 않는다.
 
 - 2026-11-02 손 전체 이동 기반 마우스 모드와 Electron/Windows 입력 경로를 추가했다. 현재 계약·실행법은 `docs/air-mouse.md`와 `desktop/README.md`를 확인한다. 실제 웹캠 사용성과 실제 OS 클릭 검증은 별도다.
@@ -18,17 +18,21 @@
 
 ## 브랜치와 담당 경계
 
-작업을 시작할 때 `git status --short`, `git branch --show-current`, `git remote -v`로 실제 상태를 확인한다. 다른 사람의 변경을 되돌리거나 깨끗하게 만들기 위해 삭제하지 않는다. 신규 작업은 최신 `origin/production`에서 작업 단위 `codex/<이슈>-<설명>` 브랜치를 만든다. 아래 역할 브랜치는 과거 범위 참고이며 한 사람의 모든 작업을 한 브랜치에 모으지 않는다. 기존 진행 중 브랜치·미커밋 파일·worker는 그대로 보존하고 재생성하거나 강제로 production에 맞추지 않는다.
+작업을 시작할 때 `git status --short`, `git branch --show-current`, `git remote -v`로 실제 상태를 확인한다. 다른 사람의 변경을 되돌리거나 깨끗하게 만들기 위해 삭제하지 않는다. 신규 작업은 최신 `origin/production`에서 작업 단위 `<이슈>-<설명>` 브랜치를 만든다. 아래 역할 브랜치는 과거 범위 참고이며 한 사람의 모든 작업을 한 브랜치에 모으지 않는다. 기존 진행 중 브랜치·미커밋 파일·worker는 그대로 보존하고 재생성하거나 강제로 production에 맞추지 않는다.
 
 통합 흐름은 [브랜치 흐름](docs/branch-flow.md)을 따른다. 작업 브랜치는 `origin/preview`에서 만들고 PR 대상은 `preview`다. 리뷰어 승인은 필요 없다. `production`에는 preview에서 시험한 뒤 `preview` 브랜치 PR로만 병합한다.
 
+브랜치 이름에 도구 접두사(`codex/`, `claude/` 등)를 붙이지 않는다. `scrum-23-gesture-enrollment`처럼 `<이슈>-<설명>`만 쓰고, Jira 번호가 없으면 `<설명>`만 쓴다. 열린 PR의 head 브랜치 이름을 바꾸면 GitHub가 그 PR을 닫으므로, 이미 PR이 있는 브랜치는 이름을 바꾸지 않는다.
+
+**작업 가져가기.** 담당이 없거나 막혀 있는 일(설계 문서의 "미구현"·"제안"·교차 검수 항목, Jira의 미배정 태스크)은 누구나 가져갈 수 있다. 가져가는 사람의 에이전트는 시작할 때 Jira 해당 이슈의 담당자·상태를 바꾸거나 코멘트를 남기고, 또는 GitHub에 브랜치·draft PR을 올려 작업 중임을 표시한다. 둘 다 할 수 없으면 사람에게 알린다. 표시 없이 같은 파일을 두 사람이 고치지 않도록, 시작 전에 Jira와 열린 PR·원격 브랜치를 새로 조회한다. 사람이 시키지 않은 담당 변경·이슈 완료 처리는 하지 않는다.
+
 | 역할 | 담당 | 권장 브랜치 | 주 담당 파일 |
 | --- | --- | --- | --- |
-| R1 / SCRUM-6 | 김동혁 | `codex/scrum-6-camera` | `src/camera.js`, `src/vision-client.js`, `src/vision-worker.js`, `src/orientation.js` |
-| R2 / SCRUM-7 | 박현규 | `codex/scrum-7-control` | `src/gesture-controller.js`, `src/media-controller.js` |
-| R3 / SCRUM-8 | 라즈 | `codex/scrum-8-personalization` | `src/personalization.js`, 특징·데이터 규격 |
-| R4 / SCRUM-9 | Paul Dan | `codex/scrum-9-onboarding` | `src/enrollment.js`, `src/enrollment-view.js`, `public/index.html`, `public/styles.css` |
-| R5 / SCRUM-10 | Sean Choi | `codex/scrum-10-integration` | `src/profile-store.js`, `src/app.js`, `server.js`, 실행·통합 도구 |
+| R1 / SCRUM-6 | 김동혁 | `scrum-6-camera` | `src/camera.js`, `src/vision-client.js`, `src/vision-worker.js`, `src/orientation.js` |
+| R2 / SCRUM-7 | 박현규 | `scrum-7-control` | `src/gesture-controller.js`, `src/media-controller.js` |
+| R3 / SCRUM-8 | 라즈 | `scrum-8-personalization` | `src/personalization.js`, 특징·데이터 규격 |
+| R4 / SCRUM-9 | Paul Dan | `scrum-9-onboarding` | `src/enrollment.js`, `src/enrollment-view.js`, `public/index.html`, `public/styles.css` |
+| R5 / SCRUM-10 | Sean Choi | `scrum-10-integration` | `src/profile-store.js`, `src/app.js`, `server.js`, 실행·통합 도구 |
 
 각 담당은 대응 테스트도 관리한다. R6/SCRUM-11은 실제 참여 5명의 공동 평가 영역이며 SCRUM-12~16이 각 담당의 검증 작업이다. 문채원은 명단 등록 상태이며 작업을 배정하지 않는다.
 

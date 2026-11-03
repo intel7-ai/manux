@@ -1,6 +1,6 @@
 # R3 개인화·데이터 작업 지침
 
-담당 **라즈**, 검토 **김동혁**. Jira [SCRUM-8](https://se4nchoi.atlassian.net/browse/SCRUM-8), 공동 검증 [SCRUM-14](https://se4nchoi.atlassian.net/browse/SCRUM-14). 권장 브랜치 `codex/scrum-8-personalization`. 이 문서는 구현 전 작업 계획이다. 인수인계 준비에서는 앱 코드를 바꾸지 않았으며, 아래 내용은 담당자가 자기 브랜치에서 수행할 과제다.
+담당 **라즈**, 검토 **김동혁**. Jira [SCRUM-8](https://se4nchoi.atlassian.net/browse/SCRUM-8), 공동 검증 [SCRUM-14](https://se4nchoi.atlassian.net/browse/SCRUM-14). 권장 브랜치 `scrum-8-personalization`. 이 문서는 구현 전 작업 계획이다. 인수인계 준비에서는 앱 코드를 바꾸지 않았으며, 아래 내용은 담당자가 자기 브랜치에서 수행할 과제다.
 
 ## 목표
 
@@ -54,7 +54,7 @@ node --test tests/personalization.test.js tests/profile-store.test.js
 ```text
 MANUX의 R3을 담당한다. AGENTS.md, docs/master-plan.md, docs/contracts.md,
 docs/workstreams/r3-personalization.md, Jira SCRUM-8/14의 확인된 내용을 읽어라.
-내 브랜치는 codex/scrum-8-personalization이다. personalization.js의
+내 브랜치는 scrum-8-personalization이다. personalization.js의
 전체 POSES 필수 가정을 확인하고 동작 하나씩 후보 학습·거부·검증하는 계약을
 R4/R5와 맞춰라. 단일 클래스에서 경쟁 마진이 없다는 문제를 처리하고
 미등록 모양을 무조건 최근접 클래스에 배정하지 마라. 기존 모델과 프로필을

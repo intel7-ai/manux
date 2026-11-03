@@ -1,6 +1,6 @@
 # R5 프로필·통합·실행 작업 지침
 
-담당 **Sean Choi**, 검토 **박현규**. Jira [SCRUM-10](https://se4nchoi.atlassian.net/browse/SCRUM-10), 공동 검증 [SCRUM-16](https://se4nchoi.atlassian.net/browse/SCRUM-16). 권장 브랜치 `codex/scrum-10-integration`. 이 문서는 구현 전 작업 계획이다. 인수인계 준비에서는 앱 코드를 바꾸지 않았으며, 아래 내용은 담당자가 자기 브랜치에서 수행할 과제다.
+담당 **Sean Choi**, 검토 **박현규**. Jira [SCRUM-10](https://se4nchoi.atlassian.net/browse/SCRUM-10), 공동 검증 [SCRUM-16](https://se4nchoi.atlassian.net/browse/SCRUM-16). 권장 브랜치 `scrum-10-integration`. 이 문서는 구현 전 작업 계획이다. 인수인계 준비에서는 앱 코드를 바꾸지 않았으며, 아래 내용은 담당자가 자기 브랜치에서 수행할 과제다.
 
 ## 목표
 
@@ -58,7 +58,7 @@ node scripts/test-enrollment-browser.mjs
 ```text
 MANUX의 R5를 담당한다. AGENTS.md, docs/master-plan.md, docs/contracts.md,
 docs/workstreams/r5-integration.md, Jira SCRUM-10/16의 확인된 내용을 읽어라.
-내 브랜치는 codex/scrum-10-integration이다. profile-store.js와 app.js 통합을
+내 브랜치는 scrum-10-integration이다. profile-store.js와 app.js 통합을
 담당한다. R3/R4 계약을 먼저 맞추고 선택 동작만 검증 후 저장하는 구조를
 연결하라. 기존 사용자·다른 동작·다른 환경을 보존하고 구형 프로필 변환 실패와
 저장 오류에서 원본을 잃지 않게 하라. 세션 변경 후 늦은 결과를 적용하지 마라.

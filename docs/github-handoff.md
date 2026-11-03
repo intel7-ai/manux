@@ -62,7 +62,7 @@ git rev-parse HEAD
 ## 기존 팀 저장소가 있는 경우
 
 1. 해당 저장소를 별도 폴더에 clone하고 `git remote show origin`으로 기본 브랜치를 확인한다.
-2. 기본 브랜치 최신 상태에서 `codex/manux-team-baseline` 브랜치를 만든다.
+2. 기본 브랜치 최신 상태에서 `manux-team-baseline` 브랜치를 만든다.
 3. 게시 폴더와 기존 파일을 비교하여 필요한 파일만 추가한다. 기존 코드·설정·히스토리를 통째로 덮어쓰지 않는다.
 4. 단위 회귀와 변경 검토 후 baseline PR을 만든다. 승인된 PR을 통합한 커밋을 팀의 출발점으로 공유한다.
 
@@ -72,11 +72,11 @@ git rev-parse HEAD
 
 | Jira | 담당 | 작업 브랜치 | 리뷰어 |
 | --- | --- | --- | --- |
-| [SCRUM-6](https://se4nchoi.atlassian.net/browse/SCRUM-6) | 김동혁 | `codex/scrum-6-camera` | 라즈 |
-| [SCRUM-7](https://se4nchoi.atlassian.net/browse/SCRUM-7) | 박현규 | `codex/scrum-7-control` | Sean Choi |
-| [SCRUM-8](https://se4nchoi.atlassian.net/browse/SCRUM-8) | 라즈 | `codex/scrum-8-personalization` | 김동혁 |
-| [SCRUM-9](https://se4nchoi.atlassian.net/browse/SCRUM-9) | Paul Dan | `codex/scrum-9-onboarding` | Sean Choi |
-| [SCRUM-10](https://se4nchoi.atlassian.net/browse/SCRUM-10) | Sean Choi | `codex/scrum-10-integration` | 박현규 |
+| [SCRUM-6](https://se4nchoi.atlassian.net/browse/SCRUM-6) | 김동혁 | `scrum-6-camera` | 라즈 |
+| [SCRUM-7](https://se4nchoi.atlassian.net/browse/SCRUM-7) | 박현규 | `scrum-7-control` | Sean Choi |
+| [SCRUM-8](https://se4nchoi.atlassian.net/browse/SCRUM-8) | 라즈 | `scrum-8-personalization` | 김동혁 |
+| [SCRUM-9](https://se4nchoi.atlassian.net/browse/SCRUM-9) | Paul Dan | `scrum-9-onboarding` | Sean Choi |
+| [SCRUM-10](https://se4nchoi.atlassian.net/browse/SCRUM-10) | Sean Choi | `scrum-10-integration` | 박현규 |
 
 별도 장기 `develop` 브랜치를 필수로 추가하지 않는다. 기본 브랜치와 짧은 작업 PR로 시작하고 통합 책임자가 공통 계약 변경을 조율한다. 저장소 관리자는 기본 브랜치의 직접 push 방지, 최소 1명 리뷰, 실제 성공한 CI를 요구하는 보호 규칙을 설정한다. 해당 설정은 아직 적용하지 않았다.
 

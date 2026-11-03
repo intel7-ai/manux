@@ -60,11 +60,11 @@ Electron 패키징, 시스템 음량, Alt+Tab, 마우스 커서, PC 종료, 임�
 
 | 역할 | 담당 / 검토자 | Jira | 권장 브랜치 | 상세 작업 |
 | --- | --- | --- | --- | --- |
-| R1 비전·카메라·성능 | 김동혁 / 라즈 | [SCRUM-6](https://se4nchoi.atlassian.net/browse/SCRUM-6), [SCRUM-12](https://se4nchoi.atlassian.net/browse/SCRUM-12) | `codex/scrum-6-camera` | [R1](workstreams/r1-camera.md) |
-| R2 판정·영상 명령 | 박현규 / Sean Choi | [SCRUM-7](https://se4nchoi.atlassian.net/browse/SCRUM-7), [SCRUM-13](https://se4nchoi.atlassian.net/browse/SCRUM-13) | `codex/scrum-7-control` | [R2](workstreams/r2-control.md) |
-| R3 개인화·데이터 | 라즈 / 김동혁 | [SCRUM-8](https://se4nchoi.atlassian.net/browse/SCRUM-8), [SCRUM-14](https://se4nchoi.atlassian.net/browse/SCRUM-14) | `codex/scrum-8-personalization` | [R3](workstreams/r3-personalization.md) |
-| R4 등록·제품 UI | Paul Dan / Sean Choi | [SCRUM-9](https://se4nchoi.atlassian.net/browse/SCRUM-9), [SCRUM-15](https://se4nchoi.atlassian.net/browse/SCRUM-15) | `codex/scrum-9-onboarding` | [R4](workstreams/r4-enrollment.md) |
-| R5 프로필·통합·실행 | Sean Choi / 박현규 | [SCRUM-10](https://se4nchoi.atlassian.net/browse/SCRUM-10), [SCRUM-16](https://se4nchoi.atlassian.net/browse/SCRUM-16) | `codex/scrum-10-integration` | [R5](workstreams/r5-integration.md) |
+| R1 비전·카메라·성능 | 김동혁 / 라즈 | [SCRUM-6](https://se4nchoi.atlassian.net/browse/SCRUM-6), [SCRUM-12](https://se4nchoi.atlassian.net/browse/SCRUM-12) | `scrum-6-camera` | [R1](workstreams/r1-camera.md) |
+| R2 판정·영상 명령 | 박현규 / Sean Choi | [SCRUM-7](https://se4nchoi.atlassian.net/browse/SCRUM-7), [SCRUM-13](https://se4nchoi.atlassian.net/browse/SCRUM-13) | `scrum-7-control` | [R2](workstreams/r2-control.md) |
+| R3 개인화·데이터 | 라즈 / 김동혁 | [SCRUM-8](https://se4nchoi.atlassian.net/browse/SCRUM-8), [SCRUM-14](https://se4nchoi.atlassian.net/browse/SCRUM-14) | `scrum-8-personalization` | [R3](workstreams/r3-personalization.md) |
+| R4 등록·제품 UI | Paul Dan / Sean Choi | [SCRUM-9](https://se4nchoi.atlassian.net/browse/SCRUM-9), [SCRUM-15](https://se4nchoi.atlassian.net/browse/SCRUM-15) | `scrum-9-onboarding` | [R4](workstreams/r4-enrollment.md) |
+| R5 프로필·통합·실행 | Sean Choi / 박현규 | [SCRUM-10](https://se4nchoi.atlassian.net/browse/SCRUM-10), [SCRUM-16](https://se4nchoi.atlassian.net/browse/SCRUM-16) | `scrum-10-integration` | [R5](workstreams/r5-integration.md) |
 
 [SCRUM-5](https://se4nchoi.atlassian.net/browse/SCRUM-5)는 상위 계획, [SCRUM-11](https://se4nchoi.atlassian.net/browse/SCRUM-11)은 공동 평가다. 담당자는 해당 모듈의 구현과 검증을 함께 맡고, R5는 전체 결과를 모은다. PR 수·줄 수를 개인 기여 점수로 사용하지 않는다.
 

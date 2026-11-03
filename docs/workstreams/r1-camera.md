@@ -1,6 +1,6 @@
 # R1 비전·카메라·성능 작업 지침
 
-담당 **김동혁**, 검토 **라즈**. Jira [SCRUM-6](https://se4nchoi.atlassian.net/browse/SCRUM-6), 공동 검증 [SCRUM-12](https://se4nchoi.atlassian.net/browse/SCRUM-12). 권장 브랜치 `codex/scrum-6-camera`. 이 문서는 구현 전 작업 계획이다. 인수인계 준비에서는 앱 코드를 바꾸지 않았으며, 아래 내용은 담당자가 자기 브랜치에서 수행할 과제다.
+담당 **김동혁**, 검토 **라즈**. Jira [SCRUM-6](https://se4nchoi.atlassian.net/browse/SCRUM-6), 공동 검증 [SCRUM-12](https://se4nchoi.atlassian.net/browse/SCRUM-12). 권장 브랜치 `scrum-6-camera`. 이 문서는 구현 전 작업 계획이다. 인수인계 준비에서는 앱 코드를 바꾸지 않았으며, 아래 내용은 담당자가 자기 브랜치에서 수행할 과제다.
 
 ## 목표
 
@@ -49,7 +49,7 @@ node scripts/benchmark-vision.mjs
 ```text
 MANUX의 R1을 담당한다. AGENTS.md, docs/master-plan.md, docs/contracts.md,
 docs/workstreams/r1-camera.md, Jira SCRUM-6/12의 확인된 내용을 먼저 읽어라.
-내 브랜치는 codex/scrum-6-camera다. 기준 커밋과 변경 상태를 확인하고
+내 브랜치는 scrum-6-camera다. 기준 커밋과 변경 상태를 확인하고
 카메라·추론·기울기 파일 범위에서 작업한다. 등록 실패의 원인을 가정하지 말고
 기존 시험과 실물 재현 절차를 먼저 정리하라. 실제 손 시험을 수행할 수 없으면
 그 부분을 미검증으로 남기고 자동 시험·진단 도구는 완성하라.
