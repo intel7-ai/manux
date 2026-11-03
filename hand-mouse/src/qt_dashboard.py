@@ -79,10 +79,9 @@ class QtDashboard(QObject):
         # Which point of the hand the cursor follows: index fingertip or palm centre.
         self.pointer_anchor = saved_anchor if saved_anchor in ("index", "palm") else "index"
         # Tracking test (main.py owns the TrackingTest; this only shows it)
-        self.tracking_test = None
+        self.tracking_view = None           # plain view of the runtime's TrackingTest
         self.tracking_requested = False
-        self.tracking_cursor = (.5, .5)
-        self.tracking_result = ""
+        self.tracking_close_requested = False
         self.metrics = ("", -1, False)  # camera mode text, brightness 0..255 (-1 unknown), dark
         # Hand-area crop on/off (A/B with the tracking test) and failure recording
         self.hand_crop = self.preferences.value("handCrop", False, type=bool)
@@ -268,11 +267,6 @@ class QtDashboard(QObject):
         self.preferences.setValue("pointerClick", self.click_style)
         self.stateChanged.emit()
 
-    @property
-    def tracking_only(self):
-        """No click detection: click style "off", or while the tracking test runs."""
-        return self.click_style == "off" or self.tracking_test is not None
-
     @Property(str, notify=stateChanged)
     def anchorLabel(self):
         return "기준점 · 검지 끝" if self.pointer_anchor == "index" else "기준점 · 손바닥 중심"
@@ -288,100 +282,125 @@ class QtDashboard(QObject):
         self.stateChanged.emit()
 
     # ------------------------------------------------------------------ tracking test
+    # The runtime thread owns the TrackingTest; the dashboard only shows `tracking_view`,
+    # a plain dict copied from it each frame (see src/qt_runtime.tracking_view).
+    @property
+    def tracking_only(self):
+        """No click detection: click style "off", or while the tracking test runs."""
+        return self.click_style == "off" or self.tracking_view is not None
+
     @Slot()
     def beginTrackingTest(self):
-        if self.stage_name != "main" or self.tracking_test is not None:
+        if self.stage_name != "main" or self.tracking_view is not None or self.tracking_requested:
             return
-        self.commands.clear()
-        self.commands.append(27)  # paused; Space in the test window starts control
-        self.tracking_result = ""
-        self.tracking_requested = True
-
-    def set_tracking(self, test):
-        self.tracking_test = test
-        self.stateChanged.emit()
-        self.trackingActiveChanged.emit()
-        self.trackingChanged.emit()
-
-    def tracking_frame(self, cursor_fraction):
-        self.tracking_cursor = cursor_fraction
-        self.trackingChanged.emit()
-
-    def tracking_finished(self, text):
-        self.tracking_result = text
-        self.trackingChanged.emit()
+        self.tracking_requested = True  # the UI loop forwards it; the test starts paused
 
     @Slot()
     def closeTrackingTest(self):
-        if self.tracking_test is None:
+        if self.tracking_view is None and not self.tracking_requested:
             return
-        self.commands.clear()
-        self.commands.append(27)
-        self.tracking_test = None
-        self.stateChanged.emit()
-        self.trackingActiveChanged.emit()
+        self.tracking_requested = False
+        self.tracking_close_requested = True
+        self.set_tracking_view(None)
+
+    def set_tracking_view(self, view):
+        was = self.tracking_view is not None
+        self.tracking_view = view
+        if was != (view is not None):
+            self.stateChanged.emit()
+            self.trackingActiveChanged.emit()
         self.trackingChanged.emit()
 
     # Bound to the window's visibility / screen. They must not re-evaluate every frame:
     # on Windows re-applying FullScreen and the screen 30 times a second froze the app.
     @Property(bool, notify=trackingActiveChanged)
     def trackingActive(self):
-        return self.tracking_test is not None
+        return self.tracking_view is not None
 
     @Property(str, notify=trackingActiveChanged)
     def trackingScreen(self):
         screen = QGuiApplication.primaryScreen()
         return screen.name() if screen is not None else ""
 
-    def _target(self):
-        return self.tracking_test.current if self.tracking_test is not None else None
+    def _view(self, key, default):
+        v = self.tracking_view
+        return default if v is None else v.get(key, default)
 
     @Property(float, notify=trackingChanged)
     def trackingTargetX(self):
-        t = self._target()
-        return t.fx if t else -1.0
+        t = self._view("target", None)
+        return t[0] if t else -1.0
 
     @Property(float, notify=trackingChanged)
     def trackingTargetY(self):
-        t = self._target()
-        return t.fy if t else -1.0
+        t = self._view("target", None)
+        return t[1] if t else -1.0
 
     @Property(float, notify=trackingChanged)
     def trackingTargetSize(self):
         """Diameter as a fraction of the test monitor's width."""
-        t = self._target()
-        return t.size_px / self.tracking_test.monitor.width if t else 0.0
+        t = self._view("target", None)
+        return t[2] if t else 0.0
 
     @Property(float, notify=trackingChanged)
     def trackingCursorX(self):
-        return float(self.tracking_cursor[0])
+        return float(self._view("cursor", (.5, .5))[0])
 
     @Property(float, notify=trackingChanged)
     def trackingCursorY(self):
-        return float(self.tracking_cursor[1])
+        return float(self._view("cursor", (.5, .5))[1])
 
     @Property(str, notify=trackingChanged)
     def trackingStatus(self):
-        test = self.tracking_test
-        if test is None:
+        v = self.tracking_view
+        if v is None:
             return ""
-        if test.done:
-            return "완료 · " + (self.tracking_result or test.summary_text())
-        if test.paused:
-            return f"일시정지됨 · Space를 눌러 시작하세요 (표적 {test.index + 1}/{len(test.targets)})"
-        t = test.current
-        holding = t.inside_since is not None
-        return (f"표적 {test.index + 1}/{len(test.targets)} · "
-                + ("멈춰 있기…" if holding else "커서를 원 안으로 옮겨 0.5초 멈추세요")
-                + ("" if test.hand_present else " · 손을 찾는 중"))
+        if v["done"]:
+            return "완료 · " + v["summary"]
+        progress = f"표적 {v['index'] + 1}/{v['total']}"
+        if v["paused"]:
+            return f"일시정지됨 · Space를 눌러 시작하세요 ({progress})"
+        return (progress + " · " + ("멈춰 있기…" if v["holding"] else "커서를 원 안으로 옮겨 0.5초 멈추세요")
+                + ("" if v["hand_present"] else " · 손을 찾는 중"))
 
     @Property(bool, notify=trackingChanged)
     def trackingPaused(self):
-        return self.tracking_test is not None and self.tracking_test.paused and not self.tracking_test.done
+        return bool(self._view("paused", False)) and not self._view("done", False)
 
     @Property(bool, notify=trackingChanged)
     def trackingDone(self):
-        return self.tracking_test is not None and self.tracking_test.done
+        return bool(self._view("done", False))
+
+    # ------------------------------------------------------------------ runtime thread link
+    def ui_state(self):
+        from src.qt_runtime import UiState
+        return UiState(
+            stage=self.stage_name, control_hand=self.control_hand,
+            use_index_pointer=self.use_index_pointer, click_style=self.click_style,
+            anchor=self.pointer_anchor, hand_crop=self.hand_crop, axes=self.axes,
+            calibrating=self.calibrating, sensitivity=self.pointer_sensitivity,
+            show_fingertips=self.show_fingertips,
+        )
+
+    def apply_snapshot(self, snap):
+        """Render one runtime snapshot (UI thread)."""
+        if self.stage_name == "capture":
+            self.select_hand(snap.detections, snap.mirrored)
+        if self.use_index_pointer:
+            self.update_pointer(snap.tip, snap.source, snap.mirrored, snap.aspect)
+        if snap.metrics is not None:
+            self.set_camera_metrics(*snap.metrics)
+        if self.tracking_view is not None or snap.tracking is not None:
+            if not self.tracking_close_requested:
+                self.set_tracking_view(snap.tracking)
+        if snap.tracking is None:
+            self.tracking_close_requested = False
+        if snap.failures is not None:
+            self.set_failures(*snap.failures)
+        if snap.recent_line:
+            self.add_recent(snap.recent_line)
+        self.show(snap.frame, snap.detected, snap.paused, snap.action, snap.fps, snap.detect_ms,
+                  snap.status, contacts=snap.contacts)
 
     def update_pointer(self, point, source, mirrored, aspect):
         key = f"pointerAxes/{self.control_hand}/{source}/{int(mirrored)}/{aspect:.4f}"

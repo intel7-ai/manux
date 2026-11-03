@@ -22,7 +22,7 @@
 
 본 프로젝트는 `uv` 패키지 관리자를 사용합니다.
 
-MANUX Qt Quick 화면을 시험하려면 `uv run --locked --extra qt python main.py --ui qt --source 0`을 실행하세요. Tkinter 화면은 `--ui tk`로 선택할 수 있습니다. 두 화면 모두 시작할 때 OS 입력은 일시정지되어 있습니다. `--ui`를 주지 않으면 카메라 창·트레이 아이콘 모드(추론 스레드 분리)로 실행됩니다. `--ui tk|qt` 화면은 아직 트레이·`--headless`·상태 오버레이·UI 조준 보조를 쓰지 않습니다.
+MANUX Qt Quick 화면을 시험하려면 `uv run --locked --extra qt python main.py --ui qt --source 0`을 실행하세요. Tkinter 화면은 `--ui tk`로 선택할 수 있습니다. 두 화면 모두 시작할 때 OS 입력은 일시정지되어 있습니다. `--ui`를 주지 않으면 카메라 창·트레이 아이콘 모드(추론 스레드 분리)로 실행됩니다. `--ui tk|qt` 화면은 아직 트레이·`--headless`·상태 오버레이·UI 조준 보조를 쓰지 않습니다. `--ui qt`에서는 카메라·손 인식·포인터 판정·커서 제어가 별도 스레드(`src/qt_runtime.py`)에서 돌고, 화면 스레드는 결과만 그립니다. 판정 로직의 입력·출력은 [엔진 계약](docs/engine-contract.md)에 있습니다.
 
 Qt 화면의 검지 포인터 모드에는 클릭 방식이 두 가지 있습니다. 왼쪽 패널의 **클릭 · …** 버튼으로 바꾸며, 바꾸면 제어가 일시정지됩니다.
 

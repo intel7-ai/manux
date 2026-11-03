@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.mouse_controller import MouseController  # noqa: E402
 from src.qt_dashboard import QtDashboard  # noqa: E402
 from src.tracking_test import TrackingTest  # noqa: E402
+from src.qt_runtime import tracking_view  # noqa: E402
 from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 
@@ -61,10 +62,10 @@ def main() -> int:
 
     monitor = mouse.screens.primary
     test = TrackingTest(monitor, seed=11)
-    dash.set_tracking(test)
+    dash.set_tracking_view(tracking_view(test, monitor.center))
     # Opens paused (like the app): the window must say so before control starts
     test.update(time.perf_counter(), monitor.center, hand=True, active=False)
-    dash.tracking_frame(test.cursor_fraction(monitor.center))
+    dash.set_tracking_view(tracking_view(test, monitor.center))
     for _ in range(10):
         dash.poll()
     paused_status = dash.trackingStatus
@@ -86,7 +87,7 @@ def main() -> int:
             cx, cy = test.center_px(target)
             pos = (pos[0] + (cx - pos[0]) * .2, pos[1] + (cy - pos[1]) * .2)
         test.update(t0, pos, hand=True, active=True, fps=30, detect_ms=12)
-        dash.tracking_frame(test.cursor_fraction(pos))
+        dash.set_tracking_view(tracking_view(test, pos))
         dash.poll()
         times.append((time.perf_counter() - t0) * 1000.0)
         time.sleep(max(0.0, 1 / 30 - (time.perf_counter() - t0)))
@@ -126,8 +127,8 @@ def main() -> int:
         QTest.keyClick(win, Qt.Key_Escape)  # Esc must close the test window
     dash.poll()
     report["space_reached_app"] = space_reached_app
-    report["esc_closed_test"] = dash.tracking_test is None
-    if dash.tracking_test is not None:
+    report["esc_closed_test"] = dash.tracking_view is None and dash.tracking_close_requested
+    if dash.tracking_view is not None:
         dash.closeTrackingTest()
         dash.poll()
     report["test_window_hidden_after_close"] = win is not None and not win.isVisible()
