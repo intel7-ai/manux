@@ -155,6 +155,39 @@ test('final report must match validated records in the same request folder', asy
   await assert.rejects(validateDiscordOutput(input(report.replace('MANUX-EXAMPLE', 'OTHER-ID')), { root }));
 });
 
+test('list-style final reports pass only when every line equals the rendered record', async t => {
+  const { root } = await fixture(t);
+  const report = renderTaskReport(resultExample, taskExample);
+  const lines = report.split('\n');
+  assert.ok(lines.some(line => line.startsWith('- ')), 'the example report uses list lines');
+  assert.deepEqual(await evaluateHook(input(report), { root }), {});
+  assert.deepEqual(await evaluateHook(input(report, 'edit_message'), { root }), {});
+  const bulletIndex = lines.findIndex(line => line.startsWith('- '));
+  const tampered = [
+    lines.filter((_, index) => index !== bulletIndex).join('\n'),
+    [...lines.slice(0, bulletIndex + 1), '- 통과 · 지어낸 검사: 모두 통과', ...lines.slice(bulletIndex + 1)].join('\n'),
+    [...lines].reverse().join('\n'),
+    report.replace('미실행 1', '통과 1'),
+    report.replace('상태: 검토 필요', '상태: 완료'),
+    report.replace('통합: 아니오', '통합: 예'),
+    report.replace(/^- /m, '* '),
+    `${report}\n- 한계: 없음`,
+    report.replace('- 한계:', '다음: 숨겨진 항목\n- 한계:'),
+  ];
+  for (const text of tampered) assert.equal((await evaluateHook(input(text), { root })).hookSpecificOutput?.permissionDecision, 'deny', text);
+});
+
+test('a list line cannot start a sixth heading and a final report over the Discord limit is denied', async t => {
+  const { root } = await fixture(t);
+  const report = renderTaskReport(resultExample, taskExample);
+  const forged = report.replace(/^- /m, '검증: ');
+  assert.equal((await evaluateHook(input(forged), { root })).hookSpecificOutput.permissionDecision, 'deny');
+  const padded = `${report}\n- ${'가'.repeat(1900 - report.length)}`;
+  assert.ok(padded.length > 1900);
+  assert.equal((await evaluateHook(input(padded), { root })).hookSpecificOutput.permissionDecision, 'deny');
+  assert.ok(report.length <= 1900);
+});
+
 test('missing, oversized or contradictory records cannot authorize a final report', async t => {
   const { root, directory } = await fixture(t);
   const report = renderTaskReport(resultExample, taskExample);

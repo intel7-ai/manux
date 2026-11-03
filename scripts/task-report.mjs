@@ -1,7 +1,7 @@
-import { open, realpath } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { lstat, mkdir, open, realpath, writeFile } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { ContractValidationError, renderTaskReport, validateResult } from './task-contract.mjs';
+import { ContractValidationError, renderTaskReport, renderTaskReportHtml, validateResult } from './task-contract.mjs';
 
 function inside(root, target) {
   const child = relative(root, target);
@@ -26,12 +26,60 @@ export async function readTaskRecord(path, { root = process.cwd() } = {}) {
   } finally { await handle?.close().catch(() => {}); }
 }
 
-export async function runTaskReport(args = process.argv.slice(2), { root = process.cwd(), output = console.log, error = console.error } = {}) {
+const USAGE = '사용법: node scripts/task-report.mjs TASK.json RESULT.json [--check | --html REPORT.html]';
+
+// Reports may only be written under these top-level folders, so --html cannot overwrite
+// an existing source, page or documentation file such as public/index.html.
+export const HTML_REPORT_FOLDERS = Object.freeze(['.local', 'reports']);
+
+const reportFolder = (base, path) => {
+  const parts = relative(base, path).split(sep);
+  return parts.length > 1 && HTML_REPORT_FOLDERS.includes(parts[0].toLowerCase());
+};
+
+/** Real path of the closest existing ancestor; a link that cannot be resolved is refused. */
+async function closestExistingRealpath(path) {
+  for (let current = path; ; current = dirname(current)) {
+    const info = await lstat(current).catch(error => {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null;
+      throw error;
+    });
+    if (info) return realpath(current);
+    if (dirname(current) === current) throw new Error('No existing parent');
+  }
+}
+
+/** Write the standalone HTML report below .local/ or reports/, never through a link that leaves them. */
+async function writeHtmlReport(path, html, root) {
+  const fail = () => new ContractValidationError(['HTML 출력: .local/ 또는 reports/ 아래의 .html 파일 경로를 지정하세요']);
+  const base = await realpath(root);
+  const target = resolve(base, path);
+  if (!reportFolder(base, target) || !inside(base, target) || !target.toLowerCase().endsWith('.html')) throw fail();
+  // Check where the closest existing parent really points before creating anything.
+  const existingParent = await closestExistingRealpath(dirname(target));
+  if (existingParent !== base && !inside(base, existingParent)) throw fail();
+  await mkdir(dirname(target), { recursive: true });
+  const parent = await realpath(dirname(target));
+  if (!reportFolder(base, join(parent, basename(target)))) throw fail();
+  const file = join(parent, basename(target));
+  const existing = await lstat(file).catch(() => null);
+  if (existing && !existing.isFile()) throw fail();
+  await writeFile(file, html, 'utf8');
+  return relative(base, file).split(sep).join('/');
+}
+
+export async function runTaskReport(args = process.argv.slice(2), { root = process.cwd(), output = console.log, error = console.error, notice = console.error, renderText = renderTaskReport, renderPage = renderTaskReportHtml } = {}) {
   try {
-    if (args.length < 2 || args.length > 3 || (args.length === 3 && args[2] !== '--check')) throw new ContractValidationError(['사용법: node scripts/task-report.mjs TASK.json RESULT.json [--check]']);
+    const check = args.length === 3 && args[2] === '--check';
+    const html = args.length === 4 && args[2] === '--html';
+    if (args.length < 2 || args.length > 4 || (args.length === 3 && !check) || (args.length === 4 && !html)) throw new ContractValidationError([USAGE]);
     const [task, result] = await Promise.all(args.slice(0, 2).map(path => readTaskRecord(path, { root })));
     validateResult(result, task);
-    output(args[2] === '--check' ? `작업 기록 검증 통과: ${result.requestId}` : renderTaskReport(result, task));
+    // Render everything first so a rendering failure never leaves a report file behind.
+    const text = check ? `작업 기록 검증 통과: ${result.requestId}` : renderText(result, task);
+    const page = html ? renderPage(result, task) : null;
+    if (html) notice(`HTML 보고서를 저장했습니다: ${await writeHtmlReport(args[3], page, root)}`);
+    output(text);
     return 0;
   } catch (failure) {
     error(failure instanceof ContractValidationError ? failure.message : '작업 기록을 처리하지 못했습니다.');
