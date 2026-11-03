@@ -109,21 +109,33 @@ def ensure_model_exists(model_path: Path = DEFAULT_MODEL_PATH) -> Path:
 
 
 class HandTracker:
-    """Real-time hand tracker built on Google MediaPipe Tasks Vision API."""
+    """Real-time hand tracker built on Google MediaPipe Tasks Vision API.
+
+    Presence / tracking confidence default to 0.5 (MediaPipe's own default; was 0.6). At 0.6
+    a dim room or a hand far from a 30 fps webcam dropped tracking while the cursor was being
+    moved, and every drop forces a fresh palm detection (2026-11-03). Detection stays 0.6 so
+    a new hand still needs a confident find. All four are config keys: see tracker_options().
+    """
 
     def __init__(
         self,
         model_path: Optional[Path] = None,
         num_hands: int = 1,
         min_detection_confidence: float = 0.6,
-        min_presence_confidence: float = 0.6,
-        min_tracking_confidence: float = 0.6,
+        min_presence_confidence: float = 0.5,
+        min_tracking_confidence: float = 0.5,
         detect_max_width: int = 640,
     ) -> None:
         # MediaPipe shrinks the image to a small fixed input internally anyway, so feeding it
         # a 720p frame mostly costs conversion time (14.5 ms -> 10.6 ms per frame at 640 px).
         # Landmarks are normalized, so they map back to the full frame unchanged.
         self.detect_max_width = int(detect_max_width)
+        self.options = {
+            "min_detection_confidence": min_detection_confidence,
+            "min_presence_confidence": min_presence_confidence,
+            "min_tracking_confidence": min_tracking_confidence,
+            "detect_max_width": self.detect_max_width,
+        }
         self.last_detect_ms: float = 0.0
         resolved_model = ensure_model_exists(model_path or DEFAULT_MODEL_PATH)
 
@@ -213,3 +225,29 @@ class HandTracker:
         if self._landmarker is not None:
             self._landmarker.close()
             self._landmarker = None
+
+
+TRACKER_DEFAULTS = {
+    "tracker_min_detection_confidence": 0.6,
+    "tracker_min_presence_confidence": 0.5,
+    "tracker_min_tracking_confidence": 0.5,
+    "tracker_detect_max_width": 640,
+}
+
+
+def tracker_options(config) -> dict:
+    """HandTracker keyword arguments from config keys (bad values fall back to defaults)."""
+    def number(key, low, high):
+        try:
+            value = float(config.get(key, TRACKER_DEFAULTS[key]))
+        except (TypeError, ValueError):
+            return TRACKER_DEFAULTS[key]
+        return value if low <= value <= high else TRACKER_DEFAULTS[key]
+
+    return {
+        "min_detection_confidence": number("tracker_min_detection_confidence", 0.05, 0.95),
+        "min_presence_confidence": number("tracker_min_presence_confidence", 0.05, 0.95),
+        "min_tracking_confidence": number("tracker_min_tracking_confidence", 0.05, 0.95),
+        # 0 = no downscale (full camera width)
+        "detect_max_width": int(number("tracker_detect_max_width", 0, 4096)),
+    }

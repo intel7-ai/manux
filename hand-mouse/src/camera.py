@@ -201,6 +201,23 @@ class CameraStream:
     def fps(self) -> float:
         return self._fps_ema
 
+    def actual_mode(self):
+        """(width, height, fps) the driver actually opened, or None (phone / not open).
+
+        Webcams often ignore the requested 1280x720 @ 60 and fall back (many are 30 fps,
+        and some drop further in a dark room), so show what we really got.
+        """
+        cap = self.cap
+        if cap is None or not cap.isOpened() or not isinstance(self.config.source, int):
+            return None
+        try:
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = float(cap.get(cv2.CAP_PROP_FPS))
+        except Exception:
+            return None
+        return (w, h, round(fps, 1)) if w > 0 and h > 0 else None
+
     def switch_source(self, new_source: Union[int, str]) -> bool:
         """Dynamically switch between USB webcam indices or smartphone mode."""
         old_source = self.config.source

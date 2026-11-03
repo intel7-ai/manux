@@ -84,3 +84,22 @@ def test_hand_tracker_synthetic_blank_frame():
         assert len(detections) == 0
     finally:
         tracker.close()
+
+
+def test_tracker_options_default_to_mediapipe_tracking_and_read_config():
+    from src.hand_tracker import TRACKER_DEFAULTS, tracker_options
+
+    opts = tracker_options({})
+    assert opts["min_tracking_confidence"] == 0.5 and opts["min_presence_confidence"] == 0.5
+    assert opts["min_detection_confidence"] == 0.6 and opts["detect_max_width"] == 640
+    opts = tracker_options({"tracker_min_tracking_confidence": 0.35, "tracker_detect_max_width": 0,
+                            "tracker_min_presence_confidence": "x", "tracker_min_detection_confidence": 2})
+    assert opts["min_tracking_confidence"] == 0.35 and opts["detect_max_width"] == 0
+    assert opts["min_presence_confidence"] == TRACKER_DEFAULTS["tracker_min_presence_confidence"]
+    assert opts["min_detection_confidence"] == TRACKER_DEFAULTS["tracker_min_detection_confidence"]
+
+
+def test_actual_mode_is_none_until_a_webcam_is_open():
+    from src.camera import CameraConfig, CameraStream
+
+    assert CameraStream(CameraConfig(source=0)).actual_mode() is None

@@ -36,7 +36,8 @@ CLICK_LABELS = {
 class QtDashboard(QObject):
     stateChanged = Signal()
     previewChanged = Signal()
-    trackingChanged = Signal()
+    trackingChanged = Signal()        # every frame while the test runs (target, cursor, text)
+    trackingActiveChanged = Signal()  # only when the test window opens or closes
 
     def __init__(self, dry_run=False):
         super().__init__()
@@ -187,6 +188,7 @@ class QtDashboard(QObject):
     def set_tracking(self, test):
         self.tracking_test = test
         self.stateChanged.emit()
+        self.trackingActiveChanged.emit()
         self.trackingChanged.emit()
 
     def tracking_frame(self, cursor_fraction):
@@ -205,13 +207,16 @@ class QtDashboard(QObject):
         self.commands.append(27)
         self.tracking_test = None
         self.stateChanged.emit()
+        self.trackingActiveChanged.emit()
         self.trackingChanged.emit()
 
-    @Property(bool, notify=trackingChanged)
+    # Bound to the window's visibility / screen. They must not re-evaluate every frame:
+    # on Windows re-applying FullScreen and the screen 30 times a second froze the app.
+    @Property(bool, notify=trackingActiveChanged)
     def trackingActive(self):
         return self.tracking_test is not None
 
-    @Property(str, notify=trackingChanged)
+    @Property(str, notify=trackingActiveChanged)
     def trackingScreen(self):
         screen = QGuiApplication.primaryScreen()
         return screen.name() if screen is not None else ""
@@ -250,11 +255,17 @@ class QtDashboard(QObject):
             return ""
         if test.done:
             return "완료 · " + (self.tracking_result or test.summary_text())
+        if test.paused:
+            return f"일시정지됨 · Space를 눌러 시작하세요 (표적 {test.index + 1}/{len(test.targets)})"
         t = test.current
         holding = t.inside_since is not None
         return (f"표적 {test.index + 1}/{len(test.targets)} · "
                 + ("멈춰 있기…" if holding else "커서를 원 안으로 옮겨 0.5초 멈추세요")
                 + ("" if test.hand_present else " · 손을 찾는 중"))
+
+    @Property(bool, notify=trackingChanged)
+    def trackingPaused(self):
+        return self.tracking_test is not None and self.tracking_test.paused and not self.tracking_test.done
 
     @Property(bool, notify=trackingChanged)
     def trackingDone(self):

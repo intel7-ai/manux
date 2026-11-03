@@ -381,7 +381,9 @@ ApplicationWindow {
         title: "MANUX 트래킹 측정"
         color: "#0E1B26"
         visibility: dashboard.trackingActive ? Window.FullScreen : Window.Hidden
-        flags: Qt.Window | Qt.WindowStaysOnTopHint
+        flags: Qt.Window
+        // Take keyboard focus when shown, so Space / Esc reach this window right away
+        onVisibilityChanged: if (visibility === Window.FullScreen) requestActivate()
         screen: {
             const list = Qt.application.screens
             for (let i = 0; i < list.length; i++)
@@ -431,6 +433,15 @@ ApplicationWindow {
                 color: "#9FB3C2"
                 font.pixelSize: 14
             }
+        }
+        Label {
+            visible: dashboard.trackingPaused
+            anchors.centerIn: parent
+            text: "일시정지됨\nSpace를 눌러 시작"
+            horizontalAlignment: Text.AlignHCenter
+            color: "#F5F7F8"
+            font.pixelSize: 40
+            font.bold: true
         }
         Button {
             visible: dashboard.trackingDone
