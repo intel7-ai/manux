@@ -1,6 +1,6 @@
 # MANUX 팀 에이전트 작업 지침
 
-이 저장소는 로컬 웹캠으로 영상과 Windows 마우스를 제어하는 MANUX의 공동 작업 공간이다. 먼저 [README](README.md)와 [하네스](docs/harness.md)를 읽고, 작업에 필요한 [모듈 계약](docs/contracts.md)과 본인 [작업 문서](docs/workstreams/)만 추가로 읽는다. [마스터 플랜](docs/master-plan.md)은 과거 계획을 포함하므로 현재 구현과 구분한다. 사람의 현재 요청이 이 문서보다 우선한다.
+이 저장소는 로컬 웹캠으로 영상과 Windows 마우스를 제어하는 MANUX의 공동 작업 공간이다. 먼저 [README](README.md)와 [하네스](docs/harness.md)를 읽고, 작업에 필요한 [설계 문서 5종](docs/design/README.md)·[모듈 계약](docs/contracts.md)과 본인 [작업 문서](docs/workstreams/)만 추가로 읽는다. 설계 문서의 컴포넌트 **하지 않는 것** 열이 파일 경계이고, 코드에 문서에 없던 판단이 생기면 같은 PR에서 문서를 고친다. [마스터 플랜](docs/master-plan.md)은 과거 계획을 포함하므로 현재 구현과 구분한다. 사람의 현재 요청이 이 문서보다 우선한다.
 
 ## 현재 상태
 
