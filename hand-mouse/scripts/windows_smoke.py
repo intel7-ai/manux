@@ -132,10 +132,50 @@ def main() -> int:
         dash.closeTrackingTest()
         dash.poll()
     report["test_window_hidden_after_close"] = win is not None and not win.isVisible()
+    tray_failures = []
+    # Tray mode: real tray icon where Windows offers one, overlay, start hidden, close to tray
+    from PySide6.QtWidgets import QSystemTrayIcon
+    from src.qt_tray import QtTray
+    dash.close()
+    dash.preferences.setValue("controlHand", dash.control_hand or "Right")
+    dash.preferences.sync()
+    tray_dash = QtDashboard(dry_run=True, hide_to_tray=True, start_hidden=True, overlay=True)
+    tray_dash.poll()
+    tray = QtTray(tray_dash)
+    tray_dash.show(frame, True, False, "move_cursor", 30, 10)
+    for _ in range(10):
+        tray_dash.poll()
+    # The first dashboard's (hidden) overlay may still exist: take the new dashboard's own window
+    from PySide6.QtGui import QWindow
+    overlay_win = next((w for w in tray_dash.window.findChildren(QWindow) if w.title() == "MANUX 상태"), None)
+    if overlay_win is not None and overlay_win.isVisible():
+        overlay_win.grabWindow().save(str(out / "overlay.png"))
+    report["tray"] = {
+        "system_tray_available": QSystemTrayIcon.isSystemTrayAvailable(),
+        "tray_icon_visible": tray.tray.isVisible(),
+        "tooltip": tray.tray.toolTip(),
+        "window_hidden_at_start": not tray_dash.window.isVisible(),
+        "overlay_visible": overlay_win is not None and overlay_win.isVisible(),
+        "reception": tray_dash.receptionState,
+    }
+    tray_dash.showDashboard()
+    tray_dash.poll()
+    tray_dash.window.close()  # tray mode: must hide, not quit
+    tray_dash.poll()
+    report["tray"]["close_hides_to_tray"] = not tray_dash.window.isVisible() and not tray_dash.closed
+    if not report["tray"]["window_hidden_at_start"]:
+        tray_failures.append("tray mode: window was shown at start although a hand is saved")
+    if not report["tray"]["overlay_visible"]:
+        tray_failures.append("tray mode: overlay did not show")
+    if not report["tray"]["close_hides_to_tray"]:
+        tray_failures.append("tray mode: closing the window did not hide it to the tray")
+    tray.hide()
+    tray_dash.close()
+
     (out / "smoke-report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False))
 
-    failures = []
+    failures = list(tray_failures)
     if win is None or not report["test_window"]["visible"]:
         failures.append("tracking test window did not show")
     if report["frame_ms_median"] > FRAME_BUDGET_MS:

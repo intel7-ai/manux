@@ -39,7 +39,8 @@ cam.CameraStream.actual_mode = lambda self: (1280, 720, 30.0)
 for stream in (sys.stdout, sys.stderr):
     if hasattr(stream, "reconfigure"):
         stream.reconfigure(encoding="utf-8", errors="replace")
-sys.argv = ["main.py", "--ui", "qt", "--dry-run", "--source", "0", "--max-frames", str(FRAMES)]
+# Extra args pass through, e.g. --headless (tray mode, window hidden)
+sys.argv = ["main.py", "--ui", "qt", "--dry-run", "--source", "0", "--max-frames", str(FRAMES)] + sys.argv[1:]
 start = time.perf_counter()
 try:
     runpy.run_path(str(ROOT / "main.py"), run_name="__main__")

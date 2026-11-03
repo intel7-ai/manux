@@ -11,7 +11,14 @@ ApplicationWindow {
     visible: true
     title: "Hand-Mouse · MANUX Qt"
     color: "#F4F6F8"
-    onClosing: dashboard.requestClose()
+    onClosing: function (close) {
+        if (dashboard.hidesToTray) {
+            close.accepted = false   // tray mode: keep running, quit from the tray menu
+            dashboard.hideDashboard()
+        } else {
+            dashboard.requestClose()
+        }
+    }
     readonly property color navy: "#112331"
     readonly property color muted: "#526575"
     readonly property color mint: "#46E5BD"
@@ -524,9 +531,54 @@ ApplicationWindow {
         }
     }
 
+    // Reception overlay: small click-through pill in a screen corner (tray mode / --overlay)
+    Window {
+        id: overlay
+        title: "MANUX 상태"
+        // Independent of the dashboard window: it stays usable while the dashboard is hidden in the tray
+        transientParent: null
+        visible: dashboard.overlayVisible
+        color: "transparent"
+        flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
+               | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus
+        width: pill.implicitWidth
+        height: 34
+        readonly property var area: dashboard.overlayArea
+        readonly property string corner: dashboard.overlayCorner
+        x: corner.indexOf("left") >= 0 ? area[0] + 16 : area[0] + area[2] - width - 16
+        y: corner.indexOf("top") >= 0 ? area[1] + 16 : area[1] + area[3] - height - 16
+        Rectangle {
+            id: pill
+            anchors.fill: parent
+            implicitWidth: pillRow.implicitWidth + 24
+            radius: height / 2
+            color: "#E6112331"
+            Row {
+                id: pillRow
+                anchors.centerIn: parent
+                spacing: 8
+                Rectangle {
+                    width: 10; height: 10; radius: 5
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: dashboard.receptionState === "ok" ? "#2FBF8F"
+                         : dashboard.receptionState === "weak" ? "#F2B544"
+                         : dashboard.receptionState === "none" ? "#8A9AA6" : "#526575"
+                }
+                Label {
+                    text: "MANUX · " + dashboard.receptionText
+                    color: "#F5F7F8"
+                    font.pixelSize: 13
+                    font.family: "Malgun Gothic"
+                }
+            }
+        }
+    }
+
     Window {
         id: trackingWindow
         title: "MANUX 트래킹 측정"
+        // Independent of the dashboard window: it stays usable while the dashboard is hidden in the tray
+        transientParent: null
         color: "#0E1B26"
         visibility: dashboard.trackingActive ? Window.FullScreen : Window.Hidden
         flags: Qt.Window
