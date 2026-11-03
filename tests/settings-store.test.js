@@ -170,6 +170,72 @@ test('stored bindings to an action this build does not know still load', () => {
   assert.equal(validateSettings(settings, {validateRegistrations}).valid, true);
 });
 
+test('denied localStorage getter opens read-only instead of crashing startup', t => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  t.after(() => {
+    if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor);
+    else delete globalThis.localStorage;
+  });
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    get() { throw new Error('Storage access denied'); },
+  });
+  const store = new SettingsStore();
+  assert.equal(store.status, 'unavailable');
+  assert.equal(store.readOnly, true);
+  assert.deepEqual(store.settings, defaultSettings());
+  assert.throws(() => store.setMouse({sensitivity: 2000}), /Storage access denied/);
+  const storage = memoryStorage();
+  Object.defineProperty(globalThis, 'localStorage', {configurable: true, value: storage});
+  store.load();
+  store.setMouse({sensitivity: 2000});
+  assert.equal(open(storage).settings.mouse.sensitivity, 2000);
+});
+
+test('throwing read-back restores empty and populated storage and permits retry', () => {
+  for (const populated of [false, true]) {
+    const storage = memoryStorage();
+    const store = open(storage);
+    if (populated) store.setMouse({sensitivity: 2000});
+    const before = store.settings;
+    const raw = storage.getItem(SETTINGS_KEY);
+    const getItem = storage.getItem;
+    let reads = 0;
+    storage.getItem = key => {
+      if (++reads === 2) throw new Error('read-back failed');
+      return getItem(key);
+    };
+    assert.throws(() => store.setMouse({sensitivity: 3000}), /기존 설정은 그대로입니다/);
+    assert.equal(getItem(SETTINGS_KEY), raw);
+    assert.deepEqual(store.settings, before);
+    store.setMouse({sensitivity: 3000});
+    assert.equal(open(storage).settings.mouse.sensitivity, 3000);
+  }
+});
+
+test('failed rollback blocks further writes and reports uncertain persisted state', () => {
+  const storage = memoryStorage();
+  const store = open(storage);
+  store.setMouse({sensitivity: 2000});
+  const setItem = storage.setItem;
+  const getItem = storage.getItem;
+  let writes = 0, reads = 0;
+  storage.setItem = (key, value) => {
+    if (++writes > 1) throw new Error('rollback denied');
+    setItem(key, value);
+  };
+  storage.getItem = key => {
+    if (++reads === 2) throw new Error('read-back failed');
+    return getItem(key);
+  };
+  assert.throws(() => store.setMouse({sensitivity: 3000}), /복원을 확인하지 못했습니다/);
+  assert.equal(store.readOnly, true);
+  assert.equal(store.settings.mouse.sensitivity, 2000);
+  assert.equal(JSON.parse(getItem(SETTINGS_KEY)).mouse.sensitivity, 3000);
+  assert.throws(() => store.setMouse({sensitivity: 1000}), /앱을 다시 열어/);
+  assert.equal(writes, 2);
+});
+
 test('settings handed out are copies, so callers cannot change committed state', () => {
   const store = open(memoryStorage());
   const copy = store.settings;
