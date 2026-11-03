@@ -25,7 +25,6 @@ import argparse
 from pathlib import Path
 import sys
 import time
-import math
 from typing import Union
 
 import cv2
@@ -39,17 +38,12 @@ from src.settings_panel import SettingsPanel
 from src.hotkeys import VK_0, VK_F2, VK_NUMPAD0, VK_O, KeyPoller
 from src.win_perf import keep_responsive_in_background
 from src.perf_log import PerfLog
-from src.tracking_test import TrackingTest, result_line
-from src.hand_crop import HandCrop
-from src.failure_log import FailureRecorder
 from src.pipeline import InferencePipeline, Snapshot
 from src.status import describe_state, short_label
 from src.overlay import CORNERS, StatusOverlay
 from src.tray import TrayIcon
 from src.ui_magnet import UITargetMagnet
 from src.dashboard import Dashboard
-from src.pointer_workspace import FINGERTIPS
-from src.pointer_engine import PointerEngine, PointerSettings
 
 WINDOW_NAME = "Hand-Mouse (MediaPipe)"  # must keep the "Hand-Mouse" prefix (hotkeys.py)
 
@@ -303,26 +297,91 @@ def _log_to_file_without_console() -> None:
     sys.stderr = sys.stderr or f
 
 
+def run_qt(args, perf, engine, camera, tracker, mouse, settings, keys, perf_log) -> int:
+    """`--ui qt`: Qt dashboard on the UI thread, camera -> tracking -> mouse on a runtime thread.
+
+    The UI thread only polls Qt, forwards keys / requests to the runtime and renders its
+    newest snapshot (src/qt_runtime.py), so a slow UI frame never delays the cursor.
+    """
+    from src.qt_dashboard import QtDashboard
+    from src.qt_runtime import QtRuntime
+
+    dashboard = QtDashboard(dry_run=args.dry_run)
+    runtime = QtRuntime(
+        camera=camera, tracker=tracker, engine=engine, mouse=mouse, perf_log=perf_log,
+        config_path=args.config, dry_run=args.dry_run, max_frames=args.max_frames,
+        draw_cursor_anchor=draw_cursor_anchor, draw_recording=draw_recording,
+    )
+    print("=== Hand-Mouse Started (Qt, runtime thread) ===")
+    if perf:
+        print(f"  Background performance: {', '.join(perf)}")
+    print(f"  Camera Source : {camera.config.source}")
+    print(f"  Movement Mode : {engine.config.get('movement_mode')}")
+    print("  Space start/pause · Esc pause · N next monitor · F mark a failure · O settings · Q quit")
+    print(f"  Monitors: {len(mouse.screens)} (cursor can cross to any of them, [N] = jump to next)")
+
+    close_posted = False
+    runtime.ui = dashboard.ui_state()
+    runtime.start()
+    try:
+        while not dashboard.closed and not runtime.finished:
+            key = dashboard.poll()
+            if dashboard.closed:
+                break
+            if dashboard.tracking_requested:
+                dashboard.tracking_requested = False
+                runtime.post("pause")
+                runtime.post("tracking_start")
+            if dashboard.tracking_close_requested and not close_posted:
+                runtime.post("tracking_close")
+                close_posted = True
+            elif not dashboard.tracking_close_requested:
+                close_posted = False
+            if dashboard.failure_mark_requested:
+                dashboard.failure_mark_requested = False
+                runtime.post("failure_mark")
+            want_settings = key in (ord("o"), ord("O"), ord("0"))
+            if keys.available:
+                want_settings = want_settings or keys.pressed([VK_F2]) or keys.pressed(
+                    [VK_O, VK_0, VK_NUMPAD0], require_focus=True)
+            if want_settings and dashboard.stage_name == "main":
+                runtime.post("pause")
+                settings.toggle()
+            elif key in (ord("q"), ord("Q")):
+                break
+            elif key not in (-1, ord("o"), ord("O"), ord("0")):
+                runtime.post("key", key)
+            runtime.ui = dashboard.ui_state()
+            snap = runtime.wait_snapshot(.03)
+            if snap is not None:
+                dashboard.apply_snapshot(snap)
+                if snap.message:
+                    print(snap.message)
+            settings.update()
+        if runtime.error is not None:
+            print(f"[Error] runtime thread stopped: {runtime.error!r}", file=sys.stderr)
+    finally:
+        runtime.stop()
+        mouse.close()
+        settings.shutdown()
+        perf_log.close()
+        mouse.release_all()
+        tracker.close()
+        camera.release()
+        dashboard.close()
+        cv2.destroyAllWindows()
+    return 1 if runtime.error is not None else 0
+
+
 def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, perf_log) -> int:
-    """`--ui tk|qt`: Tk/Qt dashboard with hand selection and the index pointer preset.
+    """`--ui tk`: Tk dashboard (Dan's palm engine). `--ui qt` uses run_qt (runtime thread).
 
     Runs camera -> gestures -> mouse inline on the main thread, because the dashboard UI
     must be polled there. Tray, headless mode, status overlay and UI aim assist belong to
     the default pipeline loop in main() and are not wired into this mode yet.
     """
-    if args.ui == "qt":
-        from src.qt_dashboard import QtDashboard
-        dashboard = QtDashboard(dry_run=args.dry_run)
-    else:
-        dashboard = Dashboard(dry_run=args.dry_run)
+    dashboard = Dashboard(dry_run=args.dry_run)
     paused = True
-    had_selected_hand = False
-    # Portable core of the index pointer (no camera / Qt / OS code): src/pointer_engine.py
-    pointer = PointerEngine(GestureEngine(config_path=args.config)) if args.ui == "qt" else None
-    hand_crop = HandCrop()  # Qt: look only around the selected hand, at full camera resolution
-    crop_roi = None
-    failures = FailureRecorder(Path(__file__).resolve().parent / "logs" / "failures")
-    pointer_frame = None
     status_msg = ""
     status_expire = 0.0
     frame_count = 0
@@ -366,8 +425,6 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
             ok, frame = camera.read()
             loop_t0 = time.perf_counter()
             if not ok or frame is None:
-                if pointer is not None:
-                    pointer.frame_missing()
                 time.sleep(0.03)
                 continue
 
@@ -376,114 +433,14 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                 camera.phone_server is not None and camera.phone_server.has_client
             )
 
-            crop_roi = hand_crop.roi if (args.ui == "qt" and dashboard.hand_crop) else None
             if should_detect:
-                detections = tracker.detect(frame, roi=crop_roi)
-                if crop_roi is not None and not detections:
-                    # Lost inside the crop: look at the whole frame again in this same frame
-                    hand_crop.reset()
-                    crop_roi = None
-                    detections = tracker.detect(frame)
+                detections = tracker.detect(frame)
             else:
                 detections = []
 
-            if args.ui == "qt":
-                selected = dashboard.select_hand(detections, camera.config.mirror)
-                detections = [selected] if selected is not None else []
-                if dashboard.hand_crop and detections:
-                    hand_crop.update(detections[0].landmarks, frame.shape[1], frame.shape[0])
-                else:
-                    hand_crop.reset()
-                if dashboard.stage_name != "main" and not paused:
-                    paused = True
-                    mouse.close_switcher(confirm=False)
-                    mouse.release_all()
-                    engine.reset()
-                if had_selected_hand and not detections:
-                    mouse.close_switcher(confirm=False)
-                    mouse.release_all()
-                    engine.reset()
-                had_selected_hand = bool(detections)
-
             fh, fw = frame.shape[:2]
             mouse.frame_aspect = fh / max(1, fw)
-            if args.ui == "qt" and frame_count % 10 == 0:
-                # Camera header: actual mode and how dark the picture is (a dim room makes
-                # the webcam expose longer, so a moving hand blurs and tracking drops)
-                small = cv2.resize(frame, (64, 36), interpolation=cv2.INTER_AREA)
-                level = int(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY).mean())
-                try:
-                    dark_below = float(engine.config.get("low_light_threshold", 70))
-                except (TypeError, ValueError):
-                    dark_below = 70.0
-                cam_mode = camera.actual_mode()
-                dashboard.set_camera_metrics(
-                    f"{cam_mode[0]}×{cam_mode[1]} · {cam_mode[2]:g}fps" if cam_mode else "",
-                    level, level < dark_below)
-
-            index_mode = args.ui == "qt" and dashboard.use_index_pointer
-            contacts = ()
-            pointer_frame = None
-            if index_mode:
-                tip = detections[0].landmarks[GestureEngine.INDEX_TIP] if detections else None
-                dashboard.update_pointer((tip.x, tip.y) if tip else None, camera.config.source,
-                                         camera.config.mirror, mouse.frame_aspect)
-                settings_now = PointerSettings(
-                    click_style=dashboard.click_style, anchor=dashboard.pointer_anchor,
-                    tracking_only=dashboard.tracking_test is not None, axes=dashboard.axes,
-                    config=engine.config,
-                )
-                pointer_frame = pointer.step(
-                    loop_t0, detections[0].landmarks if detections else None, mouse.frame_aspect,
-                    settings_now, active=not paused and not dashboard.calibrating,
-                    detecting=should_detect,
-                )
-            elif pointer is not None:
-                pointer.reset()
-            if pointer_frame is not None:
-                points = detections[0].landmarks
-                contacts = pointer_frame.contacts
-                preview_point = pointer_frame.preview_point
-                result = GestureResult()
-                if pointer_frame.action is not None:
-                    action = pointer_frame.action
-                    if pointer_frame.warp is not None:
-                        mouse.warp_to(*pointer_frame.warp)
-                    result = GestureResult(action=action, cursor_point=pointer_frame.cursor_point,
-                                           is_moving=pointer_frame.cursor_point is not None)
-                    mouse.apply(result, engine.config, index_tip=pointer_frame.pointer_point,
-                                index_sensitivity=dashboard.pointer_sensitivity / 100,
-                                pointer_source=pointer_frame.pointer_source)
-                    pointer.record_cursor(loop_t0, mouse.last_screen_pos)
-                    parts = [f"이동 {pointer_frame.speed:.2f}" + (" 유지" if pointer_frame.latched else "")]
-                    cam_mode = camera.actual_mode()
-                    if cam_mode:
-                        parts.insert(0, f"카메라 {cam_mode[0]}×{cam_mode[1]}@{cam_mode[2]:g}")
-                    if dashboard.tracking_only:
-                        parts.append("클릭 끔")
-                    elif dashboard.click_style == "trigger":
-                        ratio = pointer_frame.trigger_ratio
-                        parts.append(f"방아쇠 {ratio:.2f}" if math.isfinite(ratio) else "방아쇠 —")
-                    if not pointer_frame.click_armed:
-                        parts.append("클릭 대기: 엄지를 떼세요")
-                    status_msg, status_expire = "  ·  ".join(parts), time.perf_counter() + .5
-                    if action in ("left_click", "right_click"):
-                        recent_action, recent_action_until = action, time.perf_counter() + .5
-                x, y = preview_point
-                if not dashboard.show_fingertips and 0 <= x <= 1 and 0 <= y <= 1:
-                    cv2.circle(frame, (int(x * fw), int(y * fh)), 6,
-                               (189, 229, 70), -1, cv2.LINE_AA)
-                numbered_tips = FINGERTIPS if dashboard.show_fingertips else ()
-                for number, landmark_id in enumerate(numbered_tips):
-                    point = points[landmark_id]
-                    if not (0 <= point.x <= 1 and 0 <= point.y <= 1):
-                        continue
-                    x, y = int(point.x * fw), int(point.y * fh)
-                    color = (189, 229, 70) if number == 1 or number in contacts else (245, 245, 245)
-                    cv2.circle(frame, (x, y), 10, (49, 35, 17), -1, cv2.LINE_AA)
-                    cv2.putText(frame, str(number), (x - 5, y + 5), cv2.FONT_HERSHEY_SIMPLEX,
-                                .46, color, 1, cv2.LINE_AA)
-            elif detections:
+            if detections:
                 hand = detections[0]
                 result = engine.process(hand.landmarks)
                 if not paused:
@@ -511,92 +468,16 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                     status_msg = f"FLING! ~{mouse.last_fling_distance:.0f}px"
                     status_expire = time.perf_counter() + 0.8
             else:
-                result = GestureResult() if index_mode else engine.process(None)
-                if not paused and args.ui != "qt":
+                result = engine.process(None)
+                if not paused:
                     mouse.hand_lost(engine.config)
-
-            if args.ui == "qt":
-                if crop_roi is not None:
-                    # Show where the tracker looked (only the area inside was analysed)
-                    cv2.rectangle(frame, crop_roi[:2], crop_roi[2:], (189, 229, 70), 2, cv2.LINE_AA)
-                # Failure recording: the last 2 s of numbers (no images), saved around bad moments
-                if dashboard.failure_mark_requested:
-                    dashboard.failure_mark_requested = False
-                    if failures.trigger(loop_t0, "manual"):
-                        status_msg, status_expire = "실패 기록: 앞뒤 3초를 저장합니다", time.perf_counter() + 2.0
-                auto_kind = None
-                if index_mode and not dashboard.calibrating:
-                    hand = detections[0] if detections else None
-                    auto_kind = failures.record(
-                        loop_t0, landmarks=hand.landmarks if hand else None,
-                        score=hand.score if hand else 0.0,
-                        moving=pointer.latch.latched and not paused,
-                        crop=list(crop_roi) if crop_roi else None,
-                        cursor=list(mouse.last_screen_pos), speed=round(pointer.latch.speed, 3),
-                        brightness=dashboard.metrics[1], fps=round(camera.fps, 1),
-                        detect_ms=round(tracker.last_detect_ms, 1), paused=paused,
-                    )
-                if auto_kind:
-                    status_msg, status_expire = f"실패 기록: {auto_kind}", time.perf_counter() + 2.0
-                saved_failure = failures.poll(loop_t0, {
-                    "anchor": dashboard.pointer_anchor, "click_style": dashboard.click_style,
-                    "hand_crop": dashboard.hand_crop, "frame_px": [frame.shape[1], frame.shape[0]],
-                    "camera_mode": list(camera.actual_mode() or ()),
-                    "tracker": tracker.options, "sensitivity_pct": dashboard.pointer_sensitivity,
-                    "control_hand": dashboard.control_hand, "dry_run": args.dry_run,
-                })
-                if saved_failure is not None:
-                    dashboard.set_failures(failures.summary_text(), saved_failure.name)
-                    print(f"[Failure] saved {saved_failure}")
-                # Tracking test (no clicks): targets on the primary monitor, CSV in logs/
-                if dashboard.tracking_requested:
-                    dashboard.tracking_requested = False
-                    mouse.release_all()
-                    mouse.warp_to(*mouse.screens.primary.center)
-                    dashboard.set_tracking(TrackingTest(mouse.screens.primary))
-                test = dashboard.tracking_test
-                if test is not None:
-                    test.update(loop_t0, mouse.last_screen_pos, hand=bool(detections),
-                                active=index_mode and not paused and not dashboard.calibrating,
-                                fps=camera.fps, detect_ms=tracker.last_detect_ms)
-                    dashboard.tracking_frame(test.cursor_fraction(mouse.last_screen_pos))
-                    if test.done and not getattr(test, "saved", False):
-                        test.saved = True
-                        primary = mouse.screens.primary
-                        run = {
-                            "anchor": dashboard.pointer_anchor,
-                            "sensitivity_pct": dashboard.pointer_sensitivity,
-                            "direction_calibrated": dashboard.axes is not None,
-                            "control_hand": dashboard.control_hand,
-                            "camera_source": camera.config.source,
-                            "monitor_px": f"{primary.width}x{primary.height}",
-                            "monitors": len(mouse.screens),
-                            "dry_run": args.dry_run,
-                            "camera_mode": "x".join(map(str, camera.actual_mode() or ())) or "unknown",
-                            "hand_crop": dashboard.hand_crop,
-                            **{f"tracker_{k}": v for k, v in tracker.options.items()},
-                        }
-                        text = test.summary_text()
-                        try:
-                            saved = test.save_csv(Path(__file__).resolve().parent / "logs", run)
-                            text += f" · {saved.name}"
-                        except OSError as exc:
-                            text += f" · 저장 실패: {exc}"
-                        dashboard.tracking_finished(text)
-                        dashboard.add_recent(result_line({**run, **test.summary()},
-                                                         time.strftime("%m/%d %H:%M")))
-                        print(f"[Tracking] {text}")
 
             now = time.perf_counter()
             if now > status_expire:
                 status_msg = ""
             action = recent_action if now < recent_action_until else result.action
-            if args.ui == "qt":
-                dashboard.show(frame, bool(detections), paused, action, camera.fps,
-                               tracker.last_detect_ms, status_msg, contacts=contacts)
-            else:
-                dashboard.show(frame, bool(detections), paused, action, camera.fps,
-                               tracker.last_detect_ms, status_msg)
+            dashboard.show(frame, bool(detections), paused, action, camera.fps,
+                           tracker.last_detect_ms, status_msg)
             frame_count += 1
             if args.max_frames > 0 and frame_count >= args.max_frames:
                 break
@@ -615,7 +496,7 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                 )
             elif key in (ord("o"), ord("O"), ord("0")):
                 toggle_settings = True
-            if toggle_settings and (args.ui != "qt" or dashboard.stage_name == "main"):
+            if toggle_settings:
                 paused = True
                 mouse.close_switcher(confirm=False)
                 mouse.release_all()
@@ -628,7 +509,7 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
             if key in (ord("q"), ord("Q")):
                 break
             elif key in (27, ord(" ")):
-                paused = key == 27 or not paused or (args.ui == "qt" and dashboard.stage_name != "main")
+                paused = key == 27 or not paused
                 mouse.close_switcher(confirm=False)
                 mouse.release_all()
                 engine.reset()
@@ -642,8 +523,6 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                 mouse.release_all()
                 status_msg = f"Switched Movement Mode -> {new_mode.upper()}"
                 status_expire = now + 2.0
-            elif key in (ord("f"), ord("F")) and args.ui == "qt":
-                dashboard.failure_mark_requested = True
             elif key in (ord("n"), ord("N")):
                 mouse.release_all()
                 target = mouse.cycle_monitor()
@@ -765,6 +644,8 @@ def main() -> int:
     settings = SettingsPanel(engine)
     keys = KeyPoller()
     perf_log = PerfLog(Path(__file__).resolve().parent / "logs" / "perf_latest.csv")
+    if args.ui == "qt":
+        return run_qt(args, perf, engine, camera, tracker, mouse, settings, keys, perf_log)
     if args.ui:
         return run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, perf_log)
     # Aim assist: slow the cursor near clickable UI (reads engine.config live, [Settings] toggles it)
