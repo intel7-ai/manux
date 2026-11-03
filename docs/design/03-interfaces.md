@@ -1,6 +1,6 @@
 # 03. 인터페이스 정의서 (M1)
 
-> 상태: **AI 초안, 사람 검수 전** (2026-11-03). 입력: [02 컴포넌트](02-components.md)와 실제 export. **구현됨**은 2026-11-03 `preview` + 머지 대기 PR #8~#11의 코드에 있는 시그니처이고, **제안**은 아직 코드에 없다. 세부 수치·이유 코드는 [contracts](../contracts.md) §9, [air-mouse](../air-mouse.md), [settings-store](../settings-store.md)가 원본이다. 이 문서와 다르면 코드가 사실이고, 이 문서를 고친다.
+> 상태: **AI 초안, 사람 검수 전** (2026-11-03). 입력: [02 컴포넌트](02-components.md)와 실제 export. **구현됨**은 2026-11-03 `preview`(PR #10·#11 포함)와 열린 PR #12·#13(마우스 정지 감시·양손 PoC)의 코드에 있는 시그니처이고, **제안**은 아직 코드에 없다. 세부 수치·이유 코드는 [contracts](../contracts.md) §9, [air-mouse](../air-mouse.md), [settings-store](../settings-store.md)가 원본이다. 이 문서와 다르면 코드가 사실이고, 이 문서를 고친다.
 >
 > 함수마다 **실패하면** 줄을 둔다: 예외를 던지는가 / `null`을 주는가 / `false`·`accepted:false`를 주는가 / 빈 값인가. 같은 반환 타입이라도 "빈 결과"와 "실패"는 다른 계약이다.
 
