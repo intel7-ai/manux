@@ -2,12 +2,13 @@ import {GestureController} from './gesture-controller.js';
 import {applyMediaAction, ACTION_NAMES, formatTime} from './media-controller.js';
 import {VisionClient} from './vision-client.js';
 import {cameraConstraints, describeCamera} from './camera.js';
-import {extractFeatures, getHandQuality, trainEnvironment, classifyPersonal} from './personalization.js';
+import {extractFeatures, getHandQuality, trainEnvironment, classifyPersonal, validateRegistrations} from './personalization.js';
 import {readProfiles, writeProfiles} from './profile-store.js';
 import {EnrollmentController} from './enrollment.js';
 import {extractOrientation, VIEW_LABELS} from './orientation.js';
 import {renderAngleCoverage} from './enrollment-view.js';
 import {MouseWorkspace} from './mouse-workspace.js';
+import {SettingsStore} from './settings-store.js';
 
 const $ = selector => document.querySelector(selector);
 const player = $('#player'), camera = $('#camera'), canvas = $('#landmarks');
@@ -29,7 +30,12 @@ let cameraInfo = null, lastResultAt = null, fps = 0, lastStatsAt = 0;
 let enrollment = null, enrollmentModel = null, enrollmentContext = null, enrollmentError = null;
 let previewMoveId = 0;
 let controlMode = 'media';
-const mouse = new MouseWorkspace();
+// Registrations are checked with G1's validator. Bindings stay closed until C3 passes allowedActions (docs/settings-store.md).
+const settingsStore = new SettingsStore({validateRegistrations});
+const mouse = new MouseWorkspace({sensitivity:settingsStore.settings.mouse.sensitivity, onSensitivityChange:sensitivity => {
+  try { settingsStore.setMouse({sensitivity}); }
+  catch (error) { mouse.status(`감도를 저장하지 못했습니다. ${error.message}`, true); }
+}});
 
 function switchMode(mode) {
   disableGestures(); cancelEnrollment('제어 모드를 바꿔 등록을 취소했습니다.');
@@ -452,4 +458,5 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('beforeunload', () => { stopCamera(); if (mediaUrl) URL.revokeObjectURL(mediaUrl); });
 renderProfiles(profiles[0]?.id || ''); syncMedia();
 if (location.hash === '#mouse' || globalThis.manuxDesktop) switchMode('mouse');
+if (settingsStore.error) mouse.status(settingsStore.error, true);
 if (stored.error) message('#profile-message', `${stored.error} 기존 데이터를 보호하기 위해 새 저장을 멈췄습니다. 공통 모델은 사용할 수 있습니다.`, true);
