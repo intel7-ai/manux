@@ -10,13 +10,13 @@
 
 원인은 코드 구조에 있다. 손이 서툴러서가 아니다.
 
-- 검지 끝 포인터 모드(`src/pointer_workspace.py`의 `PointerPose`, Qt 작업 폴더의 **미커밋** 코드)는 ☝️일 때만 커서를 움직인다.
+- 검지 끝 포인터 모드(`src/pointer_workspace.py`의 `PointerPose`, `manux-python-ui` 브랜치 e224f40, WIP)는 ☝️일 때만 커서를 움직인다.
 - 클릭은 Dan 엔진의 판정을 그대로 쓴다: 엄지 끝+중지 끝 = 좌클릭, 엄지 끝+약지 끝 = 우클릭.
 - ☝️에서는 중지·약지가 접혀 있어 이 접촉을 만들 수 없다. 그래서 ✋로 손을 펴는 "준비" 단계가 생긴다.
 
 ## 현재 두 앱의 상태 (사실)
 
-| | Electron 앱 (`preview`, [air-mouse](../air-mouse.md)) | Python 앱 (`hand-mouse-gesture-overhaul` 26f0815, Dan) | Qt 포인터 모드 (미커밋, Codex) |
+| | Electron 앱 (`preview`, [air-mouse](../air-mouse.md)) | Python 앱 (`hand-mouse-gesture-overhaul` 26f0815, Dan) | Qt 포인터 모드 (`manux-python-ui` e224f40, WIP) |
 | --- | --- | --- | --- |
 | 커서 기준점 | 손목+손가락 기저부 평균(손바닥) | 손목→중지 기저부 선 위 점(`cursor_anchor_ratio` 0.5, 손바닥 중심), 상대 이동 | 검지 끝 |
 | 이동 자세 | 손바닥 편 상태(손가락 3개 이상 펴짐) | 손 모양 무관(핀치 없음) | ☝️만 |
@@ -86,8 +86,8 @@
 
 ## 이 노트를 쓸 때의 작업 상태 (2026-11-03)
 
-- Qt 포인터 모드·대시보드·손 선택 코드는 사무실 PC의 `.local/hand-mouse-gesture-overhaul` 작업 폴더(로컬 브랜치 `manux-python-ui`)에 **커밋되지 않은 채** 있다. 원격에는 없다.
-- 그 사이 Dan이 `hand-mouse-gesture-overhaul`에 26f0815(트레이/헤드리스, 추론 스레드 분리, 1,351줄)를 올렸다. `main.py`가 겹치므로 미커밋 작업을 이어갈 때 병합이 필요하다.
+- Qt 포인터 모드·대시보드·손 선택 코드는 사무실 PC 작업 폴더에서 WIP 커밋으로 원격 `manux-python-ui`(e224f40, 기준 37cb486)에 올렸다. 실제 손·웹캠 확인 전이다.
+- 그 사이 Dan이 `hand-mouse-gesture-overhaul`에 26f0815(트레이/헤드리스, 추론 스레드 분리, 1,351줄)를 올렸다. `main.py`가 겹친다. 병합 커밋은 `manux-python-ui-dan-merge`(594d5e1)에 있다: 기본 실행은 Dan의 추론 스레드·트레이 루프, `--ui tk|qt`는 기존 대시보드 루프를 그대로 쓴다. Linux 합성 시험만 했고 Windows·실물 웹캠 실행은 하지 않았다.
 - 실제 웹캠·실제 손에서 A·B·C 어느 것도 측정하지 않았다.
 
 ## 결정
