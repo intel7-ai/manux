@@ -79,16 +79,16 @@ ApplicationWindow {
         }
     }
 
-    Shortcut { sequence: "Return"; enabled: dashboard.calibratingPointer; autoRepeat: false; onActivated: dashboard.capturePointerSample() }
-    Shortcut { sequence: "Enter"; enabled: dashboard.calibratingPointer; autoRepeat: false; onActivated: dashboard.capturePointerSample() }
-    Shortcut { sequence: "Esc"; onActivated: dashboard.command(27) }
-    Shortcut { sequence: "Space"; enabled: !pointerSettings.visible; onActivated: dashboard.command(32) }
-    Shortcut { sequence: "Q"; onActivated: dashboard.command(81) }
-    Shortcut { sequence: "O"; onActivated: dashboard.command(111) }
-    Shortcut { sequence: "M"; onActivated: dashboard.command(109) }
-    Shortcut { sequence: "N"; onActivated: dashboard.command(110) }
-    Shortcut { sequence: "C"; onActivated: dashboard.command(99) }
-    Shortcut { sequence: "P"; onActivated: dashboard.command(112) }
+    Shortcut { sequence: "Return"; enabled: !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
+    Shortcut { sequence: "Enter"; enabled: !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
+    Shortcut { sequence: "Esc"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(27) }
+    Shortcut { sequence: "Space"; enabled: !dashboard.trackingActive && (!pointerSettings.visible); onActivated: dashboard.command(32) }
+    Shortcut { sequence: "Q"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(81) }
+    Shortcut { sequence: "O"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(111) }
+    Shortcut { sequence: "M"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(109) }
+    Shortcut { sequence: "N"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(110) }
+    Shortcut { sequence: "C"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(99) }
+    Shortcut { sequence: "P"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(112) }
 
     Timer { interval: 700; running: dashboard.stage === "splash"; onTriggered: dashboard.finishSplash() }
 
@@ -383,7 +383,12 @@ ApplicationWindow {
         visibility: dashboard.trackingActive ? Window.FullScreen : Window.Hidden
         flags: Qt.Window
         // Take keyboard focus when shown, so Space / Esc reach this window right away
-        onVisibilityChanged: if (visibility === Window.FullScreen) requestActivate()
+        onVisibilityChanged: function (mode) {
+            if (mode === Window.FullScreen) {
+                requestActivate()
+                keyCatcher.forceActiveFocus()
+            }
+        }
         screen: {
             const list = Qt.application.screens
             for (let i = 0; i < list.length; i++)
@@ -391,8 +396,28 @@ ApplicationWindow {
             return list.length ? list[0] : null
         }
 
-        Shortcut { sequence: "Space"; onActivated: dashboard.command(32) }
-        Shortcut { sequence: "Esc"; onActivated: dashboard.closeTrackingTest() }
+        // Keys are read directly here, and the main window's shortcuts are off while the
+        // test runs: they also caught keys pressed in this window, and two "Space" shortcuts
+        // clashed so neither fired (2026-11-03, Windows: stuck on "Space를 눌러 시작").
+        Item {
+            id: keyCatcher
+            anchors.fill: parent
+            focus: true
+            Keys.onPressed: function (event) {
+                if (event.key === Qt.Key_Space) {
+                    dashboard.command(32)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Escape) {
+                    dashboard.closeTrackingTest()
+                    event.accepted = true
+                }
+            }
+        }
+        MouseArea {
+            // Clicking the window (with the real mouse) also gives it the keyboard back
+            anchors.fill: parent
+            onPressed: function (mouse) { keyCatcher.forceActiveFocus(); mouse.accepted = false }
+        }
 
         Rectangle {
             id: target
