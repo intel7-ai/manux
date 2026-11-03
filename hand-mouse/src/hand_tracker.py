@@ -97,6 +97,7 @@ class HandDetection:
     landmarks: List[HandLandmark]
     handedness: str  # "Left" or "Right"
     score: float
+    from_crop: bool = False  # found in the hand-area crop (landmarks already mapped back)
 
 
 def ensure_model_exists(model_path: Path = DEFAULT_MODEL_PATH) -> Path:
@@ -154,9 +155,30 @@ class HandTracker:
         )
         self._landmarker = HandLandmarker.create_from_options(options)
         self._last_timestamp_ms: int = 0
+        # Hand-area crop: a second landmarker (one hand) fed a full-resolution crop around
+        # the hand, created on first use. Separate instance = separate VIDEO-mode state.
+        self._crop_options = HandLandmarkerOptions(
+            base_options=BaseOptions(model_asset_path=str(resolved_model)),
+            running_mode=VisionRunningMode.VIDEO,
+            num_hands=1,
+            min_hand_detection_confidence=min_detection_confidence,
+            min_hand_presence_confidence=min_presence_confidence,
+            min_tracking_confidence=min_tracking_confidence,
+        )
+        self._crop_landmarker = None
+        self._crop_timestamp_ms: int = 0
+        self.crop_max_side = 480  # a crop bigger than this is shrunk before MediaPipe
 
-    def detect(self, frame_bgr: np.ndarray) -> List[HandDetection]:
-        """Detect hands in a BGR frame and return 21 normalized landmarks per hand."""
+    def detect(self, frame_bgr: np.ndarray, roi: Optional[Tuple[int, int, int, int]] = None
+               ) -> List[HandDetection]:
+        """Detect hands in a BGR frame and return 21 normalized landmarks per hand.
+
+        With `roi` = (x0, y0, x1, y1) in frame pixels, look only inside that crop, at the
+        camera's full resolution (no 640 px downscale), and map the landmarks back to
+        whole-frame coordinates. A far-away hand then covers many more model pixels.
+        """
+        if roi is not None:
+            return self._detect_crop(frame_bgr, roi)
         t0 = time.perf_counter()
         h, w = frame_bgr.shape[:2]
         if self.detect_max_width > 0 and w > self.detect_max_width:
@@ -221,10 +243,49 @@ class HandTracker:
                 mid = ((thumb_pt[0] + tip_pt[0]) // 2, (thumb_pt[1] + tip_pt[1]) // 2)
                 cv2.circle(frame, mid, 11, color, 2, cv2.LINE_AA)
 
+    def _detect_crop(self, frame_bgr: np.ndarray, roi: Tuple[int, int, int, int]) -> List[HandDetection]:
+        t0 = time.perf_counter()
+        h, w = frame_bgr.shape[:2]
+        x0, y0, x1, y1 = (int(v) for v in roi)
+        x0, y0 = max(0, min(w - 1, x0)), max(0, min(h - 1, y0))
+        x1, y1 = max(x0 + 1, min(w, x1)), max(y0 + 1, min(h, y1))
+        crop = frame_bgr[y0:y1, x0:x1]
+        cw, ch = x1 - x0, y1 - y0
+        side = max(cw, ch)
+        if side > self.crop_max_side:
+            scale = self.crop_max_side / float(side)
+            crop = cv2.resize(crop, (max(1, int(round(cw * scale))), max(1, int(round(ch * scale)))),
+                              interpolation=cv2.INTER_AREA)
+        if self._crop_landmarker is None:
+            self._crop_landmarker = mp.tasks.vision.HandLandmarker.create_from_options(self._crop_options)
+        rgb = np.ascontiguousarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+        timestamp_ms = int(time.perf_counter() * 1000)
+        if timestamp_ms <= self._crop_timestamp_ms:
+            timestamp_ms = self._crop_timestamp_ms + 1
+        self._crop_timestamp_ms = timestamp_ms
+        result = self._crop_landmarker.detect_for_video(
+            mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb), timestamp_ms)
+        self.last_detect_ms = (time.perf_counter() - t0) * 1000.0
+        detections: List[HandDetection] = []
+        for idx, hand_lms in enumerate(result.hand_landmarks or []):
+            # crop-normalized -> frame-normalized (z is in units of image width, like x)
+            landmarks = [HandLandmark(x=(x0 + lm.x * cw) / w, y=(y0 + lm.y * ch) / h, z=lm.z * cw / w)
+                         for lm in hand_lms]
+            handedness, score = "Right", 1.0
+            if result.handedness and idx < len(result.handedness) and result.handedness[idx]:
+                handedness = result.handedness[idx][0].category_name or "Right"
+                score = float(result.handedness[idx][0].score or 1.0)
+            detections.append(HandDetection(landmarks=landmarks, handedness=handedness, score=score,
+                                            from_crop=True))
+        return detections
+
     def close(self) -> None:
         if self._landmarker is not None:
             self._landmarker.close()
             self._landmarker = None
+        if self._crop_landmarker is not None:
+            self._crop_landmarker.close()
+            self._crop_landmarker = None
 
 
 TRACKER_DEFAULTS = {
