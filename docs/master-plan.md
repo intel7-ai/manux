@@ -56,19 +56,17 @@ Electron 패키징, 시스템 음량, Alt+Tab, 마우스 커서, PC 종료, 임�
 
 ## 4. 실제 담당과 브랜치
 
-6명 명단 중 실제 개발은 5명이 수행한다. 문채원은 명단에 포함하되 현재 작업 미배정이다. R6는 별도 인원이 아니라 다섯 명의 공동 검증 업무다.
+2026-11-03부터 고정 담당·검토자 배정은 없다. 작업 영역과 Jira 연결만 남기며, 누가 하는지는 Jira 담당자·열린 PR로 표시한다([AGENTS.md](../AGENTS.md) "작업 가져가기").
 
-| 역할 | 담당 / 검토자 | Jira | 권장 브랜치 | 상세 작업 |
-| --- | --- | --- | --- | --- |
-| R1 비전·카메라·성능 | 김동혁 / 라즈 | [SCRUM-6](https://se4nchoi.atlassian.net/browse/SCRUM-6), [SCRUM-12](https://se4nchoi.atlassian.net/browse/SCRUM-12) | `scrum-6-camera` | [R1](workstreams/r1-camera.md) |
-| R2 판정·영상 명령 | 박현규 / Sean Choi | [SCRUM-7](https://se4nchoi.atlassian.net/browse/SCRUM-7), [SCRUM-13](https://se4nchoi.atlassian.net/browse/SCRUM-13) | `scrum-7-control` | [R2](workstreams/r2-control.md) |
-| R3 개인화·데이터 | 라즈 / 김동혁 | [SCRUM-8](https://se4nchoi.atlassian.net/browse/SCRUM-8), [SCRUM-14](https://se4nchoi.atlassian.net/browse/SCRUM-14) | `scrum-8-personalization` | [R3](workstreams/r3-personalization.md) |
-| R4 등록·제품 UI | Paul Dan / Sean Choi | [SCRUM-9](https://se4nchoi.atlassian.net/browse/SCRUM-9), [SCRUM-15](https://se4nchoi.atlassian.net/browse/SCRUM-15) | `scrum-9-onboarding` | [R4](workstreams/r4-enrollment.md) |
-| R5 프로필·통합·실행 | Sean Choi / 박현규 | [SCRUM-10](https://se4nchoi.atlassian.net/browse/SCRUM-10), [SCRUM-16](https://se4nchoi.atlassian.net/browse/SCRUM-16) | `scrum-10-integration` | [R5](workstreams/r5-integration.md) |
+| 영역 | Jira | 상세 작업 |
+| --- | --- | --- |
+| R1 비전·카메라·성능 | [SCRUM-6](https://se4nchoi.atlassian.net/browse/SCRUM-6), [SCRUM-12](https://se4nchoi.atlassian.net/browse/SCRUM-12) | [R1](workstreams/r1-camera.md) |
+| R2 판정·영상 명령 | [SCRUM-7](https://se4nchoi.atlassian.net/browse/SCRUM-7), [SCRUM-13](https://se4nchoi.atlassian.net/browse/SCRUM-13) | [R2](workstreams/r2-control.md) |
+| R3 개인화·데이터 | [SCRUM-8](https://se4nchoi.atlassian.net/browse/SCRUM-8), [SCRUM-14](https://se4nchoi.atlassian.net/browse/SCRUM-14) | [R3](workstreams/r3-personalization.md) |
+| R4 등록·제품 UI | [SCRUM-9](https://se4nchoi.atlassian.net/browse/SCRUM-9), [SCRUM-15](https://se4nchoi.atlassian.net/browse/SCRUM-15) | [R4](workstreams/r4-enrollment.md) |
+| R5 프로필·통합·실행 | [SCRUM-10](https://se4nchoi.atlassian.net/browse/SCRUM-10), [SCRUM-16](https://se4nchoi.atlassian.net/browse/SCRUM-16) | [R5](workstreams/r5-integration.md) |
 
-[SCRUM-5](https://se4nchoi.atlassian.net/browse/SCRUM-5)는 상위 계획, [SCRUM-11](https://se4nchoi.atlassian.net/browse/SCRUM-11)은 공동 평가다. 담당자는 해당 모듈의 구현과 검증을 함께 맡고, R5는 전체 결과를 모은다. PR 수·줄 수를 개인 기여 점수로 사용하지 않는다.
-
-브랜치 이름은 제안이며 현재 생성·푸시됐다는 뜻이 아니다. 모든 브랜치는 GitHub에 올린 **동일한 기준 커밋**에서 시작한다. 각자의 에이전트는 [공통 계약](contracts.md)과 역할 문서를 먼저 읽는다. `src/app.js`는 R5가 연결하고 다른 담당자는 필요한 인터페이스 변경을 PR 설명에 전달한다. 공개 API 변경은 소비 모듈 담당자의 검토를 받는다.
+[SCRUM-5](https://se4nchoi.atlassian.net/browse/SCRUM-5)는 상위 계획, [SCRUM-11](https://se4nchoi.atlassian.net/browse/SCRUM-11)은 공동 평가다. 작업한 사람이 구현과 검증을 함께 남긴다. PR 수·줄 수를 개인 기여 점수로 사용하지 않는다. 파일 경계는 [02 컴포넌트](design/02-components.md), 공개 API 변경은 [03 인터페이스](design/03-interfaces.md)를 먼저 고치고 PR에 영향 영역을 적는다.
 
 ## 5. 구현 순서와 병렬 작업
 

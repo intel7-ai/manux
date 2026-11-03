@@ -1,6 +1,6 @@
 # MANUX 개발 참여 안내
 
-팀원과 에이전트는 같은 작업 규칙과 검사 명령을 사용합니다. 먼저 [README](README.md), [공통 작업·결과 규칙](docs/harness.md), [AGENTS.md](AGENTS.md)를 읽으세요. 역할별 담당 범위는 [작업 문서](docs/workstreams/), 모듈 연결은 [계약](docs/contracts.md)을 따릅니다.
+팀원과 에이전트는 같은 작업 규칙과 검사 명령을 사용합니다. 먼저 [README](README.md), [공통 작업·결과 규칙](docs/harness.md), [AGENTS.md](AGENTS.md)를 읽으세요. 파일 경계는 [설계 문서](docs/design/README.md), 영역별 작업은 [작업 문서](docs/workstreams/), 모듈 연결은 [계약](docs/contracts.md)을 따릅니다.
 
 코드를 직접 수정하지 않는 팀원은 [Discord 참여 안내](README.md#discord로-참여하기)만으로 시작할 수 있습니다. 설치가 익숙하지 않으면 [첫날 온보딩](docs/onboarding.md)을 사용하세요.
 
@@ -17,11 +17,11 @@ git branch -r
 git status --short
 ```
 
-새 작업은 최신 `production`에서 시작합니다. 기본 브랜치 이름과 배포 브랜치를 혼동하지 마세요. 깨끗한 본인 checkout에서 다음처럼 작업별 브랜치를 만듭니다.
+새 작업은 최신 `preview`에서 시작합니다([브랜치 흐름](docs/branch-flow.md)). 기본 브랜치 이름과 배포 브랜치를 혼동하지 마세요. 깨끗한 본인 checkout에서 다음처럼 작업별 브랜치를 만듭니다.
 
 ```powershell
-git fetch origin production
-git switch --no-track -c scrum-23-gesture-enrollment origin/production
+git fetch origin preview
+git switch --no-track -c scrum-23-gesture-enrollment origin/preview
 ```
 
 진행 중인 작업은 기존 브랜치에서 계속합니다. 이 전환을 위해 기존 worktree·미커밋 파일·worker를 삭제하거나 reset/checkout -f 하지 않습니다. 다른 작업의 코드가 필요하면 의존 PR을 명시하고 승인된 변경을 통합합니다.
@@ -35,7 +35,7 @@ git rev-parse HEAD
 git remote -v
 ```
 
-미커밋 변경이 있으면 소유자와 내용을 먼저 확인합니다. 브랜치 전환·초기화·파일 삭제로 다른 작업을 덮어쓰지 않습니다. 확인한 기준에서 `<이슈>-<짧은-설명>` 이름의 작업 브랜치를 만들고, PR에는 **기준 브랜치·기준 커밋·담당자**를 남깁니다. 기존 본인 브랜치가 있다면 그대로 이어갑니다.
+미커밋 변경이 있으면 소유자와 내용을 먼저 확인합니다. 브랜치 전환·초기화·파일 삭제로 다른 작업을 덮어쓰지 않습니다. 확인한 기준에서 `<이슈>-<짧은-설명>` 이름의 작업 브랜치를 만들고, PR에는 **기준 브랜치·기준 커밋·작업자**를 남깁니다. 시작할 때 Jira 또는 GitHub에 작업 중임을 표시합니다([AGENTS.md](AGENTS.md) "작업 가져가기"). 기존 본인 브랜치가 있다면 그대로 이어갑니다.
 
 ## 2. 한 번 준비하고 같은 명령으로 검사
 
@@ -61,10 +61,10 @@ npm run desktop:setup
 요청자가 **목표·현재 문제·완료 기준**을 적으면 에이전트가 [하네스 계약](docs/harness.md)의 작업 기록으로 정리합니다. 비전공자가 JSON을 직접 작성할 필요는 없습니다.
 
 1. 현재 구현과 제안 기능을 구분하고, 재현 순서와 예상/실제 동작을 기록합니다.
-2. 담당 영역에서 작은 변경을 구현합니다. `src/app.js`와 여러 모듈의 연결은 통합 담당자와 조정합니다.
+2. 가져간 영역에서 작은 변경을 구현합니다. `src/app.js`와 여러 모듈의 연결은 [03 인터페이스](docs/design/03-interfaces.md) 계약을 먼저 고치고 최소 diff로 넣습니다.
 3. 변경에 해당하는 검사를 실행하고, 통합 전에 `npm run verify`를 통과합니다.
 4. 공통 형식 **상태 → 요약 → 변경 → 검증 → 다음**으로 결과를 공유합니다. 실제 실행 결과와 미실행 이유를 포함합니다.
-5. 본인 브랜치를 push하고 `production` 대상 PR을 엽니다. 개인 PC의 AI와 Discord worker가 같은 경로를 사용합니다. 공유 호스트에 코드를 먼저 모을 필요는 없습니다. 다른 작업자의 실행 중인 폴더와 브랜치는 보존합니다.
+5. 본인 브랜치를 push하고 `preview` 대상 PR을 엽니다. 개인 PC의 AI와 Discord worker가 같은 경로를 사용합니다. 공유 호스트에 코드를 먼저 모을 필요는 없습니다. 다른 작업자의 실행 중인 폴더와 브랜치는 보존합니다.
 
 에이전트의 내부 기록은 `.local/harness/<requestId>/task.json`과 `result.json`입니다. 보고서는 다음 명령으로 생성하며, 스키마·사용 예시는 하네스 문서가 원본입니다.
 

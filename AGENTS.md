@@ -1,10 +1,10 @@
 # MANUX 팀 에이전트 작업 지침
 
-이 저장소는 로컬 웹캠으로 영상과 Windows 마우스를 제어하는 MANUX의 공동 작업 공간이다. 먼저 [README](README.md)와 [하네스](docs/harness.md)를 읽고, 작업에 필요한 [설계 문서 5종](docs/design/README.md)·[모듈 계약](docs/contracts.md)과 본인 [작업 문서](docs/workstreams/)만 추가로 읽는다. 설계 문서의 컴포넌트 **하지 않는 것** 열이 파일 경계이고, 코드에 문서에 없던 판단이 생기면 같은 PR에서 문서를 고친다. [마스터 플랜](docs/master-plan.md)은 과거 계획을 포함하므로 현재 구현과 구분한다. 사람의 현재 요청이 이 문서보다 우선한다.
+이 저장소는 로컬 웹캠으로 영상과 Windows 마우스를 제어하는 MANUX의 공동 작업 공간이다. 먼저 [README](README.md)와 [하네스](docs/harness.md)를 읽고, 작업에 필요한 [설계 문서 5종](docs/design/README.md)·[모듈 계약](docs/contracts.md)과 관련 영역의 [작업 문서](docs/workstreams/)만 추가로 읽는다. 설계 문서의 컴포넌트 **하지 않는 것** 열이 파일 경계이고, 코드에 문서에 없던 판단이 생기면 같은 PR에서 문서를 고친다. [마스터 플랜](docs/master-plan.md)은 과거 계획을 포함하므로 현재 구현과 구분한다. 사람의 현재 요청이 이 문서보다 우선한다.
 
 ## 현재 상태
 
-- 현재 마일스톤·담당·마감의 기준은 최신 [SCRUM-5](https://se4nchoi.atlassian.net/browse/SCRUM-5)와 [SCRUM-11](https://se4nchoi.atlassian.net/browse/SCRUM-11), 본인 세부 태스크다. 2026-11-02 승인된 M1은 11/04 PoC·11/06 Windows 책상 마우스 제품 후보이며 5인·20개 작업이다. 10/29의 팀 계획·마스터 플랜은 과거 계획이므로 현재 Jira 범위와 충돌할 때 따르지 않는다.
+- 현재 마일스톤 범위의 기준은 최신 [SCRUM-5](https://se4nchoi.atlassian.net/browse/SCRUM-5)와 [SCRUM-11](https://se4nchoi.atlassian.net/browse/SCRUM-11)의 세부 태스크다. 2026-11-02 승인된 M1은 11/04 PoC·11/06 Windows 책상 마우스 제품 후보다. 2026-11-03부터 고정 역할·담당 배정은 없다. 세부 태스크의 담당이 비어 있으면 아래 "작업 가져가기"를 따른다. 10/29의 팀 계획·마스터 플랜은 과거 계획이므로 현재 Jira 범위와 충돌할 때 따르지 않는다.
 - 개발 경로는 개인 PC의 원하는 AI 또는 Discord worker → 작업별 브랜치 → preview 대상 PR → 자동 검사 → preview 머지·시험 → `preview → production` PR → production 머지 → Windows 설치본 릴리스다. 리뷰어 승인은 요구하지 않는다([브랜치 흐름](docs/branch-flow.md)). Jira 번호가 없는 개선도 목표·범위를 기록하여 시작할 수 있다.
 - 팀원 개인 PC의 AI 에이전트 개발/브랜치 푸시와 Discord Claude의 독립 worktree 개발을 모두 지원한다. 공유된 기준 커밋을 확인하고 `scrum-23-gesture-enrollment`처럼 세부 태스크 번호를 브랜치·PR에 명시한다. 외부 푸시는 로컬 작업 폴더에 자동 반영되지 않으며 최신 원격 조회와 PR 리뷰·통합은 별개다.
 - Discord의 할 일 질문은 Jira를, 원격 개발 현황은 GitHub를 새로 조회한다. OAuth 인증 계정이나 Git 작성자를 Discord 질문자로 간주하지 않는다. Jira/원격 조회 실패를 작업 없음이나 완료로 바꾸지 않는다.
@@ -13,12 +13,12 @@
 
 - 기본 네 명령, 선택적 ±10초 반복, 카메라·Worker, 사용자·환경 프로필, 여러 각도 등록 코드가 있다.
 - 2026-10-29 사용자는 여러 동작을 한꺼번에 등록하는 부담과 실제 등록 실패를 보고했다. 원인은 아직 확인하지 않았다. 자동 시험 통과를 실사용 문제 해결이나 인식률 보장으로 표현하지 않는다.
-- 동작 하나씩 등록, 임의의 `rock` 손 모양 추가, 자유로운 액션 바인딩은 후속 개발 사항이다. 문서의 제안 API를 현재 구현으로 설명하지 않는다.
+- 2026-11-03 기준 동작 하나씩 등록하는 엔진(`trainGesture`·`registerGesture`·`classifyRegisteredGesture`)과 설정 저장소(`SettingsStore`)는 preview에 있다. 화면에서 사용자 정의 동작을 등록하는 경로, 등록 동작을 액션으로 실행하는 경로, 허용 액션 목록은 아직 없다. 현재 구현과 남은 일은 [설계 문서 01](docs/design/01-use-cases.md)의 "현재 구현" 줄이 기준이다. 문서의 제안 API를 현재 구현으로 설명하지 않는다.
 - 현재 개인화는 관절 특징 예시 기반 분류다. 사전학습 MediaPipe 가중치를 파인튜닝하지 않는다.
 
 ## 브랜치와 담당 경계
 
-작업을 시작할 때 `git status --short`, `git branch --show-current`, `git remote -v`로 실제 상태를 확인한다. 다른 사람의 변경을 되돌리거나 깨끗하게 만들기 위해 삭제하지 않는다. 신규 작업은 최신 `origin/production`에서 작업 단위 `<이슈>-<설명>` 브랜치를 만든다. 아래 역할 브랜치는 과거 범위 참고이며 한 사람의 모든 작업을 한 브랜치에 모으지 않는다. 기존 진행 중 브랜치·미커밋 파일·worker는 그대로 보존하고 재생성하거나 강제로 production에 맞추지 않는다.
+작업을 시작할 때 `git status --short`, `git branch --show-current`, `git remote -v`로 실제 상태를 확인한다. 다른 사람의 변경을 되돌리거나 깨끗하게 만들기 위해 삭제하지 않는다. 신규 작업은 최신 `origin/preview`에서 작업 단위 `<이슈>-<설명>` 브랜치를 만든다. 한 사람의 모든 작업을 한 브랜치에 모으지 않는다. 기존 진행 중 브랜치·미커밋 파일·worker는 그대로 보존하고 재생성하거나 강제로 production에 맞추지 않는다.
 
 통합 흐름은 [브랜치 흐름](docs/branch-flow.md)을 따른다. 작업 브랜치는 `origin/preview`에서 만들고 PR 대상은 `preview`다. 리뷰어 승인은 필요 없다. `production`에는 preview에서 시험한 뒤 `preview` 브랜치 PR로만 병합한다.
 
@@ -26,17 +26,7 @@
 
 **작업 가져가기.** 담당이 없거나 막혀 있는 일(설계 문서의 "미구현"·"제안"·교차 검수 항목, Jira의 미배정 태스크)은 누구나 가져갈 수 있다. 가져가는 사람의 에이전트는 시작할 때 Jira 해당 이슈의 담당자·상태를 바꾸거나 코멘트를 남기고, 또는 GitHub에 브랜치·draft PR을 올려 작업 중임을 표시한다. 둘 다 할 수 없으면 사람에게 알린다. 표시 없이 같은 파일을 두 사람이 고치지 않도록, 시작 전에 Jira와 열린 PR·원격 브랜치를 새로 조회한다. 사람이 시키지 않은 담당 변경·이슈 완료 처리는 하지 않는다.
 
-| 역할 | 담당 | 권장 브랜치 | 주 담당 파일 |
-| --- | --- | --- | --- |
-| R1 / SCRUM-6 | 김동혁 | `scrum-6-camera` | `src/camera.js`, `src/vision-client.js`, `src/vision-worker.js`, `src/orientation.js` |
-| R2 / SCRUM-7 | 박현규 | `scrum-7-control` | `src/gesture-controller.js`, `src/media-controller.js` |
-| R3 / SCRUM-8 | 라즈 | `scrum-8-personalization` | `src/personalization.js`, 특징·데이터 규격 |
-| R4 / SCRUM-9 | Paul Dan | `scrum-9-onboarding` | `src/enrollment.js`, `src/enrollment-view.js`, `public/index.html`, `public/styles.css` |
-| R5 / SCRUM-10 | Sean Choi | `scrum-10-integration` | `src/profile-store.js`, `src/app.js`, `server.js`, 실행·통합 도구 |
-
-각 담당은 대응 테스트도 관리한다. R6/SCRUM-11은 실제 참여 5명의 공동 평가 영역이며 SCRUM-12~16이 각 담당의 검증 작업이다. 문채원은 명단 등록 상태이며 작업을 배정하지 않는다.
-
-`src/app.js`는 R5가 통합한다. 다른 역할에서 연결 변경이 필요하면 계약과 최소 연결 diff를 제안하고 R5와 조정한다. 한 PR에서 담당 영역 밖의 대규모 리팩터링을 하지 않는다. 계약 변경을 먼저 문서화하고 소비 모듈 담당자가 확인하도록 PR에 표시한다.
+**파일 경계.** 어떤 파일이 어느 컴포넌트에 속하고 무엇을 하지 않는지는 [02 컴포넌트](docs/design/02-components.md) 표가 기준이다. 사람별 담당 파일은 두지 않는다. 고친 파일의 대응 테스트는 고친 사람이 같은 PR에서 맞춘다. `src/app.js`처럼 여러 컴포넌트를 묶는 파일은 [03 인터페이스](docs/design/03-interfaces.md) 계약을 먼저 고치고 최소 연결 diff만 넣는다. 한 PR에서 컴포넌트 경계 밖의 대규모 리팩터링을 하지 않는다. 계약을 바꾸면 PR 본문에 영향받는 컴포넌트를 적는다.
 
 ## 작업 순서
 

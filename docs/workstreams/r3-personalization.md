@@ -1,6 +1,8 @@
 # R3 개인화·데이터 작업 지침
 
-담당 **라즈**, 검토 **김동혁**. Jira [SCRUM-8](https://se4nchoi.atlassian.net/browse/SCRUM-8), 공동 검증 [SCRUM-14](https://se4nchoi.atlassian.net/browse/SCRUM-14). 권장 브랜치 `scrum-8-personalization`. 이 문서는 구현 전 작업 계획이다. 인수인계 준비에서는 앱 코드를 바꾸지 않았으며, 아래 내용은 담당자가 자기 브랜치에서 수행할 과제다.
+> 2026-11-03: 고정 담당·검토자 배정은 없다. R1~R5는 사람이 아니라 작업 영역 이름이다. "R5와 조정"은 그 영역을 지금 가져간 사람(Jira·PR로 표시)과 조정하고, 없으면 PR 본문에 영향 영역을 적는다는 뜻이다. 가져가는 방법은 [AGENTS.md](../../AGENTS.md)의 "작업 가져가기"를 따른다.
+
+Jira [SCRUM-8](https://se4nchoi.atlassian.net/browse/SCRUM-8), 공동 검증 [SCRUM-14](https://se4nchoi.atlassian.net/browse/SCRUM-14). 이 문서는 구현 전 작업 계획이다. 인수인계 준비에서는 앱 코드를 바꾸지 않았으며, 아래 내용은 담당자가 자기 브랜치에서 수행할 과제다.
 
 ## 목표
 
@@ -52,9 +54,9 @@ node --test tests/personalization.test.js tests/profile-store.test.js
 ## 에이전트 시작 프롬프트
 
 ```text
-MANUX의 R3을 담당한다. AGENTS.md, docs/master-plan.md, docs/contracts.md,
+MANUX의 R3 영역을 작업한다. AGENTS.md, docs/master-plan.md, docs/contracts.md,
 docs/workstreams/r3-personalization.md, Jira SCRUM-8/14의 확인된 내용을 읽어라.
-내 브랜치는 scrum-8-personalization이다. personalization.js의
+작업 브랜치는 최신 origin/preview에서 <이슈>-<설명> 이름으로 만든다. personalization.js의
 전체 POSES 필수 가정을 확인하고 동작 하나씩 후보 학습·거부·검증하는 계약을
 R4/R5와 맞춰라. 단일 클래스에서 경쟁 마진이 없다는 문제를 처리하고
 미등록 모양을 무조건 최근접 클래스에 배정하지 마라. 기존 모델과 프로필을

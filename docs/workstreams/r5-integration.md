@@ -1,6 +1,8 @@
 # R5 프로필·통합·실행 작업 지침
 
-담당 **Sean Choi**, 검토 **박현규**. Jira [SCRUM-10](https://se4nchoi.atlassian.net/browse/SCRUM-10), 공동 검증 [SCRUM-16](https://se4nchoi.atlassian.net/browse/SCRUM-16). 권장 브랜치 `scrum-10-integration`. 이 문서는 구현 전 작업 계획이다. 인수인계 준비에서는 앱 코드를 바꾸지 않았으며, 아래 내용은 담당자가 자기 브랜치에서 수행할 과제다.
+> 2026-11-03: 고정 담당·검토자 배정은 없다. R1~R5는 사람이 아니라 작업 영역 이름이다. "R5와 조정"은 그 영역을 지금 가져간 사람(Jira·PR로 표시)과 조정하고, 없으면 PR 본문에 영향 영역을 적는다는 뜻이다. 가져가는 방법은 [AGENTS.md](../../AGENTS.md)의 "작업 가져가기"를 따른다.
+
+Jira [SCRUM-10](https://se4nchoi.atlassian.net/browse/SCRUM-10), 공동 검증 [SCRUM-16](https://se4nchoi.atlassian.net/browse/SCRUM-16). 이 문서는 구현 전 작업 계획이다. 인수인계 준비에서는 앱 코드를 바꾸지 않았으며, 아래 내용은 담당자가 자기 브랜치에서 수행할 과제다.
 
 ## 목표
 
@@ -56,9 +58,9 @@ node scripts/test-enrollment-browser.mjs
 ## 에이전트 시작 프롬프트
 
 ```text
-MANUX의 R5를 담당한다. AGENTS.md, docs/master-plan.md, docs/contracts.md,
+MANUX의 R5 영역을 작업한다. AGENTS.md, docs/master-plan.md, docs/contracts.md,
 docs/workstreams/r5-integration.md, Jira SCRUM-10/16의 확인된 내용을 읽어라.
-내 브랜치는 scrum-10-integration이다. profile-store.js와 app.js 통합을
+작업 브랜치는 최신 origin/preview에서 <이슈>-<설명> 이름으로 만든다. profile-store.js와 app.js 통합을
 담당한다. R3/R4 계약을 먼저 맞추고 선택 동작만 검증 후 저장하는 구조를
 연결하라. 기존 사용자·다른 동작·다른 환경을 보존하고 구형 프로필 변환 실패와
 저장 오류에서 원본을 잃지 않게 하라. 세션 변경 후 늦은 결과를 적용하지 마라.

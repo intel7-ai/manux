@@ -70,13 +70,7 @@ git rev-parse HEAD
 
 ## 브랜치·리뷰 연결
 
-| Jira | 담당 | 작업 브랜치 | 리뷰어 |
-| --- | --- | --- | --- |
-| [SCRUM-6](https://se4nchoi.atlassian.net/browse/SCRUM-6) | 김동혁 | `scrum-6-camera` | 라즈 |
-| [SCRUM-7](https://se4nchoi.atlassian.net/browse/SCRUM-7) | 박현규 | `scrum-7-control` | Sean Choi |
-| [SCRUM-8](https://se4nchoi.atlassian.net/browse/SCRUM-8) | 라즈 | `scrum-8-personalization` | 김동혁 |
-| [SCRUM-9](https://se4nchoi.atlassian.net/browse/SCRUM-9) | Paul Dan | `scrum-9-onboarding` | Sean Choi |
-| [SCRUM-10](https://se4nchoi.atlassian.net/browse/SCRUM-10) | Sean Choi | `scrum-10-integration` | 박현규 |
+2026-11-03: 초기 인수인계의 담당·리뷰어 표는 삭제했다. 고정 배정이 없고, 작업은 [AGENTS.md](../AGENTS.md) "작업 가져가기"와 [브랜치 흐름](branch-flow.md)을 따른다. 리뷰어 승인도 요구하지 않는다.
 
 별도 장기 `develop` 브랜치를 필수로 추가하지 않는다. 기본 브랜치와 짧은 작업 PR로 시작하고 통합 책임자가 공통 계약 변경을 조율한다. 저장소 관리자는 기본 브랜치의 직접 push 방지, 최소 1명 리뷰, 실제 성공한 CI를 요구하는 보호 규칙을 설정한다. 해당 설정은 아직 적용하지 않았다.
 
