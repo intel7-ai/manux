@@ -48,11 +48,8 @@ from src.overlay import CORNERS, StatusOverlay
 from src.tray import TrayIcon
 from src.ui_magnet import UITargetMagnet
 from src.dashboard import Dashboard
-from src.pointer_workspace import (
-    FINGERTIPS, IndexTipGuard, MoveLatch, PointerPose, ThumbTrigger, is_pointing_pose,
-    thumb_contacts,
-    thumb_distances,
-)
+from src.pointer_workspace import FINGERTIPS
+from src.pointer_engine import PointerEngine, PointerSettings
 
 WINDOW_NAME = "Hand-Mouse (MediaPipe)"  # must keep the "Hand-Mouse" prefix (hotkeys.py)
 
@@ -320,19 +317,12 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
         dashboard = Dashboard(dry_run=args.dry_run)
     paused = True
     had_selected_hand = False
-    pointer_engine = GestureEngine(config_path=args.config) if args.ui == "qt" else None
-    index_tip_guard = IndexTipGuard()
-    pointer_pose = PointerPose()
-    thumb_trigger = ThumbTrigger()  # option A click (docs/design/decision-pointer-click.md)
-    move_latch = MoveLatch()  # keep moving until the tip is still (no clicks meanwhile)
+    # Portable core of the index pointer (no camera / Qt / OS code): src/pointer_engine.py
+    pointer = PointerEngine(GestureEngine(config_path=args.config)) if args.ui == "qt" else None
     hand_crop = HandCrop()  # Qt: look only around the selected hand, at full camera resolution
     crop_roi = None
     failures = FailureRecorder(Path(__file__).resolve().parent / "logs" / "failures")
-    click_armed = False  # a click needs the thumb to leave the finger first
-    pointer_gestures = {
-        "thumb_middle_pinch": {"enabled": True, "action": "left_click", "cooldown": .35},
-        "thumb_ring_pinch": {"enabled": True, "action": "right_click", "cooldown": .45},
-    }
+    pointer_frame = None
     status_msg = ""
     status_expire = 0.0
     frame_count = 0
@@ -376,11 +366,8 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
             ok, frame = camera.read()
             loop_t0 = time.perf_counter()
             if not ok or frame is None:
-                index_tip_guard.reset()
-                pointer_pose.reset()
-                thumb_trigger.reset()
-                if pointer_engine is not None:
-                    pointer_engine.reset()
+                if pointer is not None:
+                    pointer.frame_missing()
                 time.sleep(0.03)
                 continue
 
@@ -436,129 +423,48 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
 
             index_mode = args.ui == "qt" and dashboard.use_index_pointer
             contacts = ()
-            trigger_mode = index_mode and dashboard.click_style == "trigger"
-            if not index_mode or not detections or paused or dashboard.calibrating:
-                index_tip_guard.reset()
-                pointer_pose.reset()
-                thumb_trigger.reset()
-                click_armed = False
-            if not index_mode or paused or dashboard.calibrating:
-                move_latch.reset()
-            elif not detections:
-                move_latch.expire(loop_t0)  # a short hand loss keeps the latch
-            if pointer_engine is not None:
-                if not index_mode or paused or dashboard.calibrating or not should_detect:
-                    pointer_engine.reset()
-                elif not detections:
-                    pointer_engine.process(None, timestamp=loop_t0)
+            pointer_frame = None
             if index_mode:
                 tip = detections[0].landmarks[GestureEngine.INDEX_TIP] if detections else None
                 dashboard.update_pointer((tip.x, tip.y) if tip else None, camera.config.source,
                                          camera.config.mirror, mouse.frame_aspect)
-            if detections and index_mode:
+                settings_now = PointerSettings(
+                    click_style=dashboard.click_style, anchor=dashboard.pointer_anchor,
+                    tracking_only=dashboard.tracking_test is not None, axes=dashboard.axes,
+                    config=engine.config,
+                )
+                pointer_frame = pointer.step(
+                    loop_t0, detections[0].landmarks if detections else None, mouse.frame_aspect,
+                    settings_now, active=not paused and not dashboard.calibrating,
+                    detecting=should_detect,
+                )
+            elif pointer is not None:
+                pointer.reset()
+            if pointer_frame is not None:
                 points = detections[0].landmarks
-                tip = points[GestureEngine.INDEX_TIP]
-                ratios = thumb_distances(points, mouse.frame_aspect)
-                contacts = thumb_contacts(ratios)
+                contacts = pointer_frame.contacts
+                preview_point = pointer_frame.preview_point
                 result = GestureResult()
-                anchor_palm = dashboard.pointer_anchor == "palm"
-                preview_point = engine.palm_anchor_point(points) if anchor_palm else (tip.x, tip.y)
-                if not paused and not dashboard.calibrating:
-                    curls = pointer_engine.finger_curl_ratios(points)
-                    pointing = is_pointing_pose(points, curls, mouse.frame_aspect)
-                    idle_move = "move_cursor" if pointing else "pointer_wait"
-                    # Move latch: while the tip is moving, keep moving and detect no clicks
-                    # until it has been still for pointer_move_latch s (tuned in config).
-                    move_latch.configure(engine.config)
-                    pressing = trigger_mode and thumb_trigger.state in ("press", "drag")
-                    latched = move_latch.update(loop_t0, preview_point, mouse.frame_aspect)
-                    if dashboard.tracking_only:
-                        # Tracking only (click "off" or the tracking test): follow the hand,
-                        # whatever its shape, and never detect a click.
-                        pointer_engine.reset()
-                        pointer_pose.reset()
-                        thumb_trigger.reset()
-                        click_armed = True
-                        action = "move_cursor"
-                    elif latched and not pressing:
-                        pointer_engine.reset()
-                        pointer_pose.reset()
-                        thumb_trigger.reset()
-                        click_armed = False
-                        action = "move_cursor"
-                    elif trigger_mode:
-                        pointer_engine.reset()
-                        pointer_pose.reset()
-                        thumb_trigger.configure(engine.config)
-                        action = thumb_trigger.update(loop_t0, points, mouse.frame_aspect,
-                                                      pointing=pointing)
-                        if not click_armed:
-                            # A thumb already at the index side when the latch ends is a
-                            # rest, not a press: wait until it has left once.
-                            if thumb_trigger.state == "idle":
-                                click_armed = True
-                            else:
-                                thumb_trigger.reset()
-                                action = idle_move
-                    else:
-                        pointer_engine.config.update(engine.config)
-                        pointer_engine.config.update(
-                            gestures=pointer_gestures, record_fling_enabled=False,
-                            grab_scroll_enabled=False, long_press_drag=False,
-                        )
-                        gesture = pointer_engine.process(points, timestamp=loop_t0)
-                        if not click_armed:
-                            # Reported: in a pointing pose the curled middle/ring tips sit
-                            # next to the thumb, so a "pinch" exists before any press.
-                            # Only a pinch that starts after the thumb has left counts.
-                            if (gesture.active_gesture not in pointer_gestures
-                                    and gesture.action not in ("left_click", "right_click")):
-                                click_armed = True
-                            pointer_pose.reset()
-                            action = idle_move
-                        else:
-                            released = False
-                            if pointer_pose.pending:
-                                finger_tip = 12 if pointer_pose.pending == "left_click" else 16
-                                thumb = points[4]
-                                release_distance = (
-                                    float(pointer_engine.config.get("click_threshold", .052))
-                                    + float(pointer_engine.config.get("click_release_margin", .02))
-                                )
-                                released = all(
-                                    math.hypot(thumb.x - p.x, thumb.y - p.y) > release_distance
-                                    for p in (points[finger_tip], points[finger_tip - 1])
-                                )
-                            action = pointer_pose.update(
-                                loop_t0, pointing=pointing,
-                                click=gesture.action, released=released,
-                                pinching=gesture.active_gesture in pointer_gestures,
-                            )
-                    if action == "move_cursor" and not anchor_palm:
-                        if not index_tip_guard.accept(points, mouse.frame_aspect):
-                            action = "pointer_wait"
-                    else:
-                        index_tip_guard.reset()
-                    if trigger_mode and thumb_trigger.warp is not None:
-                        mouse.warp_to(*thumb_trigger.warp)
-                    point = dashboard.pointer_position(preview_point)
-                    moving = action in ("move_cursor", "drag_hold")
-                    result = GestureResult(action=action, cursor_point=point if moving else None,
-                                           is_moving=moving)
-                    mouse.apply(result, engine.config, index_tip=point,
+                if pointer_frame.action is not None:
+                    action = pointer_frame.action
+                    if pointer_frame.warp is not None:
+                        mouse.warp_to(*pointer_frame.warp)
+                    result = GestureResult(action=action, cursor_point=pointer_frame.cursor_point,
+                                           is_moving=pointer_frame.cursor_point is not None)
+                    mouse.apply(result, engine.config, index_tip=pointer_frame.pointer_point,
                                 index_sensitivity=dashboard.pointer_sensitivity / 100,
-                                pointer_source="palm" if anchor_palm else "index")
-                    thumb_trigger.record(loop_t0, mouse.last_screen_pos)
-                    parts = [f"이동 {move_latch.speed:.2f}" + (" 유지" if latched else "")]
+                                pointer_source=pointer_frame.pointer_source)
+                    pointer.record_cursor(loop_t0, mouse.last_screen_pos)
+                    parts = [f"이동 {pointer_frame.speed:.2f}" + (" 유지" if pointer_frame.latched else "")]
                     cam_mode = camera.actual_mode()
                     if cam_mode:
                         parts.insert(0, f"카메라 {cam_mode[0]}×{cam_mode[1]}@{cam_mode[2]:g}")
                     if dashboard.tracking_only:
                         parts.append("클릭 끔")
-                    elif trigger_mode:
-                        ratio = thumb_trigger.ratio
+                    elif dashboard.click_style == "trigger":
+                        ratio = pointer_frame.trigger_ratio
                         parts.append(f"방아쇠 {ratio:.2f}" if math.isfinite(ratio) else "방아쇠 —")
-                    if not click_armed:
+                    if not pointer_frame.click_armed:
                         parts.append("클릭 대기: 엄지를 떼세요")
                     status_msg, status_expire = "  ·  ".join(parts), time.perf_counter() + .5
                     if action in ("left_click", "right_click"):
@@ -624,9 +530,9 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                     auto_kind = failures.record(
                         loop_t0, landmarks=hand.landmarks if hand else None,
                         score=hand.score if hand else 0.0,
-                        moving=move_latch.latched and not paused,
+                        moving=pointer.latch.latched and not paused,
                         crop=list(crop_roi) if crop_roi else None,
-                        cursor=list(mouse.last_screen_pos), speed=round(move_latch.speed, 3),
+                        cursor=list(mouse.last_screen_pos), speed=round(pointer.latch.speed, 3),
                         brightness=dashboard.metrics[1], fps=round(camera.fps, 1),
                         detect_ms=round(tracker.last_detect_ms, 1), paused=paused,
                     )
