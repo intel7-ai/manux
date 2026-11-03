@@ -160,6 +160,65 @@ ApplicationWindow {
         }
     }
 
+    component SectionLabel: TextLabel {
+        font.pixelSize: 13
+        font.bold: true
+        Layout.topMargin: 4
+    }
+    component Divider: Rectangle {
+        Layout.fillWidth: true
+        implicitHeight: 1
+        color: window.line
+    }
+    // All choices visible at once; the current one is highlighted (was: one button that cycled)
+    component Segmented: RowLayout {
+        id: seg
+        property var options: []      // [[value, label], ...]
+        property string current: ""
+        signal picked(string value)
+        Layout.fillWidth: true
+        spacing: 4
+        Repeater {
+            model: seg.options
+            delegate: Button {
+                id: option
+                required property var modelData
+                readonly property bool selected: seg.current === modelData[0]
+                Layout.fillWidth: true
+                Layout.preferredWidth: 1
+                implicitHeight: 34
+                enabled: seg.enabled
+                onClicked: seg.picked(modelData[0])
+                contentItem: TextLabel {
+                    text: option.modelData[1]
+                    font.pixelSize: 12
+                    font.bold: option.selected
+                    color: option.enabled ? (option.selected ? window.navy : window.muted) : "#A9B6C0"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                background: Rectangle {
+                    radius: 8
+                    color: option.selected ? window.mint : option.down ? "#DDE7EC" : "#F0F3F6"
+                    border.color: option.activeFocus ? "#16846E" : "transparent"
+                    border.width: 2
+                }
+            }
+        }
+    }
+    component Chip: Rectangle {
+        id: chip
+        property alias text: chipLabel.text
+        property bool warn: false
+        implicitWidth: chipLabel.implicitWidth + 20
+        implicitHeight: 28
+        radius: 14
+        color: warn ? "#FFF1D6" : "#E8F7F2"
+        border.color: warn ? "#F2B544" : "transparent"
+        TextLabel { id: chipLabel; anchors.centerIn: parent; font.pixelSize: 12; color: chip.warn ? "#8A5A00" : window.navy }
+    }
+
     ColumnLayout {
         visible: dashboard.stage === "main"
         anchors.fill: parent
@@ -176,7 +235,10 @@ ApplicationWindow {
                 TextLabel { text: "MANUX"; font.pixelSize: 26; font.bold: true }
                 TextLabel { text: "INPUT STUDIO"; font.pixelSize: 11; font.letterSpacing: 1.4; color: window.muted }
                 Item { Layout.fillWidth: true }
-                ActionButton { text: dashboard.chosenHand + " · 다시 설정"; onClicked: dashboard.beginHandSetup() }
+                ActionButton {
+                    text: dashboard.chosenHand ? dashboard.chosenHand + " · 다시 설정" : "사용할 손 설정"
+                    onClicked: dashboard.beginHandSetup()
+                }
                 ActionButton {
                     text: "설정"
                     enabled: !dashboard.calibratingPointer
@@ -198,113 +260,153 @@ ApplicationWindow {
             Layout.margins: 20
             spacing: 16
             Rectangle {
-                Layout.preferredWidth: 236
+                Layout.preferredWidth: 280
                 Layout.fillHeight: true
                 radius: 16
                 color: "white"
                 border.color: window.line
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 18
-                    spacing: 10
-                    TextLabel { text: "시작하기"; font.pixelSize: 20; font.bold: true }
-                    TextLabel {
+                    anchors.margins: 16
+                    spacing: 8
+                    ScrollView {
+                        id: sideScroll
                         Layout.fillWidth: true
-                        text: "카메라에 손을 보여준 뒤 제어를 시작하세요."
-                        color: window.muted
-                        wrapMode: Text.Wrap
-                    }
-                    Rectangle { Layout.fillWidth: true; height: 1; color: window.line }
-                    TextLabel { text: "포인터 프리셋"; font.bold: true }
-                    ActionButton {
-                        Layout.fillWidth: true
-                        enabled: !dashboard.calibratingPointer
-                        text: dashboard.pointerPreset
-                        onClicked: dashboard.togglePointerPreset()
-                    }
-                    TextLabel {
-                        Layout.fillWidth: true
-                        text: "눌러서 방식 전환 · 바꾼 뒤 제어 시작"
-                        color: window.muted
-                        wrapMode: Text.Wrap
-                        font.pixelSize: 11
-                    }
-                    ActionButton {
-                        visible: dashboard.pointerOnly
-                        enabled: !dashboard.calibratingPointer
-                        Layout.fillWidth: true
-                        text: dashboard.clickStyleLabel
-                        onClicked: dashboard.toggleClickStyle()
-                    }
-                    ActionButton {
-                        visible: dashboard.pointerOnly
-                        enabled: !dashboard.calibratingPointer
-                        Layout.fillWidth: true
-                        text: dashboard.anchorLabel
-                        onClicked: dashboard.toggleAnchor()
-                    }
-                    ActionButton {
-                        visible: dashboard.pointerOnly
-                        enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
-                        Layout.fillWidth: true
-                        text: "트래킹 측정 (클릭 없음)"
-                        onClicked: dashboard.beginTrackingTest()
-                    }
-                    ActionButton {
-                        visible: dashboard.pointerOnly
-                        enabled: !dashboard.calibratingPointer
-                        Layout.fillWidth: true
-                        text: dashboard.pointerCalibrated ? "방향 보정 다시 하기" : "방향 보정"
-                        onClicked: dashboard.beginPointerCalibration()
-                    }
-                    ActionButton {
-                        visible: dashboard.pointerOnly && dashboard.pointerCalibrated && !dashboard.calibratingPointer
-                        Layout.fillWidth: true
-                        text: "기본 방향 복원"
-                        onClicked: dashboard.resetPointerCalibration()
-                    }
-                    TextLabel { text: "동작 안내"; font.bold: true }
-                    Repeater {
-                        model: dashboard.pointerOnly ? (dashboard.clickOff
-                            ? [[dashboard.anchorLabel.replace("기준점 · ", "") + " 따라가기", "포인터 이동"], ["클릭", "꺼짐"]]
-                            : dashboard.triggerClick
-                            ? [["검지만 펴기", "포인터 이동"], ["엄지로 검지 옆 짧게 누르기", "좌클릭"],
-                               ["누른 채 가만히", "우클릭"], ["누른 채 움직이기", "드래그"]]
-                            : [["검지만 펴기", "포인터 이동"], ["엄지 + 중지", "좌클릭"], ["엄지 + 약지", "우클릭"]]) : [
-                            ["손 이동", "포인터 이동"], ["엄지 + 검지", "스크롤"],
-                            ["엄지 + 중지", "좌클릭"], ["엄지 + 약지", "우클릭"],
-                            ["엄지 + 새끼", "창 선택"]
-                        ]
-                        delegate: RowLayout {
-                            required property var modelData
-                            Layout.fillWidth: true
-                            TextLabel { text: modelData[0]; font.pixelSize: 12; font.bold: true }
-                            Item { Layout.fillWidth: true }
-                            TextLabel { text: modelData[1]; font.pixelSize: 12; color: window.muted }
+                        Layout.fillHeight: true
+                        clip: true
+                        contentWidth: availableWidth
+                        ColumnLayout {
+                            width: sideScroll.availableWidth
+                            spacing: 8
+                            TextLabel { text: "포인터"; font.pixelSize: 20; font.bold: true }
+                            Segmented {
+                                enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                                options: [["index", "검지 포인터"], ["palm", "손바닥 (Dan)"]]
+                                current: dashboard.pointerOnly ? "index" : "palm"
+                                onPicked: function (value) { dashboard.setPointerPreset(value === "index") }
+                            }
+                            ColumnLayout {
+                                visible: dashboard.pointerOnly
+                                Layout.fillWidth: true
+                                spacing: 8
+                                SectionLabel { text: "클릭" }
+                                Segmented {
+                                    enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                                    options: [["pinch", "핀치"], ["trigger", "방아쇠"], ["off", "끔"]]
+                                    current: dashboard.clickStyle
+                                    onPicked: function (value) { dashboard.setClickStyle(value) }
+                                }
+                                SectionLabel { text: "커서 기준점" }
+                                Segmented {
+                                    enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                                    options: [["index", "검지 끝"], ["palm", "손바닥 중심"]]
+                                    current: dashboard.pointerAnchor
+                                    onPicked: function (value) { dashboard.setAnchor(value) }
+                                }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+                                    ActionButton {
+                                        Layout.fillWidth: true
+                                        enabled: !dashboard.calibratingPointer
+                                        text: dashboard.pointerCalibrated ? "방향 보정 다시" : "방향 보정"
+                                        onClicked: dashboard.beginPointerCalibration()
+                                    }
+                                    ActionButton {
+                                        visible: dashboard.pointerCalibrated && !dashboard.calibratingPointer
+                                        text: "초기화"
+                                        onClicked: dashboard.resetPointerCalibration()
+                                    }
+                                }
+                            }
+                            TextLabel {
+                                Layout.fillWidth: true
+                                text: "설정을 바꾸면 입력이 멈춥니다. 다시 제어 시작을 누르세요."
+                                color: window.muted
+                                wrapMode: Text.Wrap
+                                font.pixelSize: 11
+                            }
+                            Divider {}
+                            SectionLabel { text: "동작 안내" }
+                            Repeater {
+                                model: dashboard.pointerOnly ? (dashboard.clickOff
+                                    ? [[dashboard.pointerAnchor === "palm" ? "손바닥 따라가기" : "검지 끝 따라가기", "포인터 이동"], ["클릭", "꺼짐"]]
+                                    : dashboard.triggerClick
+                                    ? [["검지만 펴기", "포인터 이동"], ["엄지로 검지 옆 짧게", "좌클릭"],
+                                       ["누른 채 가만히", "우클릭"], ["누른 채 움직이기", "드래그"]]
+                                    : [["검지만 펴기", "포인터 이동"], ["엄지 + 중지", "좌클릭"], ["엄지 + 약지", "우클릭"]]) : [
+                                    ["손 이동", "포인터 이동"], ["엄지 + 검지", "스크롤"],
+                                    ["엄지 + 중지", "좌클릭"], ["엄지 + 약지", "우클릭"],
+                                    ["엄지 + 새끼", "창 선택"]
+                                ]
+                                delegate: RowLayout {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    TextLabel { text: modelData[0]; font.pixelSize: 12; font.bold: true }
+                                    Item { Layout.fillWidth: true }
+                                    TextLabel { text: modelData[1]; font.pixelSize: 12; color: window.muted }
+                                }
+                            }
+                            TextLabel {
+                                visible: dashboard.pointerOnly
+                                Layout.fillWidth: true
+                                text: dashboard.clickOff
+                                    ? "클릭을 판정하지 않습니다. 손이 보이면 손 모양과 관계없이 커서가 따라갑니다."
+                                    : dashboard.triggerClick
+                                    ? "엄지가 검지 옆에 다가오면 커서가 고정되고, 누르기 직전 위치에서 클릭합니다."
+                                    : "검지를 움직이는 동안에는 클릭하지 않습니다. 멈춘 뒤 엄지를 뗐다가 중지·약지에 대면 클릭합니다."
+                                color: window.muted
+                                wrapMode: Text.Wrap
+                                font.pixelSize: 11
+                            }
+                            TextLabel {
+                                visible: dashboard.pointerOnly && diagnostics.visible
+                                Layout.fillWidth: true
+                                text: "0 엄지 · 1 검지 · 2 중지 · 3 약지 · 4 새끼\n조합: " + (dashboard.detectedContacts || "—")
+                                wrapMode: Text.Wrap
+                                color: window.muted
+                                font.pixelSize: 12
+                            }
+                            Divider { visible: dashboard.pointerOnly }
+                            SectionLabel { visible: dashboard.pointerOnly; text: "트래킹 측정" }
+                            ActionButton {
+                                visible: dashboard.pointerOnly
+                                enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                                Layout.fillWidth: true
+                                text: "측정 시작 (클릭 없음)"
+                                onClicked: dashboard.beginTrackingTest()
+                            }
+                            TextLabel {
+                                visible: dashboard.pointerOnly && dashboard.recentResults.length === 0
+                                Layout.fillWidth: true
+                                text: "아직 측정 기록이 없습니다. 설정을 바꿔 가며 측정해 비교하세요."
+                                color: window.muted
+                                wrapMode: Text.Wrap
+                                font.pixelSize: 11
+                            }
+                            Repeater {
+                                model: dashboard.pointerOnly ? dashboard.recentResults : []
+                                delegate: TextLabel {
+                                    required property string modelData
+                                    required property int index
+                                    Layout.fillWidth: true
+                                    text: modelData
+                                    wrapMode: Text.Wrap
+                                    font.pixelSize: 11
+                                    font.bold: index === 0
+                                    color: index === 0 ? window.navy : window.muted
+                                }
+                            }
                         }
                     }
+                    Divider {}
                     TextLabel {
-                        visible: dashboard.pointerOnly
                         Layout.fillWidth: true
-                        text: dashboard.clickOff
-                            ? "클릭을 판정하지 않습니다. 손이 보이면 손 모양과 관계없이 커서가 따라갑니다."
-                            : dashboard.triggerClick
-                            ? "엄지가 검지 옆에 다가오면 커서가 고정되고, 누르기 직전 위치에서 클릭합니다. 상세 정보의 '방아쇠' 값이 작을수록 가깝습니다."
-                            : "엄지와 중지 또는 약지를 모으면 커서가 고정됩니다. 손끝을 떼면 클릭합니다."
-                        color: window.muted
-                        wrapMode: Text.Wrap
+                        text: "Space 시작/정지 · Esc 정지 · N 다음 모니터"
                         font.pixelSize: 11
-                    }
-                    TextLabel {
-                        visible: dashboard.pointerOnly && diagnostics.visible
-                        Layout.fillWidth: true
-                        text: "0 엄지 · 1 검지 · 2 중지\n3 약지 · 4 새끼\n조합: " + (dashboard.detectedContacts || "—")
-                        wrapMode: Text.Wrap
                         color: window.muted
-                        font.pixelSize: 12
+                        wrapMode: Text.Wrap
                     }
-                    Item { Layout.fillHeight: true }
-                    TextLabel { text: "Esc  입력 정지"; font.pixelSize: 12; color: window.muted }
                 }
             }
             Rectangle {
@@ -319,26 +421,47 @@ ApplicationWindow {
                     spacing: 12
                     RowLayout {
                         Layout.fillWidth: true
+                        spacing: 8
                         TextLabel { text: "카메라"; font.pixelSize: 20; font.bold: true }
                         Item { Layout.fillWidth: true }
-                        Rectangle {
-                            implicitWidth: trackingLabel.implicitWidth + 20
-                            implicitHeight: 28
-                            radius: 14
-                            color: "#E8F7F2"
-                            TextLabel { id: trackingLabel; anchors.centerIn: parent; text: dashboard.tracking; font.pixelSize: 12 }
+                        Chip { visible: dashboard.cameraMode !== ""; text: dashboard.cameraMode }
+                        Chip {
+                            visible: dashboard.brightness >= 0
+                            warn: dashboard.lowLight
+                            text: (dashboard.lowLight ? "어두움 " : "밝기 ") + Math.round(dashboard.brightness / 2.55) + "%"
                         }
+                        Chip { text: dashboard.tracking }
                     }
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         radius: 10
                         color: window.navy
+                        clip: true
                         Image {
                             anchors.fill: parent
                             source: dashboard.previewUrl
                             cache: false
                             fillMode: Image.PreserveAspectFit
+                        }
+                        Rectangle {
+                            visible: dashboard.lowLight
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.margins: 12
+                            implicitHeight: lowLightText.implicitHeight + 16
+                            radius: 8
+                            color: "#F2B544"
+                            TextLabel {
+                                id: lowLightText
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                text: "어두워요. 움직일 때 손을 놓치기 쉽습니다. 조명을 켜거나 모니터를 밝게 하고, 손을 카메라에 조금 더 가까이 두세요."
+                                wrapMode: Text.Wrap
+                                font.pixelSize: 12
+                                verticalAlignment: Text.AlignVCenter
+                            }
                         }
                     }
                     RowLayout {

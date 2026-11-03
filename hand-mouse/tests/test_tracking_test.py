@@ -98,3 +98,21 @@ def test_holding_tolerates_small_overshoot_past_the_edge_once_on_the_target():
     far = TrackingTest(MON, count=1, seed=6)
     far.update(0.0, (cx + r + 6, cy), hand=True, active=True)   # never entered: not inside
     assert far.current.inside_since is None
+
+
+def test_recent_results_are_read_back_from_saved_csvs(tmp_path):
+    from src.tracking_test import load_recent_results
+
+    for seed, anchor in ((1, "index"), (2, "palm")):
+        test = TrackingTest(MON, count=2, seed=seed)
+        t, pos = 0.0, MON.center
+        while not test.done:
+            t, pos = _go_to_target(test, t, pos)
+        path = test.save_csv(tmp_path, {"anchor": anchor, "sensitivity_pct": 100})
+        path.rename(tmp_path / f"tracking-20261103-23100{seed}.csv")
+    (tmp_path / "tracking-20261103-999999.csv").write_bytes(b"\xff\xfe broken")
+    lines = load_recent_results(tmp_path, limit=5)
+    assert len(lines) == 2                       # the unreadable file is skipped
+    assert lines[0].startswith("11/03 23:10  손바닥 · 100% — 도달 2/2")
+    assert "검지 끝" in lines[1] and "끊김 0회" in lines[1]
+    assert load_recent_results(tmp_path / "missing") == []

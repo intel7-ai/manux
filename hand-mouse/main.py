@@ -39,7 +39,7 @@ from src.settings_panel import SettingsPanel
 from src.hotkeys import VK_0, VK_F2, VK_NUMPAD0, VK_O, KeyPoller
 from src.win_perf import keep_responsive_in_background
 from src.perf_log import PerfLog
-from src.tracking_test import TrackingTest
+from src.tracking_test import TrackingTest, result_line
 from src.pipeline import InferencePipeline, Snapshot
 from src.status import describe_state, short_label
 from src.overlay import CORNERS, StatusOverlay
@@ -405,6 +405,19 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
 
             fh, fw = frame.shape[:2]
             mouse.frame_aspect = fh / max(1, fw)
+            if args.ui == "qt" and frame_count % 10 == 0:
+                # Camera header: actual mode and how dark the picture is (a dim room makes
+                # the webcam expose longer, so a moving hand blurs and tracking drops)
+                small = cv2.resize(frame, (64, 36), interpolation=cv2.INTER_AREA)
+                level = int(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY).mean())
+                try:
+                    dark_below = float(engine.config.get("low_light_threshold", 70))
+                except (TypeError, ValueError):
+                    dark_below = 70.0
+                cam_mode = camera.actual_mode()
+                dashboard.set_camera_metrics(
+                    f"{cam_mode[0]}×{cam_mode[1]} · {cam_mode[2]:g}fps" if cam_mode else "",
+                    level, level < dark_below)
 
             index_mode = args.ui == "qt" and dashboard.use_index_pointer
             contacts = ()
@@ -616,6 +629,8 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                         except OSError as exc:
                             text += f" · 저장 실패: {exc}"
                         dashboard.tracking_finished(text)
+                        dashboard.add_recent(result_line({**run, **test.summary()},
+                                                         time.strftime("%m/%d %H:%M")))
                         print(f"[Tracking] {text}")
 
             now = time.perf_counter()

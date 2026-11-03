@@ -43,6 +43,22 @@ def main() -> int:
     for _ in range(10):
         dash.poll()
 
+    # Main screen: per-frame status must not re-evaluate every settings binding
+    import numpy as np
+    frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    state_emits = []
+    dash.stateChanged.connect(lambda: state_emits.append(1))
+    dash.set_camera_metrics("1280x720 · 30fps", 50, True)
+    main_times = []
+    for i in range(60):
+        t0 = time.perf_counter()
+        dash.show(frame, True, False, "move_cursor", 25 + i * .1, 10 + i * .05, f"speed {i}")
+        dash.poll()
+        main_times.append((time.perf_counter() - t0) * 1000.0)
+    settings_emits_during_frames = len(state_emits)
+    main_shot = out / "dashboard.png"
+    dash.window.grabWindow().save(str(main_shot))
+
     monitor = mouse.screens.primary
     test = TrackingTest(monitor, seed=11)
     dash.set_tracking(test)
@@ -99,6 +115,9 @@ def main() -> int:
             "screen": win.screen().name() if win.screen() else None,
         },
         "screenshot": str(shot) if shot else None,
+        "main_frame_ms_median": round(statistics.median(main_times), 2),
+        "settings_signal_emits_in_60_frames": settings_emits_during_frames,
+        "dashboard_screenshot": str(main_shot),
         "paused_status": paused_status,
         "paused_flag": paused_flag,
         "test_window_active": None if win is None else win.isActive(),
@@ -124,6 +143,8 @@ def main() -> int:
         failures.append(f"a frame took {report['frame_ms_max']} ms (> {FRAME_MAX_MS} ms: UI freeze)")
     if not (paused_flag and "Space" in paused_status):
         failures.append(f"paused test window does not ask for Space: {paused_status!r}")
+    if settings_emits_during_frames:
+        failures.append(f"settings signal fired {settings_emits_during_frames}x during 60 status frames")
     if not space_reached_app:
         failures.append("Space pressed in the test window did not reach the app")
     if not report["esc_closed_test"]:
