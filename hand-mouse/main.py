@@ -303,10 +303,25 @@ def run_qt(args, perf, engine, camera, tracker, mouse, settings, keys, perf_log)
     The UI thread only polls Qt, forwards keys / requests to the runtime and renders its
     newest snapshot (src/qt_runtime.py), so a slow UI frame never delays the cursor.
     """
+    from PySide6.QtWidgets import QApplication, QSystemTrayIcon
     from src.qt_dashboard import QtDashboard
     from src.qt_runtime import QtRuntime
 
-    dashboard = QtDashboard(dry_run=args.dry_run)
+    QApplication.instance() or QApplication([])
+    # Same flags as the default mode: tray unless --no-tray, --headless starts in the tray,
+    # the reception overlay shows with --headless or --overlay (never with --no-overlay)
+    tray_ok = not args.no_tray and QSystemTrayIcon.isSystemTrayAvailable()
+    if args.headless and not tray_ok:
+        print("[Warn] --headless needs a system tray; showing the window instead.", file=sys.stderr)
+    dashboard = QtDashboard(
+        dry_run=args.dry_run, hide_to_tray=tray_ok, start_hidden=args.headless and tray_ok,
+        overlay=(args.headless or args.overlay) and not args.no_overlay,
+        overlay_corner=args.overlay_corner,
+    )
+    tray = None
+    if tray_ok:
+        from src.qt_tray import QtTray
+        tray = QtTray(dashboard)
     runtime = QtRuntime(
         camera=camera, tracker=tracker, engine=engine, mouse=mouse, perf_log=perf_log,
         config_path=args.config, dry_run=args.dry_run, max_frames=args.max_frames,
@@ -318,6 +333,9 @@ def run_qt(args, perf, engine, camera, tracker, mouse, settings, keys, perf_log)
     print(f"  Camera Source : {camera.config.source}")
     print(f"  Movement Mode : {engine.config.get('movement_mode')}")
     print("  Space start/pause · Esc pause · N next monitor · F mark a failure · O settings · Q quit")
+    if tray is not None:
+        print("  Tray icon: start/pause, show window, tracking test, status overlay, quit"
+              + (" (window hidden: --headless)" if args.headless else ""))
     print(f"  Monitors: {len(mouse.screens)} (cursor can cross to any of them, [N] = jump to next)")
 
     close_posted = False
@@ -362,6 +380,8 @@ def run_qt(args, perf, engine, camera, tracker, mouse, settings, keys, perf_log)
             print(f"[Error] runtime thread stopped: {runtime.error!r}", file=sys.stderr)
     finally:
         runtime.stop()
+        if tray is not None:
+            tray.hide()
         mouse.close()
         settings.shutdown()
         perf_log.close()

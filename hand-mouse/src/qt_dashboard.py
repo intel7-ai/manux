@@ -7,6 +7,7 @@ import math
 import cv2
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, Property, QSettings, Signal, Slot, QUrl
 from PySide6.QtGui import QGuiApplication, QImage
+from PySide6.QtWidgets import QApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -45,12 +46,22 @@ class QtDashboard(QObject):
     metricsChanged = Signal()         # camera mode / brightness, a few times a second
     recentChanged = Signal()          # tracking test result list
     failureChanged = Signal()         # failure recording summary
+    receptionChanged = Signal()       # tray / overlay state (ok, weak, none, paused)
+    overlayChanged = Signal()         # overlay shown / hidden / moved
+    hiddenToTray = Signal()           # the window was closed into the tray
     trackingActiveChanged = Signal()  # only when the test window opens or closes
 
-    def __init__(self, dry_run=False):
+    def __init__(self, dry_run=False, *, hide_to_tray=False, start_hidden=False,
+                 overlay=False, overlay_corner="top-right"):
         super().__init__()
         self.commands = deque()
         self.closed = False
+        # Tray mode (--headless / tray available): closing the window hides it instead of quitting
+        self.hide_to_tray = bool(hide_to_tray)
+        self.overlay_visible = bool(overlay)
+        self.overlay_corner = overlay_corner if overlay_corner in (
+            "top-left", "top-right", "bottom-left", "bottom-right") else "top-right"
+        self.reception = ("paused", "입력 꺼짐")
         self.dry_run = dry_run
         self.last_preview = 0.0
         self.sequence = 0
@@ -65,7 +76,8 @@ class QtDashboard(QObject):
         self.tip_at = 0.0
         self.aspect = 1.0
         self.state = ("입력 꺼짐", "카메라 연결 대기", "손을 카메라에 보여주세요.", "제어 시작", "")
-        self.application = QGuiApplication([])
+        # QApplication (not QGuiApplication): the tray menu is a Qt Widgets QMenu
+        self.application = QApplication.instance() or QApplication([])
         self.application.setQuitOnLastWindowClosed(False)
         self.preferences = QSettings("MANUX", "Hand-Mouse")
         saved = self.preferences.value("controlHand", "", type=str)
@@ -108,6 +120,8 @@ class QtDashboard(QObject):
         if not self.engine.rootObjects():
             raise RuntimeError("MANUX Qt 화면을 열지 못했습니다.")
         self.window = self.engine.rootObjects()[0]
+        if start_hidden and self.control_hand:
+            self.window.hide()  # tray start; without a chosen hand the setup screen must show
 
     @Property(str, notify=stateChanged)
     def stage(self):
@@ -588,6 +602,72 @@ class QtDashboard(QObject):
     def requestClose(self):
         self.closed = True
 
+    @Slot()
+    def quitApp(self):
+        self.closed = True
+
+    @Property(bool, constant=True)
+    def hidesToTray(self):
+        return self.hide_to_tray
+
+    @Slot()
+    def hideDashboard(self):
+        self.window.hide()
+        self.hiddenToTray.emit()
+
+    @Slot()
+    def showDashboard(self):
+        self.window.show()
+        self.window.raise_()
+        self.window.requestActivate()
+
+    # ------------------------------------------------------------------ reception (tray + overlay)
+    def _update_reception(self, detected, paused):
+        if self.stage_name != "main":
+            value = ("paused", "손 설정 필요")
+        elif paused:
+            value = ("paused", "입력 꺼짐")
+        elif not detected:
+            value = ("none", "손이 보이지 않음")
+        elif self.metrics[2]:
+            value = ("weak", "어두움 · 손 인식 약함")
+        else:
+            value = ("ok", "손 인식 중")
+        if value != self.reception:
+            self.reception = value
+            self.receptionChanged.emit()
+
+    @Property(str, notify=receptionChanged)
+    def receptionState(self):
+        return self.reception[0]
+
+    @Property(str, notify=receptionChanged)
+    def receptionText(self):
+        return self.reception[1]
+
+    @Slot(bool)
+    def setOverlayVisible(self, visible):
+        if bool(visible) != self.overlay_visible:
+            self.overlay_visible = bool(visible)
+            self.overlayChanged.emit()
+
+    @Property(bool, notify=overlayChanged)
+    def overlayVisible(self):
+        return self.overlay_visible
+
+    @Property(str, notify=overlayChanged)
+    def overlayCorner(self):
+        return self.overlay_corner
+
+    @Property("QVariantList", notify=overlayChanged)
+    def overlayArea(self):
+        """Primary screen's available area [x, y, w, h] (logical px), where the pill sits."""
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return [0, 0, 1280, 720]
+        g = screen.availableGeometry()
+        return [g.x(), g.y(), g.width(), g.height()]
+
     def poll(self):
         self.application.processEvents()
         return self.commands.popleft() if self.commands else -1
@@ -601,6 +681,7 @@ class QtDashboard(QObject):
             "제어 시작" if paused else "일시정지",
             f"{fps:.1f} fps  ·  추론 {detect_ms:.1f} ms" + (f"  ·  {status}" if status else ""),
         )
+        self._update_reception(detected, paused)
         contact_text = " + ".join(map(str, contacts))
         if (state, contact_text) != (self.state, self.contact_text):
             self.state = state
@@ -608,6 +689,8 @@ class QtDashboard(QObject):
             # Not stateChanged: that would re-evaluate every settings binding (and rebuild
             # the guide list) 30 times a second just because the fps text changed.
             self.liveChanged.emit()
+        if not self.window.isVisible():
+            return  # hidden in the tray: no preview conversion at all
         now = time.perf_counter()
         if now - self.last_preview < 1 / 24:
             return
