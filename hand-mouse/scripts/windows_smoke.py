@@ -40,6 +40,13 @@ def main() -> int:
     monitor = mouse.screens.primary
     test = TrackingTest(monitor, seed=11)
     dash.set_tracking(test)
+    # Opens paused (like the app): the window must say so before control starts
+    test.update(time.perf_counter(), monitor.center, hand=True, active=False)
+    dash.tracking_frame(test.cursor_fraction(monitor.center))
+    for _ in range(10):
+        dash.poll()
+    paused_status = dash.trackingStatus
+    paused_flag = dash.trackingPaused
     times = []
     pos = monitor.center
     for i in range(FRAMES):
@@ -78,6 +85,9 @@ def main() -> int:
             "screen": win.screen().name() if win.screen() else None,
         },
         "screenshot": str(shot) if shot else None,
+        "paused_status": paused_status,
+        "paused_flag": paused_flag,
+        "test_window_active": None if win is None else win.isActive(),
     }
     dash.closeTrackingTest()
     dash.poll()
@@ -92,6 +102,8 @@ def main() -> int:
         failures.append(f"median frame {report['frame_ms_median']} ms > {FRAME_BUDGET_MS} ms")
     if report["frame_ms_max"] > FRAME_MAX_MS:
         failures.append(f"a frame took {report['frame_ms_max']} ms (> {FRAME_MAX_MS} ms: UI freeze)")
+    if not (paused_flag and "Space" in paused_status):
+        failures.append(f"paused test window does not ask for Space: {paused_status!r}")
     if not report["test_window_hidden_after_close"]:
         failures.append("tracking test window still visible after close")
     for f in failures:

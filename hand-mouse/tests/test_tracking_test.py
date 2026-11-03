@@ -82,3 +82,19 @@ def test_csv_has_settings_summary_and_one_row_per_target(tmp_path):
     table = [r for r in rows if r and r[0] != "#"]
     assert table[0][:3] == ["target", "size_px", "distance_px"] and len(table) == 4
     assert "도달 3/3" in test.summary_text()
+
+
+def test_holding_tolerates_small_overshoot_past_the_edge_once_on_the_target():
+    test = TrackingTest(MON, count=1, seed=6)
+    target = test.current
+    cx, cy = test.center_px(target)
+    r = target.size_px / 2
+    t = 0.0
+    test.update(t, (cx, cy), hand=True, active=True)           # on the target
+    for i in range(1, 20):                                       # wobble 6 px past the edge
+        t += DT
+        test.update(t, (cx + (r + 6 if i % 2 else 0), cy), hand=True, active=True)
+    assert test.done and test.rows()[0]["reached"]
+    far = TrackingTest(MON, count=1, seed=6)
+    far.update(0.0, (cx + r + 6, cy), hand=True, active=True)   # never entered: not inside
+    assert far.current.inside_since is None

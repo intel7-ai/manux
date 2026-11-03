@@ -47,9 +47,12 @@ class Target:
 
 class TrackingTest:
     def __init__(self, monitor, count: int = 12, dwell: float = .5, timeout: float = 12.0,
-                 seed: Optional[int] = None, margin: float = .08) -> None:
+                 seed: Optional[int] = None, margin: float = .08, hold_margin_px: float = 10.0) -> None:
         self.monitor = monitor  # screens.Monitor (left, top, width, height in screen px)
         self.dwell = float(dwell)
+        # Once on a target, a cursor this far past its edge still counts as holding, so
+        # small targets stay reachable with some jitter (the jitter is still recorded).
+        self.hold_margin_px = float(hold_margin_px)
         self.timeout = float(timeout)
         rng = random.Random(seed)
         self.targets: List[Target] = []
@@ -68,6 +71,7 @@ class TrackingTest:
         self.last_pos: Optional[Tuple[float, float]] = None
         self.last_t: Optional[float] = None
         self.hand_present = True
+        self.paused = True  # control off: the dashboard tells the user to press Space
         self.frames = 0
         self.fps: List[float] = []
         self.detect_ms: List[float] = []
@@ -93,6 +97,7 @@ class TrackingTest:
     def update(self, now: float, pos: Tuple[float, float], *, hand: bool, active: bool,
                fps: float = 0.0, detect_ms: float = 0.0) -> None:
         """Feed one frame: cursor screen position, whether a hand is tracked, control on."""
+        self.paused = not active
         if self.done or not active:
             self.last_t = None  # paused time is not counted
             return
@@ -121,7 +126,8 @@ class TrackingTest:
         self.last_pos = pos
 
         cx, cy = self.center_px(target)
-        inside = math.dist(pos, (cx, cy)) <= target.size_px / 2
+        radius = target.size_px / 2 + (self.hold_margin_px if target.inside_since is not None else 0.0)
+        inside = math.dist(pos, (cx, cy)) <= radius
         if inside:
             if target.inside_since is None:
                 target.inside_since = now
