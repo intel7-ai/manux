@@ -60,7 +60,7 @@ store.removeBinding(gestureId)
 
 ## 다른 파트가 연결할 부분 (미구현)
 
-- **G1(SCRUM-23):** 병합 후 `app.js`가 `new SettingsStore({validateRegistrations})`로 실제 검증기를 넘긴다. 그 전까지 등록 저장은 항상 거부된다(검사 없이 모델을 저장하지 않기 위함).
+- **G1(SCRUM-23):** 연결됨. `app.js`가 `new SettingsStore({validateRegistrations})`로 G1 검증기를 넘긴다. 저장 경로는 `trainGesture` → `registerGesture(현재 등록, 후보)`로 충돌 재검사 → 해당 동작 하나만 `putGesture`. `tests/settings-store-gestures.test.js`가 실제 G1 함수로 재실행 복원·판정을 확인한다(합성 특징).
 - **U2(SCRUM-27):** 확인 단계가 `verified`일 때만 `putGesture`를 호출하고, `sessionId`는 등록 세션 ID를 쓴다. 예외가 나면 저장 실패 안내를 보여 주고 다른 동작 목록은 바꾸지 않는다.
 - **C3(SCRUM-22):** 허용 액션 ID 목록을 정해 `allowedActions`로 넘긴다. 저장소는 액션 이름을 해석하지 않는다. 알 수 없는 액션이 연결된 동작은 실행 시 명령 없음으로 처리한다.
 - **U3(SCRUM-28):** 주손·영역 설정 화면은 `setMouse`, 기본값 복원은 `resetMouse`를 쓴다.
