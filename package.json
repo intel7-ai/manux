@@ -4,10 +4,17 @@
   "private": true,
   "type": "module",
   "description": "Local webcam gesture video player for MANUX",
+  "author": "intel7-ai",
+  "main": "desktop/main.mjs",
   "scripts": {
     "start": "node server.js",
     "desktop": "electron desktop/main.mjs",
     "desktop:setup": "node node_modules/electron/install.js",
+    "desktop:pack": "node scripts/desktop-build.mjs dir",
+    "desktop:dist": "node scripts/desktop-build.mjs dist",
+    "test:packaged": "node scripts/test-packaged-app.mjs",
+    "test:update-download": "node scripts/test-update-download.mjs",
+    "test:installed-update": "node scripts/test-installed-update.mjs",
     "test:mouse": "node scripts/test-mouse-browser.mjs",
     "test:browser": "node scripts/test-mouse-browser.mjs",
     "test:native": "node scripts/test-desktop-mouse.mjs",
@@ -22,12 +29,16 @@
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "1.2.0"
+    "@mediapipe/tasks-vision": "1.2.0",
+    "electron-updater": "6.8.11"
   },
   "devDependencies": {
     "electron": "45.2.1",
+    "electron-builder": "26.18.0",
     "playwright": "1.64.1",
     "webm-muxer": "^5.1.4"
   },
-  "engines": {"node": ">=24 <25"}
+  "engines": {
+    "node": ">=24 <25"
+  }
 }

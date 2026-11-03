@@ -4,7 +4,7 @@
 
 `MANUX_DESKTOP_PORT` may select another fixed port from 1 through 65535. If the port is already occupied, startup reports the conflict; it never stops another process or silently changes the origin. Each port has separate localStorage. Tests may explicitly set `MANUX_DESKTOP_PORT=0` for an ephemeral port; that setting does not preserve an origin between launches.
 
-The desktop preload exposes only `getStatus`, `setEnabled`, `send`, `stop`, and `onStatus` as `window.manuxDesktop`. Renderer code has no Node.js access. The main process checks the sender, main frame, origin, event names, types, and numeric limits. Remote navigation, new windows, webviews, and remote resource requests are denied.
+The desktop preload exposes only `getStatus`, `setEnabled`, `send`, `stop`, and `onStatus` for the mouse, plus `getUpdateStatus`, `checkForUpdates`, `installUpdate`, and `onUpdateStatus` for application updates, as `window.manuxDesktop`. Update calls accept no arguments, are sender-checked like the mouse calls, and are active only in a packaged build (see `docs/desktop-release.md`). Renderer code has no Node.js access. The main process checks the sender, main frame, origin, event names, types, and numeric limits. Remote navigation, new windows, webviews, and remote resource requests are denied.
 
 Real mouse control starts disabled. The app must explicitly enable it. **Ctrl+Alt+M** stops control even when another app is focused. If the shortcut cannot be registered, native control remains unavailable. Reloading, minimizing, closing, renderer failure, screen locking, and sleep also release control. Switching focus to another app keeps control active so that app can be operated.
 
