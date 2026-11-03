@@ -17,7 +17,14 @@ git branch -r
 git status --short
 ```
 
-팀이 공유한 기준 브랜치와 커밋을 확인한 뒤 그 브랜치에서 작업을 시작합니다. `main`이라는 이름만으로 최신 기능이 있다고 판단하지 않습니다. 공유되지 않은 로컬 변경은 복제에 포함되지 않습니다.
+새 작업은 최신 `production`에서 시작합니다. 기본 브랜치 이름과 배포 브랜치를 혼동하지 마세요. 깨끗한 본인 checkout에서 다음처럼 작업별 브랜치를 만듭니다.
+
+```powershell
+git fetch origin production
+git switch --no-track -c codex/scrum-23-gesture-enrollment origin/production
+```
+
+진행 중인 작업은 기존 브랜치에서 계속합니다. 이 전환을 위해 기존 worktree·미커밋 파일·worker를 삭제하거나 reset/checkout -f 하지 않습니다. 다른 작업의 코드가 필요하면 의존 PR을 명시하고 승인된 변경을 통합합니다.
 
 기존 폴더에서는 작업 전에 다음 상태를 기록합니다.
 
@@ -57,9 +64,11 @@ npm run desktop:setup
 2. 담당 영역에서 작은 변경을 구현합니다. `src/app.js`와 여러 모듈의 연결은 통합 담당자와 조정합니다.
 3. 변경에 해당하는 검사를 실행하고, 통합 전에 `npm run verify`를 통과합니다.
 4. 공통 형식 **상태 → 요약 → 변경 → 검증 → 다음**으로 결과를 공유합니다. 실제 실행 결과와 미실행 이유를 포함합니다.
-5. 독립 작업의 결과를 리뷰하고 순서대로 통합합니다. 다른 작업자의 실행 중인 폴더나 결과를 덮어쓰지 않습니다.
+5. 본인 브랜치를 push하고 `production` 대상 PR을 엽니다. 개인 PC의 AI와 Discord worker가 같은 경로를 사용합니다. 공유 호스트에 코드를 먼저 모을 필요는 없습니다. 다른 작업자의 실행 중인 폴더와 브랜치는 보존합니다.
 
 에이전트의 내부 기록은 `.local/harness/<requestId>/task.json`과 `result.json`입니다. 보고서는 다음 명령으로 생성하며, 스키마·사용 예시는 하네스 문서가 원본입니다.
+
+신규 Discord worker는 전달받은 task.json을 자기 작업 폴더에 복사하고, 구현 전에 `baselineCommit`을 `.local/discord-baseline.json`의 `sourceHead`로 확정합니다. 완료 시 조정자가 확정된 task.json과 result.json을 모두 공유 checkout에 복사합니다. 기존 진행 중 작업의 기준과 worker의 원본 기록은 유지합니다.
 
 ```text
 npm run task:report -- TASK.json RESULT.json
@@ -107,15 +116,22 @@ node --max-old-space-size=512 scripts/test-enrollment-browser.mjs
 
 ## 5. PR과 CI
 
-한 PR에는 재현 가능한 문제 또는 합의된 작은 기능을 담습니다. [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)에 따라 문제·변경·검증·미실행 이유·남은 한계를 기록하고, 지정 리뷰어가 실제 diff와 재현 증거를 확인합니다. 계약·프로필 형식·다른 담당 영역에 영향이 있으면 소비 모듈 담당자를 연결합니다.
+한 PR에는 재현 가능한 문제 또는 합의된 작은 기능을 담습니다. [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)에 따라 문제·변경·검증·미실행 이유·남은 한계를 기록합니다. PR 대상은 `preview`이며 리뷰어 승인 없이 MANUX required 통과 후 병합합니다. `production`에는 preview에서 시험한 뒤 `preview` PR로만 병합합니다([브랜치 흐름](docs/branch-flow.md)). 계약·프로필 형식·다른 담당 영역에 영향이 있으면 소비 모듈 담당자를 연결합니다.
 
-GitHub Actions의 **MANUX CI**는 워크플로가 원격에 반영된 후 Windows와 Ubuntu의 공통 검사, 브라우저 검사, Windows native 검사를 실행합니다. 집계 검사 이름은 **MANUX required**입니다. **로컬 검사 통과와 원격 CI 통과를 각각 기록**합니다. 자동 검사는 실제 웹캠·사용성 검사를 대신하지 않습니다.
+GitHub Actions의 **MANUX CI**는 Windows와 Ubuntu의 공통 검사, 브라우저 검사, Windows native 검사와 패키징 검사를 실행하고 PR별 시험용 Windows 설치파일을 artifact로 제공합니다. 집계 검사 이름은 **MANUX required**입니다. **로컬 검사 통과와 원격 CI 통과를 각각 기록**합니다. 자동 검사는 실제 웹캠·사용성 검사를 대신하지 않습니다.
 
-기본 브랜치에는 직접 push하지 않고 PR로 통합합니다. 필수 검사·리뷰를 강제하는 브랜치 보호는 GitHub 저장소 관리자가 별도로 설정해야 합니다. 워크플로 파일만으로 보호 규칙이 켜지지는 않습니다. 충돌은 본인 브랜치에서 해결하며 다른 사람의 브랜치를 강제 push하거나 재작성하지 않습니다.
+PR의 base는 **preview**로 지정합니다. preview·production은 필수 검사 통과와 대화 해결을 요구하고 리뷰어 승인은 요구하지 않습니다. 직접 push·force push로 우회하지 않습니다. 충돌은 본인 브랜치에서 해결하며 다른 사람의 브랜치를 재작성하지 않습니다.
+
+```powershell
+git push -u origin HEAD
+gh pr create --base preview
+```
+
+PR과 preview push의 Actions artifact에서 시험용 Preview 앱을 내려받아 확인합니다. preview에서 시험한 뒤 `preview → production` PR로 병합하면 릴리스 workflow가 검사·버전 발행·Windows 설치파일 게시를 수행하며, 정식 설치본의 업데이터가 새 버전을 확인합니다. 로컬 개발 실행과 PR 시험본이 정식 업데이트를 받는 것처럼 설명하지 않습니다. 자세한 설치·업데이트 동작은 [데스크톱 배포](docs/desktop-release.md)를 확인하세요.
 
 사용자 프로필·원시 영상·토큰·계정 정보·로컬 산출물을 커밋하지 않습니다. 다른 사람의 Node·Chrome·Claude 프로세스를 일괄 종료하지 않습니다. GitHub/Jira 게시와 이슈 완료는 요청 범위와 실제 완료 기준에 따라 수행합니다.
 
-## 6. 검증된 소스 전달
+## 6. 보조 도구: 검증된 소스 전달
 
 배포 담당자는 **커밋된 깨끗한 작업 폴더**에서 같은 코드로 검사를 통과한 뒤 소스 후보를 준비합니다.
 

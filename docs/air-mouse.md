@@ -31,7 +31,7 @@
 - 기존 개인 등록·영상 제어와 동시에 명령을 보내지 않는다.
 - `AirMouseController.update({landmarks,now,enabled,quality,handedness,width,height})`는 `mode`, `phase`, `progress`, `events`를 돌려준다. OS 호출이 없는 순수 판정기다.
 - 이벤트는 `move(dx,dy)`, `button(left/right,down)`, `scroll(dy)`, `release`만 허용한다. 이동은 프레임당 축별 100px 이내, 스크롤은 240 이내로 제한한다.
-- `window.manuxDesktop`은 상태 조회·활성화·마우스 이벤트·중지·상태 알림만 제공한다. 임의 코드/셸 실행이나 키보드 입력은 노출하지 않는다.
+- `window.manuxDesktop`은 상태 조회·활성화·마우스 이벤트·중지·상태 알림과, 인자를 받지 않는 앱 업데이트 상태 조회·확인·설치 승인(`docs/desktop-release.md`)만 제공한다. 임의 코드/셸 실행이나 키보드 입력은 노출하지 않는다.
 - 실제 새 추론 결과마다 빈 배열을 포함해 전달한다. 타이머로 OS 입력 유효 기간을 연장하지 않는다. renderer, main, native helper가 각각 입력 중단을 감시한다. 자동으로 다시 활성화하지 않는다.
 - 카메라 영상은 서버로 전송·저장하지 않는다. 마우스 입력도 서버 HTTP API에 노출하지 않는다.
 
