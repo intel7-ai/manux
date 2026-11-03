@@ -21,6 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.mouse_controller import MouseController  # noqa: E402
 from src.qt_dashboard import QtDashboard  # noqa: E402
 from src.tracking_test import TrackingTest  # noqa: E402
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 
 FRAMES = 150
 FRAME_BUDGET_MS = 50.0     # median per-frame UI cost must stay well under a 30 fps frame
@@ -51,6 +53,14 @@ def main() -> int:
         dash.poll()
     paused_status = dash.trackingStatus
     paused_flag = dash.trackingPaused
+    # Real key events into the test window (reported: Space did nothing there)
+    test_win = next((w for w in dash.application.topLevelWindows() if w.title() == "MANUX 트래킹 측정"), None)
+    dash.commands.clear()
+    if test_win is not None:
+        QTest.keyClick(test_win, Qt.Key_Space)
+        dash.application.processEvents()
+    space_reached_app = 32 in dash.commands
+    dash.commands.clear()
     times = []
     pos = monitor.center
     for i in range(FRAMES):
@@ -93,8 +103,14 @@ def main() -> int:
         "paused_flag": paused_flag,
         "test_window_active": None if win is None else win.isActive(),
     }
-    dash.closeTrackingTest()
+    if win is not None:
+        QTest.keyClick(win, Qt.Key_Escape)  # Esc must close the test window
     dash.poll()
+    report["space_reached_app"] = space_reached_app
+    report["esc_closed_test"] = dash.tracking_test is None
+    if dash.tracking_test is not None:
+        dash.closeTrackingTest()
+        dash.poll()
     report["test_window_hidden_after_close"] = win is not None and not win.isVisible()
     (out / "smoke-report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False))
@@ -108,6 +124,10 @@ def main() -> int:
         failures.append(f"a frame took {report['frame_ms_max']} ms (> {FRAME_MAX_MS} ms: UI freeze)")
     if not (paused_flag and "Space" in paused_status):
         failures.append(f"paused test window does not ask for Space: {paused_status!r}")
+    if not space_reached_app:
+        failures.append("Space pressed in the test window did not reach the app")
+    if not report["esc_closed_test"]:
+        failures.append("Esc pressed in the test window did not close the test")
     if not report["test_window_hidden_after_close"]:
         failures.append("tracking test window still visible after close")
     for f in failures:
