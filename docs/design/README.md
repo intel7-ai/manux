@@ -15,6 +15,14 @@
 | [04 시퀀스](04-sequences.md) | 03의 함수를 시간 순서로 | `app.js` 호출 순서 |
 | [05 ERD](05-erd.md) | 저장 레코드와 칼럼 출처 | `settings-store.js`·`profile-store.js` 검증기 |
 
+## 설계 결정 노트
+
+결정이 필요한 설계 질문은 선택지·근거·비교 방법과 함께 따로 남긴다. 결정되면 노트의 "결정" 절을 채우고 관련 문서를 같은 PR에서 고친다.
+
+| 노트 | 상태 |
+| --- | --- |
+| [커서 기준점과 클릭 방식](decision-pointer-click.md) | 결정 전 (2026-11-03) |
+
 세부 수치와 기존 결정은 [contracts](../contracts.md), [air-mouse](../air-mouse.md), [settings-store](../settings-store.md)가 원본이다. 설계 문서는 그것들을 대체하지 않고 연결한다.
 
 ## 고치는 방법
