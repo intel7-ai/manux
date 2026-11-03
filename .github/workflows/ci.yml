@@ -3,7 +3,7 @@ name: MANUX CI
 on:
   pull_request:
   push:
-    branches: [main, master]
+    branches: [main, master, preview, production]
   workflow_dispatch:
 
 permissions:
@@ -75,7 +75,7 @@ jobs:
   required:
     name: MANUX required
     if: always()
-    needs: [verify, browser]
+    needs: [verify, browser, windows-package]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -83,4 +83,59 @@ jobs:
         env:
           VERIFY_RESULT: ${{ needs.verify.result }}
           BROWSER_RESULT: ${{ needs.browser.result }}
-        run: test "$VERIFY_RESULT" = success && test "$BROWSER_RESULT" = success
+          PACKAGE_RESULT: ${{ needs.windows-package.result }}
+        run: test "$VERIFY_RESULT" = success && test "$BROWSER_RESULT" = success && test "$PACKAGE_RESULT" = success
+      # production takes changes only after they were merged and tested on preview (docs/branch-flow.md).
+      - name: production accepts PRs from preview only
+        if: github.event_name == 'pull_request' && github.base_ref == 'production'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REF" != preview ] || [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "::error::production에는 preview 브랜치 PR만 병합합니다. 이 PR의 대상 브랜치를 preview로 바꾸세요."
+            exit 1
+          fi
+
+  windows-package:
+    name: Windows preview installer
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      MANUX_BUILD_CHANNEL: preview
+      MANUX_PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run desktop:setup
+      - run: node scripts/release-version.mjs prepare preview
+      - run: npm run desktop:dist
+      - run: npm run test:packaged
+      - run: npm run test:update-download
+      - name: Installed Preview upgrade preserves settings (disposable Windows VM)
+        run: npm run test:installed-update
+      - name: Download the PR's preview app (never a stable update)
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: MANUX-preview-${{ github.event.pull_request.number || github.run_number }}-${{ github.sha }}
+          path: dist/*.exe
+          if-no-files-found: error
+          retention-days: 14
+      - name: Packaged app evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: preview-package-evidence
+          path: |
+            test-results/packaged-app.json
+            test-results/update-download.json
+            test-results/installed-update.json
+          if-no-files-found: ignore
+          retention-days: 7

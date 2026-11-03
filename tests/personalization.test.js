@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {POSES, FEATURE_COUNT, ENROLLMENT_VIEWS, MIN_SAMPLES_PER_VIEW, extractFeatures, getHandQuality, trainEnvironment, classifyPersonal, validateProfile} from '../src/personalization.js';
+import {POSES, FEATURE_COUNT, ENROLLMENT_VIEWS, MIN_SAMPLES_PER_VIEW, extractFeatures, getHandQuality, trainEnvironment, classifyPersonal, validateProfile, trainGesture, registerGesture, removeGesture, classifyRegisteredGesture, validateRegistrations, validGestureId, MAX_REGISTERED_GESTURES} from '../src/personalization.js';
 
 const hand = [
   [0.48,0.80,0], [0.38,0.72,-.01], [0.30,0.63,-.02], [0.24,0.55,-.03], [0.19,0.49,-.04],
@@ -197,4 +197,166 @@ test('profile validation reports malformed flat data with view metadata instead 
     const result = validateProfile({version:1,id:'p',name:'name',environments:{desk:{samples:bad,viewSamples}}});
     assert.equal(result.valid,false);
   }
+});
+
+// --- SCRUM-23 / G1: single custom gesture registration (synthetic features, not user data) ---
+const gestureViews = (label, count = 12) => Object.fromEntries(ENROLLMENT_VIEWS.map((view, v) => [view, Array.from({length: count}, (_, n) => vector(label, n + v * 3))]));
+const unknownVector = Array.from({length: FEATURE_COUNT}, (_, i) => i % 2 ? .99 : .01);
+const trainOk = (gestureId, label, existing = {}, extra = {}) => {
+  const result = trainGesture({gestureId, viewSamples: gestureViews(label), existingRegistrations: existing, ...extra});
+  assert.equal(result.usable, true, result.reason);
+  return result;
+};
+
+test('gesture IDs are opaque, separate from names and actions', () => {
+  for (const id of ['custom:rock', 'custom:3f2a-91', 'builtin.thumb-up']) assert.equal(validGestureId(id), true, id);
+  for (const id of ['rock', 'custom:', 'custom:a b', 'media.play', '', null, 'custom:' + 'x'.repeat(49)]) assert.equal(validGestureId(id), false, String(id));
+  assert.throws(() => trainGesture({gestureId: 'rock', viewSamples: gestureViews(1)}), /gesture id/);
+});
+
+test('one custom gesture can be registered alone and unknown input is rejected, not forced to it', () => {
+  const {candidate} = trainOk('custom:rock', 1);
+  assert.equal(candidate.gestureId, 'custom:rock');
+  assert.equal(Object.hasOwn(candidate, 'actionId'), false);
+  const registrations = registerGesture({}, JSON.parse(JSON.stringify(candidate)));
+  assert.equal(validateRegistrations(registrations).valid, true);
+  const match = classifyRegisteredGesture({features: vector(1, 100), registrations});
+  assert.equal(match.accepted, true);
+  assert.equal(match.kind, 'match');
+  assert.equal(match.gestureId, 'custom:rock');
+  assert.equal(match.margin, null, 'a lone class has no competitor margin');
+  for (const features of [unknownVector, vector(3, 100), vector(0, 100)]) {
+    const rejected = classifyRegisteredGesture({features, registrations});
+    assert.equal(rejected.accepted, false);
+    assert.equal(rejected.gestureId, null);
+    assert.equal(rejected.kind, 'unknown');
+    assert.equal(rejected.reason, 'outside-enrollment');
+  }
+  assert.equal(classifyRegisteredGesture({features: vector(1), registrations: {}}).reason, 'no-registrations');
+  assert.equal(classifyRegisteredGesture({features: [1, 2], registrations}).kind, 'invalid');
+});
+
+test('registering, re-registering and removing change only the selected gesture', () => {
+  const a = trainOk('custom:a', 1).candidate;
+  const afterA = registerGesture({}, a);
+  const b = trainOk('custom:b', 3, afterA).candidate;
+  const afterB = registerGesture(afterA, b);
+  const snapshot = JSON.stringify(afterB);
+  assert.deepEqual(Object.keys(afterB).sort(), ['custom:a', 'custom:b']);
+  assert.deepEqual(afterB['custom:a'], a);
+  assert.equal(JSON.stringify(afterA), JSON.stringify({'custom:a': a}), 'input record is not mutated');
+  assert.equal(classifyRegisteredGesture({features: vector(1, 100), registrations: afterB}).gestureId, 'custom:a');
+  const second = classifyRegisteredGesture({features: vector(3, 100), registrations: afterB});
+  assert.equal(second.gestureId, 'custom:b');
+  assert.equal(typeof second.margin, 'number');
+  // Re-register b with different examples: a stays byte-identical.
+  const b2 = trainOk('custom:b', 2, afterB).candidate;
+  const replaced = registerGesture(afterB, b2);
+  assert.equal(JSON.stringify(replaced['custom:a']), JSON.stringify(a));
+  assert.equal(JSON.stringify(replaced['custom:b']), JSON.stringify(b2));
+  assert.equal(JSON.stringify(afterB), snapshot);
+  // Delete b only.
+  const removed = removeGesture(replaced, 'custom:b');
+  assert.deepEqual(Object.keys(removed), ['custom:a']);
+  assert.equal(JSON.stringify(removed['custom:a']), JSON.stringify(a));
+  assert.deepEqual(removeGesture(removed, 'custom:missing'), removed);
+});
+
+test('a conflicting or unstable candidate is held back and never disables an existing gesture', () => {
+  const a = trainOk('custom:a', 1).candidate;
+  const existing = registerGesture({}, a);
+  const before = JSON.stringify(existing);
+  const clone = trainGesture({gestureId: 'custom:copy', viewSamples: gestureViews(1), existingRegistrations: existing});
+  assert.equal(clone.usable, false);
+  assert.equal(clone.reason, 'conflicts-with-registered-gesture');
+  assert.equal(clone.candidate, null);
+  assert.deepEqual(clone.conflicts.map(c => c.gestureId), ['custom:a']);
+  assert.equal(JSON.stringify(existing), before);
+  assert.equal(classifyRegisteredGesture({features: vector(1, 100), registrations: existing}).gestureId, 'custom:a');
+  assert.throws(() => registerGesture(existing, clone.candidate), /candidate/);
+  const noisy = gestureViews(3);
+  noisy.left = Array.from({length: 12}, (_, n) => Array.from({length: FEATURE_COUNT}, (_, i) => (n + i) % 2 ? .99 : .01));
+  const unstable = trainGesture({gestureId: 'custom:noisy', viewSamples: noisy, existingRegistrations: existing});
+  assert.equal(unstable.usable, false);
+  assert.equal(unstable.reason, 'unstable-samples');
+  assert.equal(unstable.diagnostics.views.left.enabled, false);
+});
+
+test('re-registering the same gesture is not a conflict with its own previous registration', () => {
+  const first = trainOk('custom:a', 1).candidate;
+  const existing = registerGesture({}, first);
+  assert.equal(trainGesture({gestureId: 'custom:a', viewSamples: gestureViews(1), existingRegistrations: existing}).usable, true);
+});
+
+test('rejection examples narrow acceptance and an example that equals the gesture is refused', () => {
+  const plain = trainOk('custom:a', 1).candidate;
+  const guarded = trainOk('custom:a', 1, {}, {rejectionExamples: [vector(1.4, 5)]});
+  assert.equal(guarded.diagnostics.rejectionEvidence, 'provided');
+  assert.equal(trainOk('custom:a', 1).diagnostics.rejectionEvidence, 'none');
+  for (const view of ENROLLMENT_VIEWS) assert.ok(guarded.candidate.model.views[view].radius <= plain.model.views[view].radius);
+  const bad = trainGesture({gestureId: 'custom:a', viewSamples: gestureViews(1), rejectionExamples: [vector(1, 7)]});
+  assert.equal(bad.usable, false);
+  assert.equal(bad.reason, 'rejection-example-too-close');
+  assert.equal(bad.candidate, null);
+});
+
+test('malformed gesture input and stored registrations fail closed', () => {
+  assert.throws(() => trainGesture({gestureId: 'custom:a', viewSamples: {front: []}}), /require/);
+  const nan = gestureViews(1);
+  nan.up[0][0] = NaN;
+  assert.throws(() => trainGesture({gestureId: 'custom:a', viewSamples: nan}), /invalid feature vector/);
+  assert.throws(() => trainGesture({gestureId: 'custom:a', viewSamples: gestureViews(1), rejectionExamples: [[1, 2]]}), /rejection/);
+  const registrations = registerGesture({}, trainOk('custom:a', 1).candidate);
+  const corrupt = JSON.parse(JSON.stringify(registrations));
+  corrupt['custom:a'].model.views.front.radius = 5;
+  assert.equal(validateRegistrations(corrupt).valid, false);
+  assert.equal(classifyRegisteredGesture({features: vector(1, 100), registrations: corrupt}).reason, 'invalid-model');
+  const withAction = JSON.parse(JSON.stringify(registrations));
+  withAction['custom:a'].actionId = 'mouse.left-click';
+  assert.equal(validateRegistrations(withAction).valid, false, 'a registration must not carry an action');
+  const wrongKey = {'custom:b': JSON.parse(JSON.stringify(registrations['custom:a']))};
+  assert.equal(validateRegistrations(wrongKey).valid, false);
+  const stale = JSON.parse(JSON.stringify(registrations));
+  stale['custom:a'].modelVersion = 2;
+  assert.equal(validateRegistrations(stale).valid, false);
+  assert.throws(() => registerGesture(registrations, stale['custom:a']), /candidate/);
+  const existingBroken = trainGesture({gestureId: 'custom:b', viewSamples: gestureViews(3), existingRegistrations: corrupt});
+  assert.equal(existingBroken.usable, false);
+  assert.equal(existingBroken.reason, 'invalid-existing-registration');
+});
+
+test('the number of stored gestures is bounded', () => {
+  let registrations = {};
+  for (let i = 0; i < MAX_REGISTERED_GESTURES; i++) registrations = registerGesture(registrations, trainOk(`custom:g${i}`, 0.05 + i * 0.25).candidate);
+  assert.equal(Object.keys(registrations).length, MAX_REGISTERED_GESTURES);
+  const extra = trainGesture({gestureId: 'custom:extra', viewSamples: gestureViews(3.05), existingRegistrations: registrations});
+  assert.equal(extra.usable, false);
+  assert.equal(extra.reason, 'too-many-gestures');
+});
+
+test('registerGesture rejects a stale candidate that now conflicts, and keeps existing registrations', () => {
+  const a = trainOk('custom:a', 1).candidate;
+  // Both candidates were trained while nothing else was registered.
+  const stale = trainOk('custom:copy', 1).candidate;
+  const existing = registerGesture({}, a);
+  const before = JSON.stringify(existing);
+  assert.throws(() => registerGesture(existing, stale), /conflicts with registered gesture custom:a/);
+  assert.equal(JSON.stringify(existing), before);
+  assert.equal(classifyRegisteredGesture({features: vector(1, 100), registrations: existing}).gestureId, 'custom:a');
+  // A distinct gesture and a same-ID replacement are still accepted.
+  const distinct = trainOk('custom:b', 3).candidate;
+  assert.deepEqual(Object.keys(registerGesture(existing, distinct)).sort(), ['custom:a', 'custom:b']);
+  const replacement = trainOk('custom:a', 1.02).candidate;
+  assert.equal(registerGesture(existing, replacement)['custom:a'].gestureId, 'custom:a');
+  assert.throws(() => registerGesture({'custom:a': {}}, distinct), /existing registrations/);
+});
+
+test('removeGesture rejects malformed IDs and treats an unregistered valid ID as a no-op copy', () => {
+  const registrations = registerGesture({}, trainOk('custom:a', 1).candidate);
+  for (const id of ['rock', '', undefined, null, '__proto__', 'media.play', 5]) assert.throws(() => removeGesture(registrations, id), /gesture id/, String(id));
+  const same = removeGesture(registrations, 'custom:never-registered');
+  assert.deepEqual(same, registrations);
+  assert.notEqual(same, registrations, 'a copy is returned, not the input');
+  assert.deepEqual(Object.keys(removeGesture(registrations, 'custom:a')), []);
+  assert.deepEqual(Object.keys(registrations), ['custom:a']);
 });

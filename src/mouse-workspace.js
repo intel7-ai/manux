@@ -5,9 +5,11 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 /** Practice actions are confined to the pad; only the desktop preload can control Windows. */
 export class MouseWorkspace {
-  constructor({root = document, bridge = globalThis.manuxDesktop} = {}) {
+  constructor({root = document, bridge = globalThis.manuxDesktop, sensitivity = 1800, onSensitivityChange = null} = {}) {
     this.root = root; this.bridge = bridge; this.$ = selector => root.querySelector(selector);
-    this.controller = new AirMouseController();
+    this.controller = new AirMouseController({sensitivity});
+    this.$('#mouse-sensitivity').value = String(sensitivity);
+    this.$('#mouse-sensitivity-output').textContent = String(sensitivity);
     this.active = false; this.ready = false; this.enabled = false; this.available = false;
     this.generation = 0; this.pending = false; this.lastFrame = null;
     this.position = {x:130, y:110}; this.pressed = false; this.drag = null; this.clickStart = null;
@@ -20,6 +22,8 @@ export class MouseWorkspace {
       this.controller = new AirMouseController({sensitivity});
       this.$('#mouse-sensitivity-output').textContent = String(sensitivity);
     });
+    // Save once the slider is released, not on every intermediate value.
+    this.$('#mouse-sensitivity').addEventListener('change', () => onSensitivityChange?.(Number(this.$('#mouse-sensitivity').value)));
     this.$('#mouse-click-target').addEventListener('click', () => {
       const el = this.$('#mouse-click-count'); el.textContent = String(Number(el.textContent) + 1);
     });
