@@ -104,14 +104,25 @@ applyMediaAction(video, 'pause'|'play'|'forward'|'backward') -> Promise<{action,
 // 실패: 지원하지 않는 명령·영상 없음 → Error, 재생 차단 → NotAllowedError(reject).
 ```
 
-**제안 (C3, 미구현):**
+**구현됨 (C3, `src/binding-resolver.js`, 순수 함수 · 앱에는 아직 연결되지 않음):**
 
 ```js
 resolveBinding({decision, bindings, allowedActions}) -> {actionId | null, reason}
 // decision = classifyRegisteredGesture 결과. 실패: 예외 없음, actionId:null.
+// bindings = 설정 레코드의 environments.<환경>.bindings (gestureId -> {gestureId, actionId, enabled}).
+// allowedActions = 배열 또는 Set. 형식이 틀린 입력은 모두 명령 없음으로 끝난다.
 // reason: bound | not-accepted | no-binding | disabled | unknown-action.
-// not-accepted를 공통 모델 결과로 대체하지 않는다.
+//   not-accepted: accepted:true·kind:'match'·올바른 gestureId가 모두 맞지 않으면 (미수락·모호·오류·위조). 공통 모델 결과로 대체하지 않는다.
+//   no-binding: 연결이 없거나 행의 gestureId가 키와 다르거나 형식이 틀림.   disabled: enabled:false (알 수 없는 액션보다 먼저 판정).
+//   unknown-action: MOUSE_ACTIONS에 없거나 allowedActions에 없는 액션.
+MOUSE_ACTIONS / ALLOWED_ACTION_IDS   // 허용 액션의 유일한 정의: mouse.left-click, mouse.right-click, mouse.pause
+eventsForAction(actionId) -> 이벤트 배열 | null   // 클릭은 button down+up, pause는 [] (호출자가 제어를 끈다), 모르는 id는 null
+findSharedActions(bindings) -> [{actionId, gestureIds}]   // 같은 액션을 쓰는 활성 연결 보고(정보용)
 ```
+
+정책(구현됨): 한 동작에는 연결이 하나다(레코드가 gestureId 키이므로 두 번째 `setBinding`은 교체). 여러 동작이 같은 액션을 가리키는 것은 **허용하고 거절하지 않는다**: 한 프레임은 하나의 판정만 받으므로 같은 프레임에서 두 번 실행되지 않는다. 화면(U3)은 `findSharedActions`로 경고할 수 있다. 스크롤·드래그는 연속 손 이동이 필요해 정적 손 모양에 연결할 수 없으므로 허용 목록에서 뺐다.
+
+**제안 (미구현, 앱 조립/R5):** 판정 → `resolveBinding` → `eventsForAction` → `bridge.send`/연습 영역 연결, 액션 실행 결과 기록, 연결 변경 시 반복·잠금 초기화. `mouse.pause` 처리(제어 끄기)도 앱 조립이 맡는다.
 
 ## 설정 저장소
 
@@ -170,8 +181,8 @@ main은 1초 동안 입력이 없으면(`watchdogMs`) 스스로 끄고, helper�
 | UC-04 | 취소·이탈 → 기존 등록 보존 | 컨트롤러가 저장 등록을 갖지 않음, `cancel()` | 표현됨 |
 | UC-04 | 저장 실패 → 기존 유지·재시도 | `SettingsStore` 예외 계약 | 표현됨(화면 경로 미구현) |
 | UC-04 | 오래된 후보 거절 | `registerGesture` RangeError | 표현됨 |
-| UC-05 | 미수락 → 명령 없음, 우회 금지 | `classifyRegisteredGesture` + 제안 `resolveBinding` | **미표현** — 실행 경로 없음 |
-| UC-05 | 연결 없음·비활성·알 수 없는 액션 | 제안 `resolveBinding` | **미표현** |
+| UC-05 | 미수락 → 명령 없음, 우회 금지 | `classifyRegisteredGesture` + `resolveBinding` | 일부 — 판정기는 구현·시험됨, 앱에 연결되지 않아 실행 경로 없음 |
+| UC-05 | 연결 없음·비활성·알 수 없는 액션 | `resolveBinding` reason | 일부 — 판정기는 구현·시험됨, 앱 미연결 |
 | UC-05 | 연결 변경 시 초기화 | 없음 | **미표현** |
 | UC-05 | 실행 실패를 성공으로 기록 안 함 | 없음 | **미표현** |
 | UC-06 | 범위 밖·미확인·미등록 연결 | `validateSettings` | 표현됨 |
@@ -179,4 +190,4 @@ main은 1초 동안 입력이 없으면(`watchdogMs`) 스스로 끄고, helper�
 | UC-07 | 해시 불일치 → 설치 안 함 | `desktop/updater.mjs` | 표현됨([desktop-release](../desktop-release.md)) |
 | UC-07 | 재시작 후 제어 꺼짐 | `MouseBridge.enabled` 초기값 false | 표현됨 |
 
-미표현 4건은 모두 UC-05(C3)다. 값 미정: 허용 액션 목록, 같은 액션 중복 연결 정책.
+미표현 2건과 일부 2건은 모두 UC-05(C3)다. 허용 액션 목록(`MOUSE_ACTIONS`)과 같은 액션 중복 연결 정책(허용하고 보고)은 이번에 정했으며 사람 검수가 필요하다. 남은 것은 앱 조립 연결, 연결 변경 시 초기화, 실행 결과 기록이다.
