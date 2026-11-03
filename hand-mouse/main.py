@@ -1032,6 +1032,11 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except SystemExit:
         raise
+    except KeyboardInterrupt:
+        # Ctrl+C in the terminal: main()'s finally blocks already released the mouse,
+        # camera and windows; no traceback for a normal way to quit.
+        print("[Info] Ctrl+C: closed.", file=sys.stderr)
+        raise SystemExit(130)
     except BaseException:
         import traceback
 

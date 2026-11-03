@@ -5,7 +5,7 @@ import time
 import math
 
 import cv2
-from PySide6.QtCore import QObject, Property, QSettings, Signal, Slot, QUrl
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Property, QSettings, Signal, Slot, QUrl
 from PySide6.QtGui import QGuiApplication, QImage
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
@@ -488,5 +488,18 @@ class QtDashboard(QObject):
         self.previewChanged.emit()
 
     def close(self):
-        self.window.close()
+        """Tear the QML side down before this object goes away.
+
+        Otherwise the windows outlive `dashboard` at interpreter exit and every binding
+        logs "Cannot read property ... of null" (dozens of lines after Ctrl+C or Q).
+        """
+        if getattr(self, "_closed_qml", False):
+            return
+        self._closed_qml = True
+        for root in self.engine.rootObjects():
+            root.close()
+            root.deleteLater()
+        self.application.processEvents()
+        self.engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         self.application.processEvents()
