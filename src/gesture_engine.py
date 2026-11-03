@@ -64,6 +64,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "release_threshold": 0.075,
     "pinch_release_grace": 0.15,
     "click_threshold": 0.052,
+    "ring_click_threshold": 0.044,
     "smoothing": 0.35,
     "cursor_interpolation": True,
     "tremor_filter": True,
@@ -114,6 +115,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "click_release_margin": 0.02,
     "long_press_drag": True,
     "long_press_time": 0.6,
+    "long_press_drag_multiplier": 15.0,
+    "ui_magnet_enabled": True,
+    "ui_magnet_radius": 28.0,
+    "ui_magnet_min_factor": 0.7,
+    "ui_magnet_max_size": 200,
     "click_tuck_ratio": 0.8,
     "click_neighbor_ratio": 0.85,
     "click_release_grace": 0.03,
@@ -788,7 +794,10 @@ class GestureEngine:
         middle_ok = confirmed("middle", d_middle, dip(self.MIDDLE_TIP), click_threshold,
                               entry_ok=ratios[1] > click_tuck and nearest == "middle",
                               keep_ok=ratios[1] > click_tuck * 0.9)
-        ring_ok = confirmed("ring", d_ring, dip(self.RING_TIP), click_threshold,
+        # thumb+ring has its own (slightly stricter) distance: the ring tip often reads as
+        # touching before it really does
+        ring_thr = float(self.config.get("ring_click_threshold", 0.044))
+        ring_ok = confirmed("ring", d_ring, dip(self.RING_TIP), ring_thr,
                             entry_ok=ratios[2] > ring_tuck and nearest == "ring",
                             keep_ok=ratios[2] > ring_tuck * 0.9)
         # Thumb+pinky (task switcher): the pinky tip is hard to reach and often hidden, so it
@@ -869,6 +878,8 @@ class GestureEngine:
                     pinch_distance=d_index,
                     distances=distances,
                     is_moving=True,
+                    # held-pinch drag moves the cursor fast (like the fist)
+                    dpi_multiplier=max(0.1, float(self.config.get("long_press_drag_multiplier", 15.0))),
                 )
             return GestureResult(
                 active_gesture=f"thumb_{held}_pinch",

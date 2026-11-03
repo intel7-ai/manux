@@ -22,7 +22,7 @@
 
 본 프로젝트는 `uv` 패키지 관리자를 사용합니다.
 
-MANUX Qt Quick 화면을 시험하려면 `uv run --locked --extra qt python main.py --ui qt --source 0`을 실행하세요. Tkinter 화면은 `--ui tk`로 선택할 수 있습니다. 두 화면 모두 시작할 때 OS 입력은 일시정지되어 있습니다.
+MANUX Qt Quick 화면을 시험하려면 `uv run --locked --extra qt python main.py --ui qt --source 0`을 실행하세요. Tkinter 화면은 `--ui tk`로 선택할 수 있습니다. 두 화면 모두 시작할 때 OS 입력은 일시정지되어 있습니다. `--ui`를 주지 않으면 카메라 창·트레이 아이콘 모드(추론 스레드 분리)로 실행됩니다. `--ui tk|qt` 화면은 아직 트레이·`--headless`·상태 오버레이·UI 조준 보조를 쓰지 않습니다.
 
 
 ```bash
@@ -53,6 +53,27 @@ uv run python main.py --dry-run
 | `--config` | 커스텀 제스처 설정 파일 경로 | `config/gestures.json` |
 | `--dry-run` | 실제 OS 마우스 이벤트를 발생시키지 않고 시각화만 수행 | `False` |
 | `--no-mirror`| 카메라 화면 좌우 반전(거울 모드) 비활성화 | `False` (기본 거울 모드) |
+
+---
+
+### 관리자 권한 프로그램에서 쓰기 (예: CodeVisionAVR)
+
+Windows는 보안상 **일반 권한 프로그램이 관리자 권한으로 실행 중인 프로그램에 마우스 클릭·휠·키보드 입력을 보내는 것을 막습니다(UIPI)**.
+그래서 CodeVisionAVR, 작업 관리자처럼 관리자 권한으로 실행된 창 위에서는 hand-mouse가 동작하지 않습니다.
+이럴 때는 **`run_admin.bat`** 을 더블클릭하세요. Windows 권한 확인 창이 한 번 뜨고, hand-mouse가 관리자 권한으로 실행되어 일반·관리자 프로그램 모두에서 동작합니다. **cmd 창 없이** `--headless`(트레이 모드)로 시작하며, 시작 메시지·오류는 `logs/app_latest.log`에 저장됩니다(처음 한 번은 Python 환경 준비 과정이 보입니다)
+(옵션도 그대로 전달: `run_admin.bat --phone-web`).
+
+### 버튼 근처 자동 감속 (에임 어시스트)
+
+작은 닫기(X) 버튼·체크박스·링크 같은 **클릭 대상 근처에서 커서가 서서히 느려집니다**(Windows UI Automation 사용). 커서를 끌어당기거나 옮기지는 않고 속도만 줄이며, 주먹(빠른 이동) 중에는 적용되지 않습니다.
+설정창 `커서 이동` 탭에서 켜고 끄기, 감속 시작 거리(`ui_magnet_radius`, 기본 28px), 대상 위 속도 비율(`ui_magnet_min_factor`, 기본 0.7)을 조절할 수 있습니다. 크기 200px을 넘는 큰 요소는 대상에서 제외합니다(`ui_magnet_max_size`).
+Chrome·Electron 앱은 접근성이 꺼져 있으면 버튼이 잡히지 않을 수 있고(그 경우 평소처럼 동작), 관리자 권한 창은 `run_admin.bat`으로 실행했을 때만 인식됩니다.
+
+### 트레이 모드 / 상태 오버레이 (`--headless`)
+
+- `python main.py --headless` : 카메라 창 없이 **시스템 트레이 아이콘**으로 백그라운드 동작합니다. 트레이 메뉴에서 일시정지·카메라 창(HUD) 열기/닫기·상태 오버레이·설정·종료를 고를 수 있습니다. 카메라 창을 닫으면(X) 트레이로 숨고, 트레이가 없으면 종료됩니다.
+- 화면 구석의 **반투명 클릭-스루 상태 위젯**(트래킹 중 / 일시정지 / 드래그 / 스크롤 / 현재 클릭 동작)은 `--headless`에서 기본으로 켜지고, 카메라 창과 같이 쓰려면 `--overlay`, 위치는 `--overlay-corner top-left|top-right|bottom-left|bottom-right`, 끄려면 `--no-overlay`. 트레이 아이콘만 끄려면 `--no-tray`.
+- 추론(카메라→MediaPipe→제스처→마우스)은 별도 스레드에서 돌고 카메라 창 그리기는 메인 스레드가 맡습니다. 그래서 창 렌더링이 느려도 커서 반응에는 영향이 없고, 카메라 창을 숨기면 그리기·`imshow` 비용이 0이 됩니다.
 
 ---
 
@@ -160,6 +181,7 @@ uv run python main.py --dry-run
   "release_threshold": 0.075,     // 핀치 해제 거리 임계값 (이력현상 방지)
   "pinch_release_grace": 0.15,    // 카메라 각도로 손끝이 가려져 판정이 잠깐 끊겨도 이 시간(초)까지는 핀치 유지
   "click_threshold": 0.052,       // 클릭 판정 거리 임계값
+  "ring_click_threshold": 0.044,  // 엄지+약지(우클릭) 판정 거리 (작을수록 확실히 닿아야 인식)
   "smoothing": 0.35,              // 커서 스무딩 계수 (0에 가까울수록 부드러움, 1에 가까울수록 즉각 반응)
   "cursor_interpolation": true,   // 커서 보간: 카메라는 30fps지만 커서는 144Hz로 부드럽게 이동 (클릭 직전엔 정확한 위치로 맞춤)
   "tremor_filter": true,          // 손떨림 보정 (One Euro 필터 + 미세 떨림 무시) 사용
@@ -211,6 +233,7 @@ uv run python main.py --dry-run
   "click_release_margin": 0.02,   // 중지·약지·새끼 핀치: 클릭 감도 + 이 값을 넘어야 풀림 (경계에서 깜빡임 방지)
   "long_press_drag": true,        // 엄지+중지를 길게 붙이고 있으면 드래그 (왼쪽 버튼 누른 채 손을 따라 이동, 떼면 놓기)
   "long_press_time": 0.6,         // 길게 누르기로 판정하는 시간(초), 0.55초 이상 권장 (첫 클릭과 더블클릭으로 합쳐지지 않게)
+  "long_press_drag_multiplier": 15.0, // 엄지+중지 길게 눌러 드래그하는 동안 커서 이동 배율
   "click_tuck_ratio": 0.8,        // 클릭 손가락 자체가 손바닥 안으로 이만큼 말려 있으면(주먹) 엄지가 닿아도 클릭 아님
   "click_neighbor_ratio": 0.85,   // 중지 클릭 vs 엄지+검지: 검지가 이 비율 이상 더 가까우면 검지 쪽(스크롤)으로 판정 (중지·약지·새끼끼리는 엄지에 가장 가까운 손가락이 우선)
   "click_release_grace": 0.03,    // 중지·약지·새끼 핀치: 이 시간(초)보다 짧은 인식 끊김(1프레임)은 무시

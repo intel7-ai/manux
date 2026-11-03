@@ -10,10 +10,11 @@
   "hand_lost_reset": 0.3,
   "scroll_inertia_time": 0.4,
   "scroll_inertia_min_speed": 600.0,
-  "pinch_threshold": 0.03,
-  "release_threshold": 0.05,
+  "pinch_threshold": 0.025,
+  "release_threshold": 0.045,
   "pinch_release_grace": 0.15,
   "click_threshold": 0.052,
+  "ring_click_threshold": 0.044,
   "smoothing": 0.35,
   "tremor_filter": true,
   "tremor_min_cutoff": 1.5,
@@ -118,5 +119,10 @@
   "fist_confirm_time": 0.12,
   "desktop_min_tip_gap": 0.08,
   "long_press_drag": true,
-  "long_press_time": 0.6
+  "long_press_time": 0.6,
+  "long_press_drag_multiplier": 15.0,
+  "ui_magnet_enabled": true,
+  "ui_magnet_radius": 28.0,
+  "ui_magnet_min_factor": 0.7,
+  "ui_magnet_max_size": 200
 }

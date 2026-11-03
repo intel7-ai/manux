@@ -62,7 +62,7 @@ def pinch_guides(
     thresholds = {
         "index": float(config.get("pinch_threshold", 0.055)),
         "middle": float(config.get("click_threshold", 0.052)),
-        "ring": float(config.get("click_threshold", 0.052)),
+        "ring": float(config.get("ring_click_threshold", 0.044)),
         "pinky": float(config.get("pinky_click_threshold", 0.065)),
     }
     fired = ACTION_FINGER.get(action)

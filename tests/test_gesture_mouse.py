@@ -227,9 +227,11 @@ def test_single_frame_middle_pinch_does_not_click():
 def test_middle_ring_pinky_pinch_survive_flicker():
     """These used to flicker: jitter across the threshold / a 1-frame dropout / the
     neighbour finger drifting close all reset the confirmation every frame."""
-    for finger, tip_name, action in (("middle", "middle", "left_click"), ("ring", "ring", "right_click")):
+    for finger, tip_name, action, jitter in (
+        ("middle", "middle", "left_click", [0.050, 0.056, 0.049, 0.060, 0.051, 0.058]),  # around 0.052
+        ("ring", "ring", "right_click", [0.042, 0.048, 0.041, 0.060, 0.043, 0.050]),     # around 0.044
+    ):
         engine = GestureEngine()
-        jitter = [0.050, 0.056, 0.049, 0.060, 0.051, 0.058]  # around click_threshold 0.052
         t, actions = 1.0, []
         for k, dist in enumerate(jitter):
             hand = make_hand(**{tip_name: (0.50 + dist, 0.50)})
@@ -1807,3 +1809,34 @@ def test_pointer_source_change_does_not_move_cursor_between_landmarks():
         assert mouse.apply(move, now=1.12, index_tip=(.43, .5), pointer_source="palm") == moved
     finally:
         mouse.close()
+
+
+@pytest.mark.record_off
+def test_long_press_drag_moves_the_cursor_at_15x():
+    engine = GestureEngine()
+    out, _ = _run(engine, [_thumb_on(12, 0.02)] * 22)
+    drags = [r for r in out if r.action == "drag_hold"]
+    assert drags and all(r.dpi_multiplier == pytest.approx(15.0) for r in drags)
+
+    def moved(mult):
+        ctrl = MouseController(dry_run=True, screen_size=(1920, 1080))
+        cfg = dict(REL_CFG)
+        res = lambda x: GestureResult(active_gesture="thumb_middle_pinch", action="drag_hold",
+                                      cursor_point=(x, 0.5), is_moving=True, dpi_multiplier=mult)
+        ctrl.apply(res(0.50), cfg, now=0.0)
+        start = ctrl.last_screen_pos[0]
+        ctrl.apply(res(0.51), cfg, now=0.2)    # slow (0.05 frame widths/s): min gain
+        return ctrl.last_screen_pos[0] - start
+    assert moved(15.0) == pytest.approx(15 * moved(1.0), rel=0.1)
+
+
+@pytest.mark.record_off
+def test_ring_needs_a_real_touch_middle_unchanged():
+    """Reported: right click fired before the ring finger actually touched the thumb."""
+    out, _ = _run(GestureEngine(), [_thumb_on(16, 0.048)] * 8)   # almost touching
+    assert "right_click" not in [r.action for r in out]
+    out, _ = _run(GestureEngine(), [_thumb_on(16, 0.035)] * 8)   # touching
+    assert "right_click" in [r.action for r in out]
+    out, _ = _run(GestureEngine(), [_thumb_on(12, 0.048)] * 8)   # middle keeps its distance
+    assert "left_click" in [r.action for r in out]
+
