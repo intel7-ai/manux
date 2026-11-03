@@ -44,6 +44,7 @@ class QtDashboard(QObject):
     liveChanged = Signal()            # per-frame status (fps, action...); settings stay on stateChanged
     metricsChanged = Signal()         # camera mode / brightness, a few times a second
     recentChanged = Signal()          # tracking test result list
+    failureChanged = Signal()         # failure recording summary
     trackingActiveChanged = Signal()  # only when the test window opens or closes
 
     def __init__(self, dry_run=False):
@@ -83,6 +84,11 @@ class QtDashboard(QObject):
         self.tracking_cursor = (.5, .5)
         self.tracking_result = ""
         self.metrics = ("", -1, False)  # camera mode text, brightness 0..255 (-1 unknown), dark
+        # Hand-area crop on/off (A/B with the tracking test) and failure recording
+        self.hand_crop = self.preferences.value("handCrop", False, type=bool)
+        self.failure_mark_requested = False
+        self.failure_summary = "아직 저장된 기록이 없습니다."
+        self.failure_last = ""
         self.recent = load_recent_results(LOG_DIR, RECENT_LIMIT)
         try:
             saved_sensitivity = self.preferences.value("pointerSensitivity", 100, type=int)
@@ -162,6 +168,36 @@ class QtDashboard(QObject):
         self.pointer_anchor = anchor
         self.preferences.setValue("pointerAnchor", anchor)
         self.stateChanged.emit()
+
+    @Slot(bool)
+    def setHandCrop(self, enabled):
+        if self.stage_name != "main" or bool(enabled) == self.hand_crop:
+            return
+        self._pause_for_change()
+        self.hand_crop = bool(enabled)
+        self.preferences.setValue("handCrop", self.hand_crop)
+        self.stateChanged.emit()
+
+    @Property(bool, notify=stateChanged)
+    def handCrop(self):
+        return self.hand_crop
+
+    # ------------------------------------------------------------------ failure recording
+    @Slot()
+    def markFailure(self):
+        self.failure_mark_requested = True
+
+    def set_failures(self, summary, last_file):
+        self.failure_summary, self.failure_last = summary, last_file
+        self.failureChanged.emit()
+
+    @Property(str, notify=failureChanged)
+    def failureSummary(self):
+        return self.failure_summary
+
+    @Property(str, notify=failureChanged)
+    def failureLast(self):
+        return self.failure_last
 
     @Property(str, notify=stateChanged)
     def clickStyle(self):

@@ -247,6 +247,8 @@ def result_line(meta: Dict[str, Any], when: str = "") -> str:
     head = [ANCHOR_NAMES.get(str(get("anchor")), str(get("anchor") or "?"))]
     if get("sensitivity_pct") is not None:
         head.append(f"{get('sensitivity_pct')}%")
+    if str(get("hand_crop")) == "True":
+        head.append("확대")
     parts = [f"도달 {get('reached') or 0}/{get('shown') or 0}"]
     if get("median_time_s") is not None:
         parts.append(f"{float(get('median_time_s')):.2f}초")

@@ -40,6 +40,8 @@ from src.hotkeys import VK_0, VK_F2, VK_NUMPAD0, VK_O, KeyPoller
 from src.win_perf import keep_responsive_in_background
 from src.perf_log import PerfLog
 from src.tracking_test import TrackingTest, result_line
+from src.hand_crop import HandCrop
+from src.failure_log import FailureRecorder
 from src.pipeline import InferencePipeline, Snapshot
 from src.status import describe_state, short_label
 from src.overlay import CORNERS, StatusOverlay
@@ -323,6 +325,9 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
     pointer_pose = PointerPose()
     thumb_trigger = ThumbTrigger()  # option A click (docs/design/decision-pointer-click.md)
     move_latch = MoveLatch()  # keep moving until the tip is still (no clicks meanwhile)
+    hand_crop = HandCrop()  # Qt: look only around the selected hand, at full camera resolution
+    crop_roi = None
+    failures = FailureRecorder(Path(__file__).resolve().parent / "logs" / "failures")
     click_armed = False  # a click needs the thumb to leave the finger first
     pointer_gestures = {
         "thumb_middle_pinch": {"enabled": True, "action": "left_click", "cooldown": .35},
@@ -384,14 +389,24 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                 camera.phone_server is not None and camera.phone_server.has_client
             )
 
+            crop_roi = hand_crop.roi if (args.ui == "qt" and dashboard.hand_crop) else None
             if should_detect:
-                detections = tracker.detect(frame)
+                detections = tracker.detect(frame, roi=crop_roi)
+                if crop_roi is not None and not detections:
+                    # Lost inside the crop: look at the whole frame again in this same frame
+                    hand_crop.reset()
+                    crop_roi = None
+                    detections = tracker.detect(frame)
             else:
                 detections = []
 
             if args.ui == "qt":
                 selected = dashboard.select_hand(detections, camera.config.mirror)
                 detections = [selected] if selected is not None else []
+                if dashboard.hand_crop and detections:
+                    hand_crop.update(detections[0].landmarks, frame.shape[1], frame.shape[0])
+                else:
+                    hand_crop.reset()
                 if dashboard.stage_name != "main" and not paused:
                     paused = True
                     mouse.close_switcher(confirm=False)
@@ -595,6 +610,38 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                     mouse.hand_lost(engine.config)
 
             if args.ui == "qt":
+                if crop_roi is not None:
+                    # Show where the tracker looked (only the area inside was analysed)
+                    cv2.rectangle(frame, crop_roi[:2], crop_roi[2:], (189, 229, 70), 2, cv2.LINE_AA)
+                # Failure recording: the last 2 s of numbers (no images), saved around bad moments
+                if dashboard.failure_mark_requested:
+                    dashboard.failure_mark_requested = False
+                    if failures.trigger(loop_t0, "manual"):
+                        status_msg, status_expire = "실패 기록: 앞뒤 3초를 저장합니다", time.perf_counter() + 2.0
+                auto_kind = None
+                if index_mode and not dashboard.calibrating:
+                    hand = detections[0] if detections else None
+                    auto_kind = failures.record(
+                        loop_t0, landmarks=hand.landmarks if hand else None,
+                        score=hand.score if hand else 0.0,
+                        moving=move_latch.latched and not paused,
+                        crop=list(crop_roi) if crop_roi else None,
+                        cursor=list(mouse.last_screen_pos), speed=round(move_latch.speed, 3),
+                        brightness=dashboard.metrics[1], fps=round(camera.fps, 1),
+                        detect_ms=round(tracker.last_detect_ms, 1), paused=paused,
+                    )
+                if auto_kind:
+                    status_msg, status_expire = f"실패 기록: {auto_kind}", time.perf_counter() + 2.0
+                saved_failure = failures.poll(loop_t0, {
+                    "anchor": dashboard.pointer_anchor, "click_style": dashboard.click_style,
+                    "hand_crop": dashboard.hand_crop, "frame_px": [frame.shape[1], frame.shape[0]],
+                    "camera_mode": list(camera.actual_mode() or ()),
+                    "tracker": tracker.options, "sensitivity_pct": dashboard.pointer_sensitivity,
+                    "control_hand": dashboard.control_hand, "dry_run": args.dry_run,
+                })
+                if saved_failure is not None:
+                    dashboard.set_failures(failures.summary_text(), saved_failure.name)
+                    print(f"[Failure] saved {saved_failure}")
                 # Tracking test (no clicks): targets on the primary monitor, CSV in logs/
                 if dashboard.tracking_requested:
                     dashboard.tracking_requested = False
@@ -620,6 +667,7 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                             "monitors": len(mouse.screens),
                             "dry_run": args.dry_run,
                             "camera_mode": "x".join(map(str, camera.actual_mode() or ())) or "unknown",
+                            "hand_crop": dashboard.hand_crop,
                             **{f"tracker_{k}": v for k, v in tracker.options.items()},
                         }
                         text = test.summary_text()
@@ -688,6 +736,8 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                 mouse.release_all()
                 status_msg = f"Switched Movement Mode -> {new_mode.upper()}"
                 status_expire = now + 2.0
+            elif key in (ord("f"), ord("F")) and args.ui == "qt":
+                dashboard.failure_mark_requested = True
             elif key in (ord("n"), ord("N")):
                 mouse.release_all()
                 target = mouse.cycle_monitor()

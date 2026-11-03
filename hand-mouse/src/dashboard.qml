@@ -87,6 +87,7 @@ ApplicationWindow {
     Shortcut { sequence: "O"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(111) }
     Shortcut { sequence: "M"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(109) }
     Shortcut { sequence: "N"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(110) }
+    Shortcut { sequence: "F"; enabled: !dashboard.trackingActive; onActivated: dashboard.markFailure() }
     Shortcut { sequence: "C"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(99) }
     Shortcut { sequence: "P"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(112) }
 
@@ -303,6 +304,13 @@ ApplicationWindow {
                                     current: dashboard.pointerAnchor
                                     onPicked: function (value) { dashboard.setAnchor(value) }
                                 }
+                                SectionLabel { text: "손 주변 확대 (시험)" }
+                                Segmented {
+                                    enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                                    options: [["off", "끔"], ["on", "켬"]]
+                                    current: dashboard.handCrop ? "on" : "off"
+                                    onPicked: function (value) { dashboard.setHandCrop(value === "on") }
+                                }
                                 RowLayout {
                                     Layout.fillWidth: true
                                     spacing: 6
@@ -397,12 +405,29 @@ ApplicationWindow {
                                     color: index === 0 ? window.navy : window.muted
                                 }
                             }
+                            Divider { visible: dashboard.pointerOnly }
+                            SectionLabel { visible: dashboard.pointerOnly; text: "실패 기록" }
+                            TextLabel {
+                                visible: dashboard.pointerOnly
+                                Layout.fillWidth: true
+                                text: dashboard.failureSummary + (dashboard.failureLast ? "\n최근: " + dashboard.failureLast : "")
+                                    + "\n손을 놓치면 앞뒤 3초의 관절 좌표를 logs/failures에 저장합니다(영상 없음)."
+                                color: window.muted
+                                wrapMode: Text.Wrap
+                                font.pixelSize: 11
+                            }
+                            ActionButton {
+                                visible: dashboard.pointerOnly
+                                Layout.fillWidth: true
+                                text: "방금 이상했어요 (F)"
+                                onClicked: dashboard.markFailure()
+                            }
                         }
                     }
                     Divider {}
                     TextLabel {
                         Layout.fillWidth: true
-                        text: "Space 시작/정지 · Esc 정지 · N 다음 모니터"
+                        text: "Space 시작/정지 · Esc 정지 · N 다음 모니터 · F 실패 표시"
                         font.pixelSize: 11
                         color: window.muted
                         wrapMode: Text.Wrap
