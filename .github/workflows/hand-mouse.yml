@@ -34,6 +34,8 @@ jobs:
         run: uv run --locked --extra qt python -m pytest -q -p no:cacheprovider
       - name: Qt dashboard + tracking window smoke (real Windows window, no camera)
         run: uv run --locked --extra qt python scripts/windows_smoke.py ../smoke-out
+      - name: Main loop smoke (real main.py --ui qt, fake 30 fps camera)
+        run: uv run --locked --extra qt python scripts/loop_smoke.py
       - name: Smoke evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
