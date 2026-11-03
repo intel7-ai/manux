@@ -82,6 +82,28 @@ test('stalled camera expires even without renderer events and never auto-enables
   assert.equal(bridge.send([{type:'move',dx:5,dy:4}]), false);
 });
 
+test('emergency stop while a button is held tells the helper to release, publishes why, and ignores buffered input', async t => {
+  const {bridge, commands} = fixture(); t.after(() => bridge.close());
+  const statuses = []; bridge.on('status', status => statuses.push(status));
+  const enabled = await bridge.setEnabled(true);
+  assert.equal(bridge.send([{type:'button',button:'left',down:true}]), true);
+  bridge.disable('Ctrl+Alt+M으로 마우스 제어를 멈췄습니다.');
+  const disable = commands.at(-1);
+  assert.equal(disable.kind, 'disable');
+  assert.equal(disable.generation, enabled.generation + 1);
+  assert.equal(statuses.at(-1).enabled, false);
+  assert.match(statuses.at(-1).error, /Ctrl\+Alt\+M/);
+  const count = commands.length;
+  for (const events of [[{type:'move',dx:3,dy:3}], [], [{type:'button',button:'left',down:true}]]) {
+    assert.equal(bridge.send(events), false);
+  }
+  assert.equal(commands.length, count);
+  // Only an explicit new enable resumes, with a newer generation.
+  const again = await bridge.setEnabled(true);
+  assert.equal(again.enabled, true);
+  assert.ok(again.generation > disable.generation);
+});
+
 test('old or invalid batch disables without partially executing valid members', async t => {
   const {bridge, commands, advance} = fixture(); t.after(() => bridge.close());
   await bridge.setEnabled(true);
