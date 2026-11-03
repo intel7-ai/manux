@@ -53,6 +53,9 @@ class QtDashboard(QObject):
         saved = self.preferences.value("controlHand", "", type=str)
         self.control_hand = saved if saved in ("Left", "Right") else ""
         self.use_index_pointer = self.preferences.value("indexPointer", True, type=bool)
+        saved_click = self.preferences.value("pointerClick", "pinch", type=str)
+        # "pinch": thumb + middle/ring (existing). "trigger": option A, thumb on the index side.
+        self.click_style = saved_click if saved_click in ("pinch", "trigger") else "pinch"
         try:
             saved_sensitivity = self.preferences.value("pointerSensitivity", 100, type=int)
         except (TypeError, ValueError):
@@ -109,6 +112,24 @@ class QtDashboard(QObject):
         self.commands.append(27)
         self.use_index_pointer = not self.use_index_pointer
         self.preferences.setValue("indexPointer", self.use_index_pointer)
+        self.stateChanged.emit()
+
+    @Property(bool, notify=stateChanged)
+    def triggerClick(self):
+        return self.click_style == "trigger"
+
+    @Property(str, notify=stateChanged)
+    def clickStyleLabel(self):
+        return "클릭 · 엄지 방아쇠 (A안)" if self.click_style == "trigger" else "클릭 · 엄지+중지/약지"
+
+    @Slot()
+    def toggleClickStyle(self):
+        if self.stage_name != "main":
+            return
+        self.commands.clear()
+        self.commands.append(27)  # pause first, like the preset switch
+        self.click_style = "pinch" if self.click_style == "trigger" else "trigger"
+        self.preferences.setValue("pointerClick", self.click_style)
         self.stateChanged.emit()
 
     def update_pointer(self, point, source, mirrored, aspect):

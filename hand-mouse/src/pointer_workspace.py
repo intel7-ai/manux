@@ -122,3 +122,129 @@ class PointerPose:
         if pinching:
             return "pointer_wait"
         return "move_cursor" if pointing else "pointer_wait"
+
+
+def trigger_ratio(landmarks, aspect):
+    """Thumb tip distance to the index finger's first segment (#5-#6), in palm widths.
+
+    Option A in docs/design/decision-pointer-click.md: the thumb presses the side of
+    the pointing index finger. NaN when the palm is too small or a point is unusable.
+    """
+    def point(i):
+        p = landmarks[i]
+        return p.x, p.y * aspect, p.z
+
+    a, b, thumb = point(5), point(6), point(4)
+    width = math.dist(point(5), point(17))
+    seg = tuple(q - p for p, q in zip(a, b))
+    length2 = sum(v * v for v in seg)
+    if not math.isfinite(width) or width < .025 or not math.isfinite(length2) or length2 < 1e-8:
+        return math.nan
+    t = max(0.0, min(1.0, sum((c - p) * v for p, c, v in zip(a, thumb, seg)) / length2))
+    nearest = tuple(p + t * v for p, v in zip(a, seg))
+    ratio = math.dist(thumb, nearest) / width
+    return ratio if math.isfinite(ratio) else math.nan
+
+
+class ThumbTrigger:
+    """Option A click state machine for the index pointer (not measured on real hands yet).
+
+    - thumb comes near the index side: the cursor freezes
+    - press starts: the cursor jumps back to where it was `rewind` seconds earlier
+    - quick press and release without moving: left click
+    - press held still for `long_press` seconds: right click (once), then wait for release
+    - press held while the index tip moves: left-button drag until release
+
+    `update()` returns an action for MouseController.apply. When `warp` is set after a
+    call, the caller should put the cursor there before applying the action.
+    Every threshold is a starting guess that must be tuned on a real webcam.
+    """
+
+    DEFAULTS = {
+        "trigger_press_ratio": .28,
+        "trigger_release_ratio": .40,
+        "trigger_approach_ratio": .50,
+        "trigger_long_press": .55,
+        "trigger_drag_move": .35,
+        "trigger_rewind": .10,
+    }
+
+    def __init__(self, **settings):
+        self.settings = dict(self.DEFAULTS)
+        self.configure(settings)
+        self.history = []
+        self.reset()
+
+    def configure(self, config):
+        for key in self.DEFAULTS:
+            try:
+                value = float(config.get(key, self.settings[key]))
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(value) and value >= 0:
+                self.settings[key] = value
+
+    def reset(self):
+        self.state = "idle"
+        self.press_at = None
+        self.press_tip = None
+        self.fired = False
+        self.warp = None
+        self.ratio = math.nan
+
+    def record(self, now, screen_pos):
+        """Remember where the cursor was, for the rewind on press."""
+        self.history.append((now, screen_pos))
+        keep = now - max(.3, 2 * self.settings["trigger_rewind"])
+        while len(self.history) > 2 and self.history[1][0] < keep:
+            self.history.pop(0)
+
+    def _rewound(self, now):
+        target = now - self.settings["trigger_rewind"]
+        best = None
+        for when, pos in self.history:
+            if when <= target:
+                best = pos
+        return best if best is not None else (self.history[0][1] if self.history else None)
+
+    def update(self, now, landmarks, aspect, *, pointing):
+        s = self.settings
+        self.warp = None
+        self.ratio = ratio = trigger_ratio(landmarks, aspect)
+        tip = landmarks[8]
+        width = math.dist((landmarks[5].x, landmarks[5].y * aspect),
+                          (landmarks[17].x, landmarks[17].y * aspect))
+
+        if not math.isfinite(ratio) or width < .025:
+            dragging = self.state == "drag"
+            self.reset()
+            return "pointer_wait" if dragging else ("move_cursor" if pointing else "pointer_wait")
+
+        if self.state in ("press", "drag"):
+            if ratio >= s["trigger_release_ratio"]:
+                action = "left_click" if self.state == "press" and not self.fired else "pointer_wait"
+                self.reset()
+                return action
+            if self.state == "drag":
+                return "drag_hold"
+            moved = math.dist((tip.x, tip.y * aspect), self.press_tip) / width
+            if not self.fired and moved >= s["trigger_drag_move"]:
+                self.state = "drag"
+                return "drag_hold"
+            if not self.fired and now - self.press_at >= s["trigger_long_press"]:
+                self.fired = True
+                return "right_click"
+            return "pointer_wait"
+
+        if ratio <= s["trigger_press_ratio"]:
+            self.state = "press"
+            self.press_at = now
+            self.press_tip = (tip.x, tip.y * aspect)
+            self.fired = False
+            self.warp = self._rewound(now)
+            return "pointer_wait"
+        if ratio <= s["trigger_approach_ratio"]:
+            self.state = "approach"
+            return "pointer_wait"
+        self.state = "idle"
+        return "move_cursor" if pointing else "pointer_wait"

@@ -732,6 +732,18 @@ class MouseController:
         else:
             pyautogui.moveTo(x, y, _pause=False)
 
+    def warp_to(self, x: int, y: int) -> None:
+        """Put the cursor at (x, y) now and re-anchor relative movement there.
+
+        Used by the index pointer's thumb trigger to undo the cursor shake of a press.
+        """
+        self._abs_prev = None
+        self.anchor_hand_pos = None
+        self.anchor_screen_pos = None
+        self._smoothed_pos = None
+        self._tremor.reset()
+        self._move_os_cursor(int(x), int(y), immediate=True)
+
     def _flush_cursor(self) -> None:
         """Put the real cursor exactly on the target before a click / button change."""
         if not self.dry_run and self._interp is not None:
@@ -859,7 +871,8 @@ class MouseController:
         ):
             pass  # cursor held for a possible second click
         elif result.is_moving and result.cursor_point is not None:
-            use_tip = index_tip is not None and action == "move_cursor" and result.active_gesture != "fist"
+            use_tip = (index_tip is not None and action in ("move_cursor", "drag_hold")
+                       and result.active_gesture != "fist")
             source = pointer_source if use_tip else None
             if source != self._pointer_source:
                 self.anchor_hand_pos = None
