@@ -46,7 +46,8 @@ from src.tray import TrayIcon
 from src.ui_magnet import UITargetMagnet
 from src.dashboard import Dashboard
 from src.pointer_workspace import (
-    FINGERTIPS, IndexTipGuard, PointerPose, is_pointing_pose, thumb_contacts, thumb_distances,
+    FINGERTIPS, IndexTipGuard, PointerPose, ThumbTrigger, is_pointing_pose, thumb_contacts,
+    thumb_distances,
 )
 
 WINDOW_NAME = "Hand-Mouse (MediaPipe)"  # must keep the "Hand-Mouse" prefix (hotkeys.py)
@@ -318,6 +319,7 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
     pointer_engine = GestureEngine(config_path=args.config) if args.ui == "qt" else None
     index_tip_guard = IndexTipGuard()
     pointer_pose = PointerPose()
+    thumb_trigger = ThumbTrigger()  # option A click (docs/design/decision-pointer-click.md)
     pointer_gestures = {
         "thumb_middle_pinch": {"enabled": True, "action": "left_click", "cooldown": .35},
         "thumb_ring_pinch": {"enabled": True, "action": "right_click", "cooldown": .45},
@@ -366,6 +368,7 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
             if not ok or frame is None:
                 index_tip_guard.reset()
                 pointer_pose.reset()
+                thumb_trigger.reset()
                 if pointer_engine is not None:
                     pointer_engine.reset()
                 time.sleep(0.03)
@@ -400,9 +403,11 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
 
             index_mode = args.ui == "qt" and dashboard.use_index_pointer
             contacts = ()
+            trigger_mode = index_mode and dashboard.click_style == "trigger"
             if not index_mode or not detections or paused or dashboard.calibrating:
                 index_tip_guard.reset()
                 pointer_pose.reset()
+                thumb_trigger.reset()
             if pointer_engine is not None:
                 if not index_mode or paused or dashboard.calibrating or not should_detect:
                     pointer_engine.reset()
@@ -419,7 +424,35 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                 contacts = thumb_contacts(ratios)
                 result = GestureResult()
                 preview_point = (tip.x, tip.y)
-                if not paused and not dashboard.calibrating:
+                if not paused and not dashboard.calibrating and trigger_mode:
+                    pointer_engine.reset()
+                    pointer_pose.reset()
+                    thumb_trigger.configure(engine.config)
+                    curls = pointer_engine.finger_curl_ratios(points)
+                    action = thumb_trigger.update(
+                        loop_t0, points, mouse.frame_aspect,
+                        pointing=is_pointing_pose(points, curls, mouse.frame_aspect),
+                    )
+                    if action == "move_cursor":
+                        if not index_tip_guard.accept(points, mouse.frame_aspect):
+                            action = "pointer_wait"
+                    else:
+                        index_tip_guard.reset()
+                    if thumb_trigger.warp is not None:
+                        mouse.warp_to(*thumb_trigger.warp)
+                    point = dashboard.pointer_position(preview_point)
+                    moving = action in ("move_cursor", "drag_hold")
+                    result = GestureResult(action=action, cursor_point=point if moving else None,
+                                           is_moving=moving)
+                    mouse.apply(result, engine.config, index_tip=point,
+                                index_sensitivity=dashboard.pointer_sensitivity / 100)
+                    thumb_trigger.record(loop_t0, mouse.last_screen_pos)
+                    ratio = thumb_trigger.ratio
+                    status_msg = f"방아쇠 {ratio:.2f}" if math.isfinite(ratio) else "방아쇠 —"
+                    status_expire = time.perf_counter() + .5
+                    if action in ("left_click", "right_click"):
+                        recent_action, recent_action_until = action, time.perf_counter() + .5
+                elif not paused and not dashboard.calibrating:
                     pointer_engine.config.update(engine.config)
                     pointer_engine.config.update(
                         gestures=pointer_gestures, record_fling_enabled=False,

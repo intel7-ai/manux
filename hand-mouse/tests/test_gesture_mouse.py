@@ -1811,6 +1811,38 @@ def test_pointer_source_change_does_not_move_cursor_between_landmarks():
         mouse.close()
 
 
+
+def test_warp_to_moves_now_and_relative_motion_continues_from_there():
+    mouse = MouseController(dry_run=True)
+    move = GestureResult(action="move_cursor", is_moving=True, cursor_point=(.5, .5))
+    try:
+        mouse.apply(move, now=1.0, index_tip=(.5, .5))
+        mouse.apply(move, now=1.04, index_tip=(.56, .5))
+        mouse.warp_to(300, 200)
+        assert mouse.last_screen_pos == (300, 200)
+        wait = GestureResult(action="pointer_wait")
+        assert mouse.apply(wait, now=1.08, index_tip=(.60, .5)) == (300, 200)
+        assert mouse.apply(move, now=1.12, index_tip=(.60, .5)) == (300, 200)  # re-anchors, no jump
+        assert mouse.apply(move, now=1.16, index_tip=(.62, .5))[0] > 300
+    finally:
+        mouse.close()
+
+
+def test_index_drag_hold_follows_the_tip_and_releases_the_button():
+    mouse = MouseController(dry_run=True)
+    drag = lambda x: GestureResult(action="drag_hold", is_moving=True, cursor_point=(x, .5))
+    try:
+        mouse.warp_to(400, 300)
+        start = mouse.apply(drag(.5), now=1.0, index_tip=(.5, .5))
+        assert start == (400, 300) and mouse.is_dragging
+        assert mouse.apply(drag(.56), now=1.04, index_tip=(.56, .5))[0] > 400
+        mouse.apply(GestureResult(action="pointer_wait"), now=1.08, index_tip=(.56, .5))
+        assert not mouse.is_dragging
+        assert mouse.event_log[-2:] == ["mouseDown", "mouseUp"]
+    finally:
+        mouse.close()
+
+
 @pytest.mark.record_off
 def test_long_press_drag_moves_the_cursor_at_15x():
     engine = GestureEngine()

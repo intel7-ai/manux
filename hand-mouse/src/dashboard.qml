@@ -232,6 +232,13 @@ ApplicationWindow {
                         visible: dashboard.pointerOnly
                         enabled: !dashboard.calibratingPointer
                         Layout.fillWidth: true
+                        text: dashboard.clickStyleLabel
+                        onClicked: dashboard.toggleClickStyle()
+                    }
+                    ActionButton {
+                        visible: dashboard.pointerOnly
+                        enabled: !dashboard.calibratingPointer
+                        Layout.fillWidth: true
                         text: dashboard.pointerCalibrated ? "방향 보정 다시 하기" : "방향 보정"
                         onClicked: dashboard.beginPointerCalibration()
                     }
@@ -243,7 +250,10 @@ ApplicationWindow {
                     }
                     TextLabel { text: "동작 안내"; font.bold: true }
                     Repeater {
-                        model: dashboard.pointerOnly ? [["검지만 펴기", "포인터 이동"], ["엄지 + 중지", "좌클릭"], ["엄지 + 약지", "우클릭"]] : [
+                        model: dashboard.pointerOnly ? (dashboard.triggerClick
+                            ? [["검지만 펴기", "포인터 이동"], ["엄지로 검지 옆 짧게 누르기", "좌클릭"],
+                               ["누른 채 가만히", "우클릭"], ["누른 채 움직이기", "드래그"]]
+                            : [["검지만 펴기", "포인터 이동"], ["엄지 + 중지", "좌클릭"], ["엄지 + 약지", "우클릭"]]) : [
                             ["손 이동", "포인터 이동"], ["엄지 + 검지", "스크롤"],
                             ["엄지 + 중지", "좌클릭"], ["엄지 + 약지", "우클릭"],
                             ["엄지 + 새끼", "창 선택"]
@@ -259,7 +269,9 @@ ApplicationWindow {
                     TextLabel {
                         visible: dashboard.pointerOnly
                         Layout.fillWidth: true
-                        text: "엄지와 중지 또는 약지를 모으면 커서가 고정됩니다. 손끝을 떼면 클릭합니다."
+                        text: dashboard.triggerClick
+                            ? "엄지가 검지 옆에 다가오면 커서가 고정되고, 누르기 직전 위치에서 클릭합니다. 상세 정보의 '방아쇠' 값이 작을수록 가깝습니다."
+                            : "엄지와 중지 또는 약지를 모으면 커서가 고정됩니다. 손끝을 떼면 클릭합니다."
                         color: window.muted
                         wrapMode: Text.Wrap
                         font.pixelSize: 11
