@@ -14,6 +14,10 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from src.dashboard import ACTIONS
 from src.hand_selection import HandSelection, selected_detection
 from src.pointer_workspace import calibrated_pointer, pointer_axes
+from src.tracking_test import load_recent_results
+
+LOG_DIR = Path(__file__).resolve().parents[1] / "logs"
+RECENT_LIMIT = 5
 
 
 class CameraImage(QQuickImageProvider):
@@ -37,6 +41,9 @@ class QtDashboard(QObject):
     stateChanged = Signal()
     previewChanged = Signal()
     trackingChanged = Signal()        # every frame while the test runs (target, cursor, text)
+    liveChanged = Signal()            # per-frame status (fps, action...); settings stay on stateChanged
+    metricsChanged = Signal()         # camera mode / brightness, a few times a second
+    recentChanged = Signal()          # tracking test result list
     trackingActiveChanged = Signal()  # only when the test window opens or closes
 
     def __init__(self, dry_run=False):
@@ -75,6 +82,8 @@ class QtDashboard(QObject):
         self.tracking_requested = False
         self.tracking_cursor = (.5, .5)
         self.tracking_result = ""
+        self.metrics = ("", -1, False)  # camera mode text, brightness 0..255 (-1 unknown), dark
+        self.recent = load_recent_results(LOG_DIR, RECENT_LIMIT)
         try:
             saved_sensitivity = self.preferences.value("pointerSensitivity", 100, type=int)
         except (TypeError, ValueError):
@@ -122,6 +131,73 @@ class QtDashboard(QObject):
     @Property(str, notify=stateChanged)
     def pointerPreset(self):
         return "검지 · 기본 마우스" if self.use_index_pointer else "손바닥 · Dan 기본"
+
+    def _pause_for_change(self):
+        self.commands.clear()
+        self.commands.append(27)  # settings change while paused, like the old toggles
+
+    @Slot(bool)
+    def setPointerPreset(self, index_pointer):
+        if self.stage_name != "main" or bool(index_pointer) == self.use_index_pointer:
+            return
+        self._pause_for_change()
+        self.use_index_pointer = bool(index_pointer)
+        self.preferences.setValue("indexPointer", self.use_index_pointer)
+        self.stateChanged.emit()
+
+    @Slot(str)
+    def setClickStyle(self, style):
+        if self.stage_name != "main" or style not in CLICK_STYLES or style == self.click_style:
+            return
+        self._pause_for_change()
+        self.click_style = style
+        self.preferences.setValue("pointerClick", style)
+        self.stateChanged.emit()
+
+    @Slot(str)
+    def setAnchor(self, anchor):
+        if self.stage_name != "main" or anchor not in ("index", "palm") or anchor == self.pointer_anchor:
+            return
+        self._pause_for_change()
+        self.pointer_anchor = anchor
+        self.preferences.setValue("pointerAnchor", anchor)
+        self.stateChanged.emit()
+
+    @Property(str, notify=stateChanged)
+    def clickStyle(self):
+        return self.click_style
+
+    @Property(str, notify=stateChanged)
+    def pointerAnchor(self):
+        return self.pointer_anchor
+
+    # ------------------------------------------------------------------ camera metrics
+    def set_camera_metrics(self, mode_text, brightness, low_light):
+        value = (mode_text or "", int(brightness), bool(low_light))
+        if value != self.metrics:
+            self.metrics = value
+            self.metricsChanged.emit()
+
+    @Property(str, notify=metricsChanged)
+    def cameraMode(self):
+        return self.metrics[0]
+
+    @Property(int, notify=metricsChanged)
+    def brightness(self):
+        return self.metrics[1]
+
+    @Property(bool, notify=metricsChanged)
+    def lowLight(self):
+        return self.metrics[2]
+
+    # ------------------------------------------------------------------ recent tracking results
+    def add_recent(self, line):
+        self.recent = ([line] + self.recent)[:RECENT_LIMIT]
+        self.recentChanged.emit()
+
+    @Property("QVariantList", notify=recentChanged)
+    def recentResults(self):
+        return list(self.recent)
 
     @Slot()
     def togglePointerPreset(self):
@@ -412,19 +488,19 @@ class QtDashboard(QObject):
             return None
         return selected_detection(detections, self.control_hand, mirrored)
 
-    @Property(str, notify=stateChanged)
+    @Property(str, notify=liveChanged)
     def inputState(self):
         return self.state[0]
 
-    @Property(str, notify=stateChanged)
+    @Property(str, notify=liveChanged)
     def tracking(self):
         return self.state[1]
 
-    @Property(str, notify=stateChanged)
+    @Property(str, notify=liveChanged)
     def currentAction(self):
         return self.state[2]
 
-    @Property(str, notify=stateChanged)
+    @Property(str, notify=liveChanged)
     def controlLabel(self):
         return self.state[3]
 
@@ -432,11 +508,11 @@ class QtDashboard(QObject):
     def showFingertips(self, visible):
         self.show_fingertips = visible
 
-    @Property(str, notify=stateChanged)
+    @Property(str, notify=liveChanged)
     def detectedContacts(self):
         return self.contact_text
 
-    @Property(str, notify=stateChanged)
+    @Property(str, notify=liveChanged)
     def details(self):
         return self.state[4]
 
@@ -474,7 +550,9 @@ class QtDashboard(QObject):
         if (state, contact_text) != (self.state, self.contact_text):
             self.state = state
             self.contact_text = contact_text
-            self.stateChanged.emit()
+            # Not stateChanged: that would re-evaluate every settings binding (and rebuild
+            # the guide list) 30 times a second just because the fps text changed.
+            self.liveChanged.emit()
         now = time.perf_counter()
         if now - self.last_preview < 1 / 24:
             return

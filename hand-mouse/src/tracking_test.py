@@ -233,3 +233,44 @@ def _rms_spread(points: List[Tuple[float, float]]) -> float:
     mx = statistics.fmean(p[0] for p in points)
     my = statistics.fmean(p[1] for p in points)
     return math.sqrt(statistics.fmean((p[0] - mx) ** 2 + (p[1] - my) ** 2 for p in points))
+
+
+ANCHOR_NAMES = {"index": "검지 끝", "palm": "손바닥"}
+
+
+def result_line(meta: Dict[str, Any], when: str = "") -> str:
+    """One-line summary of a run (settings + results) for the dashboard's recent list."""
+    def get(key):
+        value = meta.get(key)
+        return None if value in (None, "", "None") else value
+
+    head = [ANCHOR_NAMES.get(str(get("anchor")), str(get("anchor") or "?"))]
+    if get("sensitivity_pct") is not None:
+        head.append(f"{get('sensitivity_pct')}%")
+    parts = [f"도달 {get('reached') or 0}/{get('shown') or 0}"]
+    if get("median_time_s") is not None:
+        parts.append(f"{float(get('median_time_s')):.2f}초")
+    if get("mean_dwell_jitter_px") is not None:
+        parts.append(f"떨림 {float(get('mean_dwell_jitter_px')):.1f}px")
+    parts.append(f"끊김 {get('lost_events') or 0}회")
+    prefix = f"{when}  " if when else ""
+    return prefix + " · ".join(head) + " — " + " · ".join(parts)
+
+
+def load_recent_results(directory: Path, limit: int = 5) -> List[str]:
+    """Summary lines of the newest tracking-*.csv files (newest first); [] if none/unreadable."""
+    try:
+        files = sorted(Path(directory).glob("tracking-*.csv"), reverse=True)[:limit]
+    except OSError:
+        return []
+    lines = []
+    for path in files:
+        try:
+            with open(path, encoding="utf-8", newline="") as f:
+                meta = {row[1]: row[2] for row in csv.reader(f) if len(row) >= 3 and row[0] == "#"}
+        except (OSError, UnicodeDecodeError, csv.Error):
+            continue
+        stamp = path.stem.replace("tracking-", "")  # YYYYmmdd-HHMMSS
+        when = f"{stamp[4:6]}/{stamp[6:8]} {stamp[9:11]}:{stamp[11:13]}" if len(stamp) >= 13 else ""
+        lines.append(result_line(meta, when))
+    return lines
