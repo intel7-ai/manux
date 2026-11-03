@@ -240,6 +240,20 @@ ApplicationWindow {
                         visible: dashboard.pointerOnly
                         enabled: !dashboard.calibratingPointer
                         Layout.fillWidth: true
+                        text: dashboard.anchorLabel
+                        onClicked: dashboard.toggleAnchor()
+                    }
+                    ActionButton {
+                        visible: dashboard.pointerOnly
+                        enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                        Layout.fillWidth: true
+                        text: "트래킹 측정 (클릭 없음)"
+                        onClicked: dashboard.beginTrackingTest()
+                    }
+                    ActionButton {
+                        visible: dashboard.pointerOnly
+                        enabled: !dashboard.calibratingPointer
+                        Layout.fillWidth: true
                         text: dashboard.pointerCalibrated ? "방향 보정 다시 하기" : "방향 보정"
                         onClicked: dashboard.beginPointerCalibration()
                     }
@@ -251,7 +265,9 @@ ApplicationWindow {
                     }
                     TextLabel { text: "동작 안내"; font.bold: true }
                     Repeater {
-                        model: dashboard.pointerOnly ? (dashboard.triggerClick
+                        model: dashboard.pointerOnly ? (dashboard.clickOff
+                            ? [[dashboard.anchorLabel.replace("기준점 · ", "") + " 따라가기", "포인터 이동"], ["클릭", "꺼짐"]]
+                            : dashboard.triggerClick
                             ? [["검지만 펴기", "포인터 이동"], ["엄지로 검지 옆 짧게 누르기", "좌클릭"],
                                ["누른 채 가만히", "우클릭"], ["누른 채 움직이기", "드래그"]]
                             : [["검지만 펴기", "포인터 이동"], ["엄지 + 중지", "좌클릭"], ["엄지 + 약지", "우클릭"]]) : [
@@ -270,7 +286,9 @@ ApplicationWindow {
                     TextLabel {
                         visible: dashboard.pointerOnly
                         Layout.fillWidth: true
-                        text: dashboard.triggerClick
+                        text: dashboard.clickOff
+                            ? "클릭을 판정하지 않습니다. 손이 보이면 손 모양과 관계없이 커서가 따라갑니다."
+                            : dashboard.triggerClick
                             ? "엄지가 검지 옆에 다가오면 커서가 고정되고, 누르기 직전 위치에서 클릭합니다. 상세 정보의 '방아쇠' 값이 작을수록 가깝습니다."
                             : "엄지와 중지 또는 약지를 모으면 커서가 고정됩니다. 손끝을 떼면 클릭합니다."
                         color: window.muted
@@ -355,6 +373,70 @@ ApplicationWindow {
                     }
                 }
             }
+        }
+    }
+
+    Window {
+        id: trackingWindow
+        title: "MANUX 트래킹 측정"
+        color: "#0E1B26"
+        visibility: dashboard.trackingActive ? Window.FullScreen : Window.Hidden
+        flags: Qt.Window | Qt.WindowStaysOnTopHint
+        screen: {
+            const list = Qt.application.screens
+            for (let i = 0; i < list.length; i++)
+                if (list[i].name === dashboard.trackingScreen) return list[i]
+            return list.length ? list[0] : null
+        }
+
+        Shortcut { sequence: "Space"; onActivated: dashboard.command(32) }
+        Shortcut { sequence: "Esc"; onActivated: dashboard.closeTrackingTest() }
+
+        Rectangle {
+            id: target
+            visible: !dashboard.trackingDone && dashboard.trackingTargetX >= 0
+            width: Math.max(6, dashboard.trackingTargetSize * trackingWindow.width)
+            height: width
+            radius: width / 2
+            x: dashboard.trackingTargetX * trackingWindow.width - width / 2
+            y: dashboard.trackingTargetY * trackingWindow.height - height / 2
+            color: "#46E5BD"
+            opacity: .85
+        }
+        Rectangle {
+            // where the controller puts the cursor (also visible in --dry-run)
+            width: 16; height: 16; radius: 8
+            x: dashboard.trackingCursorX * trackingWindow.width - 8
+            y: dashboard.trackingCursorY * trackingWindow.height - 8
+            color: "transparent"
+            border.color: "#F5F7F8"
+            border.width: 2
+        }
+        Column {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            anchors.topMargin: 24
+            spacing: 6
+            Label {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: dashboard.trackingStatus
+                color: "#F5F7F8"
+                font.pixelSize: 20
+                font.bold: true
+            }
+            Label {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: dashboard.trackingDone ? "Esc 닫기 · 결과는 hand-mouse/logs/tracking-*.csv"
+                                             : "Space 제어 시작/일시정지 · Esc 그만두기 · 클릭은 하지 않습니다"
+                color: "#9FB3C2"
+                font.pixelSize: 14
+            }
+        }
+        Button {
+            visible: dashboard.trackingDone
+            anchors.centerIn: parent
+            text: "닫기"
+            onClicked: dashboard.closeTrackingTest()
         }
     }
 }

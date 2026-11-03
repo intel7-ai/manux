@@ -39,6 +39,7 @@ from src.settings_panel import SettingsPanel
 from src.hotkeys import VK_0, VK_F2, VK_NUMPAD0, VK_O, KeyPoller
 from src.win_perf import keep_responsive_in_background
 from src.perf_log import PerfLog
+from src.tracking_test import TrackingTest
 from src.pipeline import InferencePipeline, Snapshot
 from src.status import describe_state, short_label
 from src.overlay import CORNERS, StatusOverlay
@@ -432,7 +433,8 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                 ratios = thumb_distances(points, mouse.frame_aspect)
                 contacts = thumb_contacts(ratios)
                 result = GestureResult()
-                preview_point = (tip.x, tip.y)
+                anchor_palm = dashboard.pointer_anchor == "palm"
+                preview_point = engine.palm_anchor_point(points) if anchor_palm else (tip.x, tip.y)
                 if not paused and not dashboard.calibrating:
                     curls = pointer_engine.finger_curl_ratios(points)
                     pointing = is_pointing_pose(points, curls, mouse.frame_aspect)
@@ -442,7 +444,15 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                     move_latch.configure(engine.config)
                     pressing = trigger_mode and thumb_trigger.state in ("press", "drag")
                     latched = move_latch.update(loop_t0, preview_point, mouse.frame_aspect)
-                    if latched and not pressing:
+                    if dashboard.tracking_only:
+                        # Tracking only (click "off" or the tracking test): follow the hand,
+                        # whatever its shape, and never detect a click.
+                        pointer_engine.reset()
+                        pointer_pose.reset()
+                        thumb_trigger.reset()
+                        click_armed = True
+                        action = "move_cursor"
+                    elif latched and not pressing:
                         pointer_engine.reset()
                         pointer_pose.reset()
                         thumb_trigger.reset()
@@ -496,7 +506,7 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                                 click=gesture.action, released=released,
                                 pinching=gesture.active_gesture in pointer_gestures,
                             )
-                    if action == "move_cursor":
+                    if action == "move_cursor" and not anchor_palm:
                         if not index_tip_guard.accept(points, mouse.frame_aspect):
                             action = "pointer_wait"
                     else:
@@ -508,10 +518,13 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                     result = GestureResult(action=action, cursor_point=point if moving else None,
                                            is_moving=moving)
                     mouse.apply(result, engine.config, index_tip=point,
-                                index_sensitivity=dashboard.pointer_sensitivity / 100)
+                                index_sensitivity=dashboard.pointer_sensitivity / 100,
+                                pointer_source="palm" if anchor_palm else "index")
                     thumb_trigger.record(loop_t0, mouse.last_screen_pos)
                     parts = [f"이동 {move_latch.speed:.2f}" + (" 유지" if latched else "")]
-                    if trigger_mode:
+                    if dashboard.tracking_only:
+                        parts.append("클릭 끔")
+                    elif trigger_mode:
                         ratio = thumb_trigger.ratio
                         parts.append(f"방아쇠 {ratio:.2f}" if math.isfinite(ratio) else "방아쇠 —")
                     if not click_armed:
@@ -564,6 +577,41 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                 result = GestureResult() if index_mode else engine.process(None)
                 if not paused and args.ui != "qt":
                     mouse.hand_lost(engine.config)
+
+            if args.ui == "qt":
+                # Tracking test (no clicks): targets on the primary monitor, CSV in logs/
+                if dashboard.tracking_requested:
+                    dashboard.tracking_requested = False
+                    mouse.release_all()
+                    mouse.warp_to(*mouse.screens.primary.center)
+                    dashboard.set_tracking(TrackingTest(mouse.screens.primary))
+                test = dashboard.tracking_test
+                if test is not None:
+                    test.update(loop_t0, mouse.last_screen_pos, hand=bool(detections),
+                                active=index_mode and not paused and not dashboard.calibrating,
+                                fps=camera.fps, detect_ms=tracker.last_detect_ms)
+                    dashboard.tracking_frame(test.cursor_fraction(mouse.last_screen_pos))
+                    if test.done and not getattr(test, "saved", False):
+                        test.saved = True
+                        primary = mouse.screens.primary
+                        run = {
+                            "anchor": dashboard.pointer_anchor,
+                            "sensitivity_pct": dashboard.pointer_sensitivity,
+                            "direction_calibrated": dashboard.axes is not None,
+                            "control_hand": dashboard.control_hand,
+                            "camera_source": camera.config.source,
+                            "monitor_px": f"{primary.width}x{primary.height}",
+                            "monitors": len(mouse.screens),
+                            "dry_run": args.dry_run,
+                        }
+                        text = test.summary_text()
+                        try:
+                            saved = test.save_csv(Path(__file__).resolve().parent / "logs", run)
+                            text += f" · {saved.name}"
+                        except OSError as exc:
+                            text += f" · 저장 실패: {exc}"
+                        dashboard.tracking_finished(text)
+                        print(f"[Tracking] {text}")
 
             now = time.perf_counter()
             if now > status_expire:

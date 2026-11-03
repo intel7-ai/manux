@@ -25,9 +25,18 @@ class CameraImage(QQuickImageProvider):
         return self.image
 
 
+CLICK_STYLES = ("pinch", "trigger", "off")
+CLICK_LABELS = {
+    "pinch": "클릭 · 엄지+중지/약지",
+    "trigger": "클릭 · 엄지 방아쇠 (A안)",
+    "off": "클릭 · 끔 (트래킹만)",
+}
+
+
 class QtDashboard(QObject):
     stateChanged = Signal()
     previewChanged = Signal()
+    trackingChanged = Signal()
 
     def __init__(self, dry_run=False):
         super().__init__()
@@ -55,7 +64,16 @@ class QtDashboard(QObject):
         self.use_index_pointer = self.preferences.value("indexPointer", True, type=bool)
         saved_click = self.preferences.value("pointerClick", "pinch", type=str)
         # "pinch": thumb + middle/ring (existing). "trigger": option A, thumb on the index side.
-        self.click_style = saved_click if saved_click in ("pinch", "trigger") else "pinch"
+        # "off": cursor tracking only, no click detection at all.
+        self.click_style = saved_click if saved_click in CLICK_STYLES else "pinch"
+        saved_anchor = self.preferences.value("pointerAnchor", "index", type=str)
+        # Which point of the hand the cursor follows: index fingertip or palm centre.
+        self.pointer_anchor = saved_anchor if saved_anchor in ("index", "palm") else "index"
+        # Tracking test (main.py owns the TrackingTest; this only shows it)
+        self.tracking_test = None
+        self.tracking_requested = False
+        self.tracking_cursor = (.5, .5)
+        self.tracking_result = ""
         try:
             saved_sensitivity = self.preferences.value("pointerSensitivity", 100, type=int)
         except (TypeError, ValueError):
@@ -118,9 +136,13 @@ class QtDashboard(QObject):
     def triggerClick(self):
         return self.click_style == "trigger"
 
+    @Property(bool, notify=stateChanged)
+    def clickOff(self):
+        return self.click_style == "off"
+
     @Property(str, notify=stateChanged)
     def clickStyleLabel(self):
-        return "클릭 · 엄지 방아쇠 (A안)" if self.click_style == "trigger" else "클릭 · 엄지+중지/약지"
+        return CLICK_LABELS[self.click_style]
 
     @Slot()
     def toggleClickStyle(self):
@@ -128,9 +150,115 @@ class QtDashboard(QObject):
             return
         self.commands.clear()
         self.commands.append(27)  # pause first, like the preset switch
-        self.click_style = "pinch" if self.click_style == "trigger" else "trigger"
+        i = CLICK_STYLES.index(self.click_style)
+        self.click_style = CLICK_STYLES[(i + 1) % len(CLICK_STYLES)]
         self.preferences.setValue("pointerClick", self.click_style)
         self.stateChanged.emit()
+
+    @property
+    def tracking_only(self):
+        """No click detection: click style "off", or while the tracking test runs."""
+        return self.click_style == "off" or self.tracking_test is not None
+
+    @Property(str, notify=stateChanged)
+    def anchorLabel(self):
+        return "기준점 · 검지 끝" if self.pointer_anchor == "index" else "기준점 · 손바닥 중심"
+
+    @Slot()
+    def toggleAnchor(self):
+        if self.stage_name != "main":
+            return
+        self.commands.clear()
+        self.commands.append(27)
+        self.pointer_anchor = "palm" if self.pointer_anchor == "index" else "index"
+        self.preferences.setValue("pointerAnchor", self.pointer_anchor)
+        self.stateChanged.emit()
+
+    # ------------------------------------------------------------------ tracking test
+    @Slot()
+    def beginTrackingTest(self):
+        if self.stage_name != "main" or self.tracking_test is not None:
+            return
+        self.commands.clear()
+        self.commands.append(27)  # paused; Space in the test window starts control
+        self.tracking_result = ""
+        self.tracking_requested = True
+
+    def set_tracking(self, test):
+        self.tracking_test = test
+        self.stateChanged.emit()
+        self.trackingChanged.emit()
+
+    def tracking_frame(self, cursor_fraction):
+        self.tracking_cursor = cursor_fraction
+        self.trackingChanged.emit()
+
+    def tracking_finished(self, text):
+        self.tracking_result = text
+        self.trackingChanged.emit()
+
+    @Slot()
+    def closeTrackingTest(self):
+        if self.tracking_test is None:
+            return
+        self.commands.clear()
+        self.commands.append(27)
+        self.tracking_test = None
+        self.stateChanged.emit()
+        self.trackingChanged.emit()
+
+    @Property(bool, notify=trackingChanged)
+    def trackingActive(self):
+        return self.tracking_test is not None
+
+    @Property(str, notify=trackingChanged)
+    def trackingScreen(self):
+        screen = QGuiApplication.primaryScreen()
+        return screen.name() if screen is not None else ""
+
+    def _target(self):
+        return self.tracking_test.current if self.tracking_test is not None else None
+
+    @Property(float, notify=trackingChanged)
+    def trackingTargetX(self):
+        t = self._target()
+        return t.fx if t else -1.0
+
+    @Property(float, notify=trackingChanged)
+    def trackingTargetY(self):
+        t = self._target()
+        return t.fy if t else -1.0
+
+    @Property(float, notify=trackingChanged)
+    def trackingTargetSize(self):
+        """Diameter as a fraction of the test monitor's width."""
+        t = self._target()
+        return t.size_px / self.tracking_test.monitor.width if t else 0.0
+
+    @Property(float, notify=trackingChanged)
+    def trackingCursorX(self):
+        return float(self.tracking_cursor[0])
+
+    @Property(float, notify=trackingChanged)
+    def trackingCursorY(self):
+        return float(self.tracking_cursor[1])
+
+    @Property(str, notify=trackingChanged)
+    def trackingStatus(self):
+        test = self.tracking_test
+        if test is None:
+            return ""
+        if test.done:
+            return "완료 · " + (self.tracking_result or test.summary_text())
+        t = test.current
+        holding = t.inside_since is not None
+        return (f"표적 {test.index + 1}/{len(test.targets)} · "
+                + ("멈춰 있기…" if holding else "커서를 원 안으로 옮겨 0.5초 멈추세요")
+                + ("" if test.hand_present else " · 손을 찾는 중"))
+
+    @Property(bool, notify=trackingChanged)
+    def trackingDone(self):
+        return self.tracking_test is not None and self.tracking_test.done
 
     def update_pointer(self, point, source, mirrored, aspect):
         key = f"pointerAxes/{self.control_hand}/{source}/{int(mirrored)}/{aspect:.4f}"
