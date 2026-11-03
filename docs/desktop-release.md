@@ -4,7 +4,7 @@
 
 ## 팀원이 사용하는 흐름
 
-1. 최신 `origin/preview`에서 `codex/scrum-23-gesture-enrollment` 같은 작업 브랜치를 만든다. 이미 진행 중인 브랜치는 그 자리에서 계속 작업한다.
+1. 최신 `origin/preview`에서 `scrum-23-gesture-enrollment` 같은 작업 브랜치를 만든다. 이미 진행 중인 브랜치는 그 자리에서 계속 작업한다.
 2. `npm run desktop`으로 직접 확인하고 관련 검사를 실행한다. 다른 사람의 checkout이나 공유 Claude의 코드 통합을 기다리지 않는다.
 3. 브랜치를 푸시하고 `preview` 대상 PR을 만든다. PR에는 목적·변경·검증·남은 한계를 적는다.
 4. PR의 `MANUX CI`가 Windows/Linux, 합성 브라우저, Windows helper, 실제 패키지 실행·업데이트 다운로드·설치본 교체를 검사한다. `MANUX-preview-...` artifact에는 시험용 설치파일이 있다.
