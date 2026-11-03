@@ -33,7 +33,7 @@ import numpy as np
 
 from src.camera import CameraConfig, CameraStream
 from src.gesture_engine import GestureEngine, GestureResult
-from src.hand_tracker import HandTracker, pinch_guides
+from src.hand_tracker import HandTracker, pinch_guides, tracker_options
 from src.mouse_controller import MouseController
 from src.settings_panel import SettingsPanel
 from src.hotkeys import VK_0, VK_F2, VK_NUMPAD0, VK_O, KeyPoller
@@ -522,6 +522,9 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                                 pointer_source="palm" if anchor_palm else "index")
                     thumb_trigger.record(loop_t0, mouse.last_screen_pos)
                     parts = [f"이동 {move_latch.speed:.2f}" + (" 유지" if latched else "")]
+                    cam_mode = camera.actual_mode()
+                    if cam_mode:
+                        parts.insert(0, f"카메라 {cam_mode[0]}×{cam_mode[1]}@{cam_mode[2]:g}")
                     if dashboard.tracking_only:
                         parts.append("클릭 끔")
                     elif trigger_mode:
@@ -603,6 +606,8 @@ def run_dashboard(args, perf, engine, camera, tracker, mouse, settings, keys, pe
                             "monitor_px": f"{primary.width}x{primary.height}",
                             "monitors": len(mouse.screens),
                             "dry_run": args.dry_run,
+                            "camera_mode": "x".join(map(str, camera.actual_mode() or ())) or "unknown",
+                            **{f"tracker_{k}": v for k, v in tracker.options.items()},
                         }
                         text = test.summary_text()
                         try:
@@ -740,10 +745,21 @@ def main() -> int:
         engine.set_movement_mode(args.mode)
 
     chosen_source = "phone" if args.phone_web else args.source
+    def cfg_int(key: str, default: int) -> int:
+        try:
+            value = int(engine.config.get(key, default))
+        except (TypeError, ValueError):
+            return default
+        return value if value > 0 else default
+
     cam_cfg = CameraConfig(
         source=CameraStream.parse_source(chosen_source),
         mirror=not args.no_mirror,
         phone_port=args.phone_port,
+        # What we ask the webcam for (config keys); actual_mode() shows what it gave
+        width=cfg_int("camera_width", 1280),
+        height=cfg_int("camera_height", 720),
+        fps=cfg_int("camera_fps", 60),
     )
     camera = CameraStream(cam_cfg)
     if not camera.open():
@@ -755,7 +771,13 @@ def main() -> int:
         )
         return 1
 
-    tracker = HandTracker(num_hands=2 if args.ui == "qt" else 1)
+    tracker_cfg = tracker_options(engine.config)
+    tracker = HandTracker(num_hands=2 if args.ui == "qt" else 1, **tracker_cfg)
+    mode = camera.actual_mode()
+    print(f"  Camera opened : {mode[0]}x{mode[1]} @ {mode[2]} fps (requested "
+          f"{cam_cfg.width}x{cam_cfg.height} @ {cam_cfg.fps})" if mode else "  Camera opened : (mode unknown)")
+    print("  Tracker       : detection {min_detection_confidence} / presence {min_presence_confidence} / "
+          "tracking {min_tracking_confidence}, detect width {detect_max_width}".format(**tracker_cfg))
     mouse = MouseController(dry_run=args.dry_run)
     settings = SettingsPanel(engine)
     keys = KeyPoller()
