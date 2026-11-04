@@ -6,7 +6,7 @@
 
 Discord에서 `@1조봇` 또는 허용된 `/ask`에 **목표, 현재 문제, 완료됐다고 볼 조건**을 평소 말로 적는다. 예: “등록 취소 후 이전 프로필이 사라집니다. 취소해도 이전 프로필이 유지되게 고치고 재현 테스트도 추가해 주세요.” JSON·Git·터미널을 몰라도 조정자가 요청을 정리한다.
 
-단순 질문은 바로 설명한다. 코드 작업은 목표·완료 기준·허용 파일·작업 브랜치의 실제 기준 SHA를 `task.json`에 기록한다. 신규 작업은 최신 원격 production에서 시작하며, 진행 중 작업은 기존 경로·브랜치·변경을 보존한다. 모호함이 실제 동작을 바꿀 때만 질문한다. 모든 사용자가 같은 규칙과 검사 흐름을 이용한다.
+단순 질문은 바로 설명한다. 코드 작업은 목표·완료 기준·허용 파일·작업 브랜치의 실제 기준 SHA를 `task.json`에 기록한다. 신규 작업은 최신 원격 preview에서 시작하며, 진행 중 작업은 기존 경로·브랜치·변경을 보존한다. 모호함이 실제 동작을 바꿀 때만 질문한다. 모든 사용자가 같은 규칙과 검사 흐름을 이용한다.
 
 ```mermaid
 flowchart TD
@@ -24,7 +24,7 @@ flowchart TD
   O --> U
 ```
 
-5개는 **Discord 호스트의 동시 worker 수**다. 개인 PC에서 개발하는 팀원의 수를 제한하지 않는다. 6번째 Discord 작업은 대기하며 의존 작업과 충돌은 PR에서 조정한다. 신규 worker는 원격 production의 깨끗한 커밋과 시작 시점의 대화 맥락을 받는다. 공유 checkout의 미커밋 소스는 복제하지 않는다. 이후 결정은 조정자가 전달한다. 모든 worker의 내부 대화나 파일이 실시간으로 자동 합쳐지지는 않는다.
+5개는 **Discord 호스트의 동시 worker 수**다. 개인 PC에서 개발하는 팀원의 수를 제한하지 않는다. 6번째 Discord 작업은 대기하며 의존 작업과 충돌은 PR에서 조정한다. 신규 worker는 원격 preview의 깨끗한 커밋과 시작 시점의 대화 맥락을 받는다. 공유 checkout의 미커밋 소스는 복제하지 않는다. 이후 결정은 조정자가 전달한다. 모든 worker의 내부 대화나 파일이 실시간으로 자동 합쳐지지는 않는다.
 
 ## 작은 규칙 집합
 
@@ -44,7 +44,7 @@ flowchart TD
 
 조정자/worker는 `.local/harness/<requestId>/`에 `task.json`, `result.json`을 기록한다. Git에 포함되지 않는 로컬 작업 기록이므로 파일을 삭제하면 사라진다. 재부팅 후 조정자는 이 기록과 보존된 worktree를 확인하며, 종료된 worker가 계속 실행 중이라고 가정하지 않는다. 공유할 결정과 사용법은 관련 `docs/`에도 반영한다.
 
-신규 Discord worker에는 조정자가 작성한 task.json의 절대 경로를 전달한다. 공유 `.local`은 새 worktree에 자동 복제되지 않으므로 worker가 자기 `.local/harness/<requestId>/task.json`에 사본을 둔다. 구현 전에 사본의 `baselineCommit`을 자기 `.local/discord-baseline.json`의 `sourceHead`로 확정한다. 생성 훅이 접수 때보다 최신 production을 조회할 수 있으므로 접수 시점의 SHA나 공유 checkout의 HEAD로 덮어쓰지 않는다. 기존 진행 중 작업의 기준은 유지한다. 완료 후 조정자는 확정된 task.json과 result.json 둘 다 공유 checkout의 같은 위치에 복사한 뒤 보고서를 생성한다. 결과만 복사해서 서로 다른 기준의 기록을 조합하지 않으며 worker의 원본 기록도 보존한다.
+신규 Discord worker에는 조정자가 작성한 task.json의 절대 경로를 전달한다. 공유 `.local`은 새 worktree에 자동 복제되지 않으므로 worker가 자기 `.local/harness/<requestId>/task.json`에 사본을 둔다. 구현 전에 사본의 `baselineCommit`을 자기 `.local/discord-baseline.json`의 `sourceHead`로 확정한다. 생성 훅이 접수 때보다 최신 preview를 조회할 수 있으므로 접수 시점의 SHA나 공유 checkout의 HEAD로 덮어쓰지 않는다. 기존 진행 중 작업의 기준은 유지한다. 완료 후 조정자는 확정된 task.json과 result.json 둘 다 공유 checkout의 같은 위치에 복사한 뒤 보고서를 생성한다. 결과만 복사해서 서로 다른 기준의 기록을 조합하지 않으며 worker의 원본 기록도 보존한다.
 
 ```powershell
 npm run harness:check
@@ -93,7 +93,7 @@ npm run task:report -- .local/harness/작업ID/task.json .local/harness/작업ID
 
 `npm run verify`는 로컬과 CI가 함께 쓰는 기본 진입점이다. 검사 준비·명령·실패 해결은 [CONTRIBUTING](../CONTRIBUTING.md)을 따른다. 개인 계정·봇 토큰·카메라 없이 기본 검사가 가능하다. 브라우저와 Windows 경로는 별도 검사로 보완한다.
 
-PR에는 목표, 실제 검사 결과, 리뷰할 한계와 Jira 번호(있는 경우)를 적는다. 다른 사람의 파일을 삭제하거나 자신의 변경으로 묶지 않는다. 코드는 본인 브랜치에서 바로 production 대상 PR로 전달한다. 공유 checkout에는 Discord 전송용 보고 기록만 모은다. 로컬 성공과 GitHub CI 성공을 구분한다.
+PR에는 목표, 실제 검사 결과, 리뷰할 한계와 Jira 번호(있는 경우)를 적는다. 다른 사람의 파일을 삭제하거나 자신의 변경으로 묶지 않는다. 코드는 본인 브랜치에서 preview 대상 PR로 전달한다. 공유 checkout에는 Discord 전송용 보고 기록만 모은다. 로컬 성공과 GitHub CI 성공을 구분한다.
 
 PR workflow는 자동 검사와 **시험용 Windows 설치파일**을 제공한다. PR은 필수 검사 통과 후 preview에 머지하고(리뷰어 승인 없음) preview에서 시험한 뒤 `preview → production` PR로 production에 머지하며, 릴리스 workflow가 해당 production 커밋을 검증·패키징하여 GitHub Release에 게시한다. 설치된 앱은 게시된 정식 버전을 확인한다. 릴리스 상세와 서명 상태는 [데스크톱 배포](desktop-release.md)를 따른다. 기존 source handoff는 별도의 소스 전달 보조 도구다. workflow 파일이 머지되기 전에는 새 배포 흐름이 원격에서 활성화된 것으로 보고하지 않는다.
 
