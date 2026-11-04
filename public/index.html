@@ -22,6 +22,11 @@
         <button id="mouse-stop" type="button" class="secondary">제어 중지</button>
       </div>
       <p id="mouse-target-note" class="small-note">연습 모드에서는 아래 영역의 커서만 움직입니다.</p>
+      <div class="mouse-toolbar">
+        <label for="mouse-engine">조작 방식</label>
+        <select id="mouse-engine"><option value="palm">손바닥 이동 · 핀치 클릭 (기본)</option><option value="pointer-trigger">검지 포인터 · 엄지 방아쇠 클릭</option><option value="pointer-off">검지 포인터 · 클릭 없음</option></select>
+      </div>
+      <p id="mouse-engine-note" class="small-note"></p>
       <div id="mouse-pad" class="mouse-pad" aria-label="마우스 이동, 클릭, 드래그, 스크롤 연습 영역">
         <div class="mouse-pad-label">PRACTICE</div>
         <div class="mouse-click-task"><button id="mouse-click-target" type="button">여기를 클릭</button><span>좌클릭 <strong id="mouse-click-count">0</strong>회</span></div>

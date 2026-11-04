@@ -1,5 +1,6 @@
 import {AirMouseController} from './air-mouse-controller.js';
 import {buildOverlayFrame} from './overlay-frame.js';
+import {IndexPointerController, POINTER_PRESETS} from './index-pointer-controller.js';
 
 const LABELS = {idle:'쉬는 중', move:'커서 이동', left:'좌클릭 · 드래그', right:'우클릭', scroll:'스크롤'};
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -8,7 +9,7 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 export class MouseWorkspace {
   constructor({root = document, bridge = globalThis.manuxDesktop, sensitivity = 1800, onSensitivityChange = null} = {}) {
     this.root = root; this.bridge = bridge; this.$ = selector => root.querySelector(selector);
-    this.controller = new AirMouseController({sensitivity});
+    this.controller = this.makeController(sensitivity);
     this.$('#mouse-sensitivity').value = String(sensitivity);
     this.$('#mouse-sensitivity-output').textContent = String(sensitivity);
     this.active = false; this.ready = false; this.enabled = false; this.available = false;
@@ -20,7 +21,7 @@ export class MouseWorkspace {
     this.$('#mouse-sensitivity').addEventListener('input', () => {
       this.stop('감도를 바꿨습니다. 제어를 다시 켜세요.');
       const sensitivity = Number(this.$('#mouse-sensitivity').value);
-      this.controller = new AirMouseController({sensitivity});
+      this.controller = this.makeController(sensitivity);
       this.$('#mouse-sensitivity-output').textContent = String(sensitivity);
     });
     // Save once the slider is released, not on every intermediate value.
@@ -29,6 +30,12 @@ export class MouseWorkspace {
       const el = this.$('#mouse-click-count'); el.textContent = String(Number(el.textContent) + 1);
     });
     this.$('#mouse-scroll-area').addEventListener('scroll', () => this.renderScroll());
+    this.$('#mouse-engine')?.addEventListener('change', () => {
+      this.stop('조작 방식을 바꿨습니다. 제어를 다시 켜세요.');
+      this.controller = this.makeController(Number(this.$('#mouse-sensitivity').value));
+      this.renderEngineNote();
+    });
+    this.renderEngineNote();
     this.overlay = false;
     this.$('#mouse-overlay')?.addEventListener('change', () => { void this.setOverlay(this.$('#mouse-overlay').checked); });
     this.unsubscribe = bridge?.onStatus(status => {
@@ -50,6 +57,20 @@ export class MouseWorkspace {
     this.renderTarget(); this.renderCursor(); this.refresh();
   }
 
+  get engine() { return this.$('#mouse-engine')?.value ?? 'palm'; }
+  /** Every engine takes the same update() input and returns {mode, phase, progress, events}. */
+  makeController(sensitivity) {
+    const clickStyle = POINTER_PRESETS[this.engine];
+    return clickStyle ? new IndexPointerController({sensitivity, clickStyle}) : new AirMouseController({sensitivity});
+  }
+  renderEngineNote() {
+    const note = this.$('#mouse-engine-note');
+    if (!note) return;
+    note.textContent = {
+      'pointer-trigger':'검지를 펴서 가리키면 커서가 따라옵니다. 엄지로 검지 옆을 짧게 누르면 좌클릭, 누른 채 가만히 있으면 우클릭, 누른 채 움직이면 드래그입니다.',
+      'pointer-off':'검지 끝을 따라 커서만 움직입니다. 클릭은 하지 않습니다(추적 확인용).',
+    }[this.engine] ?? '손바닥 중심으로 이동하고 손가락을 붙여 클릭·스크롤합니다.';
+  }
   get desktop() { return this.$('#mouse-target').value === 'desktop'; }
   get backgroundAllowed() { return this.active && this.enabled && this.desktop && this.available; }
   status(text, error = false) { const el = this.$('#mouse-status'); el.textContent = text; el.classList.toggle('error', error); }

@@ -62,6 +62,22 @@
 
 `src/binding-resolver.js`의 `resolveBinding`은 등록 동작 판정 결과(`gestureId`)를 연결된 액션 ID(`mouse.left-click`, `mouse.right-click`, `mouse.pause`)로 바꾸는 순수 함수이며 `eventsForAction`이 클릭의 `button` 이벤트를 만든다. 미수락·모호·오류 판정, 연결 없음, 비활성, 알 수 없는 액션은 모두 명령 없음이다. 이 코드는 **앱에 연결되지 않았다**: 지금 `app.js`는 이 함수를 호출하지 않으므로 화면에서 등록 동작으로 클릭할 수 없다. 계약과 정책은 [인터페이스](design/03-interfaces.md)를 따른다. 합성 입력 시험만 했고 실제 웹캠·실제 OS 클릭 검증은 별도다.
 
+## 조작 방식 선택: 검지 포인터 (Python Qt 앱에서 이식, 2026-11-04)
+
+마우스 패널의 **조작 방식**에서 고른다. 기본값은 지금까지의 손바닥 이동·핀치 클릭이다.
+
+| 조작 방식 | 모듈 | 내용 |
+| --- | --- | --- |
+| 손바닥 이동 · 핀치 클릭 (기본) | `src/air-mouse-controller.js` | 위 표 그대로 |
+| 검지 포인터 · 엄지 방아쇠 클릭 | `src/index-pointer-controller.js` + `src/pointer-engine.js` | 검지를 펴서 가리키면 이동. 엄지로 검지 옆(#5~#6)을 짧게 누르면 좌클릭, 누른 채 가만히 0.55초면 우클릭 1회, 누른 채 움직이면 드래그. 누르기 시작하면 약 0.1초 전 커서 위치로 되감는다. 움직이는 동안(이동 유지)은 클릭을 받지 않는다 |
+| 검지 포인터 · 클릭 없음 | 같은 모듈 | 추적만, 클릭 없음 |
+
+- `pointer-engine.js`는 `hand-mouse/src/pointer_engine.py`·`pointer_workspace.py`의 이식본이다. 계약은 [hand-mouse/docs/engine-contract.md](../hand-mouse/docs/engine-contract.md). Python 엔진으로 만든 기준 기록(`tests/fixtures/pointer-engine-reference.json`, 합성 손 275프레임, `scripts/pointer-reference.py`)을 JS가 프레임마다 같은 출력으로 재현하는지 시험한다.
+- 커서 계층은 Qt 앱의 상대 이동(One Euro 떨림 필터 2.0/7.0, 속도에 따라 이득 1.5~5.0배 × 감도/1800)을 옮겼다. 되감기는 앱이 낸 이동량으로 계산한 가상 위치 기준이다.
+- 이식하지 않은 것: `pinch` 클릭 방식(Python 제스처 엔진 필요), 방향 보정(axes), 손바닥 기준(anchor `palm`)의 화면 선택, 설정 저장(조작 방식은 실행할 때마다 기본값).
+- 모든 방식은 같은 `update()` 입력과 `{mode, phase, progress, events}` 출력을 쓴다. 오래된 프레임(`stale`)은 아무것도 바꾸지 않고, 끄기·손 소실은 눌린 버튼을 놓는다(`tests/index-pointer-controller.test.js`).
+- 임계값은 Python 쪽 시작값이며 실제 웹캠에서 맞추지 않았다.
+
 ## 화면 손가락 표시 오버레이 (park의 HUD에서 이식, 2026-11-04)
 
 데스크톱 앱 마우스 패널의 **화면에 손가락 표시**를 켜면 Windows 커서 주변에 손가락 끝 다섯 개, 현재 동작, 엄지가 닿은 손가락을 그린다(아이 트래커처럼 손이 어디 있는지 보여 줌). 어느 조작 방식에서도 동작한다.
