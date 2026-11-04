@@ -6,8 +6,11 @@ export const POINTER_SETTINGS = Object.freeze({
 });
 export const DEFAULT_POINTER_SETTINGS = Object.freeze({engine:'palm', click:'trigger', anchor:'index'});
 
-/** [gesture, result] rows for the "동작 안내" list. */
-export function guideRows({engine, click, anchor}) {
+/** [gesture, result] rows for the "동작 안내" list. `move`/`act` name the hands in two-hand mode. */
+export function guideRows({hands, engine, click, anchor}, {move = '오른손', act = '왼손'} = {}) {
+  if (hands === 'two') {
+    return [[`${move} 움직이기`, '포인터 이동'], [`${act} 엄지 + 검지`, '좌클릭 · 누른 채 드래그'], [`${act} 엄지 + 중지`, '우클릭']];
+  }
   if (engine !== 'index') {
     return [['손을 편하게 펴고 이동', '포인터 이동'], ['엄지 + 검지', '좌클릭 · 드래그'], ['엄지 + 중지', '우클릭'], ['엄지 + 약지', '스크롤']];
   }
@@ -15,7 +18,8 @@ export function guideRows({engine, click, anchor}) {
   return [['검지만 펴기', '포인터 이동'], ['엄지로 검지 옆 짧게', '좌클릭'], ['누른 채 가만히', '우클릭'], ['누른 채 움직이기', '드래그']];
 }
 
-export function guideNote({engine, click}) {
+export function guideNote({hands, engine, click}) {
+  if (hands === 'two') return '한 손은 커서만 움직이고, 다른 손으로 클릭합니다. 클릭하는 동안에도 커서가 흔들리지 않습니다. 두 손이 모두 보여야 클릭합니다.';
   if (engine !== 'index') return '손끝 대신 손바닥 중심으로 이동을 읽습니다. 손가락을 접거나 주먹을 쥐면 쉬고, 손을 내리면 입력을 멈춥니다.';
   return click === 'off'
     ? '클릭을 판정하지 않습니다. 손이 보이면 손 모양과 관계없이 커서가 따라갑니다.'

@@ -6,8 +6,9 @@ export const SETTINGS_BACKUP_KEY = 'manux.settings.v1.backup';
 export const SETTINGS_VERSION = 2;
 export const HANDS = Object.freeze(['right', 'left']);
 // Pointer choices shown in the desktop studio (src/pointer-guide.js). 'pinch' is not ported yet.
-export const POINTER_CHOICES = Object.freeze({engine: Object.freeze(['index', 'palm']), click: Object.freeze(['trigger', 'off']), anchor: Object.freeze(['index', 'palm'])});
-const defaultPointer = () => ({engine: 'index', click: 'trigger', anchor: 'index'});
+export const POINTER_CHOICES = Object.freeze({hands: Object.freeze(['two', 'one']), engine: Object.freeze(['index', 'palm']), click: Object.freeze(['trigger', 'off']), anchor: Object.freeze(['index', 'palm'])});
+// Two hands by default (team choice 2026-11-04): the chosen hand moves, the other acts.
+const defaultPointer = () => ({hands: 'two', engine: 'index', click: 'trigger', anchor: 'index'});
 export const ENVIRONMENTS = Object.freeze(['desk']);
 export const SENSITIVITY = Object.freeze({min: 600, max: 3600, step: 100, default: 1800});
 export const MIN_AREA_SPAN = 0.2;

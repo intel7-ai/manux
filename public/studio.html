@@ -33,10 +33,17 @@
     <aside class="sidebar">
       <div class="sidebar-scroll">
         <h2>포인터</h2>
-        <div class="segmented" data-setting="engine"><button type="button" data-value="index">검지 포인터</button><button type="button" data-value="palm">손바닥</button></div>
-        <div class="index-only">
+        <h3>손</h3>
+        <div class="segmented" data-setting="hands"><button type="button" data-value="two">양손</button><button type="button" data-value="one">한 손</button></div>
+        <div class="setting-row" id="row-engine">
+          <h3>이동 방식</h3>
+          <div class="segmented" data-setting="engine"><button type="button" data-value="index">검지 포인터</button><button type="button" data-value="palm">손바닥</button></div>
+        </div>
+        <div class="setting-row" id="row-click">
           <h3>클릭</h3>
           <div class="segmented" data-setting="click"><button type="button" disabled title="Python 앱의 핀치 판정은 아직 이식하지 않았습니다.">핀치</button><button type="button" data-value="trigger">방아쇠</button><button type="button" data-value="off">끔</button></div>
+        </div>
+        <div class="setting-row" id="row-anchor">
           <h3>커서 기준점</h3>
           <div class="segmented" data-setting="anchor"><button type="button" data-value="index">검지 끝</button><button type="button" data-value="palm">손바닥 중심</button></div>
         </div>

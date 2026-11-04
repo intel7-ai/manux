@@ -64,9 +64,12 @@ export class MouseSession {
     return this.overlay;
   }
 
-  update({landmarks, now, quality, handedness = null, width, height, latency = 0}) {
+  /** input: {landmarks, quality, handedness} for one hand, or {moveHand, actionHand} for two; plus now, width, height, latency. */
+  update(input) {
+    const {width, height, latency = 0} = input;
+    const landmarks = input.landmarks ?? input.moveHand ?? null, quality = input.quality ?? Boolean(landmarks);
     if (this.enabled && latency > MAX_LATENCY_MS) this.stop('추적 결과가 늦어 제어를 껐습니다. 해상도를 낮추고 다시 켜보세요.', true);
-    const state = this.controller.update({landmarks, now, quality, handedness, width, height, enabled:this.enabled});
+    const state = this.controller.update({...input, enabled:this.enabled});
     if (this.overlay && state.phase !== 'stale') {
       const frame = quality ? buildOverlayFrame(landmarks, {mode:this.enabled ? state.mode : 'idle', width, height}) : null;
       if (frame) this.bridge?.sendOverlayFrame?.(frame);

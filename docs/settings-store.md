@@ -10,7 +10,7 @@ localStorage 키 `manux.settings.v1`, 직렬화 상한 2,000,000자.
 {
   version: 2, revision: 3, savedAt: '2026-11-03T01:00:00.000Z',
   mouse: {sensitivity: 1800, mainHand: 'right', area: {left: 0, top: 0, right: 1, bottom: 1},
-         pointer: {engine: 'index', click: 'trigger', anchor: 'index'}},
+         pointer: {hands: 'two', engine: 'index', click: 'trigger', anchor: 'index'}},
   environments: {
     desk: {
       registrations: {'custom:ok-sign': /* G1 registerGesture 결과 그대로 */},
@@ -25,7 +25,7 @@ localStorage 키 `manux.settings.v1`, 직렬화 상한 2,000,000자.
 | --- | --- |
 | `mouse.sensitivity` | 600~3600, 100 단위 (현재 슬라이더와 같음) |
 | `mouse.mainHand` | `right` \| `left` \| `null`(아직 고르지 않음, 데스크톱 첫 실행에서 물어봄) |
-| `mouse.pointer` | 데스크톱 스튜디오의 포인터 설정. `engine`: `index`\|`palm`, `click`: `trigger`\|`off`, `anchor`: `index`\|`palm`. 기본 `index`·`trigger`·`index` |
+| `mouse.pointer` | 데스크톱 스튜디오의 포인터 설정. `hands`: `two`(기본, 한 손 이동·다른 손 동작)\|`one`, `engine`: `index`\|`palm`, `click`: `trigger`\|`off`, `anchor`: `index`\|`palm`. 기본 `index`·`trigger`·`index` |
 | `mouse.area` | 0~1 비율, 가로·세로 0.2 이상. 아직 판정기가 사용하지 않는 저장 전용 값 |
 | `registrations` | G1의 `validateRegistrations`로 검사. 레코드는 G1이 만든 그대로 저장하고 A2가 필드를 덧붙이지 않는다 |
 | `verifications` | 모든 등록에 하나씩 있어야 한다. 확인을 거치지 않은 후보는 저장할 수 없다 |

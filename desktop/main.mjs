@@ -61,7 +61,7 @@ else {
       server.listen(port, '127.0.0.1', resolve);
     });
     origin = `http://127.0.0.1:${server.address().port}`;
-    bridge = new MouseBridge();
+    bridge = new MouseBridge({interpolate:true});
     shortcutReady = globalShortcut.register(emergencyKey, () => bridge.disable('Ctrl+Alt+M으로 마우스 제어를 멈췄습니다.'));
     window = new BrowserWindow({width:1460, height:1040, minWidth:760, minHeight:620,
       show:process.env.MANUX_MOUSE_DRY_RUN !== '1',
