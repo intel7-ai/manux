@@ -14,7 +14,7 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 
-from src import app_paths, global_hotkeys, profiles
+from src import app_paths, gesture_guide, global_hotkeys, profiles
 from src.dashboard import ACTIONS
 from src.gesture_engine import DEFAULT_CONFIG_PATH
 from src.hand_selection import HandSelection, selected_detection
@@ -71,6 +71,7 @@ class QtDashboard(QObject):
         self.last_preview = 0.0
         self.sequence = 0
         self.contact_text = ""
+        self.live_gesture = ""
         self.show_fingertips = False
         self.calibration_key = ""
         self.axes = None
@@ -87,7 +88,7 @@ class QtDashboard(QObject):
         self.preferences = QSettings("MANUX", "Hand-Mouse")
         saved = self.preferences.value("controlHand", "", type=str)
         self.control_hand = saved if saved in ("Left", "Right") else ""
-        self.use_index_pointer = self.preferences.value("indexPointer", True, type=bool)
+        self.use_index_pointer = self.preferences.value("indexPointer", False, type=bool)   # default: Dan's palm engine
         saved_click = self.preferences.value("pointerClick", "pinch", type=str)
         # "pinch": thumb + middle/ring (existing). "trigger": option A, thumb on the index side.
         # "off": cursor tracking only, no click detection at all.
@@ -711,6 +712,27 @@ class QtDashboard(QObject):
             return None
         return selected_detection(detections, self.control_hand, mirrored)
 
+    def gesture_cards(self):
+        return gesture_guide.cards(self.use_index_pointer, self.click_style, self.pointer_anchor)
+
+    @Property("QVariantList", notify=stateChanged)
+    def gestureCards(self):
+        """[[key, title, how], ...] for the current engine and click settings."""
+        return gesture_guide.for_qml(self.gesture_cards())
+
+    @Property(bool, constant=True)
+    def tutorialAvailable(self):
+        return False      # the guided gesture tutorial comes in its own change
+
+    @Slot()
+    def beginTutorial(self):
+        pass
+
+    @Property(str, notify=liveChanged)
+    def liveGesture(self):
+        """Key of the gesture card the user is doing right now ("" for none)."""
+        return self.live_gesture
+
     @Property(str, notify=liveChanged)
     def inputState(self):
         return self.state[0]
@@ -883,9 +905,12 @@ class QtDashboard(QObject):
         )
         self._update_reception(detected, paused)
         contact_text = " + ".join(map(str, contacts))
-        if (state, contact_text) != (self.state, self.contact_text):
+        live = gesture_guide.active_key(self.gesture_cards(), action if detected and not paused else "",
+                                        motion_on=bool(self.motion_state[0]) and not paused)
+        if (state, contact_text, live) != (self.state, self.contact_text, self.live_gesture):
             self.state = state
             self.contact_text = contact_text
+            self.live_gesture = live
             # Not stateChanged: that would re-evaluate every settings binding (and rebuild
             # the guide list) 30 times a second just because the fps text changed.
             self.liveChanged.emit()
