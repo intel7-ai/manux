@@ -6,6 +6,8 @@ import {getHandQuality, validateRegistrations} from './personalization.js';
 import {SettingsStore} from './settings-store.js';
 import {AirMouseController} from './air-mouse-controller.js';
 import {IndexPointerController} from './index-pointer-controller.js';
+import {TwoHandController} from './two-hand-controller.js';
+import {LandmarkSmoother} from './landmark-smoother.js';
 import {MouseSession} from './mouse-session.js';
 import {HandSelection, HAND_LABELS, selectedDetection} from './hand-selection.js';
 import {guideRows, guideNote, contactText} from './pointer-guide.js';
@@ -20,6 +22,7 @@ const store = new SettingsStore({validateRegistrations});
 let settings = store.settings;
 const makeController = () => {
   const {sensitivity, pointer} = settings.mouse;
+  if (pointer.hands === 'two') return new TwoHandController({sensitivity, anchor:pointer.anchor});
   return pointer.engine === 'index'
     ? new IndexPointerController({sensitivity, clickStyle:pointer.click, anchor:pointer.anchor})
     : new AirMouseController({sensitivity});
@@ -27,6 +30,8 @@ const makeController = () => {
 const session = new MouseSession({controller:makeController(), onChange:render});
 const selection = new HandSelection();
 const brightness = new BrightnessSampler();
+const smoother = new LandmarkSmoother();
+const otherHand = side => side === 'left' ? 'right' : 'left';
 
 let stage = 'splash', stream = null, vision = null, token = 0, ready = false, loop = 0;
 let lastVideoTime = -1, lastInference = 0, lastResultAt = null, fps = 0, lastStatsAt = 0, cameraLabel = '';
@@ -96,7 +101,7 @@ async function startCamera() {
     camera.srcObject = stream; await camera.play();
     if (current !== token) return;
     cameraLabel = describeCamera(stream.getVideoTracks()[0], camera, $('#resolution').value).label;
-    const client = new VisionClient(); vision = client; await client.init();
+    const client = new VisionClient({numHands:settings.mouse.pointer.hands === 'two' ? 2 : 1}); vision = client; await client.init();
     if (current !== token) return;
     await client.recognize(camera, performance.now());   // shader warm-up before controls are offered
     if (current !== token) return;
@@ -144,7 +149,14 @@ function infer(current) {
 function onResult(packet, now, roundTripMs) {
   const result = packet.result, camera = $('#camera');
   const width = camera.videoWidth, height = camera.videoHeight;
-  drawHands(result.landmarks, width, height);
+  // Every hand is smoothed per physical side before drawing or judging (landmark jitter).
+  const hands = (result.handedness ?? []).map((h, i) => {
+    const side = h?.[0]?.categoryName, raw = result.landmarks?.[i];
+    const key = side === 'Left' || side === 'Right' ? side.toLowerCase() : `hand-${i}`;
+    return {handedness:side, score:h?.[0]?.score, landmarks:smoother.smooth(key, raw, now / 1000)};
+  });
+  for (const side of ['left', 'right']) if (!hands.some(h => h.handedness?.toLowerCase() === side)) smoother.reset(side);
+  drawHands(hands.map(h => h.landmarks), width, height);
   if (lastResultAt !== null) fps = fps ? fps * .8 + 1000 / (now - lastResultAt) * .2 : 1000 / (now - lastResultAt);
   lastResultAt = now;
   if (now - lastStatsAt > 500) {
@@ -154,14 +166,24 @@ function onResult(packet, now, roundTripMs) {
   }
   if (stage === 'capture') { observeCapture(result, now); return; }
   if (stage !== 'main') return;
-  // Only the chosen hand controls the pointer; any other hand counts as no hand.
-  const hands = (result.handedness ?? []).map((h, i) => ({handedness:h?.[0]?.categoryName, score:h?.[0]?.score, index:i}));
-  const chosen = selectedDetection(hands, settings.mouse.mainHand);
-  const landmarks = chosen ? result.landmarks[chosen.index] : null;
-  const quality = landmarks ? getHandQuality(landmarks, {width, height}).ok : false;
-  detected = Boolean(landmarks);
-  contacts = landmarks ? thumbContacts(thumbDistances(landmarks, height / width)) : [];
-  session.update({landmarks, now, quality, handedness:chosen?.handedness ?? null, width, height, latency:roundTripMs});
+  const usable = side => {
+    const hand = selectedDetection(hands, side)?.landmarks;
+    return hand && getHandQuality(hand, {width, height}).ok ? hand : null;
+  };
+  const mainHand = settings.mouse.mainHand;
+  if (settings.mouse.pointer.hands === 'two') {
+    // The chosen hand moves; the other hand only acts.
+    const moveHand = usable(mainHand), actionHand = usable(otherHand(mainHand));
+    detected = Boolean(moveHand);
+    contacts = actionHand ? thumbContacts(thumbDistances(actionHand, height / width)) : [];
+    session.update({moveHand, actionHand, now, width, height, latency:roundTripMs});
+  } else {
+    // Only the chosen hand controls the pointer; any other hand counts as no hand.
+    const landmarks = usable(mainHand);
+    detected = Boolean(landmarks);
+    contacts = landmarks ? thumbContacts(thumbDistances(landmarks, height / width)) : [];
+    session.update({landmarks, now, quality:Boolean(landmarks), handedness:landmarks ? mainHand : null, width, height, latency:roundTripMs});
+  }
   render();
 }
 
@@ -185,6 +207,14 @@ function showBrightness(reading) {
 }
 
 function triggerText() {
+  const two = session.controller instanceof TwoHandController;
+  if (two) {
+    const [index, middle] = session.controller.contacts ?? [];
+    const f = v => Number.isFinite(v) ? v.toFixed(2) : '—';
+    const {press, release} = session.controller.settings;
+    return `
+${HAND_LABELS[otherHand(settings.mouse.mainHand)] ?? '동작 손'} 엄지–검지 ${f(index)} · 엄지–중지 ${f(middle)} (누름 ≤ ${press} · 놓기 ≥ ${release})`;
+  }
   const trigger = session.controller.engine?.trigger;
   if (!trigger || settings.mouse.pointer.click !== 'trigger') return '';
   const ratio = Number.isFinite(trigger.ratio) ? trigger.ratio.toFixed(2) : '—';
@@ -194,8 +224,11 @@ function triggerText() {
 /* ---------------------------------------------------------------- main screen */
 function setPointer(setting, value) {
   if (settings.mouse.pointer[setting] === value) return;
+  const hands = settings.mouse.pointer.hands;
   if (!save({pointer:{[setting]:value}}, '포인터 설정을 저장하지 못했습니다.')) return;
   session.setController(makeController());
+  // One or two tracked hands is a MediaPipe option: restart the camera to apply it.
+  if (setting === 'hands' && hands !== value && stream) { stopCamera(); void startCamera(); }
   session.say('설정을 바꿔 입력을 멈췄습니다. 다시 제어 시작을 누르세요.');
 }
 document.querySelectorAll('.segmented[data-setting] button[data-value]').forEach(button => button.addEventListener('click', () => {
@@ -240,9 +273,13 @@ function render() {
       if (button.dataset.value) button.disabled = session.pending;
     }
   }
-  document.querySelector('.index-only').hidden = pointer.engine !== 'index';
+  const two = pointer.hands === 'two';
+  $('#row-engine').hidden = two;
+  $('#row-click').hidden = two || pointer.engine !== 'index';
+  $('#row-anchor').hidden = !two && pointer.engine !== 'index';
+  const names = {move:HAND_LABELS[mainHand] ?? '오른손', act:HAND_LABELS[otherHand(mainHand)] ?? '왼손'};
   const list = $('#guide-list');
-  list.replaceChildren(...guideRows(pointer).flatMap(([gesture, result]) => {
+  list.replaceChildren(...guideRows(pointer, names).flatMap(([gesture, result]) => {
     const dt = document.createElement('dt'), dd = document.createElement('dd');
     dt.textContent = gesture; dd.textContent = result; return [dt, dd];
   }));
@@ -262,6 +299,7 @@ function render() {
   const state = session.state;
   $('#current-action').textContent = !session.enabled ? '제어 시작을 누르면 손짓으로 조작할 수 있어요.'
     : !detected ? `${mainHand ? HAND_LABELS[mainHand] : '손'}을 카메라에 보여주세요.`
+    : state?.phase === 'action-hand-missing' ? `포인터 이동 · ${names.act}이 보여야 클릭할 수 있어요`
     : state?.phase === 'holding' ? '커서 고정 · 검지를 펴면 이동'
     : state?.phase === 'latched' ? '포인터 이동 · 멈추면 클릭할 수 있어요'
     : ACTION_TEXT[state?.mode] ?? '손짓 대기';

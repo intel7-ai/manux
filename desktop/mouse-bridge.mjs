@@ -28,9 +28,13 @@ export function validateMouseEvents(events) {
 /** Narrow bridge to one fixed native helper, with an expiring renderer lease. */
 export class MouseBridge extends EventEmitter {
   constructor({platform = process.platform, spawnHelper = spawn, now = Date.now, watchdogMs = 1000,
-    startupTimeoutMs = 15000, dryRun = process.env.MANUX_MOUSE_DRY_RUN === '1'} = {}) {
+    startupTimeoutMs = 15000, dryRun = process.env.MANUX_MOUSE_DRY_RUN === '1',
+    interpolate = false, interpolateHz = 144, scheduler = {set:setTimeout, clear:clearTimeout}} = {}) {
     super();
-    Object.assign(this, {platform, spawnHelper, now, watchdogMs, startupTimeoutMs, dryRun});
+    Object.assign(this, {platform, spawnHelper, now, watchdogMs, startupTimeoutMs, dryRun, interpolate, interpolateHz, scheduler});
+    // Cursor interpolation (hand-mouse/src/cursor_interp.py): a move-only batch from one camera frame
+    // is spread over the expected frame interval instead of jumping ~30 times a second.
+    this.glide = null; this.glideTimer = null; this.frameInterval = 33; this.lastMoveAt = null;
     this.enabled = false;
     this.ready = false;
     this.generation = 0;
@@ -131,8 +135,62 @@ export class MouseBridge extends EventEmitter {
     try { batch = validateMouseEvents(events); }
     catch { this.disable('지원하지 않는 마우스 입력으로 제어를 멈췄습니다.'); return false; }
     this.lastInputAt = this.now();
+    if (this.interpolate && batch.length && batch.every(event => event.type === 'move')) {
+      this.queueGlide(batch, sentAt);
+      return this.enabled;
+    }
+    // Buttons and scrolls act where the cursor really is: finish any glide first, in order.
+    this.flushGlide();
+    if (!this.enabled) return false;
     if (!this.write({kind:'batch', generation:this.generation, sentAt, events:batch})) {
       this.disable('마우스 연결이 지연되어 제어를 멈췄습니다.'); return false;
+    }
+    return true;
+  }
+
+  queueGlide(batch, sentAt) {
+    const now = this.now();
+    if (this.lastMoveAt !== null) {
+      const gap = now - this.lastMoveAt;
+      if (gap > 0 && gap < 200) this.frameInterval = Math.min(50, Math.max(10, this.frameInterval * .7 + gap * .3));
+    }
+    this.lastMoveAt = now;
+    const left = this.glide ? [this.glide.dx, this.glide.dy] : [0, 0];
+    const dx = left[0] + batch.reduce((sum, e) => sum + e.dx, 0), dy = left[1] + batch.reduce((sum, e) => sum + e.dy, 0);
+    const steps = Math.max(1, Math.round(this.frameInterval * this.interpolateHz / 1000));
+    this.glide = {dx, dy, steps, generation:this.generation, sentAt};
+    if (this.glideTimer === null) this.glideStep();
+  }
+
+  glideStep() {
+    this.glideTimer = null;
+    const glide = this.glide;
+    if (!glide || !this.enabled || glide.generation !== this.generation) { this.glide = null; return; }
+    const sx = Math.trunc(glide.dx / glide.steps), sy = Math.trunc(glide.dy / glide.steps);
+    const last = glide.steps <= 1;
+    const mx = last ? glide.dx : sx, my = last ? glide.dy : sy;
+    glide.dx -= mx; glide.dy -= my; glide.steps -= 1;
+    if ((mx || my) && !this.writeMoves(mx, my, glide.sentAt)) return;
+    if (last || (glide.dx === 0 && glide.dy === 0)) { this.glide = null; return; }
+    this.glideTimer = this.scheduler.set(() => this.glideStep(), 1000 / this.interpolateHz);
+  }
+
+  flushGlide() {
+    if (this.glideTimer !== null) { this.scheduler.clear(this.glideTimer); this.glideTimer = null; }
+    const glide = this.glide; this.glide = null;
+    if (glide && this.enabled && glide.generation === this.generation && (glide.dx || glide.dy)) this.writeMoves(glide.dx, glide.dy, glide.sentAt);
+  }
+
+  writeMoves(dx, dy, sentAt) {
+    const events = [];
+    while (dx !== 0 || dy !== 0) {
+      const ex = Math.max(-100, Math.min(100, dx)), ey = Math.max(-100, Math.min(100, dy));
+      events.push({type:'move', dx:ex, dy:ey}); dx -= ex; dy -= ey;
+    }
+    for (let i = 0; i < events.length; i += 8) {
+      if (!this.write({kind:'batch', generation:this.generation, sentAt, events:events.slice(i, i + 8)})) {
+        this.disable('마우스 연결이 지연되어 제어를 멈췄습니다.'); return false;
+      }
     }
     return true;
   }
@@ -142,6 +200,9 @@ export class MouseBridge extends EventEmitter {
   }
 
   disable(reason = null) {
+    // Stopping drops any movement not yet sent; it never plays out after control is off.
+    if (this.glideTimer !== null) { this.scheduler.clear(this.glideTimer); this.glideTimer = null; }
+    this.glide = null;
     this.enabled = false;
     this.generation += 1;
     this.error = reason;

@@ -257,3 +257,13 @@ test('unrelated or duplicate worker replies cannot settle another pending frame'
   await recognition;
   assert.equal(client.pending.size, 0);
 });
+
+test('the worker is asked for one hand by default and two only when requested', async (t) => {
+  const one = setup(t);
+  one.client.init().catch(() => {});
+  assert.equal(one.worker.messages[0].message.numHands, 1);
+  const two = setup(t, { numHands: 2 });
+  two.client.init().catch(() => {});
+  assert.equal(two.worker.messages[0].message.numHands, 2);
+  assert.throws(() => new VisionClient({ numHands: 3 }), RangeError);
+});

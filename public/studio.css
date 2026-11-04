@@ -37,16 +37,16 @@ button,input,select{font:inherit;color:inherit}
 .sidebar h2,.camera-card h2{font-size:20px;margin:0}
 .sidebar h3{font-size:13px;margin:4px 0 0}
 .sidebar hr{border:0;border-top:1px solid var(--line);margin:4px 0;width:100%}
-.index-only{display:flex;flex-direction:column;gap:8px}
+.setting-row{display:flex;flex-direction:column;gap:8px}
 .segmented{display:flex;gap:4px}
 .segmented button{flex:1;min-width:0;height:34px;border:2px solid transparent;border-radius:8px;background:var(--soft);color:var(--muted);font-size:12px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .segmented button.selected{background:var(--mint);color:var(--navy);font-weight:700}
 .segmented button:disabled{color:#a9b6c0;cursor:not-allowed}
 .note{font-size:11px;color:var(--muted);margin:0;white-space:pre-line}
 .shortcuts{margin-top:4px}
-.guide{display:grid;grid-template-columns:1fr auto;gap:4px 10px;margin:0;font-size:12px}
+.guide{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin:0;font-size:12px}
 .guide dt{font-weight:700}
-.guide dd{margin:0;color:var(--muted)}
+.guide dt{white-space:nowrap}.guide dd{margin:0;color:var(--muted);text-align:right}
 .check{display:flex;align-items:center;gap:8px;font-size:13px}
 .camera-card{flex:1;min-width:0;background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px}
 .camera-head{display:flex;align-items:center;gap:8px}
