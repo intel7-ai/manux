@@ -1,0 +1,8 @@
+.local/
+.runtime/
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.log
+source-manifest.json
