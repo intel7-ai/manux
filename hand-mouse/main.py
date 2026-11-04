@@ -30,10 +30,13 @@ from typing import Union
 import cv2
 import numpy as np
 
+from src import profiles
 from src.camera import CameraConfig, CameraStream
 from src.gesture_engine import GestureEngine, GestureResult
 from src.hand_tracker import HandTracker, pinch_guides, tracker_options
 from src.mouse_controller import MouseController
+from src.scroll_target import ScrollTargetFinder
+from src.window_probe import window_center_at
 from src.settings_panel import SettingsPanel
 from src.hotkeys import VK_0, VK_F2, VK_NUMPAD0, VK_O, KeyPoller
 from src.win_perf import keep_responsive_in_background
@@ -266,6 +269,9 @@ def parse_args() -> argparse.Namespace:
         help="No camera window: run in the background with a tray icon and a small status overlay "
              "(open the camera window again from the tray menu)",
     )
+    parser.add_argument("--profile", default=None,
+                        help="Calibration profile for this run (name, or 'none'); default: the one chosen last "
+                             "(scripts/profile.py list|use)")
     parser.add_argument("--no-tray", action="store_true", help="Do not create the system tray icon")
     parser.add_argument("--overlay", action="store_true",
                         help="Show the small click-through status overlay even with the camera window open")
@@ -339,6 +345,10 @@ def run_qt(args, perf, engine, camera, tracker, mouse, settings, keys, perf_log)
     print(f"  Monitors: {len(mouse.screens)} (cursor can cross to any of them, [N] = jump to next)")
 
     close_posted = False
+    # Aim assist: slow the cursor near clickable UI (same as the default mode)
+    magnet = UITargetMagnet(lambda: engine.config)
+    mouse.slowdown_provider = magnet.factor
+    magnet.start()
     runtime.ui = dashboard.ui_state()
     runtime.start()
     try:
@@ -380,6 +390,9 @@ def run_qt(args, perf, engine, camera, tracker, mouse, settings, keys, perf_log)
             print(f"[Error] runtime thread stopped: {runtime.error!r}", file=sys.stderr)
     finally:
         runtime.stop()
+        magnet.shutdown()
+        if mouse.scroll_target_finder is not None:
+            mouse.scroll_target_finder.shutdown()
         if tray is not None:
             tray.hide()
         mouse.close()
@@ -622,9 +635,16 @@ def main() -> int:
     args = parse_args()
     perf = keep_responsive_in_background()
 
+    if args.profile is not None:
+        profiles.RUN_OVERRIDE = "" if args.profile.strip().lower() in ("none", "없음", "") else args.profile.strip()
     engine = GestureEngine(config_path=args.config)
+    print(f"  Profile       : {engine.profile_name or '(none)'}"
+          + ("" if not args.profile or engine.profile_name else f"  [Warn] profile '{args.profile}' not found"))
     if args.mode:
         engine.set_movement_mode(args.mode)
+    # Setting "start_in_tray": same as passing --headless (the flag always wins when given)
+    if engine.config.get("start_in_tray", False):
+        args.headless = True
 
     chosen_source = "phone" if args.phone_web else args.source
     def cfg_int(key: str, default: int) -> int:
@@ -661,6 +681,9 @@ def main() -> int:
     print("  Tracker       : detection {min_detection_confidence} / presence {min_presence_confidence} / "
           "tracking {min_tracking_confidence}, detect width {detect_max_width}".format(**tracker_cfg))
     mouse = MouseController(dry_run=args.dry_run)
+    mouse.window_probe = window_center_at       # page scrolling keeps the cursor in the middle of its window
+    mouse.scroll_target_finder = ScrollTargetFinder(lambda: engine.config)    # ...of the scroll region under the cursor
+    mouse.scroll_target_finder.start()
     settings = SettingsPanel(engine)
     keys = KeyPoller()
     perf_log = PerfLog(Path(__file__).resolve().parent / "logs" / "perf_latest.csv")
@@ -884,6 +907,8 @@ def main() -> int:
     finally:
         pipeline.stop()
         magnet.shutdown()
+        if mouse.scroll_target_finder is not None:
+            mouse.scroll_target_finder.shutdown()
         if tray is not None:
             tray.stop()
         if overlay is not None:

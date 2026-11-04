@@ -16,3 +16,9 @@ models/certs/
 
 # Performance logs
 logs/
+
+# Personal calibration profiles (a profile name can be a person's name) and the active choice
+config/profiles/
+config/active_profile.txt
+config/calibration.json
+config/gestures.json.bak-*

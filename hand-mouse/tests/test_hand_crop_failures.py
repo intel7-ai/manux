@@ -115,3 +115,29 @@ def test_manual_mark_cooldown_and_file_cap(tmp_path):
         t += 2.0
     assert len(list(tmp_path.glob("*.json"))) == 2   # oldest pruned
     assert rec.counts == {"manual": 4}
+
+
+def test_summary_reports_loss_length_candidates_and_index_row(tmp_path):
+    rec = FailureRecorder(tmp_path, before=1.0, after=1.0)
+    # a hand that shrinks fast (turning sideways), then vanishes mid-frame for ~0.5 s, then returns
+    frames = [(hand(.5, .5, .2 - .004 * i), True) for i in range(30)] + [(None, True)] * 15         + [(hand(.5, .5, .1), False)] * 20
+    kinds, t = _run(rec, frames)
+    assert kinds == ["lost_while_moving"]
+    path = rec.poll(t, {"frame_px": [1280, 720]})
+    data = json.loads(path.read_text(encoding="utf-8"))
+    s = data["summary"]
+    assert s["recovered"] is True and 400 <= s["lost_ms"] <= 600 and s["lost_frames"] == 15
+    assert s["edge_gap"] > .2 and any("줄어듦" in h for h in s["hints"])
+    rows = (tmp_path / "index.csv").read_text(encoding="utf-8-sig").splitlines()
+    assert rows[0].startswith("file,kind") and "lost_while_moving" in rows[1]
+
+
+def test_summary_flags_hand_seen_but_filtered_out(tmp_path):
+    rec = FailureRecorder(tmp_path, before=1.0, after=.5)
+    _run(rec, [(hand(.5, .5, .1), True)] * 30)
+    t0 = 1.0
+    for i in range(10):   # MediaPipe still returns a hand ("raw") but the control-hand filter drops it
+        rec.record(t0 + i / 30, landmarks=None, moving=True, raw=[["Right", .9]], path="full")
+    path = rec.poll(t0 + 2, {"frame_px": [1280, 720]})
+    s = json.loads(path.read_text(encoding="utf-8"))["summary"]
+    assert s["raw_hands_during_loss"] == 10 and any("handedness" in h for h in s["hints"])

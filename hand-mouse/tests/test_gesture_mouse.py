@@ -75,9 +75,10 @@ def test_built_in_defaults():
     assert D["movement_mode"] == "relative"
     assert D["relative_gain_min"] == pytest.approx(0.35)
     assert D["relative_gain_max"] == pytest.approx(1.2)
-    assert D["fist_dpi_multiplier"] == pytest.approx(20.0)
+    assert D["fist_dpi_multiplier"] == pytest.approx(25.0)      # open hand 1x ... fist 25x, in between by how far the fingers are curled (2026-11-04)
+    assert D["shape_dpi_min"] == pytest.approx(1.0) and D["shape_dpi_enabled"] is True
     assert D["switcher_navigation"] == "pointer"
-    assert D["scroll_gain"] == pytest.approx(24000.0)
+    assert D["scroll_gain"] == pytest.approx(36000.0)   # 1.5x the original 24000: scrolls further per hand move (2026-11-04 request)
     assert D["switcher_fist_multiplier"] == pytest.approx(15.0)
     from src.gesture_engine import RECORD_FLING_DEFAULT
     assert RECORD_FLING_DEFAULT is False
@@ -646,7 +647,7 @@ def test_fist_is_detected_and_overrides_pinches():
     fists = [r for r in results if r.active_gesture == "fist"]
     assert len(fists) >= 4                       # after fist_confirm_time (0.12 s)
     assert all(r.action == "move_cursor" and r.is_moving for r in fists)
-    assert all(r.dpi_multiplier == pytest.approx(20.0) for r in fists)
+    assert all(r.dpi_multiplier == pytest.approx(25.0) for r in fists)
 
     # Open the hand again -> back to normal movement, and no click from the fingers opening
     for _ in range(6):
@@ -723,9 +724,10 @@ def test_pinch_survives_short_tracking_dropouts():
     pinched = make_hand(index=(0.53, 0.50))
     dropout = make_hand(index=(0.62, 0.50))  # tip landmark jumps away for a moment
     assert engine.process(pinched, timestamp=t).action == "grab"
-    # Repeated 2-frame dropouts (67 ms < 0.15 s grace) never break the pinch
+    # Repeated 2-frame dropouts (67 ms < 0.15 s grace), each followed by a settled pinch (2 frames),
+    # never break the pinch. (One lone good frame between them does not restart the release timer.)
     for _ in range(4):
-        for hand in (dropout, dropout, pinched):
+        for hand in (dropout, dropout, pinched, pinched):
             t += 1 / 30
             assert engine.process(hand, timestamp=t).action == "grab"
     # A real release (longer than the grace) ends it
@@ -1055,15 +1057,15 @@ def test_show_desktop_action_sends_win_d_and_releases_drag():
 
 
 
-def test_pinky_pinch_threshold_is_more_forgiving_and_configurable():
+def test_pinky_pinch_threshold_requires_close_fingers_and_is_configurable():
     hand = make_thumb_pinky_hand()
-    hand[4] = Point3D(0.53, 0.58 + 0.058)  # 0.058 below the pinky tip: > click 0.052, < pinky 0.065
+    hand[4] = Point3D(0.53, 0.58 + 0.058)  # 0.058 away: loose gap, must NOT trigger at default 0.045
     out, _ = _run(GestureEngine(), [hand] * 4)
-    assert "task_switcher" in [r.action for r in out]
-    strict = GestureEngine()
-    strict.config["pinky_click_threshold"] = 0.04
-    out, _ = _run(strict, [hand] * 4)
     assert "task_switcher" not in [r.action for r in out]
+    loose = GestureEngine()
+    loose.config["pinky_click_threshold"] = 0.065
+    out, _ = _run(loose, [hand] * 4)
+    assert "task_switcher" in [r.action for r in out]
 
 
 def _switcher_pinch_hand(ring_y=0.66, pinky=(0.53, 0.58), spread=None):
@@ -1109,12 +1111,12 @@ def test_thumb_tucked_four_fingers_open_shows_desktop_once_per_hold():
     actions = [r.action for r in out]
     assert actions.count("show_desktop") == 1
     first = actions.index("show_desktop")
-    assert 0.4 <= first / 30 <= 0.5  # after desktop_hold (0.4 s)
+    assert 0.6 <= first / 30 <= 0.7  # after desktop_hold (0.6 s since 2026-11-04; was 0.4)
     assert out[first].active_gesture == "thumb_tucked_open"
     # Cursor keeps moving while the posture is held (it is an open hand)
     assert all(r.is_moving for r in out if r.action != "show_desktop")
     # Re-arms only after the posture is released (and after the cooldown)
-    out2, _ = _run(engine, [make_desktop_hand(tucked=False)] * 30 + [make_desktop_hand()] * 15, t0=t)
+    out2, _ = _run(engine, [make_desktop_hand(tucked=False)] * 30 + [make_desktop_hand()] * 25, t0=t)
     assert [r.action for r in out2].count("show_desktop") == 1
 
 
@@ -1163,7 +1165,7 @@ def test_thumb_tuck_is_reported_for_the_hud():
 
 def test_desktop_and_switcher_lock_each_other_out():
     engine = GestureEngine()
-    out, t = _run(engine, [make_desktop_hand()] * 15)
+    out, t = _run(engine, [make_desktop_hand()] * 25)
     assert "show_desktop" in [r.action for r in out]
     out2, t = _run(engine, [make_thumb_pinky_hand()] * 5, t0=t)  # within 1 s
     assert "task_switcher" not in [r.action for r in out2]
@@ -1632,7 +1634,9 @@ def test_ring_pinch_with_neighbours_gives_exactly_one_right_click():
 @pytest.mark.record_off
 def test_middle_and_pinky_pinch_with_neighbours():
     assert _fired(_thumb_on(12, 0.025, [(16, 0.03)])) == ["left_click"]
-    assert _fired(_thumb_on(20, 0.03, [(16, 0.035)])) == ["task_switcher"]
+    assert _fired(_thumb_on(20, 0.03, [(16, 0.045)])) == ["task_switcher"]
+    # ring tip about as close as the pinky tip (curled hand): the pinky is not clearly the one
+    assert "task_switcher" not in _fired(_thumb_on(20, 0.03, [(16, 0.035)]))
 
 
 @pytest.mark.record_off
@@ -1659,6 +1663,7 @@ def _shift(hand, dx):
 @pytest.mark.record_off
 def test_long_press_thumb_middle_drags_a_file_and_release_drops_it():
     engine = GestureEngine()
+    engine.config["long_press_time"] = 0.6   # these tests are about the drag, not the default delay
     cfg = dict(engine.config)
     ctrl = MouseController(dry_run=True, screen_size=(1920, 1080))
     ctrl.frame_aspect = 0.75
@@ -1691,6 +1696,7 @@ def test_short_pinch_is_still_a_single_click_without_drag():
 @pytest.mark.record_off
 def test_drag_survives_short_tracking_dropouts():
     engine = GestureEngine()
+    engine.config["long_press_time"] = 0.6   # these tests are about the drag, not the default delay
     pinch = _thumb_on(12, 0.02)
     lost = make_real_hand(curled=False)
     out, _ = _run(engine, [pinch] * 22 + [lost, lost, lost] + [pinch] * 5)  # 0.1 s dropout mid-drag
@@ -1846,6 +1852,7 @@ def test_index_drag_hold_follows_the_tip_and_releases_the_button():
 @pytest.mark.record_off
 def test_long_press_drag_moves_the_cursor_at_15x():
     engine = GestureEngine()
+    engine.config["long_press_time"] = 0.6   # these tests are about the drag, not the default delay
     out, _ = _run(engine, [_thumb_on(12, 0.02)] * 22)
     drags = [r for r in out if r.action == "drag_hold"]
     assert drags and all(r.dpi_multiplier == pytest.approx(15.0) for r in drags)
@@ -1872,3 +1879,465 @@ def test_ring_needs_a_real_touch_middle_unchanged():
     out, _ = _run(GestureEngine(), [_thumb_on(12, 0.048)] * 8)   # middle keeps its distance
     assert "left_click" in [r.action for r in out]
 
+
+@pytest.mark.record_off
+def test_default_long_press_does_not_turn_a_slow_click_into_a_drag():
+    """A pinch held ~0.8 s (a slow click) is still just the click; the drag needs the 1.0 s default."""
+    out, _ = _run(GestureEngine(), [_thumb_on(12, 0.02)] * 24)    # ~0.8 s
+    actions = [r.action for r in out]
+    assert actions.count("left_click") == 1 and "drag_hold" not in actions
+    out, _ = _run(GestureEngine(), [_thumb_on(12, 0.02)] * 40)    # ~1.3 s
+    assert "drag_hold" in [r.action for r in out]
+
+
+@pytest.mark.record_off
+def test_long_press_flag_does_not_outlive_the_pinch():
+    """Logged 2026-11-04: after one long-press drag, a thumb+index grab cleared the held pinch but
+    left `_long_fired` set, so EVERY later thumb+middle pinch became a drag instantly (the click
+    looked ignored). A new pinch must wait the full long_press_time again."""
+    engine = GestureEngine()
+    engine.config["grab_scroll_enabled"] = True
+    t = 0.0
+    out = []
+    for hand in ([_thumb_on(12, 0.02)] * 40            # long press -> drag (flag set)
+                 + [_thumb_on(8, 0.02)] * 8            # thumb+index grab clears the held pinch
+                 + [make_real_hand(curled=False)] * 12  # hand open
+                 + [_thumb_on(12, 0.02)] * 10):        # a normal ~0.3 s click pinch
+        out.append(engine.process(hand, timestamp=t))
+        t += 1 / 30
+    tail = [r.action for r in out[-10:]]
+    assert "drag_hold" not in tail and "left_click" in tail
+
+
+@pytest.mark.record_off
+def test_thumb_index_grab_ends_when_the_tips_are_clearly_apart():
+    """Logged 2026-11-04: with tips 0.06 apart (more than a palm width at that distance) the grab was
+    still held for seconds because the scroll release margin made the limit 0.065."""
+    engine = GestureEngine()
+    engine.config.update(grab_scroll_enabled=True, release_threshold=0.045)   # the shipped config values
+    hands = [_thumb_on(8, 0.02)] * 10 + [_thumb_on(8, 0.060)] * 12      # pinched, then ~0.4 s at 0.060
+    out = []
+    for i, h in enumerate(hands):
+        out.append(engine.process(h, timestamp=i / 30))
+    assert out[9].action == "scroll_grab"
+    assert out[-1].action != "scroll_grab"
+
+
+def _inertia_launch(moves, cfg_over=None):
+    """Drive the grab scroll directly: moves = [(dx, dy)] per frame (hand point steps, 30 fps)."""
+    cfg = dict(GestureEngine().config, scroll_inertia=True, **(cfg_over or {}))
+    ctrl = MouseController(dry_run=True, screen_size=(1920, 1080))
+    ctrl.frame_aspect = 0.75
+    x, y, t = 0.5, 0.5, 1.0
+    ctrl._grab_scroll((x, y), cfg, t)
+    for dx, dy in moves:
+        t += 1 / 30
+        x, y = x + dx, y + dy
+        ctrl._grab_scroll((x, y), cfg, t)
+    ctrl._end_scroll(cfg, t + 1 / 30)
+    return ctrl
+
+
+def test_inertia_follows_the_recent_flick_not_the_whole_grab():
+    """A long pull down followed by a quick flick back up must coast up (it used to coast nowhere)."""
+    pull_down = [(0, 0.004)] * 20
+    flick_up = [(0, -0.012)] * 4
+    ctrl = _inertia_launch(pull_down + flick_up)
+    assert ctrl.last_inertia["same_way"] and ctrl.scroll_coasting
+    assert ctrl._inertia_v[0] < 0          # hand up -> page content up -> wheel down (negative)
+
+
+def test_inertia_stays_on_the_vertical_axis_for_a_vertical_flick():
+    ctrl = _inertia_launch([(0, 0.004)] * 10 + [(0.002, 0.012)] * 4)   # ~17 % sideways wobble
+    assert ctrl.scroll_coasting and ctrl._inertia_v[1] == 0.0 and ctrl._inertia_v[0] > 0
+    diag = _inertia_launch([(0.012, 0.010)] * 6)                         # a real diagonal keeps both
+    assert diag.scroll_coasting and diag._inertia_v[0] != 0 and diag._inertia_v[1] != 0
+
+
+def test_inertia_launch_speed_is_capped():
+    ctrl = _inertia_launch([(0, 0.004)] * 5 + [(0, 0.06)] * 4)
+    assert ctrl.scroll_coasting and math.hypot(*ctrl._inertia_v) <= 3600.0 + 1e-6
+    assert ctrl.last_inertia["raw"][0] > ctrl.last_inertia["used"][0]
+
+
+@pytest.mark.record_off
+def test_drag_ends_when_fingers_part_even_if_the_thumb_rests_near_the_middle_dip():
+    """Logged 2026-11-04: tips 0.08-0.09 apart still held the drag because the thumb stayed ~0.07
+    from the middle DIP (the DIP shortcut counted at any distance up to the release limit)."""
+    engine = GestureEngine()
+    engine.config["long_press_time"] = 0.6
+    pinch = _thumb_on(12, 0.02)
+    apart = list(pinch)
+    apart[4] = Point3D(pinch[12].x + 0.0523, pinch[12].y + 0.067)   # tip 0.085 away
+    k = 0.062 / 0.085                                                  # ...with the DIP only 0.062 from the thumb
+    apart[11] = Point3D(apart[4].x + (pinch[12].x - apart[4].x) * k, apart[4].y + (pinch[12].y - apart[4].y) * k)
+    out, _ = _run(engine, [pinch] * 22 + [apart] * 12)
+    actions = [r.action for r in out]
+    assert actions[21] == "drag_hold" and actions[-1] != "drag_hold"
+
+
+@pytest.mark.record_off
+def test_scroll_freezes_when_the_fingers_part_but_not_on_a_one_frame_spike():
+    """Replay of 2026-11-04 logs: scrolling went on with the fingers already apart (hand kept 'browsing'),
+    but freezing on every threshold touch stalled ~17 % of grab frames. A one-frame spike over the limit
+    keeps scrolling; fingers staying apart (or clearly open) freeze the page."""
+    def last(gap, n):
+        e = GestureEngine()
+        e.config.update(grab_scroll_enabled=True, release_threshold=0.045, scroll_release_margin=0.015)
+        for i in range(6):
+            e.process(_thumb_on(8, 0.02), timestamp=i / 30)
+        r = None
+        for i in range(n):
+            r = e.process(_thumb_on(8, gap), timestamp=(6 + i) / 30)
+        return r
+    spike = last(0.065, 1)      # limit 0.06 -> 8 % over, first frame
+    parted = last(0.065, 3)     # still apart 0.067 s later
+    opening = last(0.085, 1)    # 40 % over: clearly opening at once
+    assert spike.action == "scroll_grab" and not spike.releasing
+    assert parted.action == "scroll_grab" and parted.releasing
+    assert opening.action == "scroll_grab" and opening.releasing
+
+
+def test_hovering_around_the_release_limit_does_not_keep_the_pinch_alive():
+    """Logged 2026-11-04: the tips hovered just over the limit with one frame back under it now and then;
+    every such frame restarted the release timer, so the page kept scrolling with the fingers apart."""
+    e = GestureEngine()
+    e.config.update(release_threshold=0.045, pinch_release_grace=0.15)
+    t = 1.0
+    assert e.process(make_hand(index=(0.53, 0.50)), timestamp=t).action == "grab"
+    apart = make_hand(index=(0.62, 0.50))         # clearly over the limit
+    close = make_hand(index=(0.53, 0.50))
+    res = None
+    for i in range(6):                            # apart x3, one close frame, apart x2: released by the 0.15 s grace
+        t += 1 / 30
+        res = e.process(close if i % 4 == 3 else apart, timestamp=t)
+    assert res.active_gesture == "no_pinch"
+
+
+# ------------------------------------------------------------------ scroll pump (smooth wheel stream)
+from src.mouse_controller import ScrollPump
+
+
+def test_scroll_pump_spreads_a_burst_over_many_small_steps_and_keeps_the_total():
+    p = ScrollPump(tau=0.03)
+    p.step(0.0)
+    p.add(240, 0)                                   # one camera frame's worth: 2 notches at once
+    sent = []
+    for i in range(1, 60):                          # ticks every 8 ms for ~0.5 s
+        v, _ = p.step(i * 0.008)
+        sent.append(v)
+    assert max(sent) < 90                           # no single event is the whole burst
+    assert sum(1 for v in sent if v) >= 12          # a stream of many events
+    assert abs(sum(sent) - 240) <= 2                # nothing lost (integer rounding only)
+    assert sent[0] > 0 and sent[:5] == sorted(sent[:5], reverse=True)   # starts quickly, then tapers
+
+
+def test_scroll_pump_clear_drops_what_was_not_sent_yet():
+    p = ScrollPump(tau=0.03)
+    p.step(0.0)
+    p.add(500, 0)
+    first = p.step(0.008)[0]
+    p.clear()
+    assert sum(p.step(0.008 * (i + 2))[0] for i in range(40)) == 0 and first > 0
+    assert p.pending() == (0.0, 0.0)
+
+
+def test_scroll_pump_flush_returns_the_rest_and_zero_tau_sends_at_once():
+    p = ScrollPump(tau=0.03)
+    p.step(0.0)
+    p.add(100, 40)
+    v1, h1 = p.step(0.008)
+    v, h = p.flush()
+    assert abs((v1 + v) - 100) <= 1 and abs((h1 + h) - 40) <= 1 and p.pending() == (0.0, 0.0)
+    q = ScrollPump(tau=0.0)
+    q.step(0.0)
+    q.add(120, -60)
+    assert q.step(0.01, tau=0.0) == (120, -60)
+
+
+@pytest.mark.record_off
+def test_cursor_stays_put_for_a_moment_after_a_scroll_grab_ends():
+    """Logged 2026-11-04: the hand is still moving up/down when the grab ends, and the cursor followed it
+    (17 px median, 65 px p90 in 0.4 s). It is held for scroll_cursor_hold, then follows the hand again."""
+    engine = GestureEngine()
+    engine.config["grab_scroll_enabled"] = True
+    t = 1.0
+    for i in range(8):                                          # grabbing, hand moving
+        engine.process(_pinch_hand_at(-0.02 * i), timestamp=t); t += 1 / 30
+    after = []
+    for i in range(24):                                         # fingers open, hand keeps moving up
+        r = engine.process(_pinch_hand_at(-0.16 - 0.02 * i, opened=True), timestamp=t)
+        after.append((round(t - 1.0 - 8 / 30, 2), r.action)); t += 1 / 30
+    held = [a for tt, a in after if tt < 0.30]
+    assert "move_cursor" not in held[3:]                        # (the first frames are still the grace period)
+    assert after[-1][1] == "move_cursor"                        # 0.7 s later it follows the hand again
+    engine2 = GestureEngine()
+    engine2.config.update(grab_scroll_enabled=True, scroll_cursor_hold=0.0)
+    t = 1.0
+    for i in range(8):
+        engine2.process(_pinch_hand_at(-0.02 * i), timestamp=t); t += 1 / 30
+    free = [engine2.process(_pinch_hand_at(-0.16 - 0.02 * i, opened=True), timestamp=t + i / 30).action for i in range(12)]
+    assert "move_cursor" in free[6:]                            # without the hold it moves right away
+
+
+def test_approach_zone_keeps_its_size_with_a_tight_release_threshold():
+    """A profile with release_threshold 0.028 shrank the 'finger is coming, freeze the cursor' zone."""
+    e = GestureEngine()
+    e.config.update(pinch_threshold=0.022, release_threshold=0.028, approach_freeze_distance=0.045)
+    near = [Point3D(p.x, p.y) for p in make_hand(index=(0.60, 0.50))]       # thumb 0.07 from the index tip
+    near[8] = Point3D(near[4].x + 0.04, near[4].y)                           # 0.04: inside 0.045, outside 0.028
+    assert e.process(near, timestamp=1.0).action != "move_cursor"
+    e.config["approach_freeze_distance"] = 0.0
+    assert e.process(near, timestamp=2.0).action == "move_cursor"
+
+
+# ------------------------------------------------------------------ scrolling and inertia as one movement
+def _seam_session(releasing_frames, finish="end", seamless=True):
+    """Pull the page for 10 frames, then `releasing_frames` frames with the fingers opening (hand still
+    drifting). finish: 'end' = release confirmed, 'close' = the fingers closed again."""
+    cfg = dict(GestureEngine().config, scroll_inertia=True, scroll_inertia_seamless=seamless)
+    ctrl = MouseController(dry_run=True, screen_size=(1920, 1080))
+    ctrl.frame_aspect = 0.75
+    t, y = 1.0, 0.5
+    ctrl._grab_scroll((0.5, y), cfg, t)
+    totals = []
+    for i in range(10):                              # pulling: ~270 wheel units per frame
+        t += 1 / 30
+        y += 0.01
+        ctrl._grab_scroll((0.5, y), cfg, t)
+        totals.append(ctrl.scroll_total[0])
+    after_pull = ctrl.scroll_total[0]
+    during = []
+    for i in range(releasing_frames):
+        t += 1 / 30
+        before = ctrl.scroll_total[0]
+        ctrl._grab_scroll((0.5, y + 0.002 * i), cfg, t, releasing=True)
+        during.append(ctrl.scroll_total[0] - before)
+    if finish == "end":
+        t += 1 / 30
+        ctrl._end_scroll(cfg, t)
+    else:
+        t += 1 / 30
+        ctrl._grab_scroll((0.5, y + 0.05), cfg, t)           # fingers closed again, hand elsewhere
+    return ctrl, after_pull, during
+
+
+def test_the_page_keeps_moving_while_the_fingers_open_and_the_release_does_not_restart_it():
+    ctrl, after_pull, during = _seam_session(4)
+    assert all(d != 0 for d in during[1:])                  # no frame of standing still before the coast
+    assert ctrl.scroll_coasting and ctrl.inertia_launches == 1   # confirming the release did not launch a second one
+    assert ctrl.scroll_total[0] > after_pull
+    for _ in range(5):                                      # and it goes on coasting afterwards
+        ctrl._tick_scroll_inertia(dict(GestureEngine().config), 2.0 + _ / 30)
+    assert ctrl.scroll_coasting is True or ctrl.scroll_total[0] > after_pull
+
+
+def test_without_the_seamless_start_the_page_stands_still_while_the_fingers_open():
+    ctrl, after_pull, during = _seam_session(4, seamless=False)
+    assert during == [0, 0, 0, 0]                           # the old behaviour: a pause
+    assert ctrl.inertia_launches == 1                        # coasting only started on confirmation
+
+
+def test_closing_the_fingers_again_takes_the_provisional_coast_back_without_a_jump():
+    ctrl, after_pull, during = _seam_session(3, finish="close")
+    assert not ctrl.scroll_coasting and ctrl.inertia_launches == 1
+    before = ctrl.scroll_total[0]
+    cfg = dict(GestureEngine().config)
+    ctrl._grab_scroll((0.5, 0.5 + 0.1 + 0.05), cfg, 3.0)     # the hand is exactly where the re-anchor put it
+    assert ctrl.scroll_total[0] - before == 0                # ...so no jump: scrolling continues from here
+
+
+# ------------------------------------------------------------------ one side pinch at a time; show desktop only when deliberate
+@pytest.mark.record_off
+def test_a_held_middle_pinch_is_not_turned_into_a_right_click_by_the_thumb_sliding_to_the_ring():
+    """Logged 2026-11-04: 10 of 17 right clicks fired while thumb+middle was held for seconds (hand angle)."""
+    engine = GestureEngine()
+    out, t = _run(engine, [_thumb_on(12, 0.02)] * 12)                      # middle pinch held (click fired)
+    both = _thumb_on(12, 0.03, [(16, 0.03)])                               # ring tip now as close as the middle
+    ring_nearer = _thumb_on(16, 0.02, [(12, 0.04)])                        # the thumb has slid onto the ring
+    out2, t = _run(engine, [both] * 4 + [ring_nearer] * 10, t0=t)
+    assert "right_click" not in [r.action for r in out2]
+    out3, _ = _run(engine, [make_real_hand(curled=False)] * 8 + [_thumb_on(16, 0.02)] * 8, t0=t)   # released, then ring
+    assert "right_click" in [r.action for r in out3]
+
+
+@pytest.mark.record_off
+def test_the_exclusive_rule_can_be_switched_off():
+    engine = GestureEngine()
+    engine.config["side_pinch_exclusive"] = False
+    out, t = _run(engine, [_thumb_on(12, 0.02)] * 12)
+    out2, _ = _run(engine, [_thumb_on(16, 0.02, [(12, 0.045)])] * 10, t0=t)
+    assert "right_click" in [r.action for r in out2]
+
+
+def test_show_desktop_needs_a_still_hand_and_a_quiet_moment_before():
+    # a hand that travels while in the posture (an open hand steering the cursor) never fires
+    moving = [make_desktop_hand(shift=(0.012 * i, 0.0)) for i in range(40)]
+    out, _ = _run(GestureEngine(), moving)
+    assert "show_desktop" not in [r.action for r in out]
+    out, _ = _run(GestureEngine(), [make_desktop_hand()] * 30)             # the same pose held still does
+    assert "show_desktop" in [r.action for r in out]
+    # right after another gesture ended (a scroll grab released a moment ago) it must wait
+    e = GestureEngine()
+    e._scroll_released_at = 0.0
+    out, _ = _run(e, [make_desktop_hand()] * 25, t0=0.2)                   # 0.2 s .. 1.0 s after the release
+    assert "show_desktop" not in [r.action for r in out]
+    out, _ = _run(e, [make_desktop_hand()] * 25, t0=1.4)                   # held on past the quiet period
+    assert "show_desktop" in [r.action for r in out]
+
+
+def test_thumb_out_with_four_folded_fingers_is_the_motion_pose_not_a_fist():
+    """It is the entry pose of motion mode; the fist branch would run the cursor at 20x DPI while it is held."""
+    h = make_real_hand(curled=True)
+    far = Point3D(h[0].x - 0.30, h[0].y)            # the thumb tip well away from the palm
+    pose = list(h)
+    pose[4] = far
+    out, _ = _run(GestureEngine(), [pose] * 8)
+    assert all(r.active_gesture == "motion_pose" and r.cursor_point is None and r.action == "none" for r in out)
+    out, _ = _run(GestureEngine(), [h] * 8)         # an ordinary fist still is one
+    assert any(r.active_gesture == "fist" for r in out)
+    e = GestureEngine()
+    e.config["motion_pose_freeze"] = False
+    out, _ = _run(e, [pose] * 8)
+    assert all(r.active_gesture != "motion_pose" for r in out)
+
+
+# ------------------------------------------------------------------ browsing keeps the cursor in the middle of the page
+def _browse_ctrl(target=(960, 540, "Chrome_WidgetWin_1"), start=(200, 150)):
+    """A controller whose window probe answers `target`. The window fallback is opt-in (scroll_center_fallback_window)."""
+    ctrl = MouseController(dry_run=True, screen_size=(1920, 1080))
+    ctrl.frame_aspect = 0.75
+    ctrl.window_probe = (lambda x, y: target) if target is not None else (lambda x, y: None)
+    ctrl.last_screen_pos = start
+    return ctrl
+
+
+def _move_result(x=0.5):
+    return GestureResult(active_gesture="no_pinch", action="move_cursor", cursor_point=(x, 0.5), is_moving=True)
+
+
+def test_a_page_grab_puts_the_cursor_in_the_middle_of_its_window_and_keeps_it_there():
+    ctrl = _browse_ctrl()
+    cfg = dict(GestureEngine().config, scroll_center_fallback_window=True)
+    ctrl._grab_scroll((0.5, 0.5), cfg, 1.0)                   # the grab starts
+    assert ctrl.last_screen_pos == (960, 540) and "scroll_center:960,540:window" in ctrl.event_log
+    for i in range(1, 8):
+        ctrl._grab_scroll((0.5, 0.5 + 0.01 * i), cfg, 1.0 + i / 30)
+    assert ctrl.last_screen_pos == (960, 540)                 # the hand moves, the cursor does not
+    ctrl.apply(_move_result(0.3), cfg, now=1.3)               # (the engine would move it while the page is let go)
+    assert ctrl.last_screen_pos == (960, 540)
+
+
+def test_the_cursor_stays_during_the_coast_and_the_session_hold_then_follows_the_hand_again():
+    ctrl = _browse_ctrl()
+    cfg = dict(GestureEngine().config, scroll_inertia=True, scroll_center_fallback_window=True)
+    t = 1.0
+    ctrl._grab_scroll((0.5, 0.5), cfg, t)
+    for i in range(10):                                        # a quick flick
+        t += 1 / 30
+        ctrl._grab_scroll((0.5, 0.5 + 0.02 * (i + 1)), cfg, t)
+    ctrl._end_scroll(cfg, t)
+    assert ctrl.scroll_coasting
+    for i in range(30):                                        # 1 s of coasting while the hand returns
+        t += 1 / 30
+        ctrl.apply(_move_result(0.2 + 0.01 * i), cfg, now=t)
+        assert ctrl.last_screen_pos == (960, 540), i
+    ctrl._stop_scroll_inertia()
+    t += 0.5
+    ctrl.apply(_move_result(0.4), cfg, now=t)                  # inside scroll_session_hold (1.2 s): still locked
+    assert ctrl.last_screen_pos == (960, 540)
+    t += 1.0
+    ctrl.apply(_move_result(0.4), cfg, now=t)
+    ctrl.apply(_move_result(0.45), cfg, now=t + 1 / 30)
+    assert ctrl.last_screen_pos != (960, 540)                  # after the hold it follows the hand again
+
+
+def test_continuous_browsing_does_not_recentre_when_the_cursor_is_already_there():
+    ctrl = _browse_ctrl()
+    cfg = dict(GestureEngine().config, scroll_center_fallback_window=True)
+    ctrl._grab_scroll((0.5, 0.5), cfg, 1.0)
+    ctrl._end_scroll(cfg, 1.5)
+    n = sum(1 for e in ctrl.event_log if e.startswith("scroll_center"))
+    ctrl._grab_scroll((0.5, 0.5), cfg, 2.0)                    # grabbing again within the session
+    assert sum(1 for e in ctrl.event_log if e.startswith("scroll_center")) == n   # no second jump
+    assert ctrl.last_screen_pos == (960, 540)
+
+
+def test_no_window_or_switched_off_means_the_old_behaviour():
+    cfg = dict(GestureEngine().config, scroll_center_fallback_window=True)
+    ctrl = _browse_ctrl(target=None)                           # the desktop / our own window: nothing to centre on
+    ctrl._grab_scroll((0.5, 0.5), cfg, 1.0)
+    assert ctrl.last_screen_pos == (200, 150)
+    ctrl = _browse_ctrl()
+    ctrl._grab_scroll((0.5, 0.5), dict(cfg, scroll_center_cursor=False), 1.0)
+    assert ctrl.last_screen_pos == (200, 150) and not ctrl._browse_centered      # switched off: no move, no lock
+    ctrl.apply(_move_result(0.3), cfg, now=1.3)
+    ctrl.apply(_move_result(0.35), cfg, now=1.33)
+    assert ctrl.last_screen_pos != (200, 150)                  # (and the cursor follows the hand)
+
+
+# ------------------------------------------------------------------ cursor speed follows how far the fingers are curled
+def _shape_hand(tip_y, thumb=(0.30, 0.64)):
+    """make_real_hand with every fingertip at tip_y (wrist 0.8, MCP 0.6, so the curl ratio is (0.8 - tip_y) / 0.2):
+    0.40 open (2.0), 0.52 loose (1.4), 0.55 half (1.25), 0.58 (1.1), 0.68 fist (0.6). The thumb is far from the fingers."""
+    h = make_real_hand(curled=True)
+    for _, tip_i in GestureEngine.FINGER_JOINTS:
+        h[tip_i] = Point3D(h[tip_i].x, tip_y)
+        h[tip_i - 1] = Point3D(h[tip_i].x, (tip_y + 0.60) / 2)
+    h[4] = Point3D(*thumb)
+    return h
+
+
+def _last(hands, config=None):
+    e = GestureEngine()
+    if config:
+        e.config.update(config)
+    r = None
+    for i, h in enumerate(hands):
+        r = e.process(h, timestamp=1.0 + i / 30)
+    return r
+
+
+def test_shape_dpi_runs_from_the_minimum_to_the_maximum_on_a_log_scale():
+    e = GestureEngine()
+    assert e.shape_dpi(2.0) == pytest.approx(1.0) and e.shape_dpi(1.45) == pytest.approx(1.0)      # open
+    assert e.shape_dpi(0.85) == pytest.approx(25.0) and e.shape_dpi(0.3) == pytest.approx(25.0)    # fist
+    assert e.shape_dpi(1.15) == pytest.approx(5.0, rel=0.01)                                      # halfway = the geometric mean
+    values = [e.shape_dpi(c) for c in (1.4, 1.3, 1.2, 1.1, 1.0, 0.9)]
+    assert values == sorted(values) and values[0] > 1.0 and values[-1] < 25.0
+
+
+def test_the_cursor_speed_follows_how_far_the_hand_is_curled():
+    open_, loose, half, fist = (_last([_shape_hand(y)] * 10) for y in (0.40, 0.52, 0.55, 0.68))
+    assert open_.dpi_multiplier == 1.0 and open_.hand_shape == "open" and open_.action == "move_cursor"
+    assert 1.0 < loose.dpi_multiplier < half.dpi_multiplier < 25.0 and half.hand_shape == "half"
+    assert half.action == "move_cursor" and half.is_moving
+    f = _last([make_real_hand(curled=True)] * 10)
+    assert f.hand_shape == "fist" and f.dpi_multiplier == pytest.approx(25.0)             # a real fist is the maximum
+
+
+def test_closing_the_hand_speeds_the_cursor_up_smoothly_and_opening_slows_it_down_again():
+    e = GestureEngine()
+    mult = []
+    for i, y in enumerate([0.40] * 4 + [0.44, 0.48, 0.52, 0.55, 0.55, 0.55] + [0.40] * 8):
+        mult.append(e.process(_shape_hand(y), timestamp=1.0 + i / 30).dpi_multiplier)
+    closing = mult[4:10]
+    assert closing == sorted(closing) and closing[-1] > 1.5 and closing[0] < closing[-1]
+    assert max(b - a for a, b in zip(mult, mult[1:])) < 8.0                                # no jump from 1x to 25x
+    assert mult[-1] == pytest.approx(1.0, abs=0.2)
+
+
+def test_a_curled_pinch_pose_is_not_sped_up_and_a_thumb_about_to_touch_still_freezes_the_cursor():
+    pinch = _last([_shape_hand(0.55, thumb=(0.4375, 0.55))] * 8)             # curled, the thumb ON the index tip
+    assert pinch.dpi_multiplier == 1.0 and pinch.action != "move_cursor" or pinch.dpi_multiplier == 1.0
+    near = _last([_shape_hand(0.55, thumb=(0.4375, 0.55 + 0.02))] * 8)       # 0.02 from it: about to touch
+    assert near.action != "move_cursor"
+
+
+def test_the_speed_steps_are_settings():
+    assert _last([_shape_hand(0.55)] * 8, {"shape_dpi_enabled": False}).dpi_multiplier == 1.0
+    assert _last([make_real_hand(curled=True)] * 8, {"fist_dpi_multiplier": 30.0}).dpi_multiplier == pytest.approx(30.0)
+    flat = _last([_shape_hand(0.55)] * 8, {"shape_dpi_curve": 0.5})
+    steep = _last([_shape_hand(0.55)] * 8, {"shape_dpi_curve": 2.0})
+    assert flat.dpi_multiplier > _last([_shape_hand(0.55)] * 8).dpi_multiplier > steep.dpi_multiplier
+    assert _last([_shape_hand(0.55)] * 8, {"shape_dpi_min": 2.0}).dpi_multiplier > _last([_shape_hand(0.55)] * 8).dpi_multiplier

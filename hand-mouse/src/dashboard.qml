@@ -293,6 +293,18 @@ ApplicationWindow {
                                 current: dashboard.pointerOnly ? "index" : "palm"
                                 onPicked: function (value) { dashboard.setPointerPreset(value === "index") }
                             }
+                            ActionButton {
+                                Layout.fillWidth: true
+                                enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                                text: dashboard.motionLabel
+                                onClicked: dashboard.toggleMotion()
+                            }
+                            ActionButton {
+                                Layout.fillWidth: true
+                                enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                                text: dashboard.profileLabel + (dashboard.profileCount > 0 ? "  (눌러서 바꾸기)" : "  (없음)")
+                                onClicked: dashboard.cycleProfile()
+                            }
                             ColumnLayout {
                                 visible: dashboard.pointerOnly
                                 Layout.fillWidth: true
@@ -568,6 +580,50 @@ ApplicationWindow {
                     text: "MANUX · " + dashboard.receptionText
                     color: "#F5F7F8"
                     font.pixelSize: 13
+                    font.family: "Malgun Gothic"
+                }
+            }
+        }
+    }
+
+    // Motion-mode badge: always on top and click-through, in the top-right corner of the screen, so the user
+    // can tell the mode from anywhere (also when this window is hidden or behind others).
+    Window {
+        id: motionBadge
+        title: "MANUX 모션 모드"
+        transientParent: null
+        visible: dashboard.motionBadgeVisible
+        color: "transparent"
+        flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
+               | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus
+        width: badgePill.implicitWidth
+        height: 44
+        readonly property var area: dashboard.overlayArea
+        x: area[0] + area[2] - width - 16
+        // below the small reception pill when that one is showing in the same corner
+        y: area[1] + 16 + (dashboard.overlayVisible && dashboard.overlayCorner === "top-right" ? 42 : 0)
+        Rectangle {
+            id: badgePill
+            anchors.fill: parent
+            implicitWidth: badgeRow.implicitWidth + 32
+            radius: height / 2
+            color: dashboard.motionBadgeOn ? "#F2B544" : "#E6112331"
+            border.width: 2
+            border.color: dashboard.motionBadgeOn ? "#FFF3D6" : "#526575"
+            Row {
+                id: badgeRow
+                anchors.centerIn: parent
+                spacing: 10
+                Rectangle {
+                    width: 12; height: 12; radius: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: dashboard.motionBadgeOn ? "#112331" : "#F2B544"
+                }
+                Label {
+                    text: dashboard.motionBadgeText
+                    color: dashboard.motionBadgeOn ? "#112331" : "#F5F7F8"
+                    font.pixelSize: 16
+                    font.bold: true
                     font.family: "Malgun Gothic"
                 }
             }
