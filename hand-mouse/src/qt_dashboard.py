@@ -3,6 +3,8 @@ from collections import deque
 from pathlib import Path
 import time
 import math
+import subprocess
+import sys
 
 import cv2
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, Property, QSettings, Signal, Slot, QUrl
@@ -12,7 +14,7 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 
-from src import app_paths, profiles
+from src import app_paths, global_hotkeys, profiles
 from src.dashboard import ACTIONS
 from src.gesture_engine import DEFAULT_CONFIG_PATH
 from src.hand_selection import HandSelection, selected_detection
@@ -106,6 +108,7 @@ class QtDashboard(QObject):
         # Hand-area crop on/off (A/B with the tracking test) and failure recording
         self.hand_crop = self.preferences.value("handCrop", False, type=bool)
         self.finger_overlay = self.preferences.value("fingerOverlay", False, type=bool)
+        self.export_text = ""
         self.finger_frame = None      # latest finger tracker frame (src/finger_overlay.py) or None
         self.failure_mark_requested = False
         self.failure_summary = "아직 저장된 기록이 없습니다."
@@ -121,6 +124,17 @@ class QtDashboard(QObject):
         self.candidate = ""
         self.remaining = 5
 
+        # System-wide shortcuts (src/global_hotkeys.py): on/off and hide/show from any program.
+        # Callbacks run on the hotkey thread, so they only queue work for poll() on this thread.
+        self.ui_requests = deque()
+        self.shortcuts = {action: global_hotkeys.normalize(self.preferences.value(f"shortcut/{action}", combo, type=str))
+                          or combo for action, combo in global_hotkeys.DEFAULTS.items()}
+        self.hotkeys = global_hotkeys.GlobalHotkeys({
+            "toggle": lambda: self.ui_requests.append("toggle"),
+            "hide": lambda: self.ui_requests.append("hide"),
+        })
+        self.hotkeys.start(self.shortcuts)
+
         QQuickStyle.setStyle("Basic")
         self.engine = QQmlApplicationEngine()
         self.provider = CameraImage()
@@ -132,6 +146,7 @@ class QtDashboard(QObject):
         self.window = self.engine.rootObjects()[0]
         if start_hidden and self.control_hand:
             self.window.hide()  # tray start; without a chosen hand the setup screen must show
+
 
     @Property(str, notify=stateChanged)
     def stage(self):
@@ -236,6 +251,28 @@ class QtDashboard(QObject):
     @Slot()
     def markFailure(self):
         self.failure_mark_requested = True
+
+    @Slot()
+    def exportLogs(self):
+        """Zip the logs into Downloads (src/log_bundle.py) and show the file in Explorer."""
+        from src import log_bundle, updater
+        out_dir = Path.home() / "Downloads"
+        if not out_dir.is_dir():
+            out_dir = Path.home()
+        try:
+            path = log_bundle.build_bundle(LOG_DIR, DEFAULT_CONFIG_PATH, out_dir, updater.current_version(),
+                                           extra={"camera": self.metrics[0], "brightness": self.metrics[1]})
+        except OSError as exc:
+            self.export_text = f"로그를 묶지 못했습니다: {exc}"
+        else:
+            self.export_text = f"저장했습니다: {path}"
+            if sys.platform == "win32":
+                subprocess.Popen(["explorer", "/select,", str(path)])
+        self.failureChanged.emit()
+
+    @Property(str, notify=failureChanged)
+    def exportText(self):
+        return self.export_text
 
     def set_failures(self, summary, last_file):
         self.failure_summary, self.failure_last = summary, last_file
@@ -787,7 +824,53 @@ class QtDashboard(QObject):
 
     def poll(self):
         self.application.processEvents()
+        while self.ui_requests:
+            request = self.ui_requests.popleft()
+            if request == "toggle":
+                self.command(32)
+            elif request == "hide":
+                self.toggle_window()
         return self.commands.popleft() if self.commands else -1
+
+    def toggle_window(self):
+        if self.window.isVisible() and self.window.visibility() != self.window.Visibility.Minimized:
+            if self.hide_to_tray:
+                self.hideDashboard()
+            else:
+                self.window.showMinimized()
+        else:
+            self.showDashboard()
+
+    # ------------------------------------------------------------------ system-wide shortcuts
+    @Slot(str, str, result=str)
+    def setShortcut(self, action, combo):
+        """Change a shortcut; returns "" or why it was not taken (the old one then stays)."""
+        if action not in self.shortcuts:
+            return "알 수 없는 단축키입니다."
+        value = global_hotkeys.normalize(combo)
+        if value is None:
+            return "Ctrl·Alt·Shift 중 하나 이상과 글자·숫자·F키 하나를 함께 누르세요."
+        if any(v == value for a, v in self.shortcuts.items() if a != action):
+            return "다른 기능이 이미 쓰는 조합입니다."
+        old = dict(self.shortcuts)
+        self.shortcuts[action] = value
+        if action in self.hotkeys.set(self.shortcuts):
+            self.shortcuts = old
+            self.hotkeys.set(self.shortcuts)
+            return "다른 프로그램이 이미 쓰는 조합입니다. 다른 조합을 고르세요."
+        self.preferences.setValue(f"shortcut/{action}", value)
+        self.stateChanged.emit()
+        return ""
+
+    @Slot(str)
+    def resetShortcut(self, action):
+        if action in global_hotkeys.DEFAULTS:
+            self.setShortcut(action, global_hotkeys.DEFAULTS[action])
+
+    @Property("QVariantMap", notify=stateChanged)
+    def shortcutLabels(self):
+        return {action: global_hotkeys.label(combo) + (" (사용 불가)" if action in self.hotkeys.failed else "")
+                for action, combo in self.shortcuts.items()}
 
     def show(self, frame, detected, paused, action, fps, detect_ms, status="", contacts=()):
         state = (
@@ -829,6 +912,7 @@ class QtDashboard(QObject):
         if getattr(self, "_closed_qml", False):
             return
         self._closed_qml = True
+        self.hotkeys.stop()
         for root in self.engine.rootObjects():
             root.close()
             root.deleteLater()
