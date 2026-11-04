@@ -1,8 +1,14 @@
 // A2 (SCRUM-30): mouse settings, registered gestures and action bindings in one versioned record.
 // Every change is a whole-record transaction: validate, write once, read back, then commit in memory.
+// The key keeps its v1 name so existing records are found; the record carries its own version.
 export const SETTINGS_KEY = 'manux.settings.v1';
 export const SETTINGS_BACKUP_KEY = 'manux.settings.v1.backup';
-export const SETTINGS_VERSION = 1;
+export const SETTINGS_VERSION = 2;
+export const HANDS = Object.freeze(['right', 'left']);
+// Pointer choices shown in the desktop studio (src/pointer-guide.js). 'pinch' is not ported yet.
+export const POINTER_CHOICES = Object.freeze({hands: Object.freeze(['two', 'one']), engine: Object.freeze(['index', 'palm']), click: Object.freeze(['trigger', 'off']), anchor: Object.freeze(['index', 'palm'])});
+// Two hands by default (team choice 2026-11-04): the chosen hand moves, the other acts.
+const defaultPointer = () => ({hands: 'two', engine: 'index', click: 'trigger', anchor: 'index'});
 export const ENVIRONMENTS = Object.freeze(['desk']);
 export const SENSITIVITY = Object.freeze({min: 600, max: 3600, step: 100, default: 1800});
 export const MIN_AREA_SPAN = 0.2;
@@ -21,19 +27,23 @@ const noValidator = registrations => Object.keys(registrations).length === 0
 export function defaultSettings() {
   return {
     version: SETTINGS_VERSION, revision: 0, savedAt: null,
-    mouse: {sensitivity: SENSITIVITY.default, mainHand: 'right', area: {left: 0, top: 0, right: 1, bottom: 1}},
+    // mainHand null = not chosen yet: the desktop studio asks for the hand on first run.
+    mouse: {sensitivity: SENSITIVITY.default, mainHand: null, area: {left: 0, top: 0, right: 1, bottom: 1}, pointer: defaultPointer()},
     environments: Object.fromEntries(ENVIRONMENTS.map(env => [env, {registrations: {}, verifications: {}, bindings: {}}])),
   };
 }
 
 function mouseErrors(mouse) {
-  if (!exactKeys(mouse, ['sensitivity', 'mainHand', 'area'])) return ['mouse: 형식이 올바르지 않습니다.'];
+  if (!exactKeys(mouse, ['sensitivity', 'mainHand', 'area', 'pointer'])) return ['mouse: 형식이 올바르지 않습니다.'];
   const errors = [];
-  const {sensitivity, mainHand, area} = mouse;
+  const {sensitivity, mainHand, area, pointer} = mouse;
+  if (!exactKeys(pointer, Object.keys(POINTER_CHOICES)) || !Object.entries(POINTER_CHOICES).every(([key, values]) => values.includes(pointer[key]))) {
+    errors.push('mouse.pointer: 포인터 설정이 올바르지 않습니다.');
+  }
   if (!Number.isInteger(sensitivity) || sensitivity < SENSITIVITY.min || sensitivity > SENSITIVITY.max || sensitivity % SENSITIVITY.step !== 0) {
     errors.push(`mouse.sensitivity: ${SENSITIVITY.min}~${SENSITIVITY.max}, ${SENSITIVITY.step} 단위여야 합니다.`);
   }
-  if (mainHand !== 'right' && mainHand !== 'left') errors.push('mouse.mainHand: right 또는 left여야 합니다.');
+  if (mainHand !== null && !HANDS.includes(mainHand)) errors.push('mouse.mainHand: right, left 또는 null이어야 합니다.');
   if (!exactKeys(area, ['left', 'top', 'right', 'bottom']) || ![area.left, area.top, area.right, area.bottom].every(fraction)
     || area.right - area.left < MIN_AREA_SPAN || area.bottom - area.top < MIN_AREA_SPAN) {
     errors.push(`mouse.area: 0~1 비율이며 가로·세로가 ${MIN_AREA_SPAN} 이상이어야 합니다.`);
@@ -81,6 +91,15 @@ export function validateSettings(settings, {validateRegistrations = noValidator}
 }
 
 /**
+ * v1 -> v2: adds mouse.pointer (defaults) and mainHand gains "not chosen" (null). v1 always stored 'right' by default, so only an
+ * explicit 'left' is kept; everyone else is asked once. The first save writes version 2.
+ */
+function migrate(record) {
+  if (!isRecord(record) || record.version !== 1 || !isRecord(record.mouse)) return record;
+  return {...record, version: 2, mouse: {...record.mouse, mainHand: record.mouse.mainHand === 'left' ? 'left' : null, pointer: defaultPointer()}};
+}
+
+/**
  * Reads the stored record. Corrupt data is never deleted here: the app runs on defaults and the
  * first successful save copies the original to SETTINGS_BACKUP_KEY. A record from a newer app
  * version is opened read-only so an older install cannot overwrite it.
@@ -95,7 +114,7 @@ export function readSettings({storage, validateRegistrations} = {}) {
   if (raw === null) return {settings: defaultSettings(), status: 'empty', readOnly: false, raw, error: null};
   try {
     if (raw.length > MAX_SERIALIZED_LENGTH) throw new Error('저장 데이터가 너무 큽니다.');
-    const parsed = JSON.parse(raw);
+    const parsed = migrate(JSON.parse(raw));
     if (Number.isInteger(parsed?.version) && parsed.version > SETTINGS_VERSION) {
       return {settings: defaultSettings(), status: 'newer', readOnly: true, raw,
         error: '새 버전 MANUX에서 저장한 설정입니다. 이 버전에서는 바꾸지 않고 기본값으로 실행합니다.'};
@@ -178,9 +197,10 @@ export class SettingsStore {
 
   setMouse(patch) {
     return this.update(next => {
-      const {area, ...rest} = patch;
+      const {area, pointer, ...rest} = patch;
       Object.assign(next.mouse, rest);
       if (area) next.mouse.area = {...next.mouse.area, ...area};
+      if (pointer) next.mouse.pointer = {...next.mouse.pointer, ...pointer};
     });
   }
 

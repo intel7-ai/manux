@@ -21,6 +21,14 @@ try {
   const initial=await page.evaluate(() => window.manuxDesktop.getStatus());
   assert.equal(initial.enabled,false); assert.equal(initial.dryRun,true);
   assert.equal(await page.evaluate(() => typeof window.require),'undefined');
+  // The desktop app opens the Input Studio; a fresh profile has no chosen hand, so onboarding asks for one.
+  assert.equal(new URL(page.url()).pathname,'/studio.html');
+  await page.waitForFunction(() => document.querySelector('#onboarding')?.dataset.stage === 'welcome',{},{timeout:10000});
+  await page.locator('#onboarding-start').click();
+  await page.waitForFunction(() => document.querySelector('#capture-status')?.textContent === '한 손을 기다리는 중',{},{timeout:60000});
+  checks.push('studio onboarding: splash, welcome and hand capture with the camera running');
+  await page.goto(new URL('/', page.url()).href);
+  await page.waitForFunction(async () => (await window.manuxDesktop.getStatus()).available,{},{timeout:30000});
   assert.equal(await page.locator('#mouse-panel').isVisible(),true);
   checks.push('isolated desktop shell opens mouse mode with native control OFF');
   await page.locator('#camera-start').click();

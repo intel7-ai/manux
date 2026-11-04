@@ -34,7 +34,8 @@ test('empty storage starts on defaults and a mouse change survives an app restar
   store.setMouse({sensitivity: 2400, mainHand: 'left', area: {left: 0.1, right: 0.9}});
   const restarted = open(storage);
   assert.equal(restarted.status, 'loaded');
-  assert.deepEqual(restarted.settings.mouse, {sensitivity: 2400, mainHand: 'left', area: {left: 0.1, top: 0, right: 0.9, bottom: 1}});
+  assert.deepEqual(restarted.settings.mouse, {sensitivity: 2400, mainHand: 'left', area: {left: 0.1, top: 0, right: 0.9, bottom: 1},
+    pointer: {hands: 'two', engine: 'index', click: 'trigger', anchor: 'index'}});
   assert.equal(restarted.settings.revision, 1);
 });
 
@@ -241,4 +242,41 @@ test('settings handed out are copies, so callers cannot change committed state',
   const copy = store.settings;
   copy.mouse.sensitivity = 100;
   assert.equal(store.settings.mouse.sensitivity, 1800);
+});
+
+test('v1 records migrate to v2: an explicit left hand is kept, the old default right means not chosen', () => {
+  for (const [stored, expected] of [['right', null], ['left', 'left']]) {
+    const {pointer: _pointer, ...mouseV1} = defaultSettings().mouse;
+    const v1 = {...defaultSettings(), version: 1, mouse: {...mouseV1, mainHand: stored}};
+    const storage = memoryStorage();
+    storage.setItem(SETTINGS_KEY, JSON.stringify(v1));
+    const store = open(storage);
+    assert.equal(store.status, 'loaded');
+    assert.equal(store.settings.version, SETTINGS_VERSION);
+    assert.equal(store.settings.mouse.mainHand, expected);
+    store.setMouse({mainHand: 'right'});
+    assert.equal(JSON.parse(storage.getItem(SETTINGS_KEY)).version, 2, 'the first save writes v2');
+  }
+});
+
+test('the hand starts as not chosen and accepts only right, left or null', () => {
+  const store = open(memoryStorage());
+  assert.equal(store.settings.mouse.mainHand, null);
+  store.setMouse({mainHand: 'left'});
+  assert.equal(store.settings.mouse.mainHand, 'left');
+  store.setMouse({mainHand: null});
+  assert.equal(store.settings.mouse.mainHand, null);
+  assert.throws(() => store.setMouse({mainHand: 'both'}), /올바르지 않습니다/);
+});
+
+test('pointer settings default to the index trigger, persist, and reject unknown choices', () => {
+  const storage = memoryStorage();
+  const store = open(storage);
+  assert.deepEqual(store.settings.mouse.pointer, {hands: 'two', engine: 'index', click: 'trigger', anchor: 'index'});
+  store.setMouse({pointer: {click: 'off'}});
+  assert.deepEqual(open(storage).settings.mouse.pointer, {hands: 'two', engine: 'index', click: 'off', anchor: 'index'});
+  for (const pointer of [{click: 'pinch'}, {engine: 'both'}, {anchor: 'wrist'}, {hands: 'three'}]) assert.throws(() => store.setMouse({pointer}), /포인터 설정/);
+  const v1 = {...defaultSettings(), version: 1, mouse: {sensitivity: 1800, mainHand: 'right', area: defaultSettings().mouse.area}};
+  const old = memoryStorage(); old.setItem(SETTINGS_KEY, JSON.stringify(v1));
+  assert.deepEqual(open(old).settings.mouse.pointer, {hands: 'two', engine: 'index', click: 'trigger', anchor: 'index'});
 });

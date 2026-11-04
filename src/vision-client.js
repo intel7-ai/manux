@@ -11,7 +11,10 @@ export class VisionClient {
     createBitmap = (video) => createImageBitmap(video),
     initTimeoutMs = 45000,
     frameTimeoutMs = 10000,
+    numHands = 1,
   } = {}) {
+    if (numHands !== 1 && numHands !== 2) throw new RangeError('numHands must be 1 or 2.');
+    this.numHands = numHands;
     this.workerFactory = workerFactory;
     this.createBitmap = createBitmap;
     this.initTimeoutMs = initTimeoutMs;
@@ -67,7 +70,8 @@ export class VisionClient {
       };
       worker.onerror = (event) => this.close(new Error(event.message || '인식 처리 오류'));
       worker.onmessageerror = () => this.close(new Error('인식 결과를 읽을 수 없습니다.'));
-      this.initialization = this.request('init').then((result) => {
+      // Two hands only when asked: the two-hand studio mode. The original page tracks one.
+      this.initialization = this.request('init', {numHands:this.numHands}).then((result) => {
         if (this.closed) throw new Error('인식 처리가 종료되었습니다.');
         this.ready = true;
         return result;

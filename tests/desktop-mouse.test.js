@@ -20,6 +20,8 @@ test('camera and IPC document checks accept local fragments, reject other origin
   const request = {isMainFrame:true, requestingUrl:origin + '/#mouse', mediaTypes:['video']};
   assert.equal(isAppDocument(origin + '/', origin), true);
   assert.equal(isAppDocument(origin + '/#mouse', origin), true);
+  assert.equal(isAppDocument(origin + '/studio.html', origin), true);
+  for (const url of [origin + '/studio.html?x=1', origin + '/overlay.html', origin + '/studio.css']) assert.equal(isAppDocument(url, origin), false, url);
   for (const url of ['https://example.com/', origin + '/src/app.js', origin + '/?remote=true', 'http://localhost:4175/', 'not-a-url']) assert.equal(isAppDocument(url, origin), false);
   assert.equal(canRequestCamera(contents, contents, 'media', request, origin), true);
   assert.equal(canRequestCamera(contents, contents, 'media', {...request, mediaTypes:['video','audio']}, origin), false);
@@ -145,4 +147,45 @@ test('unsupported platform cannot enable native input', async t => {
   const status = await bridge.setEnabled(true);
   assert.equal(status.enabled, false);
   assert.equal(status.available, false);
+});
+
+function glideFixture() {
+  let now = 1000;
+  const timers = [];
+  const child = new EventEmitter();
+  child.stdin = new PassThrough(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+  child.kill = () => child.emit('exit', 0);
+  const commands = [];
+  child.stdin.on('data', chunk => commands.push(...String(chunk).trim().split('\n').map(JSON.parse)));
+  const bridge = new MouseBridge({platform:'win32', now:() => now, interpolate:true,
+    scheduler:{set:fn => { timers.push(fn); return timers.length; }, clear:() => {}},
+    spawnHelper:() => { queueMicrotask(() => child.stdout.write('{"kind":"ready"}\n')); return child; }});
+  const runTimers = () => { while (timers.length) timers.shift()(); };
+  const moved = () => commands.filter(c => c.kind === 'batch').flatMap(c => c.events).filter(e => e.type === 'move')
+    .reduce((sum, e) => [sum[0] + e.dx, sum[1] + e.dy], [0, 0]);
+  return {bridge, commands, runTimers, moved, advance:delta => { now += delta; }};
+}
+
+test('interpolation spreads one frame of movement over several small moves and loses none', async t => {
+  const {bridge, commands, runTimers, moved} = glideFixture(); t.after(() => bridge.close());
+  await bridge.setEnabled(true);
+  assert.equal(bridge.send([{type:'move', dx:90, dy:-45}]), true);
+  runTimers();
+  const batches = commands.filter(c => c.kind === 'batch');
+  assert.ok(batches.length > 2, 'the move is split into steps');
+  assert.deepEqual(moved(), [90, -45]);
+});
+
+test('a button flushes the remaining glide first, and stopping drops unsent movement', async t => {
+  const {bridge, commands, moved} = glideFixture(); t.after(() => bridge.close());
+  await bridge.setEnabled(true);
+  bridge.send([{type:'move', dx:60, dy:0}]);
+  bridge.send([{type:'button', button:'left', down:true}]);
+  const batches = commands.filter(c => c.kind === 'batch');
+  assert.deepEqual(moved(), [60, 0], 'all movement is written before the button');
+  assert.equal(batches.at(-1).events[0].type, 'button');
+  bridge.send([{type:'move', dx:80, dy:0}]);
+  const before = moved()[0];
+  bridge.disable();
+  assert.ok(moved()[0] - before < 80, 'unsent glide steps are dropped after stop');
 });

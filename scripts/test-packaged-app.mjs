@@ -44,6 +44,7 @@ try {
   const get = async pathname => fetch(`${origin}${pathname}`);
   assert.equal((await get('/health')).status, 200);
   assert.equal((await get('/')).status, 200);
+  assert.equal((await get('/studio.html')).status, 200);
   assert.equal((await get('/src/app.js')).status, 200);
   assert.equal((await get('/vendor/vision_bundle.mjs')).status, 200);
   const wasm = await get('/vendor/wasm/vision_wasm_internal.wasm');
@@ -64,7 +65,7 @@ try {
   const update = await page.evaluate(() => window.manuxDesktop.getUpdateStatus());
   assert.equal(update.enabled, false); assert.equal(update.state, 'disabled');
   const keys = await page.evaluate(() => Object.keys(window.manuxDesktop).sort());
-  assert.deepEqual(keys, ['checkForUpdates', 'getStatus', 'getUpdateStatus', 'installUpdate', 'onStatus', 'onUpdateStatus', 'send', 'setEnabled', 'stop']);
+  assert.deepEqual(keys, ['checkForUpdates', 'getStatus', 'getUpdateStatus', 'installUpdate', 'onStatus', 'onUpdateStatus', 'send', 'sendOverlayFrame', 'setEnabled', 'setOverlay', 'stop']);
   const install = await page.evaluate(() => window.manuxDesktop.installUpdate());
   assert.equal(install.ok, false, 'install is refused when no update is downloaded');
   checks.push('update API exposes only status/check/install/onUpdateStatus; disabled when MANUX_AUTO_UPDATE=0; install refused without a downloaded update');

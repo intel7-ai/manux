@@ -124,6 +124,32 @@ findSharedActions(bindings) -> [{actionId, gestureIds}]   // 같은 액션을 �
 
 **제안 (미구현, 앱 조립/R5):** 판정 → `resolveBinding` → `eventsForAction` → `bridge.send`/연습 영역 연결, 액션 실행 결과 기록, 연결 변경 시 반복·잠금 초기화. `mouse.pause` 처리(제어 끄기)도 앱 조립이 맡는다.
 
+**조작 방식 프리셋 (구현됨, 2026-11-04):** 모든 엔진은 `update({landmarks, now, enabled, quality, width, height}) -> {mode, phase, progress, events}`와 `reset()`을 같은 뜻으로 구현한다. `MouseWorkspace.makeController()`가 `#mouse-engine` 값으로 고른다.
+
+```js
+new IndexPointerController({sensitivity = 1800, clickStyle: 'trigger'|'off', anchor = 'index', screenWidth})
+// 실패: 범위 밖 값 → RangeError. update는 예외 없음.
+// phase: stale(같거나 오래된 시각, 이벤트 없음) | disabled | invalid(손 없음·품질 미달, 눌린 버튼 해제) | tracking | latched | holding
+// events: AirMouseController와 같은 move/button/release, 한 번에 8개 이하, 이동은 축별 100px 이하.
+new PointerEngine().step(t, points, aspect, {clickStyle, anchor, axes, config}, {active})
+  -> {action, preview, pointer, cursor, source, warp, latched, speed, armed, ratio, contacts} | null
+// hand-mouse/docs/engine-contract.md의 PointerFrame. 손이 없으면 null.
+buildOverlayFrame(landmarks, {mode, width, height}) -> {tips, contacts, mode} | null
+// 손 없음·퇴화한 손 → null(오버레이가 흐려짐). 알 수 없는 mode → 'other'.
+```
+
+**Input Studio 제어 세션 (구현됨, 2026-11-04):**
+
+```js
+new MouseSession({bridge, controller, clock, onChange, timers})
+session.start() / stop(text, error) / toggle() / setController(controller) / setOverlay(boolean)
+session.update({landmarks, now, quality, handedness, width, height, latency}) -> controller state
+// MouseWorkspace와 같은 안전 규칙: stale은 입력 유지·전송 없음, latency > 450ms·0.7초 정지면 stop(버튼 해제).
+// bridge가 없거나 available이 아니면 미리보기(전송 없음).
+new HandSelection(holdSeconds = 5).observe(detections, nowSeconds) -> 'right' | 'left' | ''
+selectedDetection(detections, side) -> 그 손 하나 | null   // 둘 이상이거나 없으면 null
+```
+
 ## 설정 저장소
 
 ```js
@@ -155,6 +181,8 @@ window.manuxDesktop.send(events) -> void
 // main 쪽 실패: 배치 8개 초과·허용 밖 이벤트·이동 100px/스크롤 240 초과·300ms 넘은 입력 → 제어 끄기(부분 실행 없음).
 window.manuxDesktop.stop() -> void
 window.manuxDesktop.onStatus(callback) -> unsubscribe
+window.manuxDesktop.setOverlay(boolean) -> Promise<boolean>   // 화면 손가락 표시 창 켜기/끄기. boolean이 아니면 TypeError
+window.manuxDesktop.sendOverlayFrame(frame) -> void           // main이 validateOverlayFrame으로 다시 검사, 형식이 다르면 버림
 // generation: 켤 때마다 증가. 이전 generation의 늦은 응답은 무시한다.
 ```
 
