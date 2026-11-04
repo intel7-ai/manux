@@ -447,6 +447,20 @@ ApplicationWindow {
                                 text: "방금 이상했어요 (F)"
                                 onClicked: dashboard.markFailure()
                             }
+                            ActionButton {
+                                Layout.fillWidth: true
+                                text: "로그 묶어 내보내기"
+                                onClicked: dashboard.exportLogs()
+                            }
+                            TextLabel {
+                                visible: dashboard.exportText !== ""
+                                Layout.fillWidth: true
+                                text: dashboard.exportText + "
+성능·실패 기록과 설정만 담깁니다. 영상, 창 제목, 프로필 이름은 넣지 않습니다."
+                                color: window.muted
+                                wrapMode: Text.Wrap
+                                font.pixelSize: 11
+                            }
                         }
                     }
                     Divider {}
