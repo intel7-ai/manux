@@ -26,6 +26,7 @@ import cv2
 
 from src import app_paths
 from src.failure_log import FailureRecorder
+from src.finger_overlay import overlay_frame
 from src.motion_mode import ACTION_LABELS, MotionMode
 from src.gesture_engine import GestureEngine, GestureResult
 from src.hand_crop import HandCrop
@@ -53,6 +54,7 @@ class UiState:
     show_fingertips: bool = False
     profile: Optional[str] = None       # calibration profile the user picked (None = no profile)
     motion_request: int = 0             # +1 each time the user presses the motion-mode button
+    finger_overlay: bool = False        # finger tracker drawn around the Windows cursor
 
 
 @dataclass
@@ -77,6 +79,7 @@ class Snapshot:
     recent_line: Optional[str] = None                     # new tracking result line
     message: str = ""                                      # one-off console message
     motion: Optional[Tuple[bool, float, str, float, float]] = None  # on, seconds left (0 = no timeout), last command, entering 0..1, leaving 0..1
+    hand: Optional[Dict[str, Any]] = None  # finger tracker around the cursor (src/finger_overlay.py), None = no hand / off
 
 
 def tracking_view(test: TrackingTest, cursor) -> Dict[str, Any]:
@@ -433,6 +436,8 @@ class QtRuntime:
             recent_line=self._pending_recent, message=self._pending_message,
             motion=(self.motion.active, self.motion.remaining(t0), self._motion_last, self.motion.entering(t0),
                     self.motion.leaving(t0)),
+            hand=(overlay_frame(detections[0].landmarks, camera.config.mirror, action)
+                  if ui.finger_overlay and detections and not self.paused else None),
         )
         self._pending_failures = self._pending_recent = None
         self._pending_message = ""
