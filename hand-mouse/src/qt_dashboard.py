@@ -12,14 +12,14 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 
-from src import profiles
+from src import app_paths, profiles
 from src.dashboard import ACTIONS
 from src.gesture_engine import DEFAULT_CONFIG_PATH
 from src.hand_selection import HandSelection, selected_detection
 from src.pointer_workspace import calibrated_pointer, pointer_axes
 from src.tracking_test import load_recent_results
 
-LOG_DIR = Path(__file__).resolve().parents[1] / "logs"
+LOG_DIR = app_paths.LOG_DIR
 RECENT_LIMIT = 5
 
 

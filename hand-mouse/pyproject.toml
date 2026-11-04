@@ -1,6 +1,6 @@
 [project]
 name = "hand-mouse"
-version = "0.1.0"
+version = "0.3.0"
 description = "Add your description here"
 readme = "README.md"
 authors = [
@@ -27,6 +27,11 @@ hand-mouse = "hand_mouse:main"
 [project.optional-dependencies]
 qt = [
     "pyside6-essentials>=6.8,<7",
+]
+# Installed app build (packaging/build.ps1): PyInstaller makes MANUX.exe, velopack is bundled for updates
+package = [
+    "pyinstaller>=6.22",
+    "velopack>=1.2,<2",
 ]
 
 [build-system]

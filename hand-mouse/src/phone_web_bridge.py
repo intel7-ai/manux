@@ -34,6 +34,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
+from src import app_paths
+
 
 MOBILE_CAMERA_HTML = """<!DOCTYPE html>
 <html lang="ko">
@@ -471,7 +473,7 @@ class PhoneWebCameraServer:
     def __init__(self, port: int = 8443, cert_dir: Optional[Path] = None) -> None:
         self.port = port
         self.host_ip = get_local_ip()
-        base_dir = cert_dir or (Path(__file__).resolve().parent.parent / "models" / "certs")
+        base_dir = cert_dir or app_paths.CERT_DIR
         self.cert_path, self.key_path = ensure_self_signed_cert(base_dir, self.host_ip)
         self.url = f"https://{self.host_ip}:{self.port}"
 

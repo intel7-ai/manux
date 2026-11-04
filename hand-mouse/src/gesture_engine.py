@@ -27,9 +27,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
-from src import profiles
+from src import app_paths, profiles
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "gestures.json"
+DEFAULT_CONFIG_PATH = app_paths.user_config_path()
 
 VALID_ACTIONS = {
     "none",
