@@ -1,0 +1,8 @@
+{
+  "name": "manux-touch-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {"start": "electron .", "test": "node --test tests/workspace.test.cjs"},
+  "devDependencies": {"electron": "45.2.1"}
+}

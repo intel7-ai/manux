@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MANUX Touch Desktop</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'none'">
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-icon">m</span><strong>MANUX</strong><span class="brand-sub">Touch Desktop</span><span class="new-label">NEW BUILD</span></div>
+  <div class="top-actions"><span id="connection"><i></i>연결 중</span><button id="pause" class="quiet">잠시 멈춤</button><button id="native" class="primary">PC 제어 시작 <span>↗</span></button></div>
+</header>
+<div class="mode-banner" id="native-banner" hidden><span>지금 실제 PC를 제어하고 있습니다.</span><span>Esc · 실제 마우스를 움직이면 즉시 정지</span><button id="native-stop">정지</button></div>
+<main>
+  <section class="work-column">
+    <div class="section-heading"><div><p class="eyebrow">HANDS ON</p><h1>손으로, 직접 해보세요.</h1></div><div class="practice-pill" id="output-mode">연습 공간</div></div>
+    <nav class="tabs" aria-label="동작별 연습">
+      <button class="selected" data-scope="all">전체</button><button data-scope="click">클릭</button><button data-scope="scroll">스크롤</button><button data-scope="drag">잡고 놓기</button><button data-scope="zoom">확대</button>
+    </nav>
+    <div class="workspace" id="workspace">
+      <div class="workspace-head"><span id="scene-title">작은 작업대</span><span id="scene-subtitle">마우스로도 똑같이 시험할 수 있습니다</span><button id="reset" title="연습 초기화">↻ 초기화</button></div>
+      <div class="desktop-scene" id="scene">
+        <section class="click-task" id="click-task"><div class="task-number">01 <span>클릭 · 더블클릭</span></div><p class="task-description">검지를 톡 눌렀다가 펴세요.</p>
+          <div class="targets"><button class="target mint" data-target="1"><span>01</span><small>선택</small></button><button class="target cream" data-target="2"><span>02</span><small>두 번 클릭</small></button><button class="target violet" data-target="3"><span>03</span><small>선택</small></button></div>
+          <div class="task-feedback" id="click-feedback">버튼을 선택하면 여기에 결과가 표시됩니다.</div>
+        </section>
+        <section class="scroll-task" id="scroll-task"><div class="task-number">02 <span>스크롤</span></div><div class="scroll-list" id="scroll-list" tabindex="0" aria-label="스크롤 연습 목록">
+          <div><span>01</span> 오늘의 할 일 <b>↓</b></div><div><span>02</span> 새 프로젝트 시작</div><div><span>03</span> 자료 모으기</div><div><span>04</span> 스케치 해보기</div><div><span>05</span> 커피 한 잔</div><div><span>06</span> 잠깐 쉬어가기</div><div><span>07</span> 다시 이어가기</div><div><span>08</span> 마지막 항목 <b>✓</b></div>
+        </div></section>
+        <section class="drag-task" id="drag-task"><div class="task-number">03 <span>잡고 놓기</span></div><p class="task-description">손을 펴고 옆으로 시작 · 접어서 놓기</p><div class="drag-surface" id="drag-surface"><div id="drop-zone">이곳에 놓으세요<span>DROP HERE</span></div><div id="file-card" role="button" tabindex="0"><span class="file-icon">▤</span><strong>아이디어</strong><small>가져다 놓기</small></div></div></section>
+        <section class="zoom-task" id="zoom-task"><div class="task-number">04 <span>확대 · 축소</span><strong id="zoom-ratio">100%</strong></div><div class="zoom-viewport" id="zoom-viewport"><div class="poster" id="poster"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="poster-text">MAKE<br>ROOM.</div><small>for your ideas.</small></div><span id="zoom-badge">엄지·검지를 모아 시작</span></div></section>
+      </div>
+      <div id="hand-cursor" hidden><div></div></div>
+      <div class="paused-cover" id="paused-cover" hidden><strong>잠시 쉬는 중</strong><span>상단에서 다시 시작하세요.</span></div>
+    </div>
+    <div class="receipts"><div><span class="receipt-dot"></span><span id="receipt">실제로 실행된 결과를 이곳에 표시합니다</span></div><span id="receipt-count">클릭 0 · 더블 0 · 놓기 0</span></div>
+    <footer class="guide"><span class="guide-icon">↗</span><div><strong id="guide-title">검지는 가리키고, 나머지는 편하게.</strong><p id="guide-description">검지 누르기 → 클릭 · 편 손의 시작 방향 → 스크롤 / 잡기 · 엄지와 검지 간격 → 확대</p></div><button id="show-help">동작 안내</button></footer>
+  </section>
+  <aside>
+    <section class="camera-panel"><div class="panel-title"><h2>내 손</h2><span id="resolution">카메라 연결 중</span></div><div id="camera-wrap"><img id="preview" alt="내 카메라 화면"><canvas id="landmarks"></canvas><span class="camera-badge" id="camera-badge">손 대기</span><div class="camera-empty" id="camera-empty">카메라를 연결하고 있습니다…</div></div><div class="camera-toolbar"><button id="mirror">↔ 좌우 반전</button><button id="rotate">↻ 회전</button><select id="quality" aria-label="카메라 해상도"><option value="1920">1080p</option><option value="1280">720p</option></select></div></section>
+    <section class="live-panel"><div class="panel-title"><h2>지금 인식한 동작</h2><span class="live-dot">LIVE</span></div><div class="live-state"><span id="state-icon">◎</span><div><strong id="state-label">손을 보여주세요</strong><p id="state-reason">카메라 안에서 검지를 가리켜 보세요.</p></div></div><div class="press-meter"><span>검지 누름</span><div><i id="press-fill"></i></div><small id="press-value">0%</small></div><div class="metrics"><div><strong id="fps">—</strong><span>카메라 FPS</span></div><div><strong id="latency">—</strong><span>추론 ms</span></div><div><strong id="input-age">—</strong><span>입력 나이 ms</span></div></div></section>
+    <section class="settings-panel"><div class="panel-title"><h2>내 손에 맞추기</h2><span>자동 저장</span></div>
+      <label class="slider-label" for="area">손을 움직일 범위 <output id="area-value">77%</output></label><input id="area" data-setting="area_scale" type="range" min="35" max="95" value="77"><div class="range-labels"><span>작게 움직이기</span><span>넓게 움직이기</span></div>
+      <label class="slider-label" for="stability">떨림 보정 <output id="stability-value">60%</output></label><input id="stability" data-setting="stability" type="range" min="0" max="100" value="60"><div class="range-labels"><span>빠르게</span><span>안정적으로</span></div>
+      <label class="slider-label" for="tap">누르기 깊이 <output id="tap-value">65%</output></label><input id="tap" data-setting="tap_enter" type="range" min="25" max="100" value="65"><div class="range-labels"><span>가볍게</span><span>확실하게</span></div>
+      <button id="calibrate" class="outline">내 검지 누르기 맞추기 <span>10초</span></button><div id="calibration" hidden><p id="calibration-message"></p><progress id="calibration-progress" max="1"></progress></div>
+    </section>
+    <div class="bottom-tools"><button id="save-record">동작 기록 저장</button><button id="open-records">기록 폴더 ↗</button></div><p id="notice" aria-live="polite">영상은 저장하지 않습니다. 최근 30초의 관절 수치만 기록합니다.</p>
+  </aside>
+</main>
+<dialog id="help"><div class="dialog-heading"><h2>이렇게 사용하세요</h2><button id="close-help">닫기 ✕</button></div><ol><li><strong>이동</strong><p>검지를 가리킨 상태에서 손을 움직입니다. 카메라의 점선 안이 화면 전체에 대응합니다.</p></li><li><strong>클릭 · 더블클릭</strong><p>검지를 누르듯 살짝 움직였다가 펴세요. 두 번 반복하면 더블클릭입니다. 누르는 동안 커서는 고정됩니다.</p></li><li><strong>스크롤 · 잡고 놓기</strong><p>손바닥을 완전히 편 뒤 위아래로 시작하면 스크롤, 좌우로 시작하면 잡기입니다. 잡은 뒤에는 어느 방향이든 이동하고, 손을 접으면 놓습니다.</p></li><li><strong>확대 · 끝내기</strong><p>엄지와 검지를 잠시 모아 시작한 뒤 간격을 벌리거나 좁힙니다. 손바닥을 펴면 배율이 확정됩니다. 손을 편하게 접으면 다시 이동할 수 있습니다.</p></li></ol><p class="help-note">PC 제어를 멈추려면 Esc. 실제 마우스를 움직여도 정지합니다.<br>단안 웹캠은 실제 접촉을 측정하지 않습니다. 검지 누름이 안 보이면 카메라 각도나 내 검지 맞추기를 조정하세요.</p></dialog>
+<script src="workspace.js"></script><script src="app.js"></script>
+</body></html>
