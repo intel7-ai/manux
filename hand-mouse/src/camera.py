@@ -53,6 +53,9 @@ class CameraStream:
         self._consumed_id = 0
         self._grab_ok = True
         self.dropped_frames = 0
+        # perf_counter() when the frame read() returned last was captured (grab thread) or read
+        self.last_frame_t = 0.0
+        self._latest_t = 0.0
 
     @staticmethod
     def parse_source(source_str: Union[int, str]) -> Union[int, str]:
@@ -132,6 +135,7 @@ class CameraStream:
                     if self._latest_id != self._consumed_id:
                         self.dropped_frames += 1  # an older frame was never processed: skip it
                     self._latest = frame
+                    self._latest_t = time.perf_counter()
                     self._latest_id += 1
                     self._grab_ok = True
                 else:
@@ -156,6 +160,7 @@ class CameraStream:
             if self._latest_id == self._consumed_id or self._latest is None:
                 return False, None
             self._consumed_id = self._latest_id
+            self.last_frame_t = self._latest_t
             return True, self._latest
 
     def read(self) -> tuple[bool, Optional[np.ndarray]]:
@@ -177,6 +182,7 @@ class CameraStream:
             ok, frame = self._read_latest()
         else:
             ok, frame = self.cap.read()
+            self.last_frame_t = time.perf_counter()
         if not ok or frame is None:
             if self.config.auto_reconnect and self.is_network_stream:
                 time.sleep(0.1)

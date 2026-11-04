@@ -4,6 +4,11 @@ Once-per-second performance log (logs/perf_latest.csv, overwritten every run).
 Records FPS, hand-detection time, whole-loop time, camera frames skipped and which
 program is in the foreground, so lag that only appears while another program is on
 screen can be traced to its cause (CPU contention vs camera vs window refresh).
+
+Since 2026-11-04 also where each frame's time goes (Qt mode): how old the camera frame was when
+processing started (frame_age: capture buffer / waiting), then detect (MediaPipe incl. crop
+retry), decide (engine + mouse output + preview drawing) and rest (failure log, tracking test,
+snapshot for the UI). Columns are only appended, so older readers keep working.
 """
 
 from __future__ import annotations
@@ -12,12 +17,17 @@ import csv
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 HEADER = [
     "time", "fps", "detect_ms_avg", "detect_ms_max", "loop_ms_avg", "loop_ms_max",
     "camera_frames_skipped", "hand_mouse_in_front", "foreground_window",
+    "frame_age_ms_avg", "frame_age_ms_max", "stage_detect_ms_avg", "stage_decide_ms_avg", "stage_rest_ms_avg",
 ]
+
+
+def _avg(values: List[float]) -> str:
+    return f"{sum(values) / len(values):.1f}" if values else ""
 
 
 def foreground_window_title() -> str:
@@ -41,6 +51,8 @@ class PerfLog:
         self.interval = interval
         self._det: List[float] = []
         self._loop: List[float] = []
+        self._age: List[float] = []
+        self._stages: List[List[float]] = [[], [], []]
         self._last_write = time.perf_counter()
         self._last_dropped = 0
         self._file = None
@@ -53,10 +65,16 @@ class PerfLog:
         except OSError:
             self._file = None
 
-    def frame(self, detect_ms: Optional[float], loop_ms: float) -> None:
+    def frame(self, detect_ms: Optional[float], loop_ms: float, frame_age_ms: Optional[float] = None,
+              stages_ms: Optional[Tuple[float, float, float]] = None) -> None:
         if detect_ms is not None:
             self._det.append(detect_ms)
         self._loop.append(loop_ms)
+        if frame_age_ms is not None and frame_age_ms >= 0:
+            self._age.append(frame_age_ms)
+        if stages_ms is not None:
+            for bucket, value in zip(self._stages, stages_ms):
+                bucket.append(value)
 
     def tick(self, fps: float, dropped_total: int) -> None:
         now = time.perf_counter()
@@ -73,11 +91,16 @@ class PerfLog:
             dropped_total - self._last_dropped,
             "yes" if title.startswith("Hand-Mouse") else "no",
             title,
+            _avg(self._age), f"{max(self._age):.1f}" if self._age else "",
+            *(_avg(bucket) for bucket in self._stages),
         ])
         self._file.flush()
         self._last_dropped = dropped_total
         self._det.clear()
         self._loop.clear()
+        self._age.clear()
+        for bucket in self._stages:
+            bucket.clear()
 
     def close(self) -> None:
         if self._file is not None:

@@ -50,9 +50,11 @@ class QtTray(QObject):
         self.overlay_action = QAction("상태 표시", menu)
         self.overlay_action.setCheckable(True)
         self.overlay_action.toggled.connect(dashboard.setOverlayVisible)
+        logs_action = QAction("로그 묶어 내보내기", menu)
+        logs_action.triggered.connect(dashboard.exportLogs)
         quit_action = QAction("종료", menu)
         quit_action.triggered.connect(dashboard.quitApp)
-        for action in (self.control_action, show_action, test_action, self.overlay_action):
+        for action in (self.control_action, show_action, test_action, self.overlay_action, logs_action):
             menu.addAction(action)
         menu.addSeparator()
         menu.addAction(quit_action)

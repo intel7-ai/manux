@@ -307,6 +307,7 @@ class QtRuntime:
         else:
             detections = []
             self._det_path = "skipped"
+        t_detected = time.perf_counter()
         all_detections = list(detections)
         # every hand MediaPipe returned this frame, before the control-hand filter below
         self._raw_hands = [[d.handedness, round(float(d.score), 2)] for d in all_detections]
@@ -417,6 +418,7 @@ class QtRuntime:
         elif not index_mode:
             result = engine.process(None)
 
+        t_decided = time.perf_counter()
         if roi is not None:
             cv2.rectangle(frame, roi[:2], roi[2:], (189, 229, 70), 2, cv2.LINE_AA)
         self._failures(t0, detections, roi, index_mode, ui, frame, result, frame_out)
@@ -445,7 +447,11 @@ class QtRuntime:
             self._snap = snap
             self._cond.notify_all()
         if self.perf_log is not None:
-            self.perf_log.frame(tracker.last_detect_ms if should_detect else None, (time.perf_counter() - t0) * 1000.0)
+            t_end = time.perf_counter()
+            self.perf_log.frame(tracker.last_detect_ms if should_detect else None, (t_end - t0) * 1000.0,
+                                frame_age_ms=(t0 - camera.last_frame_t) * 1000.0 if camera.last_frame_t else None,
+                                stages_ms=((t_detected - t0) * 1000.0, (t_decided - t_detected) * 1000.0,
+                                           (t_end - t_decided) * 1000.0))
             self.perf_log.tick(camera.fps, camera.dropped_frames)
 
     def _motion_blocked(self, t0: float) -> bool:
