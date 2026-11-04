@@ -1,0 +1,48 @@
+name: hand-mouse (Windows)
+
+# The Python hand-mouse app runs on Windows; check it there, not only on Linux.
+on:
+  pull_request:
+    paths: ["hand-mouse/**", ".github/workflows/hand-mouse.yml"]
+  push:
+    branches: [preview, production]
+    paths: ["hand-mouse/**", ".github/workflows/hand-mouse.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hand-mouse-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: hand-mouse tests + Qt smoke (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: hand-mouse
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - run: uv sync --locked --extra qt
+      - name: pytest
+        run: uv run --locked --extra qt python -m pytest -q -p no:cacheprovider
+      - name: Qt dashboard + tracking window smoke (real Windows window, no camera)
+        run: uv run --locked --extra qt python scripts/windows_smoke.py ../smoke-out
+      - name: Main loop smoke (real main.py --ui qt, fake 30 fps camera)
+        run: uv run --locked --extra qt python scripts/loop_smoke.py
+      - name: Main loop smoke in tray mode (--headless)
+        run: uv run --locked --extra qt python scripts/loop_smoke.py --headless
+      - name: Smoke evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: hand-mouse-windows-smoke
+          path: smoke-out/
+          if-no-files-found: ignore
+          retention-days: 7

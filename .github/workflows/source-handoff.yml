@@ -1,0 +1,39 @@
+name: MANUX source handoff
+
+# Pick a reviewed branch in Actions → Run workflow. This is a download, not deployment.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manux-handoff-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source-handoff:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run verify
+      - run: npm run browser:install
+      - run: npm run test:browser
+      - run: npm run test:native
+      - run: npm run release:prepare
+      - name: Downloadable source and SHA-256 manifest
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: manux-source-${{ github.sha }}
+          path: .local/releases/*
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14

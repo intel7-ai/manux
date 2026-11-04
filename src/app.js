@@ -2,11 +2,13 @@ import {GestureController} from './gesture-controller.js';
 import {applyMediaAction, ACTION_NAMES, formatTime} from './media-controller.js';
 import {VisionClient} from './vision-client.js';
 import {cameraConstraints, describeCamera} from './camera.js';
-import {extractFeatures, getHandQuality, trainEnvironment, classifyPersonal} from './personalization.js';
+import {extractFeatures, getHandQuality, trainEnvironment, classifyPersonal, validateRegistrations} from './personalization.js';
 import {readProfiles, writeProfiles} from './profile-store.js';
 import {EnrollmentController} from './enrollment.js';
 import {extractOrientation, VIEW_LABELS} from './orientation.js';
 import {renderAngleCoverage} from './enrollment-view.js';
+import {MouseWorkspace} from './mouse-workspace.js';
+import {SettingsStore} from './settings-store.js';
 
 const $ = selector => document.querySelector(selector);
 const player = $('#player'), camera = $('#camera'), canvas = $('#landmarks');
@@ -27,6 +29,26 @@ let session = 0, raf = 0, lastVideoTime = -1, lastInference = 0, mediaUrl = null
 let cameraInfo = null, lastResultAt = null, fps = 0, lastStatsAt = 0;
 let enrollment = null, enrollmentModel = null, enrollmentContext = null, enrollmentError = null;
 let previewMoveId = 0;
+let controlMode = 'media';
+// Registrations are checked with G1's validator. Bindings stay closed until C3 passes allowedActions (docs/settings-store.md).
+const settingsStore = new SettingsStore({validateRegistrations});
+const mouse = new MouseWorkspace({sensitivity:settingsStore.settings.mouse.sensitivity, onSensitivityChange:sensitivity => {
+  try { settingsStore.setMouse({sensitivity}); }
+  catch (error) { mouse.status(`감도를 저장하지 못했습니다. ${error.message}`, true); }
+}});
+
+function switchMode(mode) {
+  disableGestures(); cancelEnrollment('제어 모드를 바꿔 등록을 취소했습니다.');
+  controlMode = mode; mouse.setActive(mode === 'mouse');
+  document.querySelectorAll('.media-only').forEach(el => { el.hidden = mode !== 'media'; });
+  $('#mouse-panel').hidden = mode !== 'mouse';
+  $('#mode-media').setAttribute('aria-selected', String(mode === 'media'));
+  $('#mode-mouse').setAttribute('aria-selected', String(mode === 'mouse'));
+  $('#hold-progress').style.width = '0%';
+  if (mode === 'mouse') player.pause();
+}
+$('#mode-media').addEventListener('click', () => switchMode('media'));
+$('#mode-mouse').addEventListener('click', () => switchMode('mouse'));
 
 function message(id, text, error = false) {
   $(id).textContent = text;
@@ -185,6 +207,7 @@ function cancelEnrollment(reason = '') {
   if (reason) message('#profile-message', reason);
 }
 function beginEnrollment() {
+  mouse.stop();
   const profile = currentProfile(); if (!profile || !ready || enrollment) return;
   disableGestures();
   enrollment = new EnrollmentController({prepareMs:$('#environment').value === 'sofa' ? 5000 : 3000, captureMs:2000, sampleIntervalMs:150, minSamplesPerView:12});
@@ -328,6 +351,15 @@ function processResult(packet, now, roundTripMs) {
     }
     return;
   }
+  if (controlMode === 'mouse') {
+    const state = mouse.update({landmarks, now, quality:quality.ok, handedness:result.handedness?.[0]?.[0]?.categoryName || null, ...dimensions, latency:roundTripMs});
+    $('#recognition-label').textContent = !handPresent ? '손을 보여주세요' : !quality.ok ? '입력 보류' : $('#mouse-mode').textContent;
+    $('#confidence').textContent = '손바닥 위치 · 손가락 간격';
+    $('#hold-progress').style.width = `${Math.round((state?.progress || 0) * 100)}%`;
+    if (!quality.ok) message('#camera-message', qualityText(quality, handPresent));
+    else message('#camera-message', '손바닥 중심으로 이동합니다. 손가락을 붙여 클릭·스크롤을 사용하세요.');
+    return;
+  }
   const state = gate.update({gesture, score, now, handPresent, neutral, quality:quality.ok, enabled:$('#gesture-enabled').checked});
   $('#hold-progress').style.width = `${Math.round(state.progress * 100)}%`;
   document.querySelectorAll('[data-gesture]').forEach(el => el.classList.toggle('active', quality.ok && el.dataset.gesture === gesture && score >= gate.minConfidence));
@@ -340,10 +372,12 @@ function processResult(packet, now, roundTripMs) {
 }
 function infer(token) {
   if (token !== session || !ready) return;
-  raf = requestAnimationFrame(() => infer(token));
+  // Desktop input must keep receiving fresh frames while another app covers this window.
+  // requestAnimationFrame can stop for an occluded window even with background throttling off.
+  raf = globalThis.manuxDesktop ? setTimeout(() => infer(token), 16) : requestAnimationFrame(() => infer(token));
   const now = performance.now();
   advanceEnrollment(now);
-  if (!vision || vision.busy || now - lastInference < 50 || camera.readyState < 2 || camera.currentTime === lastVideoTime) return;
+  if (!vision || vision.busy || now - lastInference < (controlMode === 'mouse' ? 30 : 50) || camera.readyState < 2 || camera.currentTime === lastVideoTime) return;
   lastInference = now; lastVideoTime = camera.currentTime;
   const client = vision;
   client.recognize(camera, now).then(packet => {
@@ -356,7 +390,10 @@ function infer(token) {
   });
 }
 function stopCamera() {
-  session++; ready = false; cancelAnimationFrame(raf); disableGestures();
+  mouse.setReady(false);
+  session++; ready = false;
+  if (globalThis.manuxDesktop) clearTimeout(raf); else cancelAnimationFrame(raf);
+  disableGestures();
   cancelEnrollment('카메라가 종료되어 진행 중인 등록을 취소했습니다.');
   vision?.close(); vision = null;
   stream?.getTracks().forEach(track => track.stop()); stream = null;
@@ -394,6 +431,7 @@ $('#camera-start').addEventListener('click', async () => {
     if (token !== session) return;
     if (stream.getVideoTracks().some(track => track.readyState !== 'live')) throw new Error('카메라 연결이 종료되었습니다.');
     ready = true; lastVideoTime = -1; lastInference = 0; lastResultAt = null; fps = 0;
+    mouse.setReady(true);
     gate.reset(); $('#camera-empty').hidden = true; $('#camera-start').textContent = '카메라 연결됨';
     badge('인식 중', 'on'); refreshProfile(); syncMedia();
     if (warmup) drawHands(warmup.result.landmarks);
@@ -408,11 +446,17 @@ $('#camera-start').addEventListener('click', async () => {
 });
 $('#camera-stop').addEventListener('click', () => { stopCamera(); message('#camera-message', '카메라와 손동작 제어를 종료했습니다.'); });
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') { disableGestures(); cancelEnrollment('Esc를 눌러 등록을 취소했습니다.'); message('#camera-message', 'Esc를 눌러 손동작 제어를 껐습니다.'); }
+  if (event.key === 'Escape') { mouse.stop('Esc를 눌러 마우스 제어를 껐습니다.'); disableGestures(); cancelEnrollment('Esc를 눌러 등록을 취소했습니다.'); message('#camera-message', 'Esc를 눌러 손동작 제어를 껐습니다.'); }
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { disableGestures(); cancelEnrollment('창을 벗어나 진행 중인 등록을 취소했습니다.'); message('#camera-message', '창을 벗어나 손동작 제어를 껐습니다. 다시 켜서 사용하세요.'); }
+  if (document.hidden) {
+    if (!mouse.backgroundAllowed) mouse.stop('창을 벗어나 연습 제어를 껐습니다.');
+    disableGestures(); cancelEnrollment('창을 벗어나 진행 중인 등록을 취소했습니다.');
+    if (!mouse.backgroundAllowed) message('#camera-message', '창을 벗어나 손동작 제어를 껐습니다. 다시 켜서 사용하세요.');
+  }
 });
 window.addEventListener('beforeunload', () => { stopCamera(); if (mediaUrl) URL.revokeObjectURL(mediaUrl); });
 renderProfiles(profiles[0]?.id || ''); syncMedia();
+if (location.hash === '#mouse' || globalThis.manuxDesktop) switchMode('mouse');
+if (settingsStore.error) mouse.status(settingsStore.error, true);
 if (stored.error) message('#profile-message', `${stored.error} 기존 데이터를 보호하기 위해 새 저장을 멈췄습니다. 공통 모델은 사용할 수 있습니다.`, true);

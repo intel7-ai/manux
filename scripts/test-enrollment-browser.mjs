@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {pathToFileURL, fileURLToPath} from 'node:url';
+import {fileURLToPath} from 'node:url';
+import {loadPlaywright, browserOptions} from './browser-runtime.mjs';
 import assert from 'node:assert/strict';
 import {createServer} from '../server.js';
 import {extractOrientation, orientationFeedback, VIEWS} from '../src/orientation.js';
@@ -11,9 +12,7 @@ import {getHandQuality, extractFeatures, POSES} from '../src/personalization.js'
 // The Worker and camera are replaced ONLY in this disposable test context.
 // This does not measure MediaPipe tracking, webcam accuracy, or supported distance.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const playwrightPath = process.env.PLAYWRIGHT_MODULE || path.join(process.env.USERPROFILE,
-  '.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
-const {chromium} = await import(pathToFileURL(playwrightPath));
+const {chromium} = await loadPlaywright();
 const reference = JSON.parse(await fs.readFile(path.join(root,'tests/fixtures/personalization-reference.json'),'utf8'));
 const width = 1920, height = 1080;
 const dot = (a,b) => a.reduce((sum,n,i) => sum+n*b[i],0);
@@ -86,7 +85,7 @@ const readState=async()=>page.evaluate(()=>({
   profiles:JSON.parse(localStorage.getItem('manux.profiles.v1')||'[]')
 }));
 try {
-  browser=await chromium.launch({channel:'chrome',headless:true,args:['--autoplay-policy=no-user-gesture-required']});
+  browser=await chromium.launch(browserOptions({args:['--autoplay-policy=no-user-gesture-required']}));
   context=await browser.newContext({viewport:{width:1366,height:900}});
   await context.addInitScript(({geometry,width,height})=>{
     const NativeWorker=window.Worker;

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MANUX task v1",
+  "description": "The coordinator converts a natural-language request into this record. Scope directories end in /. The runtime validator also rejects secrets, sensitive paths and control characters.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "objective",
+    "acceptanceCriteria",
+    "scope",
+    "baselineCommit"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "requestId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+      "maxLength": 64
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^(?:$|(?=.*\\S)[^\\u0000-\\u001f\\u007f]+)$"
+    },
+    "acceptanceCriteria": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 240,
+        "pattern": "^(?:$|(?=.*\\S)[^\\u0000-\\u001f\\u007f]+)$"
+      },
+      "uniqueItems": true
+    },
+    "scope": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 30,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 240,
+        "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[\\\\<>:\"|?*])[^\\u0000-\\u001f\\u007f]+$"
+      },
+      "uniqueItems": true
+    },
+    "baselineCommit": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    }
+  }
+}

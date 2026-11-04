@@ -1,5 +1,7 @@
 # 다음 개발을 위한 모듈 계약
 
+> 2026-11-02: 사용자 요청으로 별도의 [마우스 모드와 Windows 실행 계약](air-mouse.md)을 추가했다. 아래 내용은 기존 단일 등록 기능의 계획이며, 마우스 모드는 기존 프로필이나 영상 명령을 변경하지 않는다.
+
 기준일: 2026-10-29. **이 문서의 `Proposed` API와 스키마는 설계안이며 현재 앱에 구현돼 있지 않다.** D1에 R2·R3·R4·R5가 합의한 뒤 계약 테스트와 함께 도입한다. 기존 API를 변경할 때 소비 모듈도 같은 통합 PR에서 갱신한다.
 
 ## 1. 현재 결합 지점
@@ -138,3 +140,41 @@ P0는 기존 네 명령 동작을 보존한다. P1에서는 수락된 동작 ID�
 | 손 소실·손 바뀜·늦은 결과·관찰 공백 | R1·R4 / R3 |
 
 새 테스트는 이 계약의 경계를 검증한다. 구현의 내부 반복문을 그대로 복제하는 테스트로 완료를 주장하지 않는다.
+
+## 9. G1 구현 현황과 후속 파트에 제안하는 인터페이스 (SCRUM-23, 2026-11-02)
+
+이 절은 `codex/scrum-23-gesture-enrollment`에서 **구현된 부분**과 **다른 담당이 확인해야 하는 제안**을 구분한다. 구현은 기존 API(`POSES`, `trainEnvironment`, `classifyPersonal`, `EnrollmentController.start({now, environment})`)를 바꾸지 않고 추가만 한다. 합성 특징으로 시험했으며 실제 웹캠·사용자 인식률은 측정하지 않았다.
+
+### 9.1 구현됨 — `src/personalization.js`
+
+| 함수/상수 | 계약 |
+| --- | --- |
+| `validGestureId(id)` | `builtin.<slug>` 또는 `custom:<영문숫자_-, 최대 48자>`만 허용. 표시 이름·액션과 무관한 불투명 ID. |
+| `trainGesture({gestureId, viewSamples, existingRegistrations, rejectionExamples})` | **동작 하나**의 후보를 학습. 입력 형식 오류는 예외. 불안정·충돌·거부 예시 근접은 `{candidate:null, usable:false, reason, conflicts, diagnostics}`로 반환하고 기존 등록은 변경하지 않음. 5개 각도(`front/left/right/up/down`)마다 12개 이상 표본 필요. |
+| `registerGesture(registrations, candidate)` | 선택한 `gestureId` 하나만 추가·교체한 **새 레코드**를 반환(입력 불변). 최대 `MAX_REGISTERED_GESTURES`(12)개. 등록 시점에 `trainGesture`와 같은 최소 거리(`0.035`) 규칙으로 **다른** 등록과의 충돌을 다시 검사해, 후보 학습 뒤 다른 동작이 추가된 경우의 오래된 후보는 `RangeError`로 거절한다(기존 등록 불변). 기존 레코드가 유효하지 않으면 `TypeError`. 같은 ID의 재등록은 충돌로 보지 않는다. |
+| `removeGesture(registrations, gestureId)` | 해당 ID만 제거한 새 레코드. 형식이 잘못된 ID는 `TypeError`. 형식이 맞지만 등록돼 있지 않은 ID는 **오류 없이 같은 내용의 복사본을 반환**(멱등). 삭제 여부를 사용자에게 알려야 하면 호출자가 입력에서 `Object.hasOwn`으로 확인한다. 바인딩 삭제는 호출자가 같은 트랜잭션에서 처리. |
+| `validateRegistrations(registrations)` | 저장/불러오기 데이터 검사. 키와 `gestureId` 일치, 모델 버전 3, `actionId` 필드 금지. |
+| `classifyRegisteredGesture({features, registrations})` | 등록된 동작만 대상으로 개방 집합 판정. 결과 `kind`: `match`/`unknown`/`invalid`. 한 동작만 있으면 `margin: null`이며 허용 반경만으로 수락. 이유: `outside-enrollment`, `ambiguous-gesture`, `no-registrations`, `invalid-features`, `invalid-model`. 수락되지 않으면 `gestureId: null`. |
+
+등록 레코드(`modelVersion: 3`, `featuresVersion: 1`)는 `{gestureId, modelVersion, featuresVersion, featureCount, model:{views}, viewCoverage, rejection:{examples}}`이다. `verification`, `verifiedAt`, `bindings`는 저장 계층(A2)이 후보 검증 뒤에 붙이는 제안 필드이며 이번 구현이 만들지 않는다.
+
+거부 정책: `rejectionExamples`(쉬는 자세, 타이핑, 다른 손 모양의 특징 벡터)를 주면 해당 예시 쪽으로 허용 반경을 줄이고, 예시가 후보와 너무 가까우면 후보를 보류한다. 예시가 없으면 `diagnostics.rejectionEvidence === 'none'`이며 허용 반경만으로 거부한다. 사용 가능 판정에 거부 예시를 필수로 할지는 팀 결정 사항이다(§4의 `insufficient-rejection-evidence`는 아직 구현하지 않음). `neutral` 종류는 반환하지 않고, 쉬는 자세는 거부 예시로 다룬다.
+
+### 9.2 구현됨 — `src/enrollment.js`
+
+`EnrollmentController.start({now, environment, gestureId})`에서 `gestureId`를 주면 **그 동작 하나**를 5개 각도로 수집한다(`totalSteps: 5`). 이때 `snapshot().pose`와 `samplesByPose`/`sampleGroupsByPose`/`verification`의 키는 `gestureId`이고 `snapshot().gestureId`로도 노출된다. 생략하면 기존 5개 고정 자세 흐름 그대로다. `verify`는 `classifyRegisteredGesture` 결과(`gestureId`) 또는 기존 `classifyPersonal` 결과(`gesture`)를 `match`로 받는다. 컨트롤러는 저장된 등록을 갖지 않으므로 취소·실패·시간 초과가 다른 등록을 바꾸지 않는다.
+
+**등록 중 명령 차단.** 구현된 것은 순수 함수 `commandsSuppressed(snapshot)`이다. `idle`과 `cancelled`일 때만 `false`이고, 수집·확인·`captured`·`verified`·`failed` 등 나머지 단계는 모두 `true`이며 스냅샷이 없거나 형식·단계를 알 수 없어도 `true`(안전 쪽)다. 이 함수는 판단만 하며 명령을 직접 막지 않는다. 호출자(`app.js`, R5)의 의무(미구현·제안): ① 모든 인식 결과마다 최신 `snapshot()`으로 이 함수를 호출하고 `true`이면 영상·마우스 명령, 반복 타이머, 잠금 후보를 만들지 않는다. ② 저장하거나 버린 뒤에는 `cancel()`로 세션을 끝낸다(그때까지 `captured`/`verified`/`failed`도 차단 상태다). ③ 등록을 시작할 때 진행 중인 반복·잠금을 초기화한다. 시험은 컨트롤러 단계별 반환값만 확인하며 실제 `app.js` 연결은 확인하지 않았다.
+
+### 9.3 제안 — 다른 파트에서 필요한 연결 (미구현, 담당자 확인 필요)
+
+- **R5/A2 저장**: 프로필 `environments.<env>.registrations`(§2의 `Record<gestureId, registration>`)에 `validateRegistrations`를 연결하고, 저장은 `registerGesture`/`removeGesture` 결과를 한 번에 기록한 뒤 메모리를 바꾼다. `saveEnrollment`의 환경 모델 전체 교체는 사용자 정의 동작에 쓰지 않는다. `validateProfile`(프로필 v1)은 변경하지 않았다.
+- **R4/U2 온보딩**: 동작 선택 → `start({gestureId})` → `captured`에서 `trainGesture({viewSamples: sampleGroupsByPose[id], existingRegistrations, rejectionExamples})` → 후보를 임시 레코드로 `classifyRegisteredGesture`에 넣어 `startVerification` → `verified`에서만 저장. 사용자에게는 이유 코드(`reason`)를 안내 문구로 바꿔 보여준다.
+- **R2/C3 액션 연결**: 바인딩은 `{gestureId, actionId, enabled}`로 등록과 분리한다. 판정이 `accepted:false`이면 명령이 없으며 공통 모델로 우회하지 않는다. 바인딩이 없는 등록 동작은 명령 없음이다.
+- **G2(SCRUM-24)**: 현재 충돌 검사는 최소 거리(`0.035`)와 반경 축소만 한다. 유사 동작 안내 문구와 미등록 동작 거부 평가는 G2에서 확장한다.
+
+### 9.4 한계
+
+- 합성 특징 시험이며 실제 손·웹캠·사용자별 성공률, 오실행, 지연은 측정하지 않았다.
+- 5개 각도 수집·확인 시간은 기존 값을 그대로 사용한다. 사용자 부담을 줄이는 `capturePolicy`(각도 수 축소)는 구현하지 않았다.
+- `app.js`는 변경하지 않았으므로 화면에서는 아직 사용자 정의 동작을 등록할 수 없다. 이 PR은 엔진·계약 부분이다.

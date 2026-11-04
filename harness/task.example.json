@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "requestId": "MANUX-EXAMPLE",
+  "objective": "예시: 커서 이동을 멈추면 눌린 버튼이 해제되는지 확인한다.",
+  "acceptanceCriteria": [
+    "손 추적이 끊기면 눌린 버튼이 해제된다."
+  ],
+  "scope": [
+    "src/air-mouse-controller.js",
+    "tests/air-mouse-controller.test.js"
+  ],
+  "baselineCommit": "0000000000000000000000000000000000000000"
+}

@@ -1,17 +1,45 @@
 <!doctype html>
 <html lang="ko">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MANUX · 손으로 영상 제어</title><link rel="stylesheet" href="/styles.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MANUX · 손으로 움직이는 마우스</title><link rel="stylesheet" href="/styles.css"></head>
 <body>
-<header><img class="brand" src="/assets/manux.svg" alt="MANUX"><span class="header-note">손으로 영상 제어</span><span class="local-tag">LOCAL DEMO · 02</span></header>
+<header><img class="brand" src="/assets/manux.svg" alt="MANUX"><span class="header-note">손으로 움직이는 마우스</span><span class="local-tag">LOCAL DEMO · 03</span></header>
 <main>
-  <section class="intro"><div><p class="eyebrow">YOUR HANDS, YOUR SPACE</p><h1>내 손에 맞게.<br><span>내 자리에서 편하게.</span></h1></div><p class="intro-copy">책상과 소파에서 각각 동작을 등록하세요.<br>짧게 유지하면 한 번, 다른 동작으로 바로 전환.</p></section>
+  <section class="intro"><div><p class="eyebrow">YOUR HANDS, YOUR SPACE</p><h1>손을 움직이면,<br><span>커서도 함께.</span></h1></div><p class="intro-copy">카메라 앞에서 손동작으로 이동·클릭·스크롤.<br>먼저 연습하고, 데스크톱 앱에서 실제 마우스를 제어하세요.</p></section>
+  <div class="mode-tabs" role="tablist" aria-label="제어 방식"><button id="mode-media" type="button" role="tab" aria-selected="true" aria-controls="media-panel">영상 제어</button><button id="mode-mouse" type="button" role="tab" aria-selected="false" aria-controls="mouse-panel">마우스 제어</button></div>
   <div class="workspace">
-    <section class="player-panel" aria-labelledby="player-title">
+    <section id="media-panel" class="player-panel media-only" role="tabpanel" aria-labelledby="mode-media">
       <div class="section-heading"><h2 id="player-title">영상 플레이어</h2><label class="file-button" for="video-file">영상 파일 열기<input id="video-file" type="file" accept="video/*"></label></div>
       <div class="video-wrap"><video id="player" controls playsinline preload="metadata" aria-label="제어할 영상"></video><div class="video-empty" id="video-empty"><span class="empty-symbol">▶</span><strong>제어할 영상을 선택하세요</strong><p>MP4 · WebM 등 브라우저가 지원하는 파일</p><button id="demo-load" class="secondary">90초 테스트 영상 열기</button></div></div>
       <div class="video-details"><span id="video-name">선택한 영상 없음</span><span id="time-display">00:00 / 00:00</span></div>
       <div class="manual-controls" aria-label="영상 직접 조작"><button data-action="backward" disabled><span>−10</span>10초 뒤로</button><button data-action="play" disabled><span>▶</span>재생</button><button data-action="pause" disabled><span>Ⅱ</span>일시정지</button><button data-action="forward" disabled><span>+10</span>10초 앞으로</button></div>
       <p id="media-message" class="message" role="status">파일은 이 브라우저에서만 재생됩니다.</p>
+    </section>
+    <section id="mouse-panel" class="mouse-panel" role="tabpanel" aria-labelledby="mode-mouse" hidden>
+      <div class="section-heading"><h2 id="mouse-title">마우스 연습</h2><span id="mouse-mode" class="status-pill">대기 중</span></div>
+      <div class="mouse-toolbar">
+        <label for="mouse-target">제어 대상</label>
+        <select id="mouse-target"><option value="practice">이 화면에서 연습</option><option value="desktop" disabled>Windows 마우스 · 데스크톱 앱 필요</option></select>
+        <button id="mouse-stop" type="button" class="secondary">제어 중지</button>
+      </div>
+      <p id="mouse-target-note" class="small-note">연습 모드에서는 아래 영역의 커서만 움직입니다.</p>
+      <div id="mouse-pad" class="mouse-pad" aria-label="마우스 이동, 클릭, 드래그, 스크롤 연습 영역">
+        <div class="mouse-pad-label">PRACTICE</div>
+        <div class="mouse-click-task"><button id="mouse-click-target" type="button">여기를 클릭</button><span>좌클릭 <strong id="mouse-click-count">0</strong>회</span></div>
+        <div id="mouse-drag-zone" class="mouse-drag-zone" aria-hidden="true">이쪽으로 옮겨보세요</div>
+        <div id="mouse-drag-target" class="mouse-drag-target" aria-label="드래그 연습 조각"><span aria-hidden="true">⠿</span><strong>잡고 이동</strong></div>
+        <div class="mouse-scroll-task"><div class="mouse-scroll-heading"><strong>스크롤 연습</strong><span id="mouse-scroll-value">0px</span></div><div id="mouse-scroll-area" class="mouse-scroll-area" tabindex="0" aria-label="스크롤 연습 문서"><p><b>01</b>손을 편하게 펴고 엄지와 약지를 붙이세요.</p><p><b>02</b>붙인 채 손 전체를 위아래로 움직이세요.</p><p><b>03</b>글이 움직이면 스크롤 성공입니다.</p><p><b>04</b>손을 멈추면 스크롤도 멈춥니다.</p><p><b>05</b>손가락을 접거나 주먹을 쥐면 입력을 쉽니다.</p><p><b>06</b>다시 손을 편하게 펴면 커서를 움직입니다.</p><p><b>07</b>반대 방향으로도 움직여보세요.</p><p><b>08</b>끝까지 내려왔습니다.</p></div></div>
+        <div id="mouse-context-menu" class="mouse-context-menu" role="status" hidden><strong>우클릭 성공</strong><span>엄지와 중지를 떼면 다시 사용할 수 있어요.</span></div>
+        <div id="mouse-cursor" class="mouse-cursor" aria-hidden="true"><svg viewBox="0 0 28 36" width="28" height="36"><path d="M3 2L3 28L10 22L15 33L21 30L16 20L25 20Z" fill="currentColor" stroke="#112331" stroke-width="2" stroke-linejoin="round"/></svg></div>
+      </div>
+      <div class="mouse-control-row"><label class="control-toggle"><input id="mouse-enabled" type="checkbox" disabled><span>마우스 제어 켜기</span></label><label class="mouse-sensitivity" for="mouse-sensitivity">이동 감도 <output id="mouse-sensitivity-output" for="mouse-sensitivity">1800</output><input type="range" id="mouse-sensitivity" min="600" max="3600" step="100" value="1800"></label></div>
+      <p id="mouse-status" class="message" role="status">카메라를 시작한 뒤 마우스 제어를 켜세요.</p>
+      <div class="mouse-guide" aria-label="마우스 손동작 안내">
+        <article data-mouse-mode="move"><span class="mouse-guide-number">01</span><div><h3>손을 편하게 펴고 이동</h3><p>손 전체를 움직여 커서 이동<br>커서는 손바닥 중심을 따라갑니다</p></div></article>
+        <article data-mouse-mode="left"><span class="mouse-guide-number">02</span><div><h3>엄지 + 검지 붙이기</h3><p>붙였다 떼면 좌클릭<br>붙인 채 움직이면 드래그</p></div></article>
+        <article data-mouse-mode="right"><span class="mouse-guide-number">03</span><div><h3>엄지 + 중지 붙이기</h3><p>한 번 우클릭<br>떼었다 다시 붙여 재실행</p></div></article>
+        <article data-mouse-mode="scroll"><span class="mouse-guide-number">04</span><div><h3>엄지 + 약지 붙이기</h3><p>붙인 채 손 전체를 위아래로<br>움직여 스크롤</p></div></article>
+      </div>
+      <p class="mouse-stop-note">손끝 대신 손바닥 중심으로 이동을 읽습니다. 손가락을 접거나 주먹을 쥐면 쉬고, 손을 내리면 입력을 멈춥니다.<br><kbd>Esc</kbd> 이 창에서 중지 · <kbd>Ctrl + Alt + M</kbd> 데스크톱 어디서든 중지</p>
     </section>
     <section class="camera-panel" aria-labelledby="camera-title">
       <div class="section-heading"><h2 id="camera-title">손동작 인식</h2><span class="status-pill" id="camera-badge">카메라 꺼짐</span></div>
@@ -20,13 +48,13 @@
       <div class="camera-options"><label for="resolution">요청 해상도</label><select id="resolution"><option value="1080">1080p · 권장</option><option value="720">720p</option><option value="480">480p · 성능 비교</option></select></div>
       <p id="camera-stats" class="small-note">연결 후 실제 입력 해상도를 표시합니다.</p>
       <div class="camera-actions"><button id="camera-start" class="primary">카메라 시작</button><button id="camera-stop" class="secondary" disabled>카메라 끄기</button></div>
-      <label class="control-toggle"><input id="gesture-enabled" type="checkbox" disabled><span>손동작 제어 켜기</span><kbd>Esc</kbd></label>
-      <label class="control-toggle repeat-toggle"><input id="repeat-enabled" type="checkbox"><span>동작 유지 시 10초 이동 반복<small>앞으로·뒤로만 · 첫 실행 후 약 1초마다</small></span></label>
+      <label class="control-toggle media-only"><input id="gesture-enabled" type="checkbox" disabled><span>손동작 제어 켜기</span><kbd>Esc</kbd></label>
+      <label class="control-toggle repeat-toggle media-only"><input id="repeat-enabled" type="checkbox"><span>동작 유지 시 10초 이동 반복<small>앞으로·뒤로만 · 첫 실행 후 약 1초마다</small></span></label>
       <p id="camera-message" class="message" role="status">카메라 시작 후 브라우저의 카메라 접근을 허용하세요.</p>
-      <details><summary>인식 설정 · 반응 조절</summary><label>동작 유지 시간 <output id="hold-output">0.30초</output><input type="range" id="hold-time" min="150" max="1000" step="50" value="300"></label><label>공통 모델 진입 점수 <output id="confidence-output">70%</output><input type="range" id="min-confidence" min="55" max="95" step="5" value="70"></label><p>점수는 정확도 백분율이 아닙니다. 개인 등록은 손 관절 특징으로 별도 판정합니다. 짧은 흔들림은 허용하며, 반복 옵션이 꺼져 있다면 같은 명령을 다시 쓰기 전에 중립 자세로 쉬거나 손을 0.5초 이상 내려주세요. 설정을 바꾸면 제어가 꺼집니다.</p></details>
+      <details class="media-only"><summary>인식 설정 · 반응 조절</summary><label>동작 유지 시간 <output id="hold-output">0.30초</output><input type="range" id="hold-time" min="150" max="1000" step="50" value="300"></label><label>공통 모델 진입 점수 <output id="confidence-output">70%</output><input type="range" id="min-confidence" min="55" max="95" step="5" value="70"></label><p>점수는 정확도 백분율이 아닙니다. 개인 등록은 손 관절 특징으로 별도 판정합니다. 짧은 흔들림은 허용하며, 반복 옵션이 꺼져 있다면 같은 명령을 다시 쓰기 전에 중립 자세로 쉬거나 손을 0.5초 이상 내려주세요. 설정을 바꾸면 제어가 꺼집니다.</p></details>
     </section>
   </div>
-  <section class="personal-panel" aria-labelledby="personal-title">
+  <section class="personal-panel media-only" aria-labelledby="personal-title">
     <div class="section-heading"><div><p class="eyebrow">PERSONAL SETUP</p><h2 id="personal-title">사용자별 동작 등록</h2></div><span id="profile-mode" class="status-pill">공통 모델</span></div>
     <div class="profile-grid">
       <div><label class="field-label" for="profile-select">사용자</label><div class="field-row"><select id="profile-select"><option value="">공통 모델 사용</option></select><button id="profile-delete" class="text-button" disabled>삭제</button></div><form id="profile-form" class="field-row"><input id="profile-name" aria-label="새 사용자 이름" placeholder="새 사용자 이름" maxlength="32" required><button class="secondary" id="profile-add">추가</button></form></div>
@@ -56,7 +84,7 @@
     </dialog>
     <p class="small-note">카메라 영상은 저장하지 않습니다. 관절 특징만 이 브라우저에 저장됩니다. 위치는 직접 선택하며, 손이 너무 작거나 화면 밖으로 잘리면 실행을 보류합니다.</p>
   </section>
-  <section class="gestures" aria-label="네 가지 손동작"><article data-gesture="Open_Palm"><span class="gesture-icon">✋</span><div><h3>손바닥</h3><p>일시정지</p></div><span class="key">PAUSE</span></article><article data-gesture="Thumb_Up"><span class="gesture-icon">👍</span><div><h3>엄지척</h3><p>재생</p></div><span class="key">PLAY</span></article><article data-gesture="Victory"><span class="gesture-icon">✌️</span><div><h3>V 모양</h3><p>10초 앞으로</p></div><span class="key">+10 SEC</span></article><article data-gesture="Closed_Fist"><span class="gesture-icon">✊</span><div><h3>주먹</h3><p>10초 뒤로</p></div><span class="key">−10 SEC</span></article></section>
-  <section class="activity"><div class="section-heading"><h2>최근 실행</h2><button id="clear-log" class="text-button">기록 지우기</button></div><ol id="event-log"><li class="empty-log">동작을 실행하면 시간과 결과가 표시됩니다.</li></ol></section>
-  <footer><span>웹캠 영상은 서버로 전송하거나 저장하지 않습니다.</span><span>Esc: 손동작 제어 끄기 · 이 창의 영상만 제어</span></footer>
+  <section class="gestures media-only" aria-label="네 가지 손동작"><article data-gesture="Open_Palm"><span class="gesture-icon">✋</span><div><h3>손바닥</h3><p>일시정지</p></div><span class="key">PAUSE</span></article><article data-gesture="Thumb_Up"><span class="gesture-icon">👍</span><div><h3>엄지척</h3><p>재생</p></div><span class="key">PLAY</span></article><article data-gesture="Victory"><span class="gesture-icon">✌️</span><div><h3>V 모양</h3><p>10초 앞으로</p></div><span class="key">+10 SEC</span></article><article data-gesture="Closed_Fist"><span class="gesture-icon">✊</span><div><h3>주먹</h3><p>10초 뒤로</p></div><span class="key">−10 SEC</span></article></section>
+  <section class="activity media-only"><div class="section-heading"><h2>최근 실행</h2><button id="clear-log" class="text-button">기록 지우기</button></div><ol id="event-log"><li class="empty-log">동작을 실행하면 시간과 결과가 표시됩니다.</li></ol></section>
+  <footer><span>웹캠 영상은 서버로 전송하거나 저장하지 않습니다.</span><span>브라우저: 화면 안에서 연습 · 데스크톱 앱: Windows 마우스 제어</span></footer>
 </main><script type="module" src="/src/app.js"></script></body></html>

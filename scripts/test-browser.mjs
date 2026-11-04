@@ -1,9 +1,9 @@
-import fs from 'node:fs/promises';import path from 'node:path';import{pathToFileURL,fileURLToPath}from'node:url';import assert from'node:assert/strict';import{createServer}from'../server.js';
+import fs from 'node:fs/promises';import path from 'node:path';import{fileURLToPath}from'node:url';import assert from'node:assert/strict';import{createServer}from'../server.js';
+import {loadPlaywright, browserOptions} from './browser-runtime.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const playwrightPath=process.env.PLAYWRIGHT_MODULE||path.join(process.env.USERPROFILE,'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
-const{chromium}=await import(pathToFileURL(playwrightPath));
+const{chromium}=await loadPlaywright();
 const server=createServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}`;
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream','--enable-unsafe-swiftshader']});
+const browser=await chromium.launch(browserOptions({args:['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream','--enable-unsafe-swiftshader']}));
 const context=await browser.newContext({viewport:{width:1440,height:1100},permissions:['camera']});const page=await context.newPage();
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 await page.route('**/test-assets/*',async route=>{const name=new URL(route.request().url()).pathname.split('/').pop();const p=name==='webm-muxer.mjs'?path.join(root,'node_modules/webm-muxer/build/webm-muxer.mjs'):path.join(root,'tests/fixtures',name);await route.fulfill({body:await fs.readFile(p),contentType:name.endsWith('.mjs')?'text/javascript':'image/jpeg'});});
