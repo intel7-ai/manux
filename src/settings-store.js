@@ -130,7 +130,7 @@ export function readSettings({storage, validateRegistrations} = {}) {
 /** Holds the last committed record. A failed change throws and leaves memory and storage as they were. */
 export class SettingsStore {
   constructor({storage, validateRegistrations = noValidator, allowedActions = [], now = () => new Date()} = {}) {
-    Object.assign(this, {storage: storage ?? globalThis.localStorage, validateRegistrations, now});
+    Object.assign(this, {storage, validateRegistrations, now});
     this.allowedActions = new Set(allowedActions);
     this.load();
   }
@@ -146,7 +146,10 @@ export class SettingsStore {
   update(change) {
     if (this.readOnly) throw new Error(this.error ?? '설정을 저장할 수 없습니다.');
     let stored;
-    try { stored = this.storage.getItem(SETTINGS_KEY); } catch (error) { throw new Error(`설정 저장소를 사용할 수 없습니다. ${error.message}`); }
+    try {
+      this.storage ??= globalThis.localStorage;
+      stored = this.storage.getItem(SETTINGS_KEY);
+    } catch (error) { throw new Error(`설정 저장소를 사용할 수 없습니다. ${error.message}`); }
     // Another window saved since this one loaded; refuse instead of overwriting its changes.
     if (stored !== this.raw) throw new Error('다른 창에서 설정이 바뀌었습니다. 앱을 다시 열어 주세요.');
     const next = structuredClone(this.current);
@@ -164,9 +167,15 @@ export class SettingsStore {
     } catch (error) {
       throw new Error(`설정을 저장하지 못했습니다. 기존 설정은 그대로입니다. ${error.message}`);
     }
-    if (this.storage.getItem(SETTINGS_KEY) !== serialized) {
-      this.restoreRaw();
-      throw new Error('설정 저장을 확인하지 못했습니다. 기존 설정은 그대로입니다.');
+    try {
+      if (this.storage.getItem(SETTINGS_KEY) !== serialized) throw new Error('저장값이 일치하지 않습니다.');
+    } catch (error) {
+      if (!this.restoreRaw()) {
+        this.readOnly = true;
+        this.error = `설정 저장과 이전 값 복원을 확인하지 못했습니다. 앱을 다시 열어 저장소를 확인하세요. ${error.message}`;
+        throw new Error(this.error);
+      }
+      throw new Error(`설정 저장을 확인하지 못했습니다. 기존 설정은 그대로입니다. ${error.message}`);
     }
     Object.assign(this, {current: next, status: 'loaded', raw: serialized, error: null});
     return this.settings;
@@ -176,7 +185,8 @@ export class SettingsStore {
     try {
       if (this.raw === null) this.storage.removeItem(SETTINGS_KEY);
       else this.storage.setItem(SETTINGS_KEY, this.raw);
-    } catch { /* The read-back already failed; nothing safer is available. */ }
+      return this.storage.getItem(SETTINGS_KEY) === this.raw;
+    } catch { return false; }
   }
 
   environment(next, name) {
