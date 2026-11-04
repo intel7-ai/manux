@@ -32,11 +32,11 @@
 
 1. 현재 Git 상태를 확인하고 요청을 `harness/task.schema.json` 형식으로 정리한다. 비전공자에게 JSON 작성을 요구하지 않는다. 목표·완료 기준·허용 파일·기준 커밋을 기록하고, Jira가 없다는 이유만으로 진행을 막지 않는다.
 2. 실패를 재현한다. 환경, 입력 순서, 예상/실제 결과를 기록하고 원인 가설을 사실과 분리한다.
-3. 본인 브랜치에서 작은 변경을 구현하고 앱을 실행하여 확인한다. Discord worker는 최대 5개 독립 worktree에서 병렬 진행한다. 신규 worktree는 원격 production의 정확한 SHA에서 시작하며 공유 checkout의 미커밋 변경을 복제하지 않는다. worker는 다른 worker나 공유 checkout을 수정하지 않는다.
+3. 본인 브랜치에서 작은 변경을 구현하고 앱을 실행하여 확인한다. Discord worker는 최대 5개 독립 worktree에서 병렬 진행한다. 신규 worktree는 원격 preview의 정확한 SHA에서 시작하며 공유 checkout의 미커밋 변경을 복제하지 않는다. worker는 다른 worker나 공유 checkout을 수정하지 않는다.
 4. `npm run verify`와 변경에 필요한 브라우저/Windows 검사를 실행한다. 실패를 숨기기 위해 테스트를 삭제하거나 기대값만 맞추지 않는다. 수정 뒤에는 관련 검증을 다시 실행한다.
 5. `harness/result.schema.json` 형식으로 실제 증거·한계를 기록하고 `npm run task:report -- TASK.json RESULT.json`으로 보고서를 만든다. 본인 브랜치를 push하여 `preview` 대상 PR을 연다. PR의 필수 검사·시험용 Windows 설치파일을 확인하고 머지한 뒤 preview에서 시험한다. production에는 `preview → production` PR로만 반영한다. 공유 checkout에 코드를 먼저 통합하는 절차는 두지 않는다. 로컬 리뷰가 필요한 복잡한 변경만 별도 reviewer를 사용한다.
 
-작업 기록은 `.local/harness/<requestId>/task.json`, `result.json`에 둔다. 폴더와 ID는 일치시킨다. 신규 Discord worker는 조정자가 절대 경로로 전달한 task.json을 자기 작업 폴더에 복사하고, 구현 전에 `baselineCommit`을 `.local/discord-baseline.json`의 `sourceHead`로 확정한다. 생성 훅이 접수 때보다 최신 production을 조회할 수 있기 때문이다. 기존 진행 중 작업의 기준은 변경하지 않는다. 완료 후 조정자는 확정된 task.json과 result.json 둘 다 공유 checkout의 같은 위치에 복사하고 worker의 원본 기록을 보존한다. 코드는 작업 브랜치에 둔다. Git에 올릴 PR에는 민감정보를 제거한 보고서와 검사 증거만 첨부한다.
+작업 기록은 `.local/harness/<requestId>/task.json`, `result.json`에 둔다. 폴더와 ID는 일치시킨다. 신규 Discord worker는 조정자가 절대 경로로 전달한 task.json을 자기 작업 폴더에 복사하고, 구현 전에 `baselineCommit`을 `.local/discord-baseline.json`의 `sourceHead`로 확정한다. 생성 훅이 접수 때보다 최신 preview를 조회할 수 있기 때문이다. 기존 진행 중 작업의 기준은 변경하지 않는다. 완료 후 조정자는 확정된 task.json과 result.json 둘 다 공유 checkout의 같은 위치에 복사하고 worker의 원본 기록을 보존한다. 코드는 작업 브랜치에 둔다. Git에 올릴 PR에는 민감정보를 제거한 보고서와 검사 증거만 첨부한다.
 
 ## 모든 사용자에게 같은 응답
 
