@@ -71,3 +71,25 @@ dialog #enroll-overall{font-size:11px;min-height:0;margin:6px 0;color:#3d7663}di
 .mouse-stop-note{font-size:11px;line-height:1.9;color:var(--muted);margin:14px 0 0}.mouse-stop-note kbd{display:inline-block;margin:0 3px;white-space:nowrap}
 @media(max-width:1050px){.mouse-click-task{left:16px;width:calc(46% - 21px)}#mouse-click-target{padding:13px 12px;font-size:13px}.mouse-drag-zone{left:16px;width:calc(46% - 21px);font-size:10px}.mouse-scroll-task{right:13px;width:calc(54% - 10px)}.mouse-drag-target{left:20px;width:95px}.mouse-toolbar{gap:8px}.mouse-toolbar label{display:none}.mouse-scroll-heading{padding:12px 10px}.mouse-scroll-area{padding:0 10px}.mouse-control-row{gap:12px;grid-template-columns:1.1fr 1fr}.mouse-guide{grid-template-columns:1fr}.mouse-guide article{padding:12px 0}.mouse-guide p br{display:none}.mouse-guide h3{margin-bottom:4px}}
 @media(max-width:720px){.mode-tabs{margin-bottom:20px}.mode-tabs button{flex:1;padding:11px 16px}.mouse-guide{grid-template-columns:1fr 1fr;column-gap:12px}.mouse-guide h3{font-size:12px}.mouse-guide p{font-size:11px}.mouse-guide p br{display:block}.mouse-pad{height:350px}.mouse-scroll-heading{font-size:11px}.mouse-scroll-area p{font-size:11px}.mouse-control-row{grid-template-columns:1fr}.mouse-sensitivity{padding:0 3px}.mouse-toolbar select{font-size:12px}.mouse-toolbar button{font-size:12px}.mouse-stop-note{font-size:10px}.mouse-guide-number{width:22px;height:22px}}
+
+/* Pointer settings, action guide and camera metrics (ported from the Qt dashboard, hand-mouse/src/dashboard.qml) */
+.pointer-settings{display:grid;gap:8px;margin:12px 0 4px}
+.seg-row{display:grid;grid-template-columns:86px 1fr;gap:10px;align-items:center}
+.seg-row[hidden]{display:none}
+.seg-label{font-size:12px;color:var(--muted);font-weight:650}
+.segmented{display:flex;gap:4px}
+.segmented button{flex:1;min-width:0;border:2px solid transparent;border-radius:8px;padding:7px 8px;font-size:12px;background:#f0f3f6;color:var(--muted);cursor:pointer}
+.segmented button.selected{background:var(--mint);color:var(--ink);font-weight:700}
+.segmented button:focus-visible{border-color:#16846e;outline:none}
+.segmented button:disabled{color:#a9b6c0;cursor:not-allowed}
+.action-guide{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:10px 0}
+.action-guide h3{font-size:13px;margin:0 0 6px}
+.action-guide dl{display:grid;grid-template-columns:1fr auto;gap:4px 12px;margin:0;font-size:12px}
+.action-guide dt{font-weight:700}
+.action-guide dd{margin:0;color:var(--muted);text-align:right}
+.mouse-details{margin:6px 0 10px;font-size:12px}
+.mouse-details summary{cursor:pointer;color:var(--muted)}
+.camera-chips{display:flex;gap:6px;align-items:center}
+.status-pill.warn{background:#fff1d6;color:#8a5a00;border:1px solid #f2b544}
+.low-light-banner{position:absolute;left:12px;right:12px;top:12px;margin:0;padding:8px 10px;border-radius:8px;background:#f2b544;color:var(--ink);font-size:12px;z-index:3}
+.low-light-banner[hidden]{display:none}

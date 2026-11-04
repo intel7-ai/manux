@@ -1,0 +1,202 @@
+"""
+Windows smoke check for the Qt dashboard and the tracking test window (no camera).
+
+Run from hand-mouse/:  uv run --locked --extra qt python scripts/windows_smoke.py [out_dir]
+
+Reported 2026-11-03 on Windows: the app froze while the tracking test window was open.
+This drives the same dashboard calls main.py makes per frame (tracking update + Qt event
+processing) for a few seconds, records how long each frame takes, the monitor layout
+Windows reports vs what Qt reports (DPI), and saves a screenshot of the test window.
+Exits 1 when frames are too slow (a frozen UI) or the window does not show.
+"""
+import json
+import statistics
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+# Same import order as main.py: pyautogui (via the controller) sets DPI awareness first.
+from src.mouse_controller import MouseController  # noqa: E402
+from src.qt_dashboard import QtDashboard  # noqa: E402
+from src.tracking_test import TrackingTest  # noqa: E402
+from src.qt_runtime import tracking_view  # noqa: E402
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+
+FRAMES = 150
+FRAME_BUDGET_MS = 50.0     # median per-frame UI cost must stay well under a 30 fps frame
+FRAME_MAX_MS = 750.0       # any single frame this slow counts as a freeze
+
+
+def main() -> int:
+    # A Windows console is often cp1252/cp949; Korean status text must not crash a print
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+    out = Path(sys.argv[1] if len(sys.argv) > 1 else "smoke-out")
+    out.mkdir(parents=True, exist_ok=True)
+    mouse = MouseController(dry_run=True)
+    dash = QtDashboard(dry_run=True)
+    dash.stage_name = "main"
+    dash.stateChanged.emit()
+    for _ in range(10):
+        dash.poll()
+
+    # Main screen: per-frame status must not re-evaluate every settings binding
+    import numpy as np
+    frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    state_emits = []
+    dash.stateChanged.connect(lambda: state_emits.append(1))
+    dash.set_camera_metrics("1280x720 · 30fps", 50, True)
+    main_times = []
+    for i in range(60):
+        t0 = time.perf_counter()
+        dash.show(frame, True, False, "move_cursor", 25 + i * .1, 10 + i * .05, f"speed {i}")
+        dash.poll()
+        main_times.append((time.perf_counter() - t0) * 1000.0)
+    settings_emits_during_frames = len(state_emits)
+    main_shot = out / "dashboard.png"
+    dash.window.grabWindow().save(str(main_shot))
+
+    monitor = mouse.screens.primary
+    test = TrackingTest(monitor, seed=11)
+    dash.set_tracking_view(tracking_view(test, monitor.center))
+    # Opens paused (like the app): the window must say so before control starts
+    test.update(time.perf_counter(), monitor.center, hand=True, active=False)
+    dash.set_tracking_view(tracking_view(test, monitor.center))
+    for _ in range(10):
+        dash.poll()
+    paused_status = dash.trackingStatus
+    paused_flag = dash.trackingPaused
+    # Real key events into the test window (reported: Space did nothing there)
+    test_win = next((w for w in dash.application.topLevelWindows() if w.title() == "MANUX 트래킹 측정"), None)
+    dash.commands.clear()
+    if test_win is not None:
+        QTest.keyClick(test_win, Qt.Key_Space)
+        dash.application.processEvents()
+    space_reached_app = 32 in dash.commands
+    dash.commands.clear()
+    times = []
+    pos = monitor.center
+    for i in range(FRAMES):
+        t0 = time.perf_counter()
+        target = test.current
+        if target is not None:  # glide toward the target like a hand would
+            cx, cy = test.center_px(target)
+            pos = (pos[0] + (cx - pos[0]) * .2, pos[1] + (cy - pos[1]) * .2)
+        test.update(t0, pos, hand=True, active=True, fps=30, detect_ms=12)
+        dash.set_tracking_view(tracking_view(test, pos))
+        dash.poll()
+        times.append((time.perf_counter() - t0) * 1000.0)
+        time.sleep(max(0.0, 1 / 30 - (time.perf_counter() - t0)))
+
+    windows = [w for w in dash.application.topLevelWindows() if w.title() == "MANUX 트래킹 측정"]
+    win = windows[0] if windows else None
+    shot = None
+    if win is not None and win.isVisible():
+        shot = out / "tracking-window.png"
+        win.grabWindow().save(str(shot))
+    qt_screens = [{
+        "name": s.name(), "geometry": [s.geometry().x(), s.geometry().y(), s.geometry().width(), s.geometry().height()],
+        "devicePixelRatio": s.devicePixelRatio(), "logicalDpi": s.logicalDotsPerInch(),
+    } for s in dash.application.screens()]
+    report = {
+        "frames": FRAMES,
+        "frame_ms_median": round(statistics.median(times), 2),
+        "frame_ms_p95": round(sorted(times)[int(.95 * len(times)) - 1], 2),
+        "frame_ms_max": round(max(times), 2),
+        "targets_reached": test.summary()["reached"],
+        "windows_monitors": [vars(m) for m in mouse.screens.monitors],
+        "qt_screens": qt_screens,
+        "test_window": None if win is None else {
+            "visible": win.isVisible(), "visibility": str(win.visibility()),
+            "geometry": [win.x(), win.y(), win.width(), win.height()],
+            "screen": win.screen().name() if win.screen() else None,
+        },
+        "screenshot": str(shot) if shot else None,
+        "main_frame_ms_median": round(statistics.median(main_times), 2),
+        "settings_signal_emits_in_60_frames": settings_emits_during_frames,
+        "dashboard_screenshot": str(main_shot),
+        "paused_status": paused_status,
+        "paused_flag": paused_flag,
+        "test_window_active": None if win is None else win.isActive(),
+    }
+    if win is not None:
+        QTest.keyClick(win, Qt.Key_Escape)  # Esc must close the test window
+    dash.poll()
+    report["space_reached_app"] = space_reached_app
+    report["esc_closed_test"] = dash.tracking_view is None and dash.tracking_close_requested
+    if dash.tracking_view is not None:
+        dash.closeTrackingTest()
+        dash.poll()
+    report["test_window_hidden_after_close"] = win is not None and not win.isVisible()
+    tray_failures = []
+    # Tray mode: real tray icon where Windows offers one, overlay, start hidden, close to tray
+    from PySide6.QtWidgets import QSystemTrayIcon
+    from src.qt_tray import QtTray
+    dash.close()
+    dash.preferences.setValue("controlHand", dash.control_hand or "Right")
+    dash.preferences.sync()
+    tray_dash = QtDashboard(dry_run=True, hide_to_tray=True, start_hidden=True, overlay=True)
+    tray_dash.poll()
+    tray = QtTray(tray_dash)
+    tray_dash.show(frame, True, False, "move_cursor", 30, 10)
+    for _ in range(10):
+        tray_dash.poll()
+    # The first dashboard's (hidden) overlay may still exist: take the new dashboard's own window
+    from PySide6.QtGui import QWindow
+    overlay_win = next((w for w in tray_dash.window.findChildren(QWindow) if w.title() == "MANUX 상태"), None)
+    if overlay_win is not None and overlay_win.isVisible():
+        overlay_win.grabWindow().save(str(out / "overlay.png"))
+    report["tray"] = {
+        "system_tray_available": QSystemTrayIcon.isSystemTrayAvailable(),
+        "tray_icon_visible": tray.tray.isVisible(),
+        "tooltip": tray.tray.toolTip(),
+        "window_hidden_at_start": not tray_dash.window.isVisible(),
+        "overlay_visible": overlay_win is not None and overlay_win.isVisible(),
+        "reception": tray_dash.receptionState,
+    }
+    tray_dash.showDashboard()
+    tray_dash.poll()
+    tray_dash.window.close()  # tray mode: must hide, not quit
+    tray_dash.poll()
+    report["tray"]["close_hides_to_tray"] = not tray_dash.window.isVisible() and not tray_dash.closed
+    if not report["tray"]["window_hidden_at_start"]:
+        tray_failures.append("tray mode: window was shown at start although a hand is saved")
+    if not report["tray"]["overlay_visible"]:
+        tray_failures.append("tray mode: overlay did not show")
+    if not report["tray"]["close_hides_to_tray"]:
+        tray_failures.append("tray mode: closing the window did not hide it to the tray")
+    tray.hide()
+    tray_dash.close()
+
+    (out / "smoke-report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+
+    failures = list(tray_failures)
+    if win is None or not report["test_window"]["visible"]:
+        failures.append("tracking test window did not show")
+    if report["frame_ms_median"] > FRAME_BUDGET_MS:
+        failures.append(f"median frame {report['frame_ms_median']} ms > {FRAME_BUDGET_MS} ms")
+    if report["frame_ms_max"] > FRAME_MAX_MS:
+        failures.append(f"a frame took {report['frame_ms_max']} ms (> {FRAME_MAX_MS} ms: UI freeze)")
+    if not (paused_flag and "Space" in paused_status):
+        failures.append(f"paused test window does not ask for Space: {paused_status!r}")
+    if settings_emits_during_frames:
+        failures.append(f"settings signal fired {settings_emits_during_frames}x during 60 status frames")
+    if not space_reached_app:
+        failures.append("Space pressed in the test window did not reach the app")
+    if not report["esc_closed_test"]:
+        failures.append("Esc pressed in the test window did not close the test")
+    if not report["test_window_hidden_after_close"]:
+        failures.append("tracking test window still visible after close")
+    for f in failures:
+        print("FAIL", f)
+    dash.preferences.sync()
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

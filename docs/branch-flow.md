@@ -3,7 +3,7 @@
 2026-11-02 결정. 리뷰어 승인 대신 **preview에서 먼저 시험한 뒤 production으로 병합**한다.
 
 ```
-작업 브랜치 (codex/<이슈>-<설명>)
+작업 브랜치 (<이슈>-<설명>)
    │ PR · MANUX required 통과 · 리뷰어 승인 불필요
    ▼
 preview  ── 병합된 코드로 실제 앱 시험 (웹캠·Windows 입력·설치본)
@@ -20,6 +20,7 @@ production  ── 배포 기준
 4. `production`에는 **`preview` 브랜치에서 연 PR만** 병합한다. 다른 브랜치에서 production으로 연 PR은 MANUX required의 마지막 단계가 실패시킨다.
 5. `preview → production` PR 본문에는 포함된 PR 목록과 preview에서 시험한 결과를 적는다. 시험하지 않은 변경이 섞여 있으면 병합하지 않는다.
 6. 두 브랜치 모두 직접 push·강제 push·삭제를 하지 않는다. 충돌은 작업 브랜치에서 해결한다.
+7. production 병합은 production에 병합 커밋을 하나 만든다. 병합 직후 `origin/production`에서 작업 브랜치를 만들어 preview로 PR을 열어 되돌려 받는다. 그러지 않으면 preview가 production보다 뒤처져 다음 `preview → production` PR이 "최신 기준 브랜치" 검사에 막힌다.
 
 ## GitHub 설정 (관리자)
 

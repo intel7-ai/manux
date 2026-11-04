@@ -1,8 +1,11 @@
-/** Permit the local app document, including a fragment used to select its tab. */
+// The desktop studio (main screen) and the original page it links to. Nothing else is an app document.
+export const APP_DOCUMENTS = Object.freeze(['/studio.html', '/']);
+
+/** Permit the local app documents, including a fragment used to select a tab. */
 export function isAppDocument(url, appOrigin) {
   try {
     const parsed = new URL(url);
-    return parsed.origin === appOrigin && parsed.pathname === '/' && !parsed.search && !parsed.username && !parsed.password;
+    return parsed.origin === appOrigin && APP_DOCUMENTS.includes(parsed.pathname) && !parsed.search && !parsed.username && !parsed.password;
   } catch { return false; }
 }
 

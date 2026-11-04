@@ -1,0 +1,90 @@
+name: MANUX app release (hand-mouse)
+
+# The installed MANUX app is the Python hand-mouse app (decided 2026-11-04). A protected
+# production merge is the release decision: `build` makes MANUX.exe and the Velopack installer and
+# update packages with a read-only token; `publish` uploads exactly that artifact as the GitHub
+# release installed apps update from. Pull requests touching hand-mouse/ get the build as a
+# downloadable installer and are never published.
+on:
+  push:
+    branches: [production]
+    paths: ["hand-mouse/**", ".github/workflows/hand-mouse-release.yml"]
+  pull_request:
+    paths: ["hand-mouse/**", ".github/workflows/hand-mouse-release.yml"]
+
+permissions: {}
+
+concurrency:
+  group: hand-mouse-release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: MANUX installer (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact_id: ${{ steps.release_artifact.outputs.artifact-id }}
+    defaults:
+      run:
+        working-directory: hand-mouse
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - run: uv sync --locked --extra qt --extra package
+      - run: uv run --locked --extra qt python -m pytest -q -p no:cacheprovider
+      - name: Version
+        id: version
+        run: |
+          $base = (Select-String -Path pyproject.toml -Pattern '^version = "(\d+)\.(\d+)\.\d+"').Matches[0].Groups
+          $version = "$($base[1].Value).$($base[2].Value).${{ github.run_number }}"
+          if ("${{ github.ref }}" -ne "refs/heads/production") { $version = "$version-pr${{ github.event.pull_request.number }}" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Output "MANUX $version"
+      - run: dotnet tool install -g vpk --version 1.2.161
+      - name: Previous release (for small delta updates)
+        if: github.ref == 'refs/heads/production'
+        run: vpk download github --repoUrl https://github.com/intel7-ai/manux --channel win --outputDir build/releases
+        continue-on-error: true   # the first release has nothing to download
+      - run: ./packaging/build.ps1 -Version ${{ steps.version.outputs.version }}
+      - name: Installed app starts
+        run: |
+          $p = Start-Process build/dist/MANUX/MANUX.exe -ArgumentList '--help' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "MANUX.exe --help exited $($p.ExitCode)" }
+      - name: Installer and update packages
+        id: release_artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: MANUX-${{ steps.version.outputs.version }}
+          path: hand-mouse/build/releases/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish MANUX release
+    needs: build
+    if: github.ref == 'refs/heads/production' && github.repository == 'intel7-ai/manux'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          merge-multiple: true
+          path: releases
+      - run: dotnet tool install -g vpk --version 1.2.161
+      - name: Upload the verified packages as the release installed apps update from
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          vpk upload github --repoUrl https://github.com/intel7-ai/manux --channel win
+          --outputDir releases --publish --token $env:GH_TOKEN
+          --releaseName "MANUX ${{ needs.build.outputs.version }}" --tag v${{ needs.build.outputs.version }}
