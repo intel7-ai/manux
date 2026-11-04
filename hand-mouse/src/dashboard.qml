@@ -555,7 +555,15 @@ ApplicationWindow {
                 anchors.leftMargin: 24
                 anchors.rightMargin: 24
                 spacing: 12
-                TextLabel { text: "MANUX"; font.pixelSize: 24; font.bold: true }
+                Image {
+                    // the official horizontal logo: mark + MANUX wordmark
+                    source: "assets/manux.svg"
+                    Layout.preferredHeight: 34
+                    Layout.preferredWidth: 34 * 1552 / 494
+                    sourceSize.height: 68
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                }
                 Item { Layout.fillWidth: true }
                 TextLabel { text: dashboard.chosenHand; color: window.muted; font.pixelSize: 13 }
                 ActionButton {
