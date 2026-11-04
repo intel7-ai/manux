@@ -14,5 +14,12 @@ wheels/
 models/certs/
 *.pem
 
-# Performance logs
+# Performance logs (also holds gaze measurement reports under logs/gaze/)
 logs/
+
+# Gaze experiment: model is downloaded and hash-checked by scripts/fetch_face_model.py, never committed
+models/face_landmarker.task
+models/face_landmarker.task.part
+
+# pytest temp dir when the default one is not writable
+.pytest_tmp/
