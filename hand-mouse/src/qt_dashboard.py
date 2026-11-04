@@ -3,6 +3,8 @@ from collections import deque
 from pathlib import Path
 import time
 import math
+import subprocess
+import sys
 
 import cv2
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, Property, QSettings, Signal, Slot, QUrl
@@ -106,6 +108,7 @@ class QtDashboard(QObject):
         # Hand-area crop on/off (A/B with the tracking test) and failure recording
         self.hand_crop = self.preferences.value("handCrop", False, type=bool)
         self.finger_overlay = self.preferences.value("fingerOverlay", False, type=bool)
+        self.export_text = ""
         self.finger_frame = None      # latest finger tracker frame (src/finger_overlay.py) or None
         self.failure_mark_requested = False
         self.failure_summary = "아직 저장된 기록이 없습니다."
@@ -236,6 +239,28 @@ class QtDashboard(QObject):
     @Slot()
     def markFailure(self):
         self.failure_mark_requested = True
+
+    @Slot()
+    def exportLogs(self):
+        """Zip the logs into Downloads (src/log_bundle.py) and show the file in Explorer."""
+        from src import log_bundle, updater
+        out_dir = Path.home() / "Downloads"
+        if not out_dir.is_dir():
+            out_dir = Path.home()
+        try:
+            path = log_bundle.build_bundle(LOG_DIR, DEFAULT_CONFIG_PATH, out_dir, updater.current_version(),
+                                           extra={"camera": self.metrics[0], "brightness": self.metrics[1]})
+        except OSError as exc:
+            self.export_text = f"로그를 묶지 못했습니다: {exc}"
+        else:
+            self.export_text = f"저장했습니다: {path}"
+            if sys.platform == "win32":
+                subprocess.Popen(["explorer", "/select,", str(path)])
+        self.failureChanged.emit()
+
+    @Property(str, notify=failureChanged)
+    def exportText(self):
+        return self.export_text
 
     def set_failures(self, summary, last_file):
         self.failure_summary, self.failure_last = summary, last_file
