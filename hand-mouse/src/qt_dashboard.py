@@ -20,6 +20,7 @@ from src.gesture_engine import DEFAULT_CONFIG_PATH
 from src.hand_selection import HandSelection, selected_detection
 from src.pointer_workspace import calibrated_pointer, pointer_axes
 from src.tracking_test import load_recent_results
+from src.tutorial import Tutorial
 
 LOG_DIR = app_paths.LOG_DIR
 RECENT_LIMIT = 5
@@ -53,6 +54,7 @@ class QtDashboard(QObject):
     receptionChanged = Signal()       # tray / overlay state (ok, weak, none, paused)
     overlayChanged = Signal()         # overlay shown / hidden / moved
     fingerFrameChanged = Signal()     # finger tracker around the cursor
+    tutorialChanged = Signal()        # guided tutorial step / success / progress
     hiddenToTray = Signal()           # the window was closed into the tray
     trackingActiveChanged = Signal()  # only when the test window opens or closes
 
@@ -72,6 +74,8 @@ class QtDashboard(QObject):
         self.sequence = 0
         self.contact_text = ""
         self.live_gesture = ""
+        self.tutorial = None
+        self._tutorial_progress = -1.0
         self.show_fingertips = False
         self.calibration_key = ""
         self.axes = None
@@ -546,6 +550,8 @@ class QtDashboard(QObject):
         """Render one runtime snapshot (UI thread)."""
         if self.stage_name == "capture":
             self.select_hand(snap.detections, snap.mirrored)
+        if self.stage_name == "tutorial":
+            self._tutorial_frame(snap)
         if self.use_index_pointer:
             self.update_pointer(snap.tip, snap.source, snap.mirrored, snap.aspect)
         if snap.metrics is not None:
@@ -688,6 +694,8 @@ class QtDashboard(QObject):
         self.preferences.sync()
         self.stage_name = "main"
         self.stateChanged.emit()
+        if not self.preferences.value("tutorialDone", False, type=bool):
+            self.beginTutorial()          # first run: learn the gestures right after choosing the hand
 
     @Slot()
     def cancelHandSetup(self):
@@ -720,13 +728,94 @@ class QtDashboard(QObject):
         """[[key, title, how], ...] for the current engine and click settings."""
         return gesture_guide.for_qml(self.gesture_cards())
 
+    # ------------------------------------------------------------------ guided tutorial (src/tutorial.py)
     @Property(bool, constant=True)
     def tutorialAvailable(self):
-        return False      # the guided gesture tutorial comes in its own change
+        return True
 
     @Slot()
     def beginTutorial(self):
-        pass
+        """Teach the gestures of the current engine one by one. Practice mode: the cursor moves,
+        nothing is clicked, scrolled or typed (qt_runtime.practice_output)."""
+        if not self.control_hand:
+            return
+        self.cancelPointerCalibration()
+        self.commands.clear()
+        self.commands.append(27)              # input off while practising
+        self.tutorial = Tutorial(self.gesture_cards())
+        self.stage_name = "tutorial"
+        self.stateChanged.emit()
+        self.tutorialChanged.emit()
+
+    @Slot()
+    def tutorialNext(self):
+        if self.tutorial is not None:
+            self.tutorial.next()
+            self._tutorial_after_step()
+
+    @Slot()
+    def tutorialBack(self):
+        if self.tutorial is not None:
+            self.tutorial.back()
+            self.tutorialChanged.emit()
+
+    @Slot()
+    def finishTutorial(self):
+        self.tutorial = None
+        self.preferences.setValue("tutorialDone", True)
+        self.stage_name = "main"
+        self.stateChanged.emit()
+        self.tutorialChanged.emit()
+
+    def _tutorial_after_step(self):
+        self.tutorialChanged.emit()
+
+    def _tutorial_frame(self, snap):
+        t = self.tutorial
+        if t is None or t.finished:
+            return
+        now = time.perf_counter()
+        motion_on = bool(snap.motion and snap.motion[0])
+        changed = t.observe(snap.action if snap.detected else "", motion_on, now)
+        changed = t.tick(now) or changed
+        progress = round(t.progress, 2)
+        if changed or progress != self._tutorial_progress:
+            self._tutorial_progress = progress
+            self.tutorialChanged.emit()
+
+    @Property(int, notify=tutorialChanged)
+    def tutorialIndex(self):
+        return self.tutorial.index if self.tutorial else 0
+
+    @Property(int, notify=tutorialChanged)
+    def tutorialCount(self):
+        return len(self.tutorial.steps) if self.tutorial else 0
+
+    @Property(bool, notify=tutorialChanged)
+    def tutorialFinished(self):
+        return bool(self.tutorial and self.tutorial.finished)
+
+    @Property(str, notify=tutorialChanged)
+    def tutorialTitle(self):
+        card = self.tutorial.current if self.tutorial else None
+        return str(card["title"]) if card else ""
+
+    @Property(str, notify=tutorialChanged)
+    def tutorialHow(self):
+        card = self.tutorial.current if self.tutorial else None
+        return str(card["how"]) if card else ""
+
+    @Property(bool, notify=tutorialChanged)
+    def tutorialSucceeded(self):
+        return bool(self.tutorial and self.tutorial.succeeded_at is not None)
+
+    @Property(float, notify=tutorialChanged)
+    def tutorialProgress(self):
+        return self.tutorial.progress if self.tutorial else 0.0
+
+    @Property("QVariantList", notify=tutorialChanged)
+    def tutorialDoneSteps(self):
+        return list(self.tutorial.done) if self.tutorial else []
 
     @Property(str, notify=liveChanged)
     def liveGesture(self):
