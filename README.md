@@ -60,6 +60,12 @@ PR 검토용 `MANUX Preview` 설치파일은 해당 PR의 Actions artifact에서
 
 영상 모드나 브라우저 연습만 사용하려면 모델 준비 후 `npm start`를 실행하고 <http://127.0.0.1:4173>을 엽니다. 브라우저에서는 실제 Windows 커서에 명령을 보내지 않습니다. [영상·개인 등록 상세 사용법](docs/usage-video.md)
 
+### Python 손 마우스 앱 (`hand-mouse/`)
+
+Dan의 Python 가상 마우스(SCRUM-32·33·43~61)와 Qt 대시보드·검지 포인터 모드가 `hand-mouse/`에 있습니다. Electron 앱과 코드를 공유하지 않으며 설치파일·`npm run verify`·소스 패키지에 포함되지 않습니다. 실행 방법은 [hand-mouse/README.md](hand-mouse/README.md)를 따릅니다(예: `hand-mouse` 폴더에서 `uv run --locked --extra qt python main.py --ui qt --source 0`).
+
+원본 브랜치는 `manux-python-ui`(Qt 작업)와 `hand-mouse-gesture-overhaul`(Dan)입니다. 원본의 새 커밋은 `git merge -X subtree=hand-mouse/ origin/manux-python-ui`로 가져옵니다.
+
 ## 현재 구현과 남은 일
 
 | 기능 | 현재 상태 |
