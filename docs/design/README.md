@@ -22,6 +22,7 @@
 | 노트 | 상태 |
 | --- | --- |
 | [커서 기준점과 클릭 방식](decision-pointer-click.md) | 결정 전 (2026-11-03) |
+| [개발자 없이 하는 동작 맞춤 설정](decision-customization.md) | 제안 (2026-11-04) |
 
 세부 수치와 기존 결정은 [contracts](../contracts.md), [air-mouse](../air-mouse.md), [settings-store](../settings-store.md)가 원본이다. 설계 문서는 그것들을 대체하지 않고 연결한다.
 
