@@ -124,6 +124,13 @@ findSharedActions(bindings) -> [{actionId, gestureIds}]   // 같은 액션을 �
 
 **제안 (미구현, 앱 조립/R5):** 판정 → `resolveBinding` → `eventsForAction` → `bridge.send`/연습 영역 연결, 액션 실행 결과 기록, 연결 변경 시 반복·잠금 초기화. `mouse.pause` 처리(제어 끄기)도 앱 조립이 맡는다.
 
+**화면 손가락 표시 (구현됨, 2026-11-04):**
+
+```js
+buildOverlayFrame(landmarks, {mode, width, height}) -> {tips, contacts, mode} | null
+// 손 없음·퇴화한 손 → null(오버레이가 흐려짐). 알 수 없는 mode → 'other'.
+```
+
 ## 설정 저장소
 
 ```js
@@ -155,6 +162,8 @@ window.manuxDesktop.send(events) -> void
 // main 쪽 실패: 배치 8개 초과·허용 밖 이벤트·이동 100px/스크롤 240 초과·300ms 넘은 입력 → 제어 끄기(부분 실행 없음).
 window.manuxDesktop.stop() -> void
 window.manuxDesktop.onStatus(callback) -> unsubscribe
+window.manuxDesktop.setOverlay(boolean) -> Promise<boolean>   // 화면 손가락 표시 창 켜기/끄기. boolean이 아니면 TypeError
+window.manuxDesktop.sendOverlayFrame(frame) -> void           // main이 validateOverlayFrame으로 다시 검사, 형식이 다르면 버림
 // generation: 켤 때마다 증가. 이전 generation의 늦은 응답은 무시한다.
 ```
 

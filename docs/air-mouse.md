@@ -62,6 +62,15 @@
 
 `src/binding-resolver.js`의 `resolveBinding`은 등록 동작 판정 결과(`gestureId`)를 연결된 액션 ID(`mouse.left-click`, `mouse.right-click`, `mouse.pause`)로 바꾸는 순수 함수이며 `eventsForAction`이 클릭의 `button` 이벤트를 만든다. 미수락·모호·오류 판정, 연결 없음, 비활성, 알 수 없는 액션은 모두 명령 없음이다. 이 코드는 **앱에 연결되지 않았다**: 지금 `app.js`는 이 함수를 호출하지 않으므로 화면에서 등록 동작으로 클릭할 수 없다. 계약과 정책은 [인터페이스](design/03-interfaces.md)를 따른다. 합성 입력 시험만 했고 실제 웹캠·실제 OS 클릭 검증은 별도다.
 
+## 화면 손가락 표시 오버레이 (park의 HUD에서 이식, 2026-11-04)
+
+데스크톱 앱 마우스 패널의 **화면에 손가락 표시**를 켜면 Windows 커서 주변에 손가락 끝 다섯 개, 현재 동작, 엄지가 닿은 손가락을 그린다(아이 트래커처럼 손이 어디 있는지 보여 줌). 어느 조작 방식에서도 동작한다.
+
+- `src/overlay-frame.js`: 관절 → 손바닥 중심 기준 손가락 끝 위치(손바닥 크기 단위, 미러), 동작, 접촉 손가락 1개. 원시 영상·관절 전체는 보내지 않는다.
+- `desktop/overlay.mjs`: 투명·클릭 통과·항상 위·포커스 없음 창. 커서가 있는 모니터로 옮긴다. 메인 창은 그대로다.
+- `desktop/overlay-protocol.mjs`: main 프로세스가 프레임 형식을 다시 검사하고, 오버레이 창은 `/overlay.html`만 연다. 오버레이 preload는 프레임 수신만 한다.
+- 프레임이 0.5초 끊기면 흐려져 사라진다. 마우스 입력에는 영향이 없다.
+
 ## 검증과 한계
 
 `npm test`는 기존 회귀와 판정/입력 계약을, `npm run test:mouse`는 합성 관절과 캔버스 카메라로 화면 연결을 검사한다. `node scripts/test-desktop-mouse.mjs`는 실제 PowerShell/C# helper를 사용하되 dry-run으로 운영체제 입력을 보내지 않는다. 자동 검사는 실제 웹캠 인식 정확도나 사용 편의성을 증명하지 않는다.
