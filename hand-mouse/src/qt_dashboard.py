@@ -6,7 +6,7 @@ import math
 
 import cv2
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, Property, QSettings, Signal, Slot, QUrl
-from PySide6.QtGui import QGuiApplication, QImage
+from PySide6.QtGui import QCursor, QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
@@ -50,6 +50,7 @@ class QtDashboard(QObject):
     failureChanged = Signal()         # failure recording summary
     receptionChanged = Signal()       # tray / overlay state (ok, weak, none, paused)
     overlayChanged = Signal()         # overlay shown / hidden / moved
+    fingerFrameChanged = Signal()     # finger tracker around the cursor
     hiddenToTray = Signal()           # the window was closed into the tray
     trackingActiveChanged = Signal()  # only when the test window opens or closes
 
@@ -104,6 +105,8 @@ class QtDashboard(QObject):
         self.metrics = ("", -1, False)  # camera mode text, brightness 0..255 (-1 unknown), dark
         # Hand-area crop on/off (A/B with the tracking test) and failure recording
         self.hand_crop = self.preferences.value("handCrop", False, type=bool)
+        self.finger_overlay = self.preferences.value("fingerOverlay", False, type=bool)
+        self.finger_frame = None      # latest finger tracker frame (src/finger_overlay.py) or None
         self.failure_mark_requested = False
         self.failure_summary = "아직 저장된 기록이 없습니다."
         self.failure_last = ""
@@ -201,6 +204,33 @@ class QtDashboard(QObject):
     @Property(bool, notify=stateChanged)
     def handCrop(self):
         return self.hand_crop
+
+    # ------------------------------------------------------------------ finger tracker around the cursor
+    @Slot(bool)
+    def setFingerOverlay(self, enabled):
+        if bool(enabled) == self.finger_overlay:
+            return
+        self.finger_overlay = bool(enabled)
+        self.preferences.setValue("fingerOverlay", self.finger_overlay)
+        self.stateChanged.emit()
+
+    @Property(bool, notify=stateChanged)
+    def fingerOverlay(self):
+        return self.finger_overlay
+
+    def set_finger_frame(self, frame):
+        if frame is None and self.finger_frame is None:
+            return
+        self.finger_frame = frame
+        self.fingerFrameChanged.emit()
+
+    @Property("QVariantMap", notify=fingerFrameChanged)
+    def fingerFrame(self):
+        """tips, contact, mode and the cursor position (logical px); empty when there is nothing to draw."""
+        if self.finger_frame is None:
+            return {}
+        cursor = QCursor.pos()
+        return dict(self.finger_frame, cursor=[cursor.x(), cursor.y()])
 
     # ------------------------------------------------------------------ failure recording
     @Slot()
@@ -471,6 +501,7 @@ class QtDashboard(QObject):
             anchor=self.pointer_anchor, hand_crop=self.hand_crop, axes=self.axes,
             calibrating=self.calibrating, sensitivity=self.pointer_sensitivity,
             show_fingertips=self.show_fingertips, profile=self.profile, motion_request=self.motion_request,
+            finger_overlay=self.finger_overlay,
         )
 
     def apply_snapshot(self, snap):
@@ -498,6 +529,7 @@ class QtDashboard(QObject):
             self.set_failures(*snap.failures)
         if snap.recent_line:
             self.add_recent(snap.recent_line)
+        self.set_finger_frame(snap.hand)
         self.show(snap.frame, snap.detected, snap.paused, snap.action, snap.fps, snap.detect_ms,
                   snap.status, contacts=snap.contacts)
 
