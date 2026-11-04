@@ -33,6 +33,7 @@ from typing import Any, Deque, Dict, List, Optional, Sequence, Tuple
 
 WRIST, MIDDLE_MCP = 0, 9
 THUMB_TIP = 4
+INDEX_MCP = 5
 FINGER_JOINTS = ((5, 8), (9, 12), (13, 16), (17, 20))      # (MCP, tip): index, middle, ring, pinky
 PALM_POINTS = (0, 5, 9, 13, 17)
 
@@ -57,6 +58,11 @@ DEFAULTS: Dict[str, Any] = {
     "motion_timeout": 0.0,           # s without a swipe and motion mode ends (0 = it stays on: toggle)
     "motion_hand_lost_exit": 0.0,    # s without a hand and it ends (0 = never)
     "motion_thumb_out": 0.85,        # thumb_tuck >= this = thumb stuck out (entry pose; 5 % of ordinary fists reach 0.9)
+    # 2026-11-04: 11 logged entries, most while moving a fist / palm: in 7 the thumb tip was BELOW the index
+    # knuckle (a fist with the thumb out sideways), and the palm wandered 0.1-0.23 frame widths back and forth
+    # while staying inside motion_enter_still of where the hold began. A real thumbs-up points up and is held.
+    "motion_thumb_up": 0.5,          # thumb tip at least this many palm lengths above the index knuckle (entry pose)
+    "motion_enter_path": 0.12,       # total palm travel (frame widths) allowed during the hold, not only the net offset
     "motion_fold_ratio": 1.2,        # finger curl ratio <= this = folded (a real fist is 0.6-0.9; a thumbs-up hand 0.7-1.3)
     "motion_open_ratio": 1.3,        # a finger counts as fully extended at this curl ratio (extended ones sit at 1.5-1.8)
     "motion_open_min": 1.0,          # a stroke with any finger below this in any frame is refused ("bent")
@@ -105,9 +111,10 @@ def hand_features(landmarks: Sequence[Any]) -> Dict[str, Any]:
         curl.append(d3(pts[tip], wrist) / base if base > 1e-6 else 9.9)
     palm_len = max(1e-6, d2(wrist, pts[MIDDLE_MCP]))
     tuck = min(d2(pts[THUMB_TIP], pts[13]), d2(pts[THUMB_TIP], pts[17])) / palm_len
+    thumb_up = (pts[INDEX_MCP][1] - pts[THUMB_TIP][1]) / palm_len      # image y grows downwards
     cx = sum(pts[i][0] for i in PALM_POINTS) / len(PALM_POINTS)
     cy = sum(pts[i][1] for i in PALM_POINTS) / len(PALM_POINTS)
-    return {"curl": tuple(curl), "thumb_tuck": tuck, "palm": (cx, cy)}
+    return {"curl": tuple(curl), "thumb_tuck": tuck, "thumb_up": thumb_up, "palm": (cx, cy)}
 
 
 @dataclass
@@ -135,6 +142,8 @@ class MotionMode:
         self._last_hand_t = 0.0
         self._enter_since: Optional[float] = None
         self._enter_anchor: Optional[Tuple[float, float]] = None
+        self._enter_last: Optional[Tuple[float, float]] = None
+        self._enter_path = 0.0
         self._enter_lost_since: Optional[float] = None
         self._exit_since: Optional[float] = None
         self._exit_anchor: Optional[Tuple[float, float]] = None
@@ -185,8 +194,9 @@ class MotionMode:
         return None
 
     def entry_pose(self, f: Dict[str, Any]) -> bool:
-        """Thumb stuck out and the other four fingers folded."""
+        """Thumbs-up: thumb stuck out AND pointing up, the other four fingers folded."""
         return (f["thumb_tuck"] >= self.cfg("motion_thumb_out")
+                and f.get("thumb_up", 9.9) >= self.cfg("motion_thumb_up")
                 and max(f["curl"]) <= self.cfg("motion_fold_ratio"))
 
     def open_hand(self, f: Dict[str, Any]) -> bool:
@@ -296,10 +306,14 @@ class MotionMode:
         self._enter_lost_since = None
         palm = feats["palm"]
         if self._enter_since is None:
-            self._enter_since, self._enter_anchor = now, palm
+            self._enter_since, self._enter_anchor, self._enter_last, self._enter_path = now, palm, palm, 0.0
             return None
-        if math.hypot(palm[0] - self._enter_anchor[0], palm[1] - self._enter_anchor[1]) > self.cfg("motion_enter_still"):
-            self._enter_since, self._enter_anchor = now, palm       # the hand is travelling: hold starts over
+        self._enter_path += math.hypot(palm[0] - self._enter_last[0], palm[1] - self._enter_last[1])
+        self._enter_last = palm
+        if (math.hypot(palm[0] - self._enter_anchor[0], palm[1] - self._enter_anchor[1]) > self.cfg("motion_enter_still")
+                or self._enter_path > self.cfg("motion_enter_path")):
+            # the hand is travelling (or moving back and forth in place): the hold starts over
+            self._enter_since, self._enter_anchor, self._enter_last, self._enter_path = now, palm, palm, 0.0
             return None
         if now - self._enter_since >= self.cfg("motion_enter_hold"):
             return self._enter(now, "pose")

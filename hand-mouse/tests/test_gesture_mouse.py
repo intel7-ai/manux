@@ -2189,11 +2189,16 @@ def test_show_desktop_needs_a_still_hand_and_a_quiet_moment_before():
 def test_thumb_out_with_four_folded_fingers_is_the_motion_pose_not_a_fist():
     """It is the entry pose of motion mode; the fist branch would run the cursor at 20x DPI while it is held."""
     h = make_real_hand(curled=True)
-    far = Point3D(h[0].x - 0.30, h[0].y)            # the thumb tip well away from the palm
+    up = Point3D(h[5].x - 0.10, h[5].y - 0.25)      # thumbs-up: the tip well above the index knuckle
     pose = list(h)
-    pose[4] = far
+    pose[4] = up
     out, _ = _run(GestureEngine(), [pose] * 8)
     assert all(r.active_gesture == "motion_pose" and r.cursor_point is None and r.action == "none" for r in out)
+    # 2026-11-04: a fist moved with the thumb out SIDEWAYS (tip at wrist height) froze the cursor; it must keep moving
+    side = list(h)
+    side[4] = Point3D(h[0].x - 0.30, h[0].y)
+    out, _ = _run(GestureEngine(), [side] * 8)
+    assert all(r.active_gesture != "motion_pose" for r in out)
     out, _ = _run(GestureEngine(), [h] * 8)         # an ordinary fist still is one
     assert any(r.active_gesture == "fist" for r in out)
     e = GestureEngine()
