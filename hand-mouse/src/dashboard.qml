@@ -76,6 +76,58 @@ ApplicationWindow {
                 TextLabel { text: "빠르게"; color: window.muted }
             }
             ActionButton { text: "기본값 복원"; onClicked: dashboard.setPointerSensitivity(100) }
+            Divider {}
+            TextLabel { text: "어디서든 쓰는 단축키"; font.bold: true }
+            Repeater {
+                model: [["toggle", "켜기 / 끄기"], ["hide", "창 숨기기 / 보이기"]]
+                delegate: RowLayout {
+                    required property var modelData
+                    readonly property string shortcutAction: modelData[0]   // not "action": Button has one
+                    Layout.fillWidth: true
+                    TextLabel { text: modelData[1]; Layout.preferredWidth: 110 }
+                    ActionButton {
+                        id: captureButton
+                        Layout.fillWidth: true
+                        property bool capturing: false
+                        text: capturing ? "새 조합을 누르세요 (Esc 취소)" : (dashboard.shortcutLabels[shortcutAction] || "")
+                        onClicked: { capturing = true; shortcutError.text = ""; forceActiveFocus() }
+                        onActiveFocusChanged: if (!activeFocus) capturing = false
+                        Keys.onPressed: function (event) {
+                            if (!capturing) return
+                            event.accepted = true
+                            if (event.key === Qt.Key_Escape) { capturing = false; return }
+                            var key = ""
+                            if (event.key >= Qt.Key_A && event.key <= Qt.Key_Z) key = String.fromCharCode(event.key).toLowerCase()
+                            else if (event.key >= Qt.Key_0 && event.key <= Qt.Key_9) key = String.fromCharCode(event.key)
+                            else if (event.key >= Qt.Key_F1 && event.key <= Qt.Key_F12) key = "f" + (event.key - Qt.Key_F1 + 1)
+                            if (key === "") return        // a modifier alone: wait for the rest of the combination
+                            var parts = []
+                            if (event.modifiers & Qt.ControlModifier) parts.push("ctrl")
+                            if (event.modifiers & Qt.AltModifier) parts.push("alt")
+                            if (event.modifiers & Qt.ShiftModifier) parts.push("shift")
+                            parts.push(key)
+                            shortcutError.text = dashboard.setShortcut(shortcutAction, parts.join("+"))
+                            capturing = false
+                        }
+                    }
+                    ActionButton { text: "기본"; onClicked: dashboard.resetShortcut(shortcutAction) }
+                }
+            }
+            TextLabel {
+                id: shortcutError
+                visible: text !== ""
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                color: "#B33E27"
+                font.pixelSize: 12
+            }
+            TextLabel {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                color: window.muted
+                font.pixelSize: 11
+                text: "다른 프로그램을 쓰는 중에도 동작합니다. 앱 안에서는 Space로도 켜고 끕니다."
+            }
             ActionButton {
                 text: "엔진 설정"
                 onClicked: {
@@ -466,7 +518,7 @@ ApplicationWindow {
                     Divider {}
                     TextLabel {
                         Layout.fillWidth: true
-                        text: "Space 시작/정지 · Esc 정지 · N 다음 모니터 · F 실패 표시"
+                        text: "Space 시작/정지 · 어디서든 " + (dashboard.shortcutLabels["toggle"] || "") + " · Esc 정지 · F 실패 표시"
                         font.pixelSize: 11
                         color: window.muted
                         wrapMode: Text.Wrap
