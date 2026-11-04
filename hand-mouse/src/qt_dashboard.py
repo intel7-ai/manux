@@ -794,8 +794,8 @@ class QtDashboard(QObject):
 
     @Slot()
     def beginTutorial(self):
-        """Teach the gestures of the current engine one by one. Practice mode: the cursor moves,
-        nothing is clicked, scrolled or typed (qt_runtime.practice_output)."""
+        """Teach the gestures of the current engine one by one. Practice mode: nothing reaches
+        Windows, not even the cursor (qt_runtime.practice_output)."""
         if not self.control_hand:
             return
         self.cancelPointerCalibration()

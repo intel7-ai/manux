@@ -516,7 +516,7 @@ ApplicationWindow {
                 wrapMode: Text.Wrap
                 color: window.muted
                 font.pixelSize: 12
-                text: "연습 중에는 커서만 움직이고 클릭·스크롤·키 입력은 보내지 않습니다."
+                text: "연습 중에는 실제 마우스 커서·클릭·키 입력을 전혀 보내지 않습니다. 화면의 표시로만 확인하세요."
             }
             RowLayout {
                 Layout.fillWidth: true

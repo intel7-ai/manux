@@ -616,7 +616,7 @@ class GestureEngine:
             # with the thumb out sideways keeps moving the cursor (2026-11-04: it froze and entered motion mode)
             _up = (pts[5].y - thumb.y) / _palm
             if (_tuck >= float(self.config.get("motion_thumb_out", 0.85))
-                    and _up >= float(self.config.get("motion_thumb_up", 0.5))):
+                    and _up >= float(self.config.get("motion_thumb_up", 0.15))):
                 self._fist = False
                 self._fist_candidate_since = None
                 return GestureResult(
