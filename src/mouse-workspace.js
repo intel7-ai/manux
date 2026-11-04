@@ -1,4 +1,5 @@
 import {AirMouseController} from './air-mouse-controller.js';
+import {buildOverlayFrame} from './overlay-frame.js';
 
 const LABELS = {idle:'쉬는 중', move:'커서 이동', left:'좌클릭 · 드래그', right:'우클릭', scroll:'스크롤'};
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -28,6 +29,8 @@ export class MouseWorkspace {
       const el = this.$('#mouse-click-count'); el.textContent = String(Number(el.textContent) + 1);
     });
     this.$('#mouse-scroll-area').addEventListener('scroll', () => this.renderScroll());
+    this.overlay = false;
+    this.$('#mouse-overlay')?.addEventListener('change', () => { void this.setOverlay(this.$('#mouse-overlay').checked); });
     this.unsubscribe = bridge?.onStatus(status => {
       this.available = Boolean(status.available);
       if (this.enabled && !status.enabled && this.desktop) this.stop(status.error || 'Windows 마우스 제어가 중지되었습니다.');
@@ -64,6 +67,14 @@ export class MouseWorkspace {
       ? '실제 Windows 커서를 제어합니다. Ctrl + Alt + M으로 어디서든 중지할 수 있습니다.'
       : '연습 모드에서는 아래 영역의 커서만 움직입니다.';
     this.$('#mouse-pad').hidden = this.desktop;
+    const overlay = this.$('#mouse-overlay');
+    if (overlay) overlay.disabled = !this.available || !this.bridge?.setOverlay;
+  }
+  /** Screen finger tracker (desktop only). Drawing only; it never changes mouse input. */
+  async setOverlay(on) {
+    try { this.overlay = Boolean(await this.bridge?.setOverlay?.(on)); }
+    catch (error) { this.overlay = false; this.status(`화면 손가락 표시를 켜지 못했습니다. ${error.message}`, true); }
+    const box = this.$('#mouse-overlay'); if (box) box.checked = this.overlay;
   }
   setReady(ready) {
     this.ready = ready;
@@ -105,6 +116,10 @@ export class MouseWorkspace {
     if (!this.active) return null;
     if (this.enabled && latency > 450) this.stop('추적 결과가 늦어 제어를 껐습니다. 해상도를 낮추고 다시 켜보세요.');
     const state = this.controller.update({landmarks, now, quality, handedness, width, height, enabled:this.enabled});
+    if (this.overlay && state.phase !== 'stale') {
+      const frame = quality ? buildOverlayFrame(landmarks, {mode:this.enabled ? state.mode : 'idle', width, height}) : null;
+      if (frame) this.bridge?.sendOverlayFrame?.(frame);
+    }
     // A repeated or older timestamp is not fresh inference. It must not renew the stall watchdog
     // or the native input lease, so a frozen frame source still stops control and releases buttons.
     if (this.enabled && state.phase !== 'stale') {

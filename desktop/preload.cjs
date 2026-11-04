@@ -32,6 +32,12 @@ contextBridge.exposeInMainWorld('manuxDesktop', {
     ipcRenderer.on('manux:mouse-status', handler);
     return () => ipcRenderer.removeListener('manux:mouse-status', handler);
   },
+  // Screen finger tracker. Frames are re-validated in the main process; nothing reaches the mouse.
+  setOverlay: value => {
+    if (typeof value !== 'boolean') throw new TypeError('overlay must be boolean');
+    return ipcRenderer.invoke('manux:overlay-enable', value);
+  },
+  sendOverlayFrame: frame => ipcRenderer.send('manux:overlay-frame', frame),
   // Update status only: no URL, path or channel is accepted from the page.
   getUpdateStatus: () => ipcRenderer.invoke('manux:update-status'),
   checkForUpdates: () => ipcRenderer.invoke('manux:update-check'),

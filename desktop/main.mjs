@@ -6,6 +6,7 @@ import {createServer} from '../server.js';
 import {MouseBridge} from './mouse-bridge.mjs';
 import {isAppDocument, canRequestCamera, canCheckCamera, readDesktopPort} from './security.mjs';
 import {createUpdateManager} from './updater.mjs';
+import {createOverlay} from './overlay.mjs';
 
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const buildChannel = manifest.manuxBuildChannel ?? 'stable';
@@ -20,7 +21,7 @@ if (isPreview) {
   app.setPath('sessionData', previewData);
 }
 
-let window, server, origin, bridge, updates, shortcutReady = false;
+let window, server, origin, bridge, updates, overlay, shortcutReady = false;
 const baseTitle = isPreview ? 'MANUX Preview · Air Mouse' : 'MANUX · Air Mouse';
 const emergencyKey = 'Control+Alt+M';
 const appStatus = () => ({...bridge.status(), available:bridge.status().available && shortcutReady,
@@ -78,7 +79,7 @@ else {
     web.on('render-process-gone', () => bridge.disable('화면 프로세스가 종료되어 마우스를 해제했습니다.'));
     web.on('unresponsive', () => bridge.disable('앱 응답이 없어 마우스를 해제했습니다.'));
     window.on('minimize', () => bridge.disable('앱을 최소화하여 마우스 제어를 멈췄습니다.'));
-    window.on('close', () => bridge.close());
+    window.on('close', () => { bridge.close(); overlay?.close(); });
     window.on('closed', () => { window = null; });
     web.session.setPermissionRequestHandler((contents, permission, callback, details) => {
       callback(canRequestCamera(contents, web, permission, details, origin));
@@ -103,6 +104,13 @@ else {
       bridge.send(payload.events, {generation:payload.generation, sentAt:payload.sentAt});
     });
     ipcMain.on('manux:mouse-stop', event => { if (trusted(event)) bridge.disable(); });
+    // Screen finger tracker: draw-only window, fed by validated frames from the app page.
+    overlay = createOverlay({origin});
+    ipcMain.handle('manux:overlay-enable', (event, value) => {
+      if (!trusted(event) || typeof value !== 'boolean') throw new Error('Invalid overlay request.');
+      return overlay.setEnabled(value);
+    });
+    ipcMain.on('manux:overlay-frame', (event, frame) => { if (trusted(event)) overlay.send(frame); });
     bridge.on('status', () => { statusToWindow(); updates?.mouseStateChanged(); });
     // Updates are checked only in a packaged run; the user approves every install.
     updates = createUpdateManager({
@@ -142,6 +150,6 @@ else {
     console.log(`MANUX desktop ready: ${origin}/ (mouse control starts OFF)`);
   }).catch(error => { dialog.showErrorBox('MANUX 실행 오류', error.message); app.quit(); });
   app.on('window-all-closed', () => app.quit());
-  app.on('before-quit', () => { updates?.stop(); bridge?.close(); server?.close(); });
+  app.on('before-quit', () => { updates?.stop(); bridge?.close(); overlay?.close(); server?.close(); });
   app.on('will-quit', () => globalShortcut.unregisterAll());
 }
