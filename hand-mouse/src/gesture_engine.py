@@ -154,6 +154,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "click_dominance_ratio": 0.7,
     "click_release_margin": 0.02,
     "long_press_drag": True,
+    "motion_enabled": True,          # motion mode (thumbs-up toggle + swipes); off from the customization page
     "long_press_time": 1.0,
     "long_press_drag_multiplier": 15.0,
     "start_in_tray": False,  # next launch starts in the tray (no camera window) instead of showing it
@@ -607,7 +608,8 @@ class GestureEngine:
         # To this engine it looks like a fist, which would run the cursor at 20x DPI while the pose is
         # held, so the cursor stays still instead. (A natural fist keeps the thumb across the fingers:
         # 2.8 % of the logged fist frames had it stuck out.)
-        if self.config.get("motion_pose_freeze", True) and curl <= float(self.config.get("motion_fold_ratio", 1.2)):
+        if (self.config.get("motion_pose_freeze", True) and self.config.get("motion_enabled", True)
+                and curl <= float(self.config.get("motion_fold_ratio", 1.2))):
             _palm = max(1e-6, self._dist_2d(pts[self.WRIST], pts[self.MIDDLE_MCP]))
             _tuck = min(self._dist_2d(thumb, pts[13]), self._dist_2d(thumb, pts[17])) / _palm
             if _tuck >= float(self.config.get("motion_thumb_out", 0.85)):

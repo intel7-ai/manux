@@ -24,7 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import cv2
 
-from src import app_paths
+from src import app_paths, gesture_guide
 from src.failure_log import FailureRecorder
 from src.finger_overlay import overlay_frame
 from src.motion_mode import ACTION_LABELS, MotionMode
@@ -235,6 +235,16 @@ class QtRuntime:
                     self._say("실패 기록: 앞뒤 3초를 저장합니다")
             elif kind == "key":
                 self._key(cmd[1], now)
+            elif kind == "card_enabled":
+                # customization page: turn one gesture on/off for both engines and keep it in the user's config
+                for gestures in (self.engine, self.pointer.gestures):
+                    gesture_guide.set_card_enabled(gestures.config, cmd[1], cmd[2])
+                self.mouse.release_all()
+                self.engine.reset()
+                try:
+                    self.engine.save_config()
+                except OSError as exc:
+                    self._say(f"설정을 저장하지 못했습니다: {exc}", 3.0)
 
     def _key(self, key: int, now: float) -> None:
         engine, mouse, camera = self.engine, self.mouse, self.camera
@@ -476,7 +486,8 @@ class QtRuntime:
 
     def _motion(self, t0: float, ui, detections) -> bool:
         """Run motion mode for this frame. True while it is on (the pinch controls are then suspended)."""
-        ready = (ui.stage == "tutorial" or ui.stage == "main" and not self.paused) and not ui.calibrating
+        ready = ((ui.stage == "tutorial" or ui.stage == "main" and not self.paused) and not ui.calibrating
+                 and bool(self.engine.config.get("motion_enabled", True)))
         request = ""
         if ui.motion_request != self._motion_seen:
             self._motion_seen = ui.motion_request

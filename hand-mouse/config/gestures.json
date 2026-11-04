@@ -153,6 +153,7 @@
   "fist_confirm_time": 0.12,
   "desktop_min_tip_gap": 0.08,
   "long_press_drag": true,
+  "motion_enabled": true,
   "long_press_time": 1.0,
   "long_press_drag_multiplier": 15.0,
   "start_in_tray": false,

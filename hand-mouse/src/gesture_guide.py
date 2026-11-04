@@ -7,7 +7,7 @@ it: the main screen lights the card up, the onboarding counts it as a success.
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 Card = Dict[str, object]   # key, title, how, actions (tuple of engine action ids)
 
@@ -68,3 +68,40 @@ def for_qml(card_list: Sequence[Card]) -> List[List[str]]:
 
 def find(card_list: Sequence[Card], key: str) -> Optional[Card]:
     return next((c for c in card_list if c["key"] == key), None)
+
+
+# ------------------------------------------------------------------ turning a gesture on / off (customization page)
+# The config switches behind each card of Dan's engine. A card is on when all of its switches are on;
+# turning it off clears all of them. "move" has none: the cursor always moves.
+SWITCHES: Dict[str, List[Tuple[str, str]]] = {
+    "click": [("gesture", "thumb_middle_pinch")],
+    "right": [("gesture", "thumb_ring_pinch")],
+    "scroll": [("gesture", "thumb_index_pinch")],
+    "drag": [("gesture", "thumb_index_middle_pinch"), ("key", "long_press_drag")],
+    "switch": [("gesture", "thumb_pinky_pinch")],
+    "desktop": [("gesture", "thumb_tucked_open")],
+    "motion": [("key", "motion_enabled")],
+}
+
+
+def card_enabled(config: Dict[str, object], key: str) -> bool:
+    for kind, name in SWITCHES.get(key, []):
+        if kind == "gesture":
+            if not bool((config.get("gestures") or {}).get(name, {}).get("enabled", True)):
+                return False
+        elif not bool(config.get(name, True)):
+            return False
+    return True
+
+
+def set_card_enabled(config: Dict[str, object], key: str, enabled: bool) -> bool:
+    """Turn a card's gesture on or off in `config` (in place). False for a card that cannot be switched."""
+    if key not in SWITCHES:
+        return False
+    for kind, name in SWITCHES[key]:
+        if kind == "gesture":
+            gestures = config.setdefault("gestures", {})
+            gestures.setdefault(name, {})["enabled"] = bool(enabled)
+        else:
+            config[name] = bool(enabled)
+    return True
