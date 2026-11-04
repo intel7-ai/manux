@@ -567,11 +567,6 @@ ApplicationWindow {
                 Item { Layout.fillWidth: true }
                 TextLabel { text: dashboard.chosenHand; color: window.muted; font.pixelSize: 13 }
                 ActionButton {
-                    text: "설정"
-                    enabled: !dashboard.calibratingPointer
-                    onClicked: { dashboard.command(27); settingsDialog.open() }
-                }
-                ActionButton {
                     text: dashboard.controlLabel === "일시정지" ? "끄기" : "켜기"
                     accent: dashboard.controlLabel !== "일시정지"
                     Layout.preferredWidth: 96
@@ -579,8 +574,62 @@ ApplicationWindow {
                 }
             }
         }
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 0
+            Rectangle {
+                Layout.preferredWidth: 200
+                Layout.fillHeight: true
+                color: "white"
+                Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: window.line }
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 4
+                    Repeater {
+                        model: [["home", "홈"], ["profiles", "프로필"], ["customize", "맞춤 설정"]]
+                        delegate: Button {
+                            id: navItem
+                            required property var modelData
+                            readonly property bool selected: dashboard.currentPage === modelData[0]
+                            Layout.fillWidth: true
+                            implicitHeight: 42
+                            onClicked: dashboard.setPage(modelData[0])
+                            contentItem: TextLabel {
+                                text: navItem.modelData[1]
+                                font.bold: navItem.selected
+                                leftPadding: 8
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            background: Rectangle {
+                                radius: 10
+                                color: navItem.selected ? "#E3F8F1" : navItem.down ? "#DDE7EC" : "transparent"
+                                border.color: navItem.activeFocus ? "#16846E" : "transparent"
+                                border.width: 2
+                            }
+                        }
+                    }
+                    Item { Layout.fillHeight: true }
+                    Button {
+                        id: settingsNav
+                        Layout.fillWidth: true
+                        implicitHeight: 42
+                        enabled: !dashboard.calibratingPointer
+                        onClicked: { dashboard.command(27); settingsDialog.open() }
+                        contentItem: TextLabel { text: "설정"; leftPadding: 8; verticalAlignment: Text.AlignVCenter }
+                        background: Rectangle {
+                            radius: 10
+                            color: settingsNav.down ? "#DDE7EC" : "transparent"
+                            border.color: settingsNav.activeFocus ? "#16846E" : "transparent"
+                            border.width: 2
+                        }
+                    }
+                }
+            }
         ScrollView {
             id: mainScroll
+            visible: dashboard.currentPage === "home"
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
@@ -746,6 +795,132 @@ ApplicationWindow {
                     ActionButton { text: diagnostics.visible ? "상세 닫기" : "상세 정보"; onClicked: diagnostics.visible = !diagnostics.visible }
                 }
                 Item { Layout.preferredHeight: 8 }
+            }
+        }
+            // Profiles: which calibration profile the engine uses
+            ScrollView {
+                id: profilesScroll
+                visible: dashboard.currentPage === "profiles"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: availableWidth
+                ColumnLayout {
+                    width: Math.min(profilesScroll.availableWidth - 48, 720)
+                    x: 24
+                    spacing: 12
+                    Item { Layout.preferredHeight: 8 }
+                    TextLabel { text: "프로필"; font.pixelSize: 22; font.bold: true }
+                    TextLabel {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        color: window.muted
+                        text: "프로필은 내 손에 맞춰 잰 값입니다. 기본값 위에 덮어써서, 같은 동작도 사람마다 잘 맞게 합니다. 바꾸면 입력이 멈추니 다시 켜세요."
+                    }
+                    Repeater {
+                        model: dashboard.profileNames
+                        delegate: Rectangle {
+                            required property var modelData
+                            readonly property bool chosen: dashboard.profileName === modelData[0]
+                            Layout.fillWidth: true
+                            implicitHeight: 52
+                            radius: 12
+                            color: chosen ? "#E3F8F1" : "white"
+                            border.color: chosen ? window.mint : window.line
+                            border.width: chosen ? 2 : 1
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 16
+                                anchors.rightMargin: 16
+                                TextLabel { text: modelData[1]; font.bold: chosen; Layout.fillWidth: true }
+                                TextLabel { visible: chosen; text: "사용 중"; color: "#08775E"; font.pixelSize: 12 }
+                            }
+                            MouseArea { anchors.fill: parent; onClicked: dashboard.selectProfile(modelData[0]) }
+                        }
+                    }
+                    TextLabel {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        color: window.muted
+                        font.pixelSize: 12
+                        text: "새 프로필 만들기(내 손에 맞추기)는 맞춤 설정 화면에 곧 추가됩니다."
+                    }
+                }
+            }
+
+            // Customization: what the user can change without a developer (docs/design/decision-customization.md)
+            ScrollView {
+                id: customizeScroll
+                visible: dashboard.currentPage === "customize"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: availableWidth
+                ColumnLayout {
+                    width: Math.min(customizeScroll.availableWidth - 48, 720)
+                    x: 24
+                    spacing: 12
+                    Item { Layout.preferredHeight: 8 }
+                    TextLabel { text: "맞춤 설정"; font.pixelSize: 22; font.bold: true }
+                    TextLabel {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        color: window.muted
+                        text: dashboard.pointerOnly
+                            ? "지금은 검지 포인터(시험)를 쓰고 있습니다. 동작 켜고 끄기는 손바닥(기본) 방식에서 쓸 수 있어요."
+                            : "쓰지 않는 동작은 꺼 두면 잘못 인식될 일이 줄어듭니다. 바꾸면 입력이 멈추니 다시 켜세요."
+                    }
+                    SectionLabel { text: "동작 켜고 끄기" }
+                    Repeater {
+                        model: dashboard.pointerOnly ? [] : dashboard.switchableCards
+                        delegate: Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            implicitHeight: switchRow.implicitHeight + 24
+                            radius: 12
+                            color: "white"
+                            border.color: window.line
+                            RowLayout {
+                                id: switchRow
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                spacing: 12
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+                                    TextLabel { text: modelData[1]; font.bold: true; color: modelData[3] ? window.navy : "#A9B6C0" }
+                                    TextLabel {
+                                        Layout.fillWidth: true
+                                        text: modelData[2]
+                                        color: modelData[3] ? window.muted : "#A9B6C0"
+                                        font.pixelSize: 12
+                                        wrapMode: Text.Wrap
+                                    }
+                                }
+                                Segmented {
+                                    Layout.fillWidth: false
+                                    Layout.preferredWidth: 140
+                                    options: [["off", "끔"], ["on", "켬"]]
+                                    current: modelData[3] ? "on" : "off"
+                                    onPicked: function (value) { dashboard.setCardEnabled(modelData[0], value === "on") }
+                                }
+                            }
+                        }
+                    }
+                    Divider {}
+                    SectionLabel { text: "곧 추가됩니다" }
+                    Repeater {
+                        model: [["동작 바꾸기", "원하는 동작을 다섯 번 보여 주면, 그 동작으로 클릭·우클릭 등을 하게 바꿉니다."],
+                                ["내 손에 맞추기", "지금 동작이 잘 안 될 때, 몇 번 해 보이면 내 손에 맞는 값으로 프로필을 만듭니다."]]
+                        delegate: ColumnLayout {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 2
+                            TextLabel { text: modelData[0]; font.bold: true; color: window.muted }
+                            TextLabel { Layout.fillWidth: true; text: modelData[1]; color: window.muted; font.pixelSize: 12; wrapMode: Text.Wrap }
+                        }
+                    }
+                }
             }
         }
     }

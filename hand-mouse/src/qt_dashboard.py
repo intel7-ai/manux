@@ -16,7 +16,7 @@ from PySide6.QtQuickControls2 import QQuickStyle
 
 from src import app_paths, gesture_guide, global_hotkeys, profiles
 from src.dashboard import ACTIONS
-from src.gesture_engine import DEFAULT_CONFIG_PATH
+from src.gesture_engine import DEFAULT_CONFIG_PATH, GestureEngine
 from src.hand_selection import HandSelection, selected_detection
 from src.pointer_workspace import calibrated_pointer, pointer_axes
 from src.tracking_test import load_recent_results
@@ -74,6 +74,13 @@ class QtDashboard(QObject):
         self.sequence = 0
         self.contact_text = ""
         self.live_gesture = ""
+        self.page = "home"
+        self.runtime_requests = deque()   # (command, *args) for the runtime thread, posted by the main loop
+        try:
+            _config = GestureEngine(config_path=DEFAULT_CONFIG_PATH).config
+        except Exception:                 # unreadable config: the engine falls back the same way
+            _config = {}
+        self.card_on = {key: gesture_guide.card_enabled(_config, key) for key in gesture_guide.SWITCHES}
         self.tutorial = None
         self._tutorial_progress = -1.0
         self.show_fingertips = False
@@ -415,6 +422,55 @@ class QtDashboard(QObject):
     def profileCount(self):
         return len(profiles.list_profiles(DEFAULT_CONFIG_PATH.parent))
 
+    # ------------------------------------------------------------------ sidebar pages: home | profiles | customize
+    @Slot(str)
+    def setPage(self, page):
+        if page in ("home", "profiles", "customize") and page != self.page:
+            self.page = page
+            self.stateChanged.emit()
+
+    @Property(str, notify=stateChanged)
+    def currentPage(self):
+        return self.page
+
+    @Property("QVariantList", notify=stateChanged)
+    def profileNames(self):
+        """[[value, label], ...]: "" = no profile, then the calibration profiles."""
+        return [["", "기본 (프로필 없음)"]] + [[n, n] for n in profiles.list_profiles(DEFAULT_CONFIG_PATH.parent)]
+
+    @Property(str, notify=stateChanged)
+    def profileName(self):
+        return self.profile or ""
+
+    @Slot(str)
+    def selectProfile(self, name):
+        """Use a calibration profile ("" = none). Pauses control like the other settings."""
+        value = name or None
+        if self.stage_name != "main" or value == self.profile:
+            return
+        if value is not None and value not in profiles.list_profiles(DEFAULT_CONFIG_PATH.parent):
+            return
+        self.commands.clear()
+        self.commands.append(27)
+        self.profile = value
+        self.stateChanged.emit()
+
+    @Property("QVariantList", notify=stateChanged)
+    def switchableCards(self):
+        """[[key, title, how, on], ...] for the gestures that can be turned off (customization page)."""
+        return [[str(c["key"]), str(c["title"]), str(c["how"]), self.card_on.get(str(c["key"]), True)]
+                for c in gesture_guide.PALM_CARDS if c["key"] in gesture_guide.SWITCHES]
+
+    @Slot(str, bool)
+    def setCardEnabled(self, key, enabled):
+        if key not in gesture_guide.SWITCHES or self.card_on.get(key, True) == bool(enabled):
+            return
+        self.commands.clear()
+        self.commands.append(27)              # like other settings: input pauses, the user turns it on again
+        self.card_on[key] = bool(enabled)
+        self.runtime_requests.append(("card_enabled", key, bool(enabled)))
+        self.stateChanged.emit()
+
     @Slot()
     def cycleProfile(self):
         """none -> first profile -> next ... -> none. Pauses control like the other settings."""
@@ -721,11 +777,14 @@ class QtDashboard(QObject):
         return selected_detection(detections, self.control_hand, mirrored)
 
     def gesture_cards(self):
-        return gesture_guide.cards(self.use_index_pointer, self.click_style, self.pointer_anchor)
+        cards = gesture_guide.cards(self.use_index_pointer, self.click_style, self.pointer_anchor)
+        if self.use_index_pointer:
+            return cards
+        return [c for c in cards if self.card_on.get(str(c["key"]), True)]
 
     @Property("QVariantList", notify=stateChanged)
     def gestureCards(self):
-        """[[key, title, how], ...] for the current engine and click settings."""
+        """[[key, title, how], ...] for the current engine and click settings (switched-off gestures left out)."""
         return gesture_guide.for_qml(self.gesture_cards())
 
     # ------------------------------------------------------------------ guided tutorial (src/tutorial.py)
