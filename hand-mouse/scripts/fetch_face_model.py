@@ -13,12 +13,15 @@ import hashlib
 import sys
 import urllib.request
 from pathlib import Path
+from typing import Any, Callable, Optional
 
 URL = ("https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/"
        "float16/1/face_landmarker.task")
 EXPECTED_SHA256 = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
 EXPECTED_SIZE = 3758596
 DEFAULT_PATH = Path(__file__).resolve().parents[1] / "models" / "face_landmarker.task"
+TIMEOUT_S = 30  # applies to connecting and to each read, so a stalled download cannot hang forever
+CHUNK = 1 << 16
 
 
 def sha256_of(path: Path) -> str:
@@ -29,30 +32,45 @@ def sha256_of(path: Path) -> str:
     return h.hexdigest()
 
 
-def verify(path: Path) -> bool:
-    return path.is_file() and path.stat().st_size == EXPECTED_SIZE and sha256_of(path) == EXPECTED_SHA256
+def verify(path: Path, expected_sha256: str = EXPECTED_SHA256, expected_size: int = EXPECTED_SIZE) -> bool:
+    return path.is_file() and path.stat().st_size == expected_size and sha256_of(path) == expected_sha256
 
 
-def fetch(path: Path = DEFAULT_PATH) -> int:
-    if verify(path):
+def _download(url: str, dest: Path, opener: Callable[..., Any], max_bytes: int) -> None:
+    """Stream to `dest` with a timeout; refuse to keep reading past `max_bytes`."""
+    total = 0
+    with opener(url, timeout=TIMEOUT_S) as resp, dest.open("wb") as out:
+        while True:
+            chunk = resp.read(CHUNK)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise ValueError(f"download is larger than the expected {max_bytes} bytes")
+            out.write(chunk)
+
+
+def fetch(path: Path = DEFAULT_PATH, url: str = URL, expected_sha256: str = EXPECTED_SHA256,
+          expected_size: int = EXPECTED_SIZE, opener: Optional[Callable[..., Any]] = None) -> int:
+    if verify(path, expected_sha256, expected_size):
         print(f"OK: {path} already matches the pinned SHA-256.")
         return 0
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".task.part")
-    print(f"Downloading {URL}")
+    print(f"Downloading {url} (timeout {TIMEOUT_S}s)")
     try:
-        urllib.request.urlretrieve(URL, str(tmp))
-    except Exception as exc:  # noqa: BLE001 - report any network failure plainly
+        _download(url, tmp, opener or urllib.request.urlopen, expected_size + (1 << 20))
+    except Exception as exc:  # noqa: BLE001 - report any network or size failure plainly
         tmp.unlink(missing_ok=True)
-        print(f"FAILED: download error: {exc}", file=sys.stderr)
+        print(f"FAILED: download error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
-    if not verify(tmp):
+    if not verify(tmp, expected_sha256, expected_size):
         got = sha256_of(tmp)
         tmp.unlink(missing_ok=True)
-        print(f"FAILED: SHA-256 mismatch (got {got}, expected {EXPECTED_SHA256}). File removed.", file=sys.stderr)
+        print(f"FAILED: SHA-256 mismatch (got {got}, expected {expected_sha256}). File removed.", file=sys.stderr)
         return 3
     tmp.replace(path)
-    print(f"OK: saved {path} ({EXPECTED_SIZE} bytes, SHA-256 verified).")
+    print(f"OK: saved {path} ({expected_size} bytes, SHA-256 verified).")
     return 0
 
 

@@ -36,8 +36,14 @@ DEFAULT_OUT = ROOT / "logs" / "gaze"  # logs/ is already git-ignored
 
 
 def _pair(text: str, cast) -> Tuple[Any, Any]:
-    a, b = text.lower().split("x")
-    return cast(a), cast(b)
+    """Parse 'AxB'. Raises ValueError with a short message instead of an unpack/cast traceback."""
+    parts = str(text).lower().split("x")
+    if len(parts) != 2:
+        raise ValueError(f"expected WIDTHxHEIGHT like 1920x1080, got {text!r}")
+    try:
+        return cast(parts[0]), cast(parts[1])
+    except ValueError:
+        raise ValueError(f"expected numbers in WIDTHxHEIGHT, got {text!r}") from None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -71,26 +77,33 @@ class CameraSource:
         import mediapipe as mp
         import numpy as np
 
-        self.cv2, self.np, self.screen = cv2, np, screen
-        # Read the model into memory instead of passing a path: MediaPipe fails to open model
-        # files under folders with non-ASCII names on Windows (seen on this project).
-        buffer = model_path.read_bytes()
-        opts = mp.tasks.vision.FaceLandmarkerOptions(
-            base_options=mp.tasks.BaseOptions(model_asset_buffer=buffer),
-            running_mode=mp.tasks.vision.RunningMode.VIDEO, num_faces=1,
-            output_face_blendshapes=False, output_facial_transformation_matrixes=False)
-        self.mp = mp
-        self.landmarker = mp.tasks.vision.FaceLandmarker.create_from_options(opts)
-        src: Any = int(camera_source) if camera_source.isdigit() else camera_source
-        self.cap = cv2.VideoCapture(src)
-        if not self.cap.isOpened():
-            raise RuntimeError("camera could not be opened")
+        self.cv2, self.np, self.screen, self.mp = cv2, np, screen, mp
+        self.landmarker = None
+        self.cap = None
+        self.win = "gaze-validate (Esc = abort)"
+        self.window_open = False
+        self.aspect: Optional[float] = None
         self.t0 = time.perf_counter()
         self.last_ms = 0
-        self.win = "gaze-validate (Esc = abort)"
-        cv2.namedWindow(self.win, cv2.WINDOW_NORMAL)
-        cv2.setWindowProperty(self.win, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-        self.aspect: Optional[float] = None
+        try:
+            # Read the model into memory instead of passing a path: MediaPipe fails to open model
+            # files under folders with non-ASCII names on Windows (seen on this project).
+            buffer = model_path.read_bytes()
+            opts = mp.tasks.vision.FaceLandmarkerOptions(
+                base_options=mp.tasks.BaseOptions(model_asset_buffer=buffer),
+                running_mode=mp.tasks.vision.RunningMode.VIDEO, num_faces=1,
+                output_face_blendshapes=False, output_facial_transformation_matrixes=False)
+            self.landmarker = mp.tasks.vision.FaceLandmarker.create_from_options(opts)
+            src: Any = int(camera_source) if camera_source.isdigit() else camera_source
+            self.cap = cv2.VideoCapture(src)
+            if not self.cap.isOpened():
+                raise RuntimeError("camera could not be opened")
+            cv2.namedWindow(self.win, cv2.WINDOW_NORMAL)
+            self.window_open = True
+            cv2.setWindowProperty(self.win, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        except BaseException:
+            self.close()  # release whatever was already opened, then report the failure
+            raise
 
     def now(self) -> float:
         return time.perf_counter() - self.t0
@@ -138,35 +151,51 @@ class CameraSource:
         return frames
 
     def close(self) -> None:
-        self.cap.release()
-        self.cv2.destroyAllWindows()
+        """Release camera, window and landmarker. Safe to call twice and after a partial init."""
+        if self.cap is not None:
+            self.cap.release()
+            self.cap = None
+        if self.window_open:
+            self.cv2.destroyAllWindows()
+            self.window_open = False
+        if self.landmarker is not None:
+            self.landmarker.close()
+            self.landmarker = None
+
+
+def _fail(message: str) -> int:
+    print(f"error: {message}", file=sys.stderr)
+    return 2
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
-    w_px, h_px = _pair(args.screen_px, int)
-    w_cm, h_cm = _pair(args.screen_cm, float)
-    screen = ScreenSpec(w_px, h_px, w_cm, h_cm, args.distance_cm)
-    estimator = GazeEstimator(alpha=args.alpha, degree=args.degree, min_samples=30)
-    close = None
+    try:
+        w_px, h_px = _pair(args.screen_px, int)
+        w_cm, h_cm = _pair(args.screen_cm, float)
+        screen = ScreenSpec(w_px, h_px, w_cm, h_cm, args.distance_cm)
+        if args.frames_per_point < 1 or args.settle_frames < 0 or args.drift_minutes < 0:
+            raise ValueError("--frames-per-point must be >= 1, --settle-frames and --drift-minutes >= 0")
+        estimator = GazeEstimator(alpha=args.alpha, degree=args.degree, min_samples=30)
+    except ValueError as exc:
+        return _fail(f"invalid argument: {exc}")
+    source: Any = None
+    mode = "synthetic" if args.synthetic else "camera"
     if args.synthetic:
-        source: Any = SyntheticSource(noise=args.synthetic_noise, seed=args.seed,
-                                      drift_h_per_min=args.synthetic_drift_per_min,
-                                      head_wobble_deg=1.0, blink_rate=0.02, dropout_rate=0.01)
-        mode = "synthetic"
+        source = SyntheticSource(noise=args.synthetic_noise, seed=args.seed,
+                                 drift_h_per_min=args.synthetic_drift_per_min,
+                                 head_wobble_deg=1.0, blink_rate=0.02, dropout_rate=0.01)
     else:
         if not args.consent:
-            print("Real mode needs --consent (the person measured agreed). Nothing was started.", file=sys.stderr)
-            return 2
+            return _fail("real mode needs --consent (a self-declaration by whoever runs the tool that the "
+                         "person measured agreed). Nothing was started.")
         model = Path(args.model)
         if not model.is_file():
-            print(f"Model not found: {model}\nRun: uv run --locked python scripts/fetch_face_model.py", file=sys.stderr)
-            return 2
+            return _fail(f"model not found: {model}. Run: uv run --locked python scripts/fetch_face_model.py")
         print("Privacy: no video or image is saved; the report keeps targets and statistics only.")
-        source = CameraSource(screen, args.camera_source, model)
-        close = source.close
-        mode = "camera"
     try:
+        if not args.synthetic:
+            source = CameraSource(screen, args.camera_source, Path(args.model))  # cleans up after itself on failure
         report = run_session(source, screen, estimator, args.frames_per_point, args.settle_frames,
                              args.drift_minutes, args.drift_interval_s)
         if mode == "camera" and getattr(source, "aspect", None):
@@ -174,9 +203,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     except KeyboardInterrupt:
         print("Aborted (Esc). Nothing was saved.", file=sys.stderr)
         return 1
+    except (RuntimeError, OSError, ImportError) as exc:
+        return _fail(f"{type(exc).__name__}: {exc}")
     finally:
-        if close:
-            close()
+        if mode == "camera" and source is not None:
+            source.close()
     report["meta"] = {"mode": mode, "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                       "stage": "gaze-experiment-1",
                       "interpretation": ("synthetic data: checks the code, says nothing about real gaze accuracy"
