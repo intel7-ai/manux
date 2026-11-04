@@ -82,14 +82,14 @@ ApplicationWindow {
                 model: [["toggle", "켜기 / 끄기"], ["hide", "창 숨기기 / 보이기"]]
                 delegate: RowLayout {
                     required property var modelData
-                    readonly property string action: modelData[0]
+                    readonly property string shortcutAction: modelData[0]   // not "action": Button has one
                     Layout.fillWidth: true
                     TextLabel { text: modelData[1]; Layout.preferredWidth: 110 }
                     ActionButton {
                         id: captureButton
                         Layout.fillWidth: true
                         property bool capturing: false
-                        text: capturing ? "새 조합을 누르세요 (Esc 취소)" : (dashboard.shortcutLabels[action] || "")
+                        text: capturing ? "새 조합을 누르세요 (Esc 취소)" : (dashboard.shortcutLabels[shortcutAction] || "")
                         onClicked: { capturing = true; shortcutError.text = ""; forceActiveFocus() }
                         onActiveFocusChanged: if (!activeFocus) capturing = false
                         Keys.onPressed: function (event) {
@@ -106,11 +106,11 @@ ApplicationWindow {
                             if (event.modifiers & Qt.AltModifier) parts.push("alt")
                             if (event.modifiers & Qt.ShiftModifier) parts.push("shift")
                             parts.push(key)
-                            shortcutError.text = dashboard.setShortcut(action, parts.join("+"))
+                            shortcutError.text = dashboard.setShortcut(shortcutAction, parts.join("+"))
                             capturing = false
                         }
                     }
-                    ActionButton { text: "기본"; onClicked: dashboard.resetShortcut(action) }
+                    ActionButton { text: "기본"; onClicked: dashboard.resetShortcut(shortcutAction) }
                 }
             }
             TextLabel {
