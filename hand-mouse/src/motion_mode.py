@@ -61,8 +61,10 @@ DEFAULTS: Dict[str, Any] = {
     # 2026-11-04: 11 logged entries, most while moving a fist / palm: in 7 the thumb tip was BELOW the index
     # knuckle (a fist with the thumb out sideways), and the palm wandered 0.1-0.23 frame widths back and forth
     # while staying inside motion_enter_still of where the hold began. A real thumbs-up points up and is held.
-    "motion_thumb_up": 0.5,          # thumb tip at least this many palm lengths above the index knuckle (entry pose)
-    "motion_enter_path": 0.12,       # total palm travel (frame widths) allowed during the hold, not only the net offset
+    # Over ~3000 logged "thumb out + folded" frames this measure splits in two groups with a valley at 0.0
+    # (sideways fists below, thumbs-ups above); 0.5 cut the thumbs-up group in half and made entry hard.
+    "motion_thumb_up": 0.15,         # thumb tip at least this many palm lengths above the index knuckle (entry pose)
+    "motion_enter_path": 0.15,       # total palm travel (frame widths) allowed during the hold, not only the net offset
     "motion_fold_ratio": 1.2,        # finger curl ratio <= this = folded (a real fist is 0.6-0.9; a thumbs-up hand 0.7-1.3)
     "motion_open_ratio": 1.3,        # a finger counts as fully extended at this curl ratio (extended ones sit at 1.5-1.8)
     "motion_open_min": 1.0,          # a stroke with any finger below this in any frame is refused ("bent")

@@ -40,11 +40,9 @@ ONE_SHOT = ("left_click", "right_click", "drag_toggle", "alt_tab", "show_desktop
 
 
 def practice_output(result: GestureResult) -> GestureResult:
-    """Guided tutorial (stage "tutorial"): the cursor moves, but no button, scroll or key is sent.
-    The snapshot still reports the real action, so the tutorial can tell the user it worked."""
-    if result.is_moving and result.cursor_point is not None:
-        return GestureResult(action="move_cursor", cursor_point=result.cursor_point, is_moving=True,
-                             dpi_multiplier=result.dpi_multiplier, hand_shape=result.hand_shape)
+    """Guided tutorial (stage "tutorial"): nothing reaches Windows, not even cursor movement (11/04 feedback:
+    practising must not move the real mouse). The snapshot still reports the real action, so the tutorial
+    can tell the user it worked."""
     return GestureResult()
 
 
@@ -386,7 +384,7 @@ class QtRuntime:
             contacts = frame_out.contacts
             if frame_out.action is not None:
                 action = frame_out.action
-                if frame_out.warp is not None:
+                if frame_out.warp is not None and not tutorial:
                     mouse.warp_to(*frame_out.warp)
                 result = GestureResult(action=action, cursor_point=frame_out.cursor_point,
                                        is_moving=frame_out.cursor_point is not None)

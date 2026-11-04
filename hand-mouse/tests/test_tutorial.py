@@ -58,8 +58,9 @@ def test_skip_back_and_finish():
     assert not t.observe("left_click", False, 1.0)
 
 
-def test_practice_output_moves_but_never_presses():
-    move = GestureResult(action="drag_hold", cursor_point=(.5, .5), is_moving=True)
-    assert practice_output(move).action == "move_cursor"
-    assert practice_output(GestureResult(action="left_click")).action == "none"
-    assert practice_output(GestureResult(action="scroll_grab", cursor_point=(.5, .5))).action == "none"
+def test_practice_output_sends_nothing_not_even_movement():
+    for result in (GestureResult(action="move_cursor", cursor_point=(.5, .5), is_moving=True),
+                   GestureResult(action="drag_hold", cursor_point=(.5, .5), is_moving=True),
+                   GestureResult(action="left_click"), GestureResult(action="scroll_grab", cursor_point=(.5, .5))):
+        out = practice_output(result)
+        assert out.action == "none" and out.cursor_point is None and not out.is_moving
