@@ -12,7 +12,9 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 
+from src import profiles
 from src.dashboard import ACTIONS
+from src.gesture_engine import DEFAULT_CONFIG_PATH
 from src.hand_selection import HandSelection, selected_detection
 from src.pointer_workspace import calibrated_pointer, pointer_axes
 from src.tracking_test import load_recent_results
@@ -87,6 +89,11 @@ class QtDashboard(QObject):
         # "pinch": thumb + middle/ring (existing). "trigger": option A, thumb on the index side.
         # "off": cursor tracking only, no click detection at all.
         self.click_style = saved_click if saved_click in CLICK_STYLES else "pinch"
+        self.profile = profiles.get_active(DEFAULT_CONFIG_PATH.parent)   # calibration profile in use
+        self.motion_request = 0                                 # +1 per press of the motion-mode button
+        self.motion_state = (False, 0.0, "", 0.0, 0.0)           # (on, seconds left, last command, entering, leaving)
+        self.motion_exit_until = 0.0                             # the "motion mode off" notice stays until then
+        self.motion_badge = (False, "")                          # (visible, text) as last shown
         saved_anchor = self.preferences.value("pointerAnchor", "index", type=str)
         # Which point of the hand the cursor follows: index fingertip or palm centre.
         self.pointer_anchor = saved_anchor if saved_anchor in ("index", "palm") else "index"
@@ -281,6 +288,76 @@ class QtDashboard(QObject):
         self.preferences.setValue("pointerClick", self.click_style)
         self.stateChanged.emit()
 
+    # ------------------------------------------------------------------ motion mode
+    @Property(str, notify=stateChanged)
+    def motionLabel(self):
+        on, left, last = self.motion_state[:3]
+        if on:
+            return "모션 모드 · 켜짐 (눌러서 끄기)" + (f" · {last}" if last else "")
+        return "모션 모드 · 꺼짐 (눌러서 켜기)"
+
+    def _motion_badge_now(self):
+        """(visible, text) of the corner badge: on while motion mode is on, 'entering' while the pose is
+        held, and a short 'off' notice after it ends."""
+        on, left, last, entering, leaving = self.motion_state
+        if on:
+            if leaving >= 0.2:
+                return True, f"모션 모드 끄는 중… {int(leaving * 100)}%"
+            text = "모션 모드 켜짐" + (f" · {left:.0f}초" if left > 0 else "")
+            return True, text + (f" · {last}" if last else "")
+        if entering >= 0.2:
+            return True, f"모션 모드 진입 중… {int(entering * 100)}%"
+        if time.perf_counter() < self.motion_exit_until:
+            return True, "모션 모드 꺼짐"
+        return False, ""
+
+    @Property(bool, notify=stateChanged)
+    def motionBadgeVisible(self):
+        return self.motion_badge[0]
+
+    @Property(str, notify=stateChanged)
+    def motionBadgeText(self):
+        return self.motion_badge[1]
+
+    @Property(bool, notify=stateChanged)
+    def motionBadgeOn(self):
+        return bool(self.motion_state[0])
+
+    @Property(bool, notify=stateChanged)
+    def motionOn(self):
+        return bool(self.motion_state[0])
+
+    @Slot()
+    def toggleMotion(self):
+        if self.stage_name != "main":
+            return
+        self.motion_request += 1
+        self.stateChanged.emit()
+
+    # ------------------------------------------------------------------ calibration profile
+    @Property(str, notify=stateChanged)
+    def profileLabel(self):
+        return f"프로필 · {self.profile or '없음'}"
+
+    @Property(int, notify=stateChanged)
+    def profileCount(self):
+        return len(profiles.list_profiles(DEFAULT_CONFIG_PATH.parent))
+
+    @Slot()
+    def cycleProfile(self):
+        """none -> first profile -> next ... -> none. Pauses control like the other settings."""
+        if self.stage_name != "main":
+            return
+        names = [None] + profiles.list_profiles(DEFAULT_CONFIG_PATH.parent)
+        try:
+            i = names.index(self.profile)
+        except ValueError:
+            i = -1
+        self.commands.clear()
+        self.commands.append(27)
+        self.profile = names[(i + 1) % len(names)]
+        self.stateChanged.emit()
+
     @Property(str, notify=stateChanged)
     def anchorLabel(self):
         return "기준점 · 검지 끝" if self.pointer_anchor == "index" else "기준점 · 손바닥 중심"
@@ -393,7 +470,7 @@ class QtDashboard(QObject):
             use_index_pointer=self.use_index_pointer, click_style=self.click_style,
             anchor=self.pointer_anchor, hand_crop=self.hand_crop, axes=self.axes,
             calibrating=self.calibrating, sensitivity=self.pointer_sensitivity,
-            show_fingertips=self.show_fingertips,
+            show_fingertips=self.show_fingertips, profile=self.profile, motion_request=self.motion_request,
         )
 
     def apply_snapshot(self, snap):
@@ -409,6 +486,14 @@ class QtDashboard(QObject):
                 self.set_tracking_view(snap.tracking)
         if snap.tracking is None:
             self.tracking_close_requested = False
+        if snap.motion is not None:
+            if self.motion_state[0] and not snap.motion[0]:
+                self.motion_exit_until = time.perf_counter() + 1.8       # keep a short "off" notice on screen
+            self.motion_state = snap.motion
+            badge = self._motion_badge_now()
+            if badge != self.motion_badge:
+                self.motion_badge = badge
+                self.stateChanged.emit()
         if snap.failures is not None:
             self.set_failures(*snap.failures)
         if snap.recent_line:

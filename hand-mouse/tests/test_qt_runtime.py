@@ -1,3 +1,4 @@
+import json
 """QtRuntime (camera -> tracking -> pointer -> mouse thread) with a fake camera and tracker."""
 import time
 
@@ -89,13 +90,17 @@ def test_failure_mark_saves_a_file_and_reports_it(tmp_path):
     steps(rt, 5)
     rt.post("failure_mark")
     seen = None
-    for _ in range(200):
+    for _ in range(500):   # the recorder keeps 2 s after the mark
         snap = steps(rt, 1)
         if snap.failures:
             seen = snap.failures
             break
     assert seen is not None and "직접 표시 1건" in seen[0]
     assert len(list((tmp_path / "failures").glob("*-manual.json"))) == 1
+    data = json.loads(next((tmp_path / "failures").glob("*-manual.json")).read_text(encoding="utf-8"))
+    assert data["schema"] == 2 and "summary" in data and "config" in data["meta"]
+    assert any(f.get("path") == "full" and "raw" in f for f in data["frames"])
+    assert (tmp_path / "failures" / "index.csv").exists()
 
 
 def test_hand_setup_stage_forwards_detections_and_keeps_control_off(tmp_path):
@@ -140,3 +145,55 @@ def test_cursor_keeps_moving_while_the_ui_thread_is_busy(tmp_path):
     finally:
         rt.stop()
     assert rt.error is None
+
+
+def test_picking_a_calibration_profile_reloads_both_engines(tmp_path, monkeypatch):
+    from src import profiles
+    monkeypatch.setattr(profiles, "RUN_OVERRIDE", None)
+    cfg_dir = tmp_path / "cfg"
+    cfg_dir.mkdir()
+    import src.gesture_engine as ge
+    monkeypatch.setattr(ge, "DEFAULT_CONFIG_PATH", cfg_dir / "gestures.json")
+    profiles.save_profile(cfg_dir, "민수", {"pinch_threshold": 0.0123})
+    rt = runtime(tmp_path)
+    base = rt.engine.config["pinch_threshold"]
+    steps(rt, 2)
+    assert rt.engine.config["pinch_threshold"] == base
+    rt.ui = UiState(stage="main", control_hand="Right", click_style="off", profile="민수")
+    steps(rt, 2)
+    assert rt.engine.config["pinch_threshold"] == 0.0123
+    assert rt.pointer.gestures.config["pinch_threshold"] == 0.0123
+    assert profiles.get_active(cfg_dir) == "민수"
+    rt.ui = UiState(stage="main", control_hand="Right", click_style="off", profile=None)
+    steps(rt, 2)
+    assert rt.engine.config["pinch_threshold"] == base and profiles.get_active(cfg_dir) is None
+
+
+def test_motion_mode_suspends_the_pointer_and_sends_the_swipe_command(tmp_path):
+    from tests.test_motion_mode import hand as motion_hand
+    rt = runtime(tmp_path)
+    rt.ui = UiState(stage="main", control_hand="Right", click_style="off", motion_request=0)
+    rt.post("key", ord(" "))                                   # start controlling
+    rt.tracker.hand = [Point3D(p.x, p.y, 0.0) for p in motion_hand(cx=0.30, fingers="open", thumb="out")]
+    steps(rt, 4)
+    assert not rt.motion.active
+    pos = rt.mouse.last_screen_pos
+    rt.ui = UiState(stage="main", control_hand="Right", click_style="off", motion_request=1)   # the button
+    steps(rt, 3)
+    assert rt.motion.active
+    # a swipe to the user's right with the thumb out = "forward"; the pointer does not follow the hand
+    rt.tracker.dx = 0.0
+    steps(rt, 22, move=0.0135)
+    assert "motion:forward" in rt.mouse.event_log
+    assert rt.mouse.last_screen_pos == pos
+    assert rt._snap.motion[0] is True
+    rt.ui = UiState(stage="main", control_hand="Right", click_style="off", motion_request=2)   # button again
+    steps(rt, 3)
+    assert not rt.motion.active
+
+
+def test_pressing_the_motion_button_while_paused_does_nothing(tmp_path):
+    rt = runtime(tmp_path)
+    rt.ui = UiState(stage="main", control_hand="Right", click_style="off", motion_request=1)
+    steps(rt, 5)                                               # still paused (starts paused)
+    assert not rt.motion.active

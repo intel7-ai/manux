@@ -17,6 +17,7 @@ Executes OS cursor movements, clicks, and drag states via PyAutoGUI, and support
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import threading
 import time
@@ -39,6 +40,63 @@ except ImportError:
 # Configure PyAutoGUI for zero-latency real-time control
 pyautogui.FAILSAFE = False
 pyautogui.PAUSE = 0
+
+
+class ScrollPump:
+    """Spreads wheel amounts over time.
+
+    The camera delivers ~30 updates a second; sent as they come, each one is a burst of 1-4 notches and
+    the page steps (replay of a 2026-11-04 session: median event 130 units, p90 270, a third of the frames
+    with none). The pump takes the amounts into a pending pool and hands out a share on every tick
+    (`1 - exp(-dt / tau)`), so a thread ticking every ~8 ms produces a steady stream of small events.
+    Totals are preserved; the added delay is about `tau` (0.03 s)."""
+
+    def __init__(self, tau: float = 0.03) -> None:
+        self.tau = tau
+        self._pending = [0.0, 0.0]
+        self._carry = [0.0, 0.0]
+        self._last: Optional[float] = None
+        self._lock = threading.Lock()
+
+    def add(self, v: float, h: float) -> None:
+        with self._lock:
+            self._pending[0] += v
+            self._pending[1] += h
+
+    def clear(self) -> None:
+        """Drop what has not been sent yet (the user caught the page)."""
+        with self._lock:
+            self._pending = [0.0, 0.0]
+            self._carry = [0.0, 0.0]
+
+    def pending(self) -> Tuple[float, float]:
+        with self._lock:
+            return self._pending[0], self._pending[1]
+
+    def step(self, now: float, tau: Optional[float] = None) -> Tuple[int, int]:
+        tau = self.tau if tau is None else tau
+        dt = 0.0 if self._last is None else max(0.0, min(0.1, now - self._last))
+        self._last = now
+        share = 1.0 if tau <= 0 else 1.0 - math.exp(-dt / tau)
+        with self._lock:
+            take = [self._pending[0] * share, self._pending[1] * share]
+            self._pending[0] -= take[0]
+            self._pending[1] -= take[1]
+            self._carry[0] += take[0]
+            self._carry[1] += take[1]
+            v, h = int(self._carry[0]), int(self._carry[1])
+            self._carry[0] -= v
+            self._carry[1] -= h
+        return v, h
+
+    def flush(self) -> Tuple[int, int]:
+        with self._lock:
+            v = int(round(self._pending[0] + self._carry[0]))
+            h = int(round(self._pending[1] + self._carry[1]))
+            self._pending = [0.0, 0.0]
+            self._carry = [0.0, 0.0]
+        return v, h
+
 
 
 class MouseController:
@@ -116,7 +174,26 @@ class MouseController:
         self._scroll_acc = [0.0, 0.0]
         self.scroll_total = [0, 0]  # sent wheel units (vertical, horizontal) for HUD / tests
         self._scroll_hist: Deque[Tuple[float, float, float]] = deque()
-        self._scroll_net = [0.0, 0.0]  # total wheel amount of the current grab (direction check)
+        self._scroll_net = [0.0, 0.0]  # total wheel amount of the current grab
+        self._scroll_recent: Deque[Tuple[float, float, float]] = deque()  # last ~0.4 s (direction check)
+        self.last_inertia: Optional[Dict[str, Any]] = None  # numbers of the latest launch (failure log)
+        self.inertia_launches = 0
+        self._pump = ScrollPump()
+        # Page scrolling keeps the cursor in the middle of the window it is browsing (see _begin_browse)
+        self.window_probe: Optional[Callable[[int, int], Optional[Tuple[int, int, str]]]] = None
+        self.scroll_target_finder: Any = None      # src.scroll_target.ScrollTargetFinder: the scroll region under the cursor
+        self._browse_centered = False     # the current browsing session was centred: the cursor stays put
+        self._browse_until = -1e9         # ... until this time (extended while grabbing / coasting)
+        self.browse_target: Optional[Tuple[int, int, str]] = None     # (x, y, region|page|window|kept|series) of the last browse
+        # Continuous browsing: the cursor goes back to where the first grab of the series started
+        self._series_anchor: Optional[Tuple[int, int]] = None
+        self._series_last = -1e9          # last time the series was active (grab / coast / lock)
+        self._clock = 0.0                 # time of the frame being applied (stamps cursor moves)
+        self._cursor_moved_at = -1e9      # last time the cursor moved by more than a couple of pixels
+        self._provisional = False       # coasting already started while the fingers are still opening
+        self._pump_thread: Optional[threading.Thread] = None
+        self._pump_stop = threading.Event()
+        self._scroll_tau = 0.03
         self._scroll_resume = False    # hand came back after a short loss: re-anchor
         self._lost_since: Optional[float] = None
         self._inertia_v: Optional[List[float]] = None  # wheel units / s while coasting
@@ -415,12 +492,42 @@ class MouseController:
     def _send_scroll(self, v: int, h: int) -> None:
         if v:
             self.scroll_total[0] += v
-            if not self.dry_run:
-                pyautogui.scroll(v, _pause=False)
         if h:
             self.scroll_total[1] += h
-            if not self.dry_run:
-                pyautogui.hscroll(h, _pause=False)
+        if self.dry_run or not (v or h):
+            return
+        if self._scroll_tau > 0:
+            self._pump.add(v, h)          # a thread hands it out in small steps (see ScrollPump)
+            self._ensure_pump()
+            return
+        if v:
+            pyautogui.scroll(v, _pause=False)
+        if h:
+            pyautogui.hscroll(h, _pause=False)
+
+    def _ensure_pump(self) -> None:
+        if self._pump_thread is not None and self._pump_thread.is_alive():
+            return
+        self._pump_stop.clear()
+        self._pump_thread = threading.Thread(target=self._pump_loop, name="scroll-pump", daemon=True)
+        self._pump_thread.start()
+
+    def _pump_loop(self) -> None:
+        idle = 0
+        while not self._pump_stop.is_set():
+            v, h = self._pump.step(time.perf_counter(), self._scroll_tau)
+            try:
+                if v:
+                    pyautogui.scroll(v, _pause=False)
+                if h:
+                    pyautogui.hscroll(h, _pause=False)
+            except Exception:
+                pass
+            pv, ph = self._pump.pending()
+            idle = 0 if (v or h or abs(pv) >= 1 or abs(ph) >= 1) else idle + 1
+            if idle > 250:                # ~2 s with nothing to send: let the thread end (restarted on demand)
+                break
+            time.sleep(0.008)
 
     @staticmethod
     def _take_steps(acc: List[float], step: int = 10) -> Tuple[int, int]:
@@ -438,14 +545,18 @@ class MouseController:
         that support it (Chrome, Edge, Office, ...).
         """
         alpha = 0.5
+        self._clock = now
+        self._scroll_tau = float(config.get("scroll_smooth_tau", 0.03))
         x, y = float(hand_pt[0]), float(hand_pt[1])
         if self._scroll_prev is None:
             self._stop_scroll_inertia()  # pinching again catches a coasting page
             self._flush_cursor()  # the page under the cursor gets the wheel events
+            self._begin_browse(config, now)
             self._scroll_prev = self._scroll_anchor = (x, y)
             self._scroll_live = False
             self._scroll_acc = [0.0, 0.0]
             self._scroll_hist.clear()
+            self._scroll_recent.clear()
             self._scroll_net = [0.0, 0.0]
             return
         if self._scroll_resume:
@@ -458,9 +569,33 @@ class MouseController:
         sx, sy = px + alpha * (x - px), py + alpha * (y - py)  # light jitter smoothing
         self._scroll_prev = (sx, sy)
         if releasing:
-            # Fingers are opening: freeze the page and keep the fling velocity measured
-            # BEFORE the release started. (The hand springs back at the end of a flick; that
-            # used to drag the page back and give the inertia the opposite direction.)
+            # Fingers are opening. The hand's own motion is ignored from here (it springs back at the
+            # end of a flick; that used to drag the page back and give the inertia the opposite direction),
+            # and the fling velocity measured BEFORE the release is what counts.
+            # The page used to stand still until the release was confirmed (~0.15 s) and only then start
+            # coasting: a visible pause between scrolling and inertia. Now it coasts from the first
+            # opening frame, so the two are one movement. If the fingers close again it is cancelled.
+            if (self._scroll_live and config.get("scroll_inertia", False)
+                    and config.get("scroll_inertia_seamless", True)):
+                if not self._provisional and self._inertia_v is None:
+                    launch = self._launch_velocity(config, now)
+                    if launch is not None:
+                        self._inertia_v = [launch[0], launch[1]]
+                        self._inertia_t = now
+                        self._inertia_acc = [0.0, 0.0]
+                        self._provisional = True
+                        self.inertia_launches += 1
+                if self._provisional:
+                    self._tick_scroll_inertia(config, now)
+            return
+        if self._provisional:
+            # a false alarm (the fingers closed again): take the coast back and continue from here
+            self._provisional = False
+            self._inertia_v = None
+            self._pump.clear()
+            self._scroll_prev = (x, y)
+            self._scroll_hist.clear()
+            self._scroll_recent.clear()
             return
         if not self._scroll_live:
             ax, ay = self._scroll_anchor
@@ -468,7 +603,7 @@ class MouseController:
                 return
             self._scroll_live = True  # past the deadzone: start scrolling from here on
             return
-        gain = float(config.get("scroll_gain", 24000.0))
+        gain = float(config.get("scroll_gain", 36000.0))
         sign = -1.0 if config.get("scroll_invert", False) else 1.0
         dy = (sy - py) * self.frame_aspect  # physical units (frame widths)
         dx = sx - px
@@ -481,31 +616,139 @@ class MouseController:
         self._scroll_hist.append((now, rv, rh))
         while len(self._scroll_hist) > 2 and now - self._scroll_hist[0][0] > 0.1:
             self._scroll_hist.popleft()
+        self._scroll_recent.append((now, rv, rh))
+        while len(self._scroll_recent) > 2 and now - self._scroll_recent[0][0] > 0.4:
+            self._scroll_recent.popleft()
         self._send_scroll(*self._take_steps(self._scroll_acc))
+
+    def _launch_velocity(self, cfg: Dict[str, Any], now: float) -> Optional[Tuple[float, float]]:
+        """Wheel units/s to coast with, from the last ~0.1 s of the grab (None = do not coast)."""
+        if not (self._scroll_live and cfg.get("scroll_inertia", False) and len(self._scroll_hist) >= 2):
+            return None
+        span = max(1e-3, self._scroll_hist[-1][0] - self._scroll_hist[0][0])
+        vv = sum(r[1] for r in list(self._scroll_hist)[1:]) / span
+        vh = sum(r[2] for r in list(self._scroll_hist)[1:]) / span
+        raw = (vv, vh)
+        # Follow the page's RECENT direction (last ~0.4 s), not the whole grab: after a long
+        # pull down, a flick back up must coast up (the whole-grab check refused it).
+        rv_sum = sum(r[1] for r in self._scroll_recent)
+        rh_sum = sum(r[2] for r in self._scroll_recent)
+        same_way = vv * rv_sum + vh * rh_sum > 0
+        # Browsing is mostly vertical: a flick that is mostly up/down must not drift sideways
+        # (hand wobble leaked 20-30 % into the horizontal wheel). Same for a sideways flick.
+        lock = float(cfg.get("scroll_inertia_axis_lock", 0.5))
+        if abs(vh) < abs(vv) * lock:
+            vh = 0.0
+        elif abs(vv) < abs(vh) * lock:
+            vv = 0.0
+        # A release flick can be 5-7x faster than the pull itself: cap the launch speed.
+        cap = float(cfg.get("scroll_inertia_max_speed", 3600.0))
+        speed = math.hypot(vv, vh)
+        if speed > cap > 0:
+            vv, vh = vv * cap / speed, vh * cap / speed
+        launched = same_way and math.hypot(vv, vh) >= float(cfg.get("scroll_inertia_min_speed", 600.0))
+        self.last_inertia = {"raw": [round(raw[0]), round(raw[1])], "used": [round(vv), round(vh)],
+                             "net": [round(self._scroll_net[0]), round(self._scroll_net[1])],
+                             "recent": [round(rv_sum), round(rh_sum)], "same_way": bool(same_way),
+                             "launched": bool(launched), "hist_n": len(self._scroll_hist),
+                             "seamless": bool(self._scroll_prev is not None and not self._provisional)}
+        return (vv, vh) if launched else None
+
+    def _begin_browse(self, config: Dict[str, Any], now: float) -> None:
+        """A page grab starts: keep the cursor on the scroll area it is over for the whole browsing session.
+
+        Scrolling is the hand's up/down motion, so the cursor used to drift over links and other areas between
+        grabs (and the wheel goes to the area under the cursor). While browsing the user should not have to care
+        where the cursor is: it stays while grabbing, coasting and for `scroll_session_hold` afterwards
+        (continuous browsing keeps it fixed), then follows the hand again. When the scroll area under it is a pane
+        the application exposes, the cursor is also moved to the middle of that pane."""
+        if not config.get("scroll_center_cursor", True):
+            self._browse_centered = False
+            return
+        cx, cy = self.last_screen_pos
+        tol = float(config.get("scroll_center_tolerance", 24))
+        # Continuous browsing: the first grab of a series decided the spot (where the user put the cursor, or the
+        # middle of a pane the application exposes). Every later grab of the series sends the cursor back there, so
+        # the hand's return trip - which drags the cursor along - costs nothing. A new series starts when the last
+        # browsing is longer ago than scroll_series_gap, or when the user parked the cursor somewhere else on purpose
+        # (it stood still for scroll_series_dwell before the grab, unlike a cursor still drifting with the hand).
+        anchor = self._series_anchor
+        if anchor is not None and now - self._series_last < float(config.get("scroll_series_gap", 4.0)):
+            parked = now - self._cursor_moved_at >= float(config.get("scroll_series_dwell", 0.4))
+            away = math.hypot(cx - anchor[0], cy - anchor[1]) > tol
+            if not (away and parked):
+                if away:
+                    self.warp_to(anchor[0], anchor[1])
+                    self.event_log.append(f"scroll_return:{anchor[0]},{anchor[1]}")
+                self.browse_target = (anchor[0], anchor[1], "series")
+                self._browse_centered = True
+                self._browse_until = now + float(config.get("scroll_session_hold", 1.2))
+                self._series_last = now
+                return
+        target: Optional[Tuple[int, int, str]] = None
+        kept: Tuple[int, int, str] = (cx, cy, "kept")
+        # The cursor position is what picks the label: the wheel (and so the page) moves the scroll area under the
+        # cursor. Two things follow. (1) The cursor is only moved when the application exposes the scroll area and it is
+        # a PANE of the window (a list, a sidebar): its middle is then the best place. (2) Whatever happens, the
+        # cursor stays where it is for the whole browsing session, so it can not drift onto another label.
+        # Not moved: an area that is most of the window (the page itself - it may hold inner scroll areas the
+        # application does not expose, and moving to the page middle would leave them), and the case where nothing is
+        # exposed (a web app's own panels are mostly not): the user put the cursor on the label, it stays there.
+        if self.scroll_target_finder is not None:
+            region = self.scroll_target_finder.target_at(cx, cy, wait=float(config.get("scroll_target_wait", 0.15)))
+            if region is not None:
+                if 0.0 < region.area_fraction < float(config.get("scroll_center_max_fraction", 0.6)):
+                    target = (region.center[0], region.center[1], "region:" + region.name)
+                else:
+                    kept = (cx, cy, "page:" + region.name)
+        if target is None and config.get("scroll_center_fallback_window", False) and self.window_probe is not None:
+            found = self.window_probe(cx, cy)
+            if found is not None:
+                target = (found[0], found[1], "window:" + found[2])
+        self.browse_target = target or kept
+        if target is not None:
+            tx, ty = int(target[0]), int(target[1])
+            if math.hypot(tx - cx, ty - cy) > tol:
+                self.warp_to(tx, ty)
+                self.event_log.append(f"scroll_center:{tx},{ty}:{target[2].split(':')[0]}")
+        self._series_anchor = self.last_screen_pos           # the spot the rest of this series returns to
+        self._series_last = now
+        self._browse_centered = True
+        self._browse_until = now + float(config.get("scroll_session_hold", 1.2))
+
+    def _browse_lock(self, config: Dict[str, Any], now: float) -> bool:
+        """True while the cursor must stay where the browsing put it."""
+        if not self._browse_centered:
+            return False
+        if self._scroll_prev is not None or self.scroll_coasting:
+            self._browse_until = now + float(config.get("scroll_session_hold", 1.2))
+            self._series_last = now                      # browsing is going on: the series is alive
+            return True
+        if now < self._browse_until:
+            return True
+        self._browse_centered = False
+        return False
 
     def _end_scroll(self, config: Optional[Dict[str, Any]] = None, now: float = 0.0, launch: bool = True) -> None:
         """Pinch released: a page that was still moving keeps coasting (inertia)."""
         cfg = config or {}
         self._scroll_resume = False
-        if (
-            launch
-            and self._scroll_live
-            and cfg.get("scroll_inertia", False)
-            and len(self._scroll_hist) >= 2
-        ):
-            span = max(1e-3, self._scroll_hist[-1][0] - self._scroll_hist[0][0])
-            vv = sum(r[1] for r in list(self._scroll_hist)[1:]) / span
-            vh = sum(r[2] for r in list(self._scroll_hist)[1:]) / span
-            # never coast against the direction the page was being moved overall
-            same_way = vv * self._scroll_net[0] + vh * self._scroll_net[1] > 0
-            if same_way and math.hypot(vv, vh) >= float(cfg.get("scroll_inertia_min_speed", 600.0)):
-                self._inertia_v = [vv, vh]
+        if self._provisional:
+            # the coast began when the fingers started to open: confirming the release just keeps it
+            # going (also after a short hand loss: the user had let go)
+            self._provisional = False
+        else:
+            v = self._launch_velocity(cfg, now) if launch else None
+            if v is not None:
+                self._inertia_v = [v[0], v[1]]
                 self._inertia_t = now
                 self._inertia_acc = [0.0, 0.0]
+                self.inertia_launches += 1
         self._scroll_prev = self._scroll_anchor = None
         self._scroll_live = False
         self._scroll_acc = [0.0, 0.0]
         self._scroll_hist.clear()
+        self._scroll_recent.clear()
 
     @property
     def scroll_coasting(self) -> bool:
@@ -513,11 +756,14 @@ class MouseController:
 
     def _stop_scroll_inertia(self) -> None:
         self._inertia_v = None
+        self._provisional = False
+        self._pump.clear()
 
     def _tick_scroll_inertia(self, config: Dict[str, Any], now: float) -> None:
         """Exponential slow-down (frame-rate independent), like flicking a phone page."""
         if self._inertia_v is None:
             return
+        self._scroll_tau = float(config.get("scroll_smooth_tau", 0.03))
         tau = max(0.05, float(config.get("scroll_inertia_time", 0.4)))
         dt = max(0.0, min(0.1, now - self._inertia_t))
         self._inertia_t = now
@@ -732,6 +978,8 @@ class MouseController:
         return self.last_screen_pos
 
     def _move_os_cursor(self, x: int, y: int, immediate: bool = False) -> None:
+        if abs(x - self.last_screen_pos[0]) + abs(y - self.last_screen_pos[1]) > 2:
+            self._cursor_moved_at = self._clock
         self.last_screen_pos = (x, y)
         if self.dry_run:
             return
@@ -776,7 +1024,19 @@ class MouseController:
         if not self.dry_run and self._interp is not None:
             self._interp.snap(*self.last_screen_pos)
 
+    def send_motion_action(self, action_id: str) -> bool:
+        """Send one command of motion mode (back / forward / tab_prev / tab_next). Unknown ids are refused."""
+        from src.motion_mode import ACTION_KEYS
+        keys = ACTION_KEYS.get(action_id)
+        if keys is None:
+            return False
+        self.event_log.append(f"motion:{action_id}")
+        if not self.dry_run:
+            pyautogui.hotkey(*keys, _pause=False)
+        return True
+
     def close(self) -> None:
+        self._pump_stop.set()
         if self._interp is not None:
             self._interp.close()
 
@@ -830,6 +1090,13 @@ class MouseController:
         cfg = config or {}
         action = result.action
         now = time.perf_counter() if now is None else float(now)
+        self._clock = now
+        if self.scroll_target_finder is not None and not self._browse_centered:
+            self.scroll_target_finder.hint(*self.last_screen_pos)    # lets its thread have the region ready
+        if action in ("move_cursor", "pointer_wait") and self._browse_lock(cfg, now):
+            # browsing: the hand follows the page, not the cursor
+            result = dataclasses.replace(result, action="none", cursor_point=None, is_moving=False)
+            action = "none"
         self._lost_since = None
         self.interpolation = bool(cfg.get("cursor_interpolation", False))
         self.dpi_multiplier = float(getattr(result, "dpi_multiplier", 1.0) or 1.0)
