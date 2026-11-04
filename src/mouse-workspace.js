@@ -108,9 +108,14 @@ export class MouseWorkspace {
     const points = Array.isArray(landmarks) && landmarks.length >= 21 ? landmarks : null;
     const contacts = points ? thumbContacts(thumbDistances(points, height / width)) : [];
     const {fps, inferenceMs} = this.details;
+    // Trigger click tuning: show the live thumb-to-index distance against the press/release thresholds.
+    const trigger = this.controller.engine?.trigger;
+    const triggerText = trigger && this.pointer.click === 'trigger'
+      ? `방아쇠 거리 ${Number.isFinite(trigger.ratio) ? trigger.ratio.toFixed(2) : '—'} (누름 ≤ ${trigger.settings.trigger_press_ratio} · 놓기 ≥ ${trigger.settings.trigger_release_ratio}) · ${{idle:'대기', approach:'접근', press:'누름', drag:'드래그'}[trigger.state] ?? trigger.state}`
+      : null;
     this.$('#mouse-details-text').textContent = [
       fps ? `${fps.toFixed(1)} fps` : null, Number.isFinite(inferenceMs) ? `추론 ${inferenceMs.toFixed(1)} ms` : null,
-      `손 ${points ? '감지됨' : '대기'}`, `엄지 접촉: ${contactText(contacts)}`,
+      `손 ${points ? '감지됨' : '대기'}`, `엄지 접촉: ${contactText(contacts)}`, triggerText,
     ].filter(Boolean).join('  ·  ');
   }
   get desktop() { return this.$('#mouse-target').value === 'desktop'; }

@@ -138,6 +138,18 @@ buildOverlayFrame(landmarks, {mode, width, height}) -> {tips, contacts, mode} | 
 // 손 없음·퇴화한 손 → null(오버레이가 흐려짐). 알 수 없는 mode → 'other'.
 ```
 
+**Input Studio 제어 세션 (구현됨, 2026-11-04):**
+
+```js
+new MouseSession({bridge, controller, clock, onChange, timers})
+session.start() / stop(text, error) / toggle() / setController(controller) / setOverlay(boolean)
+session.update({landmarks, now, quality, handedness, width, height, latency}) -> controller state
+// MouseWorkspace와 같은 안전 규칙: stale은 입력 유지·전송 없음, latency > 450ms·0.7초 정지면 stop(버튼 해제).
+// bridge가 없거나 available이 아니면 미리보기(전송 없음).
+new HandSelection(holdSeconds = 5).observe(detections, nowSeconds) -> 'right' | 'left' | ''
+selectedDetection(detections, side) -> 그 손 하나 | null   // 둘 이상이거나 없으면 null
+```
+
 ## 설정 저장소
 
 ```js
