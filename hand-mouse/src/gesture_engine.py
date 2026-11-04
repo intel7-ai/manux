@@ -610,7 +610,11 @@ class GestureEngine:
         if self.config.get("motion_pose_freeze", True) and curl <= float(self.config.get("motion_fold_ratio", 1.2)):
             _palm = max(1e-6, self._dist_2d(pts[self.WRIST], pts[self.MIDDLE_MCP]))
             _tuck = min(self._dist_2d(thumb, pts[13]), self._dist_2d(thumb, pts[17])) / _palm
-            if _tuck >= float(self.config.get("motion_thumb_out", 0.85)):
+            # only a real thumbs-up (thumb tip above the index knuckle, as motion_mode.entry_pose): a fist moved
+            # with the thumb out sideways keeps moving the cursor (2026-11-04: it froze and entered motion mode)
+            _up = (pts[5].y - thumb.y) / _palm
+            if (_tuck >= float(self.config.get("motion_thumb_out", 0.85))
+                    and _up >= float(self.config.get("motion_thumb_up", 0.5))):
                 self._fist = False
                 self._fist_candidate_since = None
                 return GestureResult(
