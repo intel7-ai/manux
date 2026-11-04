@@ -30,7 +30,7 @@ from typing import Union
 import cv2
 import numpy as np
 
-from src import profiles
+from src import app_paths, profiles
 from src.camera import CameraConfig, CameraStream
 from src.gesture_engine import GestureEngine, GestureResult
 from src.hand_tracker import HandTracker, pinch_guides, tracker_options
@@ -293,7 +293,7 @@ def _log_to_file_without_console() -> None:
     """pythonw.exe (run_admin.bat) has no console: keep messages and errors in a log file."""
     if sys.stdout is not None and sys.stderr is not None:
         return
-    log_dir = Path(__file__).resolve().parent / "logs"
+    log_dir = app_paths.LOG_DIR
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
         f = open(log_dir / "app_latest.log", "w", encoding="utf-8", buffering=1)
@@ -686,7 +686,7 @@ def main() -> int:
     mouse.scroll_target_finder.start()
     settings = SettingsPanel(engine)
     keys = KeyPoller()
-    perf_log = PerfLog(Path(__file__).resolve().parent / "logs" / "perf_latest.csv")
+    perf_log = PerfLog(app_paths.LOG_DIR / "perf_latest.csv")
     if args.ui == "qt":
         return run_qt(args, perf, engine, camera, tracker, mouse, settings, keys, perf_log)
     if args.ui:

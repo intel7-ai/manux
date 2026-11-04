@@ -24,6 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import cv2
 
+from src import app_paths
 from src.failure_log import FailureRecorder
 from src.motion_mode import ACTION_LABELS, MotionMode
 from src.gesture_engine import GestureEngine, GestureResult
@@ -109,7 +110,7 @@ class QtRuntime:
         self.max_frames = int(max_frames)
         self._draw_cursor_anchor = draw_cursor_anchor
         self._draw_recording = draw_recording
-        self.log_dir = log_dir or Path(__file__).resolve().parents[1] / "logs"
+        self.log_dir = log_dir or app_paths.LOG_DIR
 
         self.pointer = PointerEngine(GestureEngine(config_path=config_path))
         self.hand_crop = HandCrop()

@@ -117,3 +117,20 @@ test('production only deploys successful immutable artifacts with a separate pub
   assert.equal((workflow.match(/refs\/heads\/production/g) ?? []).length, 2);
   for (const action of workflow.matchAll(/uses:\s*(\S+)/g)) assert.match(action[1], /@[0-9a-f]{40}$/);
 });
+
+test('the MANUX app (hand-mouse) release builds read-only and publishes only that artifact from production', async () => {
+  const workflow = (await fs.readFile(new URL('../.github/workflows/hand-mouse-release.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
+  assert.match(workflow, /branches: \[production\]/);
+  assert.doesNotMatch(workflow, /tags:|workflow_dispatch:|pull_request_target/);
+  assert.match(workflow, /^permissions: \{\}$/m);
+  const [build, publish] = workflow.split('\n  publish:');
+  assert.match(build, /contents: read/);
+  assert.doesNotMatch(build, /contents: write|GH_TOKEN|secrets\.|vpk upload/);
+  assert.ok(build.indexOf('pytest') < build.indexOf('packaging/build.ps1'));
+  assert.match(publish, /needs: build/);
+  assert.match(publish, /if: github\.ref == 'refs\/heads\/production' && github\.repository == 'intel7-ai\/manux'/);
+  assert.match(publish, /contents: write/);
+  assert.match(publish, /artifact-ids: \$\{\{ needs\.build\.outputs\.artifact_id \}\}/);
+  assert.doesNotMatch(publish, /checkout|uv sync|pyinstaller|build\.ps1/, 'publish uploads the built artifact, it never rebuilds');
+  for (const action of workflow.matchAll(/uses:\s*(\S+)/g)) assert.match(action[1], /@[0-9a-f]{40}$/);
+});
