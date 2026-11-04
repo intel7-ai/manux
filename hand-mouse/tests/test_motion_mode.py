@@ -5,7 +5,7 @@ from src.motion_mode import ACTION_KEYS, MotionMode, hand_features
 
 
 def hand(cx=0.5, cy=0.5, fingers="open", thumb="out", bent=(), half=()):
-    """21 points. Palm 0.1 long. fingers: open | folded. thumb: out | tucked | mid."""
+    """21 points. Palm 0.1 long. fingers: open | folded. thumb: out | tucked | mid | up | side."""
     wrist = (cx, cy + 0.1)
     mcps = {5: (cx - 0.04, cy + 0.01), 9: (cx - 0.013, cy), 13: (cx + 0.013, cy + 0.005), 17: (cx + 0.04, cy + 0.02)}
     pts = {i: (cx, cy + 0.05) for i in range(21)}
@@ -19,8 +19,12 @@ def hand(cx=0.5, cy=0.5, fingers="open", thumb="out", bent=(), half=()):
             pts[mcp + 3] = (x, y - 0.025)            # this finger only half extended (curl ratio ~1.2)
         pts[mcp + 1], pts[mcp + 2] = (x, y - 0.02), (x, y - 0.05)
     p13 = mcps[13]
+    if fingers == "folded" and thumb == "out":
+        thumb = "up"                                  # a fist with the thumb out = thumbs-up (the entry pose)
     pts[4] = {"out": (cx - 0.15, cy + 0.05), "tucked": (cx + 0.02, cy + 0.03),
-              "mid": (p13[0] - 0.06, p13[1])}[thumb]
+              "mid": (p13[0] - 0.06, p13[1]),
+              "up": (cx - 0.06, cy - 0.06),             # pointing up, above the index knuckle
+              "side": (cx - 0.15, cy + 0.05)}[thumb]    # out sideways, below the knuckle (an ordinary fist)
     return [SimpleNamespace(x=pts[i][0], y=pts[i][1], z=0.0) for i in range(21)]
 
 
@@ -356,3 +360,18 @@ def test_the_entry_pose_is_forgiving_about_a_thumbs_up_hand_that_is_not_perfect(
     assert not mm.entry_pose(f)                                        # ... but a thumb half across is a fist
     f["thumb_tuck"], f["curl"] = 1.2, (1.4, 0.9, 0.85, 1.0)
     assert not mm.entry_pose(f)                                        # a finger really out is not a thumbs-up
+
+
+def test_a_fist_with_the_thumb_out_sideways_is_not_the_entry_pose():
+    # 2026-11-04 logs: moving a fist with the thumb sticking out to the side switched motion mode on
+    mm = MotionMode()
+    events, _ = run(mm, [hand(fingers="folded", thumb="side")] * 60)
+    assert not mm.active and not any(e.kind == "enter" for e in events)
+
+
+def test_a_thumbs_up_moved_back_and_forth_in_place_does_not_enter():
+    # the net offset stays inside motion_enter_still, but the hand keeps travelling (moving the cursor)
+    mm = MotionMode()
+    frames = [hand(cx=0.5 + (0.03 if (n // 3) % 2 else -0.0), fingers="folded") for n in range(60)]
+    events, _ = run(mm, frames)
+    assert not mm.active and not any(e.kind == "enter" for e in events)

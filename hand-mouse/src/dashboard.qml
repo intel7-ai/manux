@@ -49,38 +49,250 @@ ApplicationWindow {
         }
     }
 
+    // Settings: everything that is not needed every day. Basic things first; engine options under "고급".
     Dialog {
-        id: pointerSettings
+        id: settingsDialog
         anchors.centerIn: parent
-        width: Math.min(400, window.width - 48)
+        width: Math.min(520, window.width - 48)
+        height: Math.min(window.height - 48, 680)
         modal: true
-        title: "검지 포인터 설정"
-        standardButtons: Dialog.Close
+        title: "설정"
+        padding: 20
+        topPadding: 8
         onClosed: dashboard.persistPointerSettings()
-        contentItem: ColumnLayout {
-            spacing: 10
-            TextLabel { text: "커서 감도 · " + dashboard.pointerSensitivity + "%"; font.bold: true }
-            Slider {
-                Layout.fillWidth: true
-                from: 50
-                to: 150
-                stepSize: 5
-                snapMode: Slider.SnapAlways
-                value: dashboard.pointerSensitivity
-                onMoved: dashboard.setPointerSensitivity(Math.round(value))
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                TextLabel { text: "느리게"; color: window.muted }
-                Item { Layout.fillWidth: true }
-                TextLabel { text: "빠르게"; color: window.muted }
-            }
-            ActionButton { text: "기본값 복원"; onClicked: dashboard.setPointerSensitivity(100) }
-            ActionButton {
-                text: "엔진 설정"
-                onClicked: {
-                    pointerSettings.close()
-                    dashboard.command(111)
+        property bool advanced: false
+        background: Rectangle { color: "white"; radius: 14 }
+        header: RowLayout {
+            spacing: 8
+            Item { Layout.preferredWidth: 12 }
+            TextLabel { text: "설정"; font.pixelSize: 18; font.bold: true; Layout.fillWidth: true; Layout.topMargin: 16 }
+            ActionButton { text: "닫기"; Layout.topMargin: 12; Layout.rightMargin: 12; onClicked: settingsDialog.close() }
+        }
+        contentItem: ScrollView {
+            id: settingsScroll
+            clip: true
+            contentWidth: availableWidth
+            ColumnLayout {
+                width: settingsScroll.availableWidth
+                spacing: 10
+                SectionLabel { text: "사용하는 손" }
+                RowLayout {
+                    Layout.fillWidth: true
+                    TextLabel { text: dashboard.chosenHand || "정하지 않음"; Layout.fillWidth: true }
+                    ActionButton {
+                        text: "다시 정하기"
+                        onClicked: { settingsDialog.close(); dashboard.beginHandSetup() }
+                    }
+                }
+                ColumnLayout {
+                    visible: dashboard.pointerOnly
+                    Layout.fillWidth: true
+                    SectionLabel { text: "커서 감도 · " + dashboard.pointerSensitivity + "%" }
+                    Slider {
+                        Layout.fillWidth: true
+                        from: 50; to: 150; stepSize: 5
+                        snapMode: Slider.SnapAlways
+                        value: dashboard.pointerSensitivity
+                        onMoved: dashboard.setPointerSensitivity(Math.round(value))
+                    }
+                }
+                SectionLabel { text: "화면 표시" }
+                RowLayout {
+                    Layout.fillWidth: true
+                    TextLabel { text: "커서 옆 손가락 표시"; Layout.fillWidth: true }
+                    Segmented {
+                        Layout.fillWidth: false
+                        Layout.preferredWidth: 160
+                        options: [["off", "끔"], ["on", "켬"]]
+                        current: dashboard.fingerOverlay ? "on" : "off"
+                        onPicked: function (value) { dashboard.setFingerOverlay(value === "on") }
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    TextLabel { text: "화면 구석 상태 표시"; Layout.fillWidth: true }
+                    Segmented {
+                        Layout.fillWidth: false
+                        Layout.preferredWidth: 160
+                        options: [["off", "끔"], ["on", "켬"]]
+                        current: dashboard.overlayVisible ? "on" : "off"
+                        onPicked: function (value) { dashboard.setOverlayVisible(value === "on") }
+                    }
+                }
+                Divider {}
+                SectionLabel { text: "어디서든 쓰는 단축키" }
+                Repeater {
+                    model: [["toggle", "켜기 / 끄기"], ["hide", "창 숨기기 / 보이기"]]
+                    delegate: RowLayout {
+                        required property var modelData
+                        readonly property string shortcutAction: modelData[0]   // not "action": Button has one
+                        Layout.fillWidth: true
+                        TextLabel { text: modelData[1]; Layout.preferredWidth: 120 }
+                        ActionButton {
+                            Layout.fillWidth: true
+                            property bool capturing: false
+                            text: capturing ? "새 조합을 누르세요 (Esc 취소)" : (dashboard.shortcutLabels[shortcutAction] || "")
+                            onClicked: { capturing = true; shortcutError.text = ""; forceActiveFocus() }
+                            onActiveFocusChanged: if (!activeFocus) capturing = false
+                            Keys.onPressed: function (event) {
+                                if (!capturing) return
+                                event.accepted = true
+                                if (event.key === Qt.Key_Escape) { capturing = false; return }
+                                var key = ""
+                                if (event.key >= Qt.Key_A && event.key <= Qt.Key_Z) key = String.fromCharCode(event.key).toLowerCase()
+                                else if (event.key >= Qt.Key_0 && event.key <= Qt.Key_9) key = String.fromCharCode(event.key)
+                                else if (event.key >= Qt.Key_F1 && event.key <= Qt.Key_F12) key = "f" + (event.key - Qt.Key_F1 + 1)
+                                if (key === "") return        // a modifier alone: wait for the rest of the combination
+                                var parts = []
+                                if (event.modifiers & Qt.ControlModifier) parts.push("ctrl")
+                                if (event.modifiers & Qt.AltModifier) parts.push("alt")
+                                if (event.modifiers & Qt.ShiftModifier) parts.push("shift")
+                                parts.push(key)
+                                shortcutError.text = dashboard.setShortcut(shortcutAction, parts.join("+"))
+                                capturing = false
+                            }
+                        }
+                        ActionButton { text: "기본"; onClicked: dashboard.resetShortcut(shortcutAction) }
+                    }
+                }
+                TextLabel {
+                    id: shortcutError
+                    visible: text !== ""
+                    Layout.fillWidth: true
+                    wrapMode: Text.Wrap
+                    color: "#B33E27"
+                    font.pixelSize: 12
+                }
+                TextLabel {
+                    Layout.fillWidth: true
+                    wrapMode: Text.Wrap
+                    color: window.muted
+                    font.pixelSize: 11
+                    text: "다른 프로그램을 쓰는 중에도 동작합니다. MANUX 창 안에서는 Space로도 켜고 끕니다."
+                }
+                Divider {}
+                SectionLabel { text: "문제가 있었나요?" }
+                TextLabel {
+                    Layout.fillWidth: true
+                    wrapMode: Text.Wrap
+                    color: window.muted
+                    font.pixelSize: 11
+                    text: dashboard.failureSummary
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    ActionButton { Layout.fillWidth: true; text: "방금 이상했어요 (F)"; onClicked: dashboard.markFailure() }
+                    ActionButton { Layout.fillWidth: true; text: "로그 묶어 내보내기"; onClicked: dashboard.exportLogs() }
+                }
+                TextLabel {
+                    visible: dashboard.exportText !== ""
+                    Layout.fillWidth: true
+                    text: dashboard.exportText + "\n성능·실패 기록과 설정만 담깁니다. 영상, 창 제목, 프로필 이름은 넣지 않습니다."
+                    color: window.muted
+                    wrapMode: Text.Wrap
+                    font.pixelSize: 11
+                }
+                Divider {}
+                ActionButton {
+                    Layout.fillWidth: true
+                    text: settingsDialog.advanced ? "고급 설정 접기" : "고급 설정 보기"
+                    onClicked: settingsDialog.advanced = !settingsDialog.advanced
+                }
+                ColumnLayout {
+                    visible: settingsDialog.advanced
+                    Layout.fillWidth: true
+                    spacing: 8
+                    TextLabel {
+                        Layout.fillWidth: true
+                        text: "고급 설정을 바꾸면 입력이 멈춥니다. 다시 켜세요."
+                        color: window.muted
+                        wrapMode: Text.Wrap
+                        font.pixelSize: 11
+                    }
+                    SectionLabel { text: "이동 방식" }
+                    Segmented {
+                        enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                        options: [["palm", "손바닥 (기본)"], ["index", "검지 포인터 (시험)"]]
+                        current: dashboard.pointerOnly ? "index" : "palm"
+                        onPicked: function (value) { dashboard.setPointerPreset(value === "index") }
+                    }
+                    ActionButton {
+                        Layout.fillWidth: true
+                        enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                        text: dashboard.motionLabel
+                        onClicked: dashboard.toggleMotion()
+                    }
+                    ActionButton {
+                        Layout.fillWidth: true
+                        enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                        text: dashboard.profileLabel + (dashboard.profileCount > 0 ? "  (눌러서 바꾸기)" : "  (없음)")
+                        onClicked: dashboard.cycleProfile()
+                    }
+                    ColumnLayout {
+                        visible: dashboard.pointerOnly
+                        Layout.fillWidth: true
+                        spacing: 8
+                        SectionLabel { text: "클릭" }
+                        Segmented {
+                            enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                            options: [["pinch", "핀치"], ["trigger", "방아쇠"], ["off", "끔"]]
+                            current: dashboard.clickStyle
+                            onPicked: function (value) { dashboard.setClickStyle(value) }
+                        }
+                        SectionLabel { text: "커서 기준점" }
+                        Segmented {
+                            enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                            options: [["index", "검지 끝"], ["palm", "손바닥 중심"]]
+                            current: dashboard.pointerAnchor
+                            onPicked: function (value) { dashboard.setAnchor(value) }
+                        }
+                        SectionLabel { text: "손 주변 확대 (시험)" }
+                        Segmented {
+                            enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                            options: [["off", "끔"], ["on", "켬"]]
+                            current: dashboard.handCrop ? "on" : "off"
+                            onPicked: function (value) { dashboard.setHandCrop(value === "on") }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            ActionButton {
+                                Layout.fillWidth: true
+                                enabled: !dashboard.calibratingPointer
+                                text: dashboard.pointerCalibrated ? "방향 보정 다시" : "방향 보정"
+                                onClicked: { settingsDialog.close(); dashboard.beginPointerCalibration() }
+                            }
+                            ActionButton {
+                                visible: dashboard.pointerCalibrated && !dashboard.calibratingPointer
+                                text: "초기화"
+                                onClicked: dashboard.resetPointerCalibration()
+                            }
+                        }
+                        SectionLabel { text: "트래킹 측정" }
+                        ActionButton {
+                            Layout.fillWidth: true
+                            enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                            text: "측정 시작 (클릭 없음)"
+                            onClicked: { settingsDialog.close(); dashboard.beginTrackingTest() }
+                        }
+                        Repeater {
+                            model: dashboard.recentResults
+                            delegate: TextLabel {
+                                required property string modelData
+                                required property int index
+                                Layout.fillWidth: true
+                                text: modelData
+                                wrapMode: Text.Wrap
+                                font.pixelSize: 11
+                                font.bold: index === 0
+                                color: index === 0 ? window.navy : window.muted
+                            }
+                        }
+                    }
+                    ActionButton {
+                        Layout.fillWidth: true
+                        text: "엔진 세부 설정"
+                        onClicked: { settingsDialog.close(); dashboard.command(111) }
+                    }
                 }
             }
         }
@@ -89,7 +301,7 @@ ApplicationWindow {
     Shortcut { sequence: "Return"; enabled: !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
     Shortcut { sequence: "Enter"; enabled: !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
     Shortcut { sequence: "Esc"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(27) }
-    Shortcut { sequence: "Space"; enabled: !dashboard.trackingActive && (!pointerSettings.visible); onActivated: dashboard.command(32) }
+    Shortcut { sequence: "Space"; enabled: !dashboard.trackingActive && (!settingsDialog.visible); onActivated: dashboard.command(32) }
     Shortcut { sequence: "Q"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(81) }
     Shortcut { sequence: "O"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(111) }
     Shortcut { sequence: "M"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(109) }
@@ -102,7 +314,7 @@ ApplicationWindow {
 
     Rectangle {
         anchors.fill: parent
-        visible: dashboard.stage !== "main"
+        visible: dashboard.stage !== "main" && dashboard.stage !== "tutorial"
         color: "#F4F6F8"
         ColumnLayout {
             anchors.centerIn: parent
@@ -227,6 +439,109 @@ ApplicationWindow {
         TextLabel { id: chipLabel; anchors.centerIn: parent; font.pixelSize: 12; color: chip.warn ? "#8A5A00" : window.navy }
     }
 
+    // Guided tutorial: one gesture at a time, confirmed by the engine (practice mode: nothing is clicked).
+    Rectangle {
+        anchors.fill: parent
+        visible: dashboard.stage === "tutorial"
+        color: "#F4F6F8"
+        ColumnLayout {
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 64, 720)
+            spacing: 14
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 4
+                Repeater {
+                    model: dashboard.tutorialCount
+                    delegate: Rectangle {
+                        required property int index
+                        Layout.fillWidth: true
+                        implicitHeight: 6
+                        radius: 3
+                        color: dashboard.tutorialDoneSteps[index] ? window.mint
+                             : index === dashboard.tutorialIndex ? "#9FB3BF" : window.line
+                    }
+                }
+            }
+            TextLabel {
+                text: dashboard.tutorialFinished ? "준비됐어요"
+                    : (dashboard.tutorialIndex + 1) + " / " + dashboard.tutorialCount
+                color: window.muted
+                font.pixelSize: 13
+            }
+            TextLabel {
+                Layout.fillWidth: true
+                text: dashboard.tutorialFinished ? "이제 켜고 써 보세요" : dashboard.tutorialTitle
+                font.pixelSize: 32
+                font.bold: true
+            }
+            TextLabel {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                color: window.muted
+                font.pixelSize: 16
+                text: dashboard.tutorialFinished
+                    ? "배운 동작은 메인 화면에 늘 보입니다. 메인 화면의 \"동작 다시 배우기\"로 언제든 다시 할 수 있어요."
+                    : dashboard.tutorialHow
+            }
+            Rectangle {
+                visible: !dashboard.tutorialFinished
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(320, window.height * .42)
+                radius: 16
+                color: window.navy
+                clip: true
+                Image { anchors.fill: parent; source: dashboard.previewUrl; cache: false; fillMode: Image.PreserveAspectFit }
+                Rectangle {
+                    visible: dashboard.tutorialSucceeded
+                    anchors.centerIn: parent
+                    width: doneLabel.implicitWidth + 40
+                    height: 56
+                    radius: 28
+                    color: window.mint
+                    TextLabel { id: doneLabel; anchors.centerIn: parent; text: "잘했어요"; font.pixelSize: 22; font.bold: true }
+                }
+            }
+            Rectangle {
+                visible: !dashboard.tutorialFinished && !dashboard.tutorialSucceeded && dashboard.tutorialProgress > 0
+                Layout.fillWidth: true
+                implicitHeight: 6
+                radius: 3
+                color: window.line
+                Rectangle { width: parent.width * dashboard.tutorialProgress; height: parent.height; radius: 3; color: window.mint }
+            }
+            TextLabel {
+                visible: !dashboard.tutorialFinished
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                color: window.muted
+                font.pixelSize: 12
+                text: "연습 중에는 실제 마우스 커서·클릭·키 입력을 전혀 보내지 않습니다. 화면의 표시로만 확인하세요."
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                ActionButton {
+                    visible: !dashboard.tutorialFinished && dashboard.tutorialIndex > 0
+                    text: "이전"
+                    onClicked: dashboard.tutorialBack()
+                }
+                Item { Layout.fillWidth: true }
+                ActionButton {
+                    visible: !dashboard.tutorialFinished
+                    text: "나중에 하기"
+                    onClicked: dashboard.finishTutorial()
+                }
+                ActionButton {
+                    text: dashboard.tutorialFinished ? "시작하기" : (dashboard.tutorialSucceeded ? "다음" : "건너뛰기")
+                    accent: dashboard.tutorialFinished || dashboard.tutorialSucceeded
+                    onClicked: dashboard.tutorialFinished ? dashboard.finishTutorial() : dashboard.tutorialNext()
+                }
+            }
+        }
+    }
+
+    // Main screen (2026-11-04): on/off, what the camera sees, and what the hand can do. Nothing else;
+    // options live in the settings dialog.
     ColumnLayout {
         visible: dashboard.stage === "main"
         anchors.fill: parent
@@ -234,315 +549,376 @@ ApplicationWindow {
         Rectangle {
             color: "white"
             Layout.fillWidth: true
-            Layout.preferredHeight: 72
+            Layout.preferredHeight: 64
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 24
                 anchors.rightMargin: 24
                 spacing: 12
-                TextLabel { text: "MANUX"; font.pixelSize: 26; font.bold: true }
-                TextLabel { text: "INPUT STUDIO"; font.pixelSize: 11; font.letterSpacing: 1.4; color: window.muted }
+                Image {
+                    // the official horizontal logo: mark + MANUX wordmark
+                    source: "assets/manux.svg"
+                    Layout.preferredHeight: 34
+                    Layout.preferredWidth: 34 * 1552 / 494
+                    sourceSize.height: 68
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                }
                 Item { Layout.fillWidth: true }
+                TextLabel { text: dashboard.chosenHand; color: window.muted; font.pixelSize: 13 }
                 ActionButton {
-                    text: dashboard.chosenHand ? dashboard.chosenHand + " · 다시 설정" : "사용할 손 설정"
-                    onClicked: dashboard.beginHandSetup()
+                    text: dashboard.controlLabel === "일시정지" ? "끄기" : "켜기"
+                    accent: dashboard.controlLabel !== "일시정지"
+                    Layout.preferredWidth: 96
+                    onClicked: dashboard.command(32)
                 }
-                ActionButton {
-                    text: "설정"
-                    enabled: !dashboard.calibratingPointer
-                    onClicked: {
-                        if (dashboard.pointerOnly) {
-                            dashboard.command(27)
-                            pointerSettings.open()
-                        } else {
-                            dashboard.command(111)
-                        }
-                    }
-                }
-                ActionButton { text: dashboard.controlLabel; accent: true; onClicked: dashboard.command(32) }
             }
         }
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.margins: 20
-            spacing: 16
+            spacing: 0
             Rectangle {
-                Layout.preferredWidth: 280
+                Layout.preferredWidth: 200
                 Layout.fillHeight: true
-                radius: 16
                 color: "white"
-                border.color: window.line
+                Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: window.line }
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 16
-                    spacing: 8
-                    ScrollView {
-                        id: sideScroll
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        clip: true
-                        contentWidth: availableWidth
-                        ColumnLayout {
-                            width: sideScroll.availableWidth
-                            spacing: 8
-                            TextLabel { text: "포인터"; font.pixelSize: 20; font.bold: true }
-                            Segmented {
-                                enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
-                                options: [["index", "검지 포인터"], ["palm", "손바닥 (Dan)"]]
-                                current: dashboard.pointerOnly ? "index" : "palm"
-                                onPicked: function (value) { dashboard.setPointerPreset(value === "index") }
+                    anchors.margins: 12
+                    spacing: 4
+                    Repeater {
+                        model: [["home", "홈"], ["profiles", "프로필"], ["customize", "맞춤 설정"]]
+                        delegate: Button {
+                            id: navItem
+                            required property var modelData
+                            readonly property bool selected: dashboard.currentPage === modelData[0]
+                            Layout.fillWidth: true
+                            implicitHeight: 42
+                            onClicked: dashboard.setPage(modelData[0])
+                            contentItem: TextLabel {
+                                text: navItem.modelData[1]
+                                font.bold: navItem.selected
+                                leftPadding: 8
+                                verticalAlignment: Text.AlignVCenter
                             }
-                            ActionButton {
-                                Layout.fillWidth: true
-                                enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
-                                text: dashboard.motionLabel
-                                onClicked: dashboard.toggleMotion()
-                            }
-                            ActionButton {
-                                Layout.fillWidth: true
-                                enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
-                                text: dashboard.profileLabel + (dashboard.profileCount > 0 ? "  (눌러서 바꾸기)" : "  (없음)")
-                                onClicked: dashboard.cycleProfile()
-                            }
-                            ColumnLayout {
-                                visible: dashboard.pointerOnly
-                                Layout.fillWidth: true
-                                spacing: 8
-                                SectionLabel { text: "클릭" }
-                                Segmented {
-                                    enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
-                                    options: [["pinch", "핀치"], ["trigger", "방아쇠"], ["off", "끔"]]
-                                    current: dashboard.clickStyle
-                                    onPicked: function (value) { dashboard.setClickStyle(value) }
-                                }
-                                SectionLabel { text: "커서 기준점" }
-                                Segmented {
-                                    enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
-                                    options: [["index", "검지 끝"], ["palm", "손바닥 중심"]]
-                                    current: dashboard.pointerAnchor
-                                    onPicked: function (value) { dashboard.setAnchor(value) }
-                                }
-                                SectionLabel { text: "커서 옆 손가락 표시" }
-                                Segmented {
-                                    options: [["off", "끔"], ["on", "켬"]]
-                                    current: dashboard.fingerOverlay ? "on" : "off"
-                                    onPicked: function (value) { dashboard.setFingerOverlay(value === "on") }
-                                }
-                                SectionLabel { text: "손 주변 확대 (시험)" }
-                                Segmented {
-                                    enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
-                                    options: [["off", "끔"], ["on", "켬"]]
-                                    current: dashboard.handCrop ? "on" : "off"
-                                    onPicked: function (value) { dashboard.setHandCrop(value === "on") }
-                                }
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 6
-                                    ActionButton {
-                                        Layout.fillWidth: true
-                                        enabled: !dashboard.calibratingPointer
-                                        text: dashboard.pointerCalibrated ? "방향 보정 다시" : "방향 보정"
-                                        onClicked: dashboard.beginPointerCalibration()
-                                    }
-                                    ActionButton {
-                                        visible: dashboard.pointerCalibrated && !dashboard.calibratingPointer
-                                        text: "초기화"
-                                        onClicked: dashboard.resetPointerCalibration()
-                                    }
-                                }
-                            }
-                            TextLabel {
-                                Layout.fillWidth: true
-                                text: "설정을 바꾸면 입력이 멈춥니다. 다시 제어 시작을 누르세요."
-                                color: window.muted
-                                wrapMode: Text.Wrap
-                                font.pixelSize: 11
-                            }
-                            Divider {}
-                            SectionLabel { text: "동작 안내" }
-                            Repeater {
-                                model: dashboard.pointerOnly ? (dashboard.clickOff
-                                    ? [[dashboard.pointerAnchor === "palm" ? "손바닥 따라가기" : "검지 끝 따라가기", "포인터 이동"], ["클릭", "꺼짐"]]
-                                    : dashboard.triggerClick
-                                    ? [["검지만 펴기", "포인터 이동"], ["엄지로 검지 옆 짧게", "좌클릭"],
-                                       ["누른 채 가만히", "우클릭"], ["누른 채 움직이기", "드래그"]]
-                                    : [["검지만 펴기", "포인터 이동"], ["엄지 + 중지", "좌클릭"], ["엄지 + 약지", "우클릭"]]) : [
-                                    ["손 이동", "포인터 이동"], ["엄지 + 검지", "스크롤"],
-                                    ["엄지 + 중지", "좌클릭"], ["엄지 + 약지", "우클릭"],
-                                    ["엄지 + 새끼", "창 선택"]
-                                ]
-                                delegate: RowLayout {
-                                    required property var modelData
-                                    Layout.fillWidth: true
-                                    TextLabel { text: modelData[0]; font.pixelSize: 12; font.bold: true }
-                                    Item { Layout.fillWidth: true }
-                                    TextLabel { text: modelData[1]; font.pixelSize: 12; color: window.muted }
-                                }
-                            }
-                            TextLabel {
-                                visible: dashboard.pointerOnly
-                                Layout.fillWidth: true
-                                text: dashboard.clickOff
-                                    ? "클릭을 판정하지 않습니다. 손이 보이면 손 모양과 관계없이 커서가 따라갑니다."
-                                    : dashboard.triggerClick
-                                    ? "엄지가 검지 옆에 다가오면 커서가 고정되고, 누르기 직전 위치에서 클릭합니다."
-                                    : "검지를 움직이는 동안에는 클릭하지 않습니다. 멈춘 뒤 엄지를 뗐다가 중지·약지에 대면 클릭합니다."
-                                color: window.muted
-                                wrapMode: Text.Wrap
-                                font.pixelSize: 11
-                            }
-                            TextLabel {
-                                visible: dashboard.pointerOnly && diagnostics.visible
-                                Layout.fillWidth: true
-                                text: "0 엄지 · 1 검지 · 2 중지 · 3 약지 · 4 새끼\n조합: " + (dashboard.detectedContacts || "—")
-                                wrapMode: Text.Wrap
-                                color: window.muted
-                                font.pixelSize: 12
-                            }
-                            Divider { visible: dashboard.pointerOnly }
-                            SectionLabel { visible: dashboard.pointerOnly; text: "트래킹 측정" }
-                            ActionButton {
-                                visible: dashboard.pointerOnly
-                                enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
-                                Layout.fillWidth: true
-                                text: "측정 시작 (클릭 없음)"
-                                onClicked: dashboard.beginTrackingTest()
-                            }
-                            TextLabel {
-                                visible: dashboard.pointerOnly && dashboard.recentResults.length === 0
-                                Layout.fillWidth: true
-                                text: "아직 측정 기록이 없습니다. 설정을 바꿔 가며 측정해 비교하세요."
-                                color: window.muted
-                                wrapMode: Text.Wrap
-                                font.pixelSize: 11
-                            }
-                            Repeater {
-                                model: dashboard.pointerOnly ? dashboard.recentResults : []
-                                delegate: TextLabel {
-                                    required property string modelData
-                                    required property int index
-                                    Layout.fillWidth: true
-                                    text: modelData
-                                    wrapMode: Text.Wrap
-                                    font.pixelSize: 11
-                                    font.bold: index === 0
-                                    color: index === 0 ? window.navy : window.muted
-                                }
-                            }
-                            Divider { visible: dashboard.pointerOnly }
-                            SectionLabel { visible: dashboard.pointerOnly; text: "실패 기록" }
-                            TextLabel {
-                                visible: dashboard.pointerOnly
-                                Layout.fillWidth: true
-                                text: dashboard.failureSummary + (dashboard.failureLast ? "\n최근: " + dashboard.failureLast : "")
-                                    + "\n손을 놓치면 앞뒤 3초의 관절 좌표를 logs/failures에 저장합니다(영상 없음)."
-                                color: window.muted
-                                wrapMode: Text.Wrap
-                                font.pixelSize: 11
-                            }
-                            ActionButton {
-                                visible: dashboard.pointerOnly
-                                Layout.fillWidth: true
-                                text: "방금 이상했어요 (F)"
-                                onClicked: dashboard.markFailure()
+                            background: Rectangle {
+                                radius: 10
+                                color: navItem.selected ? "#E3F8F1" : navItem.down ? "#DDE7EC" : "transparent"
+                                border.color: navItem.activeFocus ? "#16846E" : "transparent"
+                                border.width: 2
                             }
                         }
                     }
-                    Divider {}
-                    TextLabel {
+                    Item { Layout.fillHeight: true }
+                    Button {
+                        id: settingsNav
                         Layout.fillWidth: true
-                        text: "Space 시작/정지 · Esc 정지 · N 다음 모니터 · F 실패 표시"
-                        font.pixelSize: 11
-                        color: window.muted
-                        wrapMode: Text.Wrap
+                        implicitHeight: 42
+                        enabled: !dashboard.calibratingPointer
+                        onClicked: { dashboard.command(27); settingsDialog.open() }
+                        contentItem: TextLabel { text: "설정"; leftPadding: 8; verticalAlignment: Text.AlignVCenter }
+                        background: Rectangle {
+                            radius: 10
+                            color: settingsNav.down ? "#DDE7EC" : "transparent"
+                            border.color: settingsNav.activeFocus ? "#16846E" : "transparent"
+                            border.width: 2
+                        }
                     }
                 }
             }
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                radius: 16
-                color: "white"
-                border.color: window.line
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 18
-                    spacing: 12
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        TextLabel { text: "카메라"; font.pixelSize: 20; font.bold: true }
-                        Item { Layout.fillWidth: true }
-                        Chip { visible: dashboard.cameraMode !== ""; text: dashboard.cameraMode }
-                        Chip {
-                            visible: dashboard.brightness >= 0
-                            warn: dashboard.lowLight
-                            text: (dashboard.lowLight ? "어두움 " : "밝기 ") + Math.round(dashboard.brightness / 2.55) + "%"
-                        }
-                        Chip { text: dashboard.tracking }
-                    }
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        radius: 10
-                        color: window.navy
-                        clip: true
-                        Image {
-                            anchors.fill: parent
-                            source: dashboard.previewUrl
-                            cache: false
-                            fillMode: Image.PreserveAspectFit
+        ScrollView {
+            id: mainScroll
+            visible: dashboard.currentPage === "home"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            contentWidth: availableWidth
+            ColumnLayout {
+                width: Math.min(mainScroll.availableWidth - 48, 880)
+                x: (mainScroll.availableWidth - width) / 2
+                spacing: 16
+                Item { Layout.preferredHeight: 4 }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: statusColumn.implicitHeight + 32
+                    radius: 16
+                    color: "white"
+                    border.color: window.line
+                    ColumnLayout {
+                        id: statusColumn
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        spacing: 12
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 16
+                            Rectangle {
+                                id: previewBox
+                                property bool large: false
+                                Layout.preferredWidth: large ? statusColumn.width : 240
+                                Layout.preferredHeight: large ? statusColumn.width * 9 / 16 : 135
+                                radius: 10
+                                color: window.navy
+                                clip: true
+                                Image {
+                                    anchors.fill: parent
+                                    source: dashboard.previewUrl
+                                    cache: false
+                                    fillMode: Image.PreserveAspectFit
+                                }
+                                TextLabel {
+                                    anchors.right: parent.right
+                                    anchors.bottom: parent.bottom
+                                    anchors.margins: 6
+                                    text: previewBox.large ? "작게" : "크게"
+                                    color: "#DDE7EC"
+                                    font.pixelSize: 11
+                                }
+                                MouseArea { anchors.fill: parent; onClicked: previewBox.large = !previewBox.large }
+                            }
+                            ColumnLayout {
+                                visible: !previewBox.large
+                                Layout.fillWidth: true
+                                spacing: 6
+                                TextLabel {
+                                    text: dashboard.controlLabel === "일시정지" ? "켜짐" : "꺼짐"
+                                    font.pixelSize: 26
+                                    font.bold: true
+                                    color: dashboard.controlLabel === "일시정지" ? "#08775E" : window.navy
+                                }
+                                TextLabel {
+                                    Layout.fillWidth: true
+                                    text: dashboard.currentAction
+                                    color: window.muted
+                                    font.pixelSize: 15
+                                    wrapMode: Text.Wrap
+                                }
+                                RowLayout {
+                                    spacing: 6
+                                    Chip { text: dashboard.tracking }
+                                    Chip {
+                                        visible: dashboard.lowLight
+                                        warn: true
+                                        text: "어두움 " + Math.round(dashboard.brightness / 2.55) + "%"
+                                    }
+                                    Chip { visible: dashboard.motionBadgeOn; warn: true; text: "모션 모드" }
+                                }
+                                TextLabel {
+                                    text: "Space 또는 어디서든 " + (dashboard.shortcutLabels["toggle"] || "") + " 로 켜고 끕니다"
+                                    color: window.muted
+                                    font.pixelSize: 11
+                                }
+                            }
                         }
                         Rectangle {
                             visible: dashboard.lowLight
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            anchors.margins: 12
+                            Layout.fillWidth: true
                             implicitHeight: lowLightText.implicitHeight + 16
                             radius: 8
-                            color: "#F2B544"
+                            color: "#FFF1D6"
                             TextLabel {
                                 id: lowLightText
                                 anchors.fill: parent
                                 anchors.margins: 8
-                                text: "어두워요. 움직일 때 손을 놓치기 쉽습니다. 조명을 켜거나 모니터를 밝게 하고, 손을 카메라에 조금 더 가까이 두세요."
+                                text: "어두워요. 조명을 켜거나 모니터를 밝게 하고, 손을 카메라에 조금 더 가까이 두세요."
                                 wrapMode: Text.Wrap
                                 font.pixelSize: 12
-                                verticalAlignment: Text.AlignVCenter
+                                color: "#8A5A00"
+                            }
+                        }
+                        RowLayout {
+                            visible: dashboard.calibratingPointer
+                            Layout.fillWidth: true
+                            TextLabel { Layout.fillWidth: true; text: dashboard.calibrationHint; wrapMode: Text.Wrap }
+                            ActionButton { text: "취소"; onClicked: dashboard.cancelPointerCalibration() }
+                        }
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    TextLabel { text: "쓸 수 있는 동작"; font.pixelSize: 18; font.bold: true }
+                    Item { Layout.fillWidth: true }
+                    ActionButton {
+                        visible: dashboard.tutorialAvailable
+                        text: "동작 다시 배우기"
+                        onClicked: dashboard.beginTutorial()
+                    }
+                }
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: width > 640 ? 2 : 1
+                    columnSpacing: 10
+                    rowSpacing: 10
+                    Repeater {
+                        model: dashboard.gestureCards
+                        delegate: Rectangle {
+                            required property var modelData
+                            readonly property bool live: dashboard.liveGesture === modelData[0]
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                            implicitHeight: cardText.implicitHeight + 24
+                            radius: 12
+                            color: live ? "#E3F8F1" : "white"
+                            border.color: live ? window.mint : window.line
+                            border.width: live ? 2 : 1
+                            ColumnLayout {
+                                id: cardText
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                spacing: 4
+                                TextLabel { text: modelData[1]; font.bold: true; font.pixelSize: 15 }
+                                TextLabel {
+                                    Layout.fillWidth: true
+                                    text: modelData[2]
+                                    color: window.muted
+                                    font.pixelSize: 12
+                                    wrapMode: Text.Wrap
+                                }
                             }
                         }
                     }
-                    RowLayout {
-                        visible: dashboard.calibratingPointer
-                        Layout.fillWidth: true
-                        TextLabel {
-                            Layout.fillWidth: true
-                            text: dashboard.calibrationHint
-                            wrapMode: Text.Wrap
-                        }
-                        ActionButton { text: "취소"; onClicked: dashboard.cancelPointerCalibration() }
-                    }
-                    RowLayout {
-                        visible: !dashboard.calibratingPointer
-                        Layout.fillWidth: true
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            TextLabel { text: dashboard.inputState; font.bold: true }
-                            TextLabel { Layout.fillWidth: true; text: dashboard.currentAction; color: window.muted; wrapMode: Text.Wrap }
-                        }
-                        ActionButton { text: diagnostics.visible ? "상세 닫기" : "상세 정보"; onClicked: diagnostics.visible = !diagnostics.visible }
-                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
                     TextLabel {
                         id: diagnostics
                         visible: false
                         onVisibleChanged: dashboard.showFingertips(visible)
                         Layout.fillWidth: true
-                        text: dashboard.details
+                        text: dashboard.details + (dashboard.cameraMode ? "  ·  카메라 " + dashboard.cameraMode : "")
                         color: window.muted
                         wrapMode: Text.Wrap
+                        font.pixelSize: 11
+                    }
+                    Item { visible: !diagnostics.visible; Layout.fillWidth: true }
+                    ActionButton { text: diagnostics.visible ? "상세 닫기" : "상세 정보"; onClicked: diagnostics.visible = !diagnostics.visible }
+                }
+                Item { Layout.preferredHeight: 8 }
+            }
+        }
+            // Profiles: which calibration profile the engine uses
+            ScrollView {
+                id: profilesScroll
+                visible: dashboard.currentPage === "profiles"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: availableWidth
+                ColumnLayout {
+                    width: Math.min(profilesScroll.availableWidth - 48, 720)
+                    x: 24
+                    spacing: 12
+                    Item { Layout.preferredHeight: 8 }
+                    TextLabel { text: "프로필"; font.pixelSize: 22; font.bold: true }
+                    TextLabel {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        color: window.muted
+                        text: "프로필은 내 손에 맞춰 잰 값입니다. 기본값 위에 덮어써서, 같은 동작도 사람마다 잘 맞게 합니다. 바꾸면 입력이 멈추니 다시 켜세요."
+                    }
+                    Repeater {
+                        model: dashboard.profileNames
+                        delegate: Rectangle {
+                            required property var modelData
+                            readonly property bool chosen: dashboard.profileName === modelData[0]
+                            Layout.fillWidth: true
+                            implicitHeight: 52
+                            radius: 12
+                            color: chosen ? "#E3F8F1" : "white"
+                            border.color: chosen ? window.mint : window.line
+                            border.width: chosen ? 2 : 1
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 16
+                                anchors.rightMargin: 16
+                                TextLabel { text: modelData[1]; font.bold: chosen; Layout.fillWidth: true }
+                                TextLabel { visible: chosen; text: "사용 중"; color: "#08775E"; font.pixelSize: 12 }
+                            }
+                            MouseArea { anchors.fill: parent; onClicked: dashboard.selectProfile(modelData[0]) }
+                        }
+                    }
+                    TextLabel {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        color: window.muted
                         font.pixelSize: 12
+                        text: "새 프로필 만들기(내 손에 맞추기)는 맞춤 설정 화면에 곧 추가됩니다."
+                    }
+                }
+            }
+
+            // Customization: what the user can change without a developer (docs/design/decision-customization.md)
+            ScrollView {
+                id: customizeScroll
+                visible: dashboard.currentPage === "customize"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: availableWidth
+                ColumnLayout {
+                    width: Math.min(customizeScroll.availableWidth - 48, 720)
+                    x: 24
+                    spacing: 12
+                    Item { Layout.preferredHeight: 8 }
+                    TextLabel { text: "맞춤 설정"; font.pixelSize: 22; font.bold: true }
+                    TextLabel {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        color: window.muted
+                        text: dashboard.pointerOnly
+                            ? "지금은 검지 포인터(시험)를 쓰고 있습니다. 동작 켜고 끄기는 손바닥(기본) 방식에서 쓸 수 있어요."
+                            : "쓰지 않는 동작은 꺼 두면 잘못 인식될 일이 줄어듭니다. 바꾸면 입력이 멈추니 다시 켜세요."
+                    }
+                    SectionLabel { text: "동작 켜고 끄기" }
+                    Repeater {
+                        model: dashboard.pointerOnly ? [] : dashboard.switchableCards
+                        delegate: Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            implicitHeight: switchRow.implicitHeight + 24
+                            radius: 12
+                            color: "white"
+                            border.color: window.line
+                            RowLayout {
+                                id: switchRow
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                spacing: 12
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+                                    TextLabel { text: modelData[1]; font.bold: true; color: modelData[3] ? window.navy : "#A9B6C0" }
+                                    TextLabel {
+                                        Layout.fillWidth: true
+                                        text: modelData[2]
+                                        color: modelData[3] ? window.muted : "#A9B6C0"
+                                        font.pixelSize: 12
+                                        wrapMode: Text.Wrap
+                                    }
+                                }
+                                Segmented {
+                                    Layout.fillWidth: false
+                                    Layout.preferredWidth: 140
+                                    options: [["off", "끔"], ["on", "켬"]]
+                                    current: modelData[3] ? "on" : "off"
+                                    onPicked: function (value) { dashboard.setCardEnabled(modelData[0], value === "on") }
+                                }
+                            }
+                        }
+                    }
+                    Divider {}
+                    SectionLabel { text: "곧 추가됩니다" }
+                    Repeater {
+                        model: [["동작 바꾸기", "원하는 동작을 다섯 번 보여 주면, 그 동작으로 클릭·우클릭 등을 하게 바꿉니다."],
+                                ["내 손에 맞추기", "지금 동작이 잘 안 될 때, 몇 번 해 보이면 내 손에 맞는 값으로 프로필을 만듭니다."]]
+                        delegate: ColumnLayout {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 2
+                            TextLabel { text: modelData[0]; font.bold: true; color: window.muted }
+                            TextLabel { Layout.fillWidth: true; text: modelData[1]; color: window.muted; font.pixelSize: 12; wrapMode: Text.Wrap }
+                        }
                     }
                 }
             }

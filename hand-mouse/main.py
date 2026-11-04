@@ -368,6 +368,8 @@ def run_qt(args, perf, engine, camera, tracker, mouse, settings, keys, perf_log)
             if dashboard.failure_mark_requested:
                 dashboard.failure_mark_requested = False
                 runtime.post("failure_mark")
+            while dashboard.runtime_requests:
+                runtime.post(*dashboard.runtime_requests.popleft())
             want_settings = key in (ord("o"), ord("O"), ord("0"))
             if keys.available:
                 want_settings = want_settings or keys.pressed([VK_F2]) or keys.pressed(

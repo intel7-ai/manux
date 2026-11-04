@@ -24,7 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import cv2
 
-from src import app_paths
+from src import app_paths, gesture_guide
 from src.failure_log import FailureRecorder
 from src.finger_overlay import overlay_frame
 from src.motion_mode import ACTION_LABELS, MotionMode
@@ -37,6 +37,13 @@ from src.pointer_workspace import FINGERTIPS
 from src.tracking_test import TrackingTest, result_line
 
 ONE_SHOT = ("left_click", "right_click", "drag_toggle", "alt_tab", "show_desktop", "task_switcher")
+
+
+def practice_output(result: GestureResult) -> GestureResult:
+    """Guided tutorial (stage "tutorial"): nothing reaches Windows, not even cursor movement (11/04 feedback:
+    practising must not move the real mouse). The snapshot still reports the real action, so the tutorial
+    can tell the user it worked."""
+    return GestureResult()
 
 
 @dataclass(frozen=True)
@@ -226,6 +233,16 @@ class QtRuntime:
                     self._say("실패 기록: 앞뒤 3초를 저장합니다")
             elif kind == "key":
                 self._key(cmd[1], now)
+            elif kind == "card_enabled":
+                # customization page: turn one gesture on/off for both engines and keep it in the user's config
+                for gestures in (self.engine, self.pointer.gestures):
+                    gesture_guide.set_card_enabled(gestures.config, cmd[1], cmd[2])
+                self.mouse.release_all()
+                self.engine.reset()
+                try:
+                    self.engine.save_config()
+                except OSError as exc:
+                    self._say(f"설정을 저장하지 못했습니다: {exc}", 3.0)
 
     def _key(self, key: int, now: float) -> None:
         engine, mouse, camera = self.engine, self.mouse, self.camera
@@ -307,11 +324,13 @@ class QtRuntime:
         else:
             detections = []
             self._det_path = "skipped"
+        t_detected = time.perf_counter()
         all_detections = list(detections)
         # every hand MediaPipe returned this frame, before the control-hand filter below
         self._raw_hands = [[d.handedness, round(float(d.score), 2)] for d in all_detections]
 
-        if ui.stage != "main":
+        tutorial = ui.stage == "tutorial"
+        if ui.stage not in ("main", "tutorial"):
             if not self.paused:
                 self._pause()
             detections = []
@@ -355,7 +374,7 @@ class QtRuntime:
                 t0, detections[0].landmarks if detections else None, mouse.frame_aspect,
                 PointerSettings(click_style=ui.click_style, anchor=ui.anchor, tracking_only=tracking_only,
                                 axes=ui.axes, config=engine.config),
-                active=not self.paused and not ui.calibrating, detecting=should_detect,
+                active=(tutorial or not self.paused) and not ui.calibrating, detecting=should_detect,
             )
         else:
             pointer.reset()
@@ -365,11 +384,11 @@ class QtRuntime:
             contacts = frame_out.contacts
             if frame_out.action is not None:
                 action = frame_out.action
-                if frame_out.warp is not None:
+                if frame_out.warp is not None and not tutorial:
                     mouse.warp_to(*frame_out.warp)
                 result = GestureResult(action=action, cursor_point=frame_out.cursor_point,
                                        is_moving=frame_out.cursor_point is not None)
-                mouse.apply(result, engine.config, index_tip=frame_out.pointer_point,
+                mouse.apply(practice_output(result) if tutorial else result, engine.config, index_tip=frame_out.pointer_point,
                             index_sensitivity=ui.sensitivity / 100, pointer_source=frame_out.pointer_source)
                 pointer.record_cursor(t0, mouse.last_screen_pos)
                 parts = [f"이동 {frame_out.speed:.2f}" + (" 유지" if frame_out.latched else "")]
@@ -399,8 +418,8 @@ class QtRuntime:
         elif detections and not index_mode and not motion_active:
             hand = detections[0]
             result = engine.process(hand.landmarks)
-            if not self.paused:
-                mouse.apply(result, engine.config)
+            if tutorial or not self.paused:
+                mouse.apply(practice_output(result) if tutorial else result, engine.config)
                 if result.action in ONE_SHOT:
                     self._recent_action, self._recent_until = result.action, time.perf_counter() + .8
             HandTracker.draw_hand(frame, hand.landmarks, pinch_guides(
@@ -417,6 +436,7 @@ class QtRuntime:
         elif not index_mode:
             result = engine.process(None)
 
+        t_decided = time.perf_counter()
         if roi is not None:
             cv2.rectangle(frame, roi[:2], roi[2:], (189, 229, 70), 2, cv2.LINE_AA)
         self._failures(t0, detections, roi, index_mode, ui, frame, result, frame_out)
@@ -445,7 +465,11 @@ class QtRuntime:
             self._snap = snap
             self._cond.notify_all()
         if self.perf_log is not None:
-            self.perf_log.frame(tracker.last_detect_ms if should_detect else None, (time.perf_counter() - t0) * 1000.0)
+            t_end = time.perf_counter()
+            self.perf_log.frame(tracker.last_detect_ms if should_detect else None, (t_end - t0) * 1000.0,
+                                frame_age_ms=(t0 - camera.last_frame_t) * 1000.0 if camera.last_frame_t else None,
+                                stages_ms=((t_detected - t0) * 1000.0, (t_decided - t_detected) * 1000.0,
+                                           (t_end - t_decided) * 1000.0))
             self.perf_log.tick(camera.fps, camera.dropped_frames)
 
     def _motion_blocked(self, t0: float) -> bool:
@@ -460,7 +484,8 @@ class QtRuntime:
 
     def _motion(self, t0: float, ui, detections) -> bool:
         """Run motion mode for this frame. True while it is on (the pinch controls are then suspended)."""
-        ready = ui.stage == "main" and not self.paused and not ui.calibrating
+        ready = ((ui.stage == "tutorial" or ui.stage == "main" and not self.paused) and not ui.calibrating
+                 and bool(self.engine.config.get("motion_enabled", True)))
         request = ""
         if ui.motion_request != self._motion_seen:
             self._motion_seen = ui.motion_request
@@ -481,7 +506,8 @@ class QtRuntime:
             elif event.kind == "exit":
                 self._say(f"모션 모드 꺼짐 ({event.info.get('why')})", 2.0)
             elif event.kind == "swipe":
-                self.mouse.send_motion_action(event.action)
+                if ui.stage == "main":          # the tutorial only shows that the swipe was read
+                    self.mouse.send_motion_action(event.action)
                 self._motion_last = ACTION_LABELS.get(event.action, event.action)
                 self._say(f"모션: {self._motion_last}", 1.5)
             if self.failures.trigger(t0, f"motion_{event.kind}", note=json.dumps(event.info, ensure_ascii=False)):
