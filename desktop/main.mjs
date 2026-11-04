@@ -145,7 +145,7 @@ else {
     powerMonitor.on('suspend', () => bridge.disable('절전 모드에서 마우스 제어를 해제했습니다.'));
     powerMonitor.on('lock-screen', () => bridge.disable('화면이 잠겨 마우스 제어를 해제했습니다.'));
     void bridge.start().catch(error => { console.error(`MANUX mouse: ${error.message}`); statusToWindow(); });
-    await window.loadURL(`${origin}/`);
+    await window.loadURL(`${origin}/studio.html`);
     void updates.start();
     console.log(`MANUX desktop ready: ${origin}/ (mouse control starts OFF)`);
   }).catch(error => { dialog.showErrorBox('MANUX 실행 오류', error.message); app.quit(); });

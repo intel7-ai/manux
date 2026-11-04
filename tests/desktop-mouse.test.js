@@ -20,6 +20,8 @@ test('camera and IPC document checks accept local fragments, reject other origin
   const request = {isMainFrame:true, requestingUrl:origin + '/#mouse', mediaTypes:['video']};
   assert.equal(isAppDocument(origin + '/', origin), true);
   assert.equal(isAppDocument(origin + '/#mouse', origin), true);
+  assert.equal(isAppDocument(origin + '/studio.html', origin), true);
+  for (const url of [origin + '/studio.html?x=1', origin + '/overlay.html', origin + '/studio.css']) assert.equal(isAppDocument(url, origin), false, url);
   for (const url of ['https://example.com/', origin + '/src/app.js', origin + '/?remote=true', 'http://localhost:4175/', 'not-a-url']) assert.equal(isAppDocument(url, origin), false);
   assert.equal(canRequestCamera(contents, contents, 'media', request, origin), true);
   assert.equal(canRequestCamera(contents, contents, 'media', {...request, mediaTypes:['video','audio']}, origin), false);

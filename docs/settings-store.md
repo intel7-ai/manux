@@ -8,8 +8,9 @@ localStorage 키 `manux.settings.v1`, 직렬화 상한 2,000,000자.
 
 ```js
 {
-  version: 1, revision: 3, savedAt: '2026-11-03T01:00:00.000Z',
-  mouse: {sensitivity: 1800, mainHand: 'right', area: {left: 0, top: 0, right: 1, bottom: 1}},
+  version: 2, revision: 3, savedAt: '2026-11-03T01:00:00.000Z',
+  mouse: {sensitivity: 1800, mainHand: 'right', area: {left: 0, top: 0, right: 1, bottom: 1},
+         pointer: {engine: 'index', click: 'trigger', anchor: 'index'}},
   environments: {
     desk: {
       registrations: {'custom:ok-sign': /* G1 registerGesture 결과 그대로 */},
@@ -23,7 +24,8 @@ localStorage 키 `manux.settings.v1`, 직렬화 상한 2,000,000자.
 | 필드 | 규칙 |
 | --- | --- |
 | `mouse.sensitivity` | 600~3600, 100 단위 (현재 슬라이더와 같음) |
-| `mouse.mainHand` | `right` \| `left` |
+| `mouse.mainHand` | `right` \| `left` \| `null`(아직 고르지 않음, 데스크톱 첫 실행에서 물어봄) |
+| `mouse.pointer` | 데스크톱 스튜디오의 포인터 설정. `engine`: `index`\|`palm`, `click`: `trigger`\|`off`, `anchor`: `index`\|`palm`. 기본 `index`·`trigger`·`index` |
 | `mouse.area` | 0~1 비율, 가로·세로 0.2 이상. 아직 판정기가 사용하지 않는 저장 전용 값 |
 | `registrations` | G1의 `validateRegistrations`로 검사. 레코드는 G1이 만든 그대로 저장하고 A2가 필드를 덧붙이지 않는다 |
 | `verifications` | 모든 등록에 하나씩 있어야 한다. 확인을 거치지 않은 후보는 저장할 수 없다 |
@@ -56,7 +58,7 @@ store.removeBinding(gestureId)
 | localStorage 접근자·읽기 권한 거부 | 기본값·읽기 전용으로 앱 시작, 오류 안내 |
 | 검사 실패(범위·형식·미확인 등록·미등록 동작 연결·허용 밖 액션) | 쓰기 전에 예외 |
 | 저장 원문이 깨짐 | 기본값으로 실행, 원문은 지우지 않음. 첫 저장 전에 `manux.settings.v1.backup`에 한 번 복사 |
-| 더 새 버전(`version` > 1)이 저장한 값 | 읽기 전용, 기본값으로 실행, 저장 거부 (자동 업데이트 후 이전 버전 실행 대비) |
+| 더 새 버전(`version` > 2)이 저장한 값 | 읽기 전용, 기본값으로 실행, 저장 거부 (자동 업데이트 후 이전 버전 실행 대비) |
 | 다른 창이 먼저 저장 | 덮어쓰지 않고 예외 ("앱을 다시 열어 주세요") |
 | 저장소 접근 자체가 실패 | 읽기 전용, 기본값 |
 
@@ -70,3 +72,7 @@ store.removeBinding(gestureId)
 ## 시험과 한계
 
 `tests/settings-store.test.js`가 위 표의 경우를 메모리 저장소로 검사한다. 등록 레코드는 G1 검증기의 대역(stub)으로 시험했다. 실제 G1 검증기와의 연결, 실제 Electron 재실행 복원은 별도로 기록한다. 영상 모드 프로필(v1)의 변환은 이번 범위가 아니다. 프로필 키와 같은 localStorage 할당량(브라우저 기본 약 5MB)을 나눠 쓰므로, 용량 부족은 저장 예외로 처리될 뿐 미리 막지 않는다.
+
+## 버전 기록
+
+- v2 (2026-11-04): `mouse.pointer` 추가(기본값으로 채움), `mouse.mainHand`에 `null` 추가, 기본값 `null`. v1 기록은 읽을 때 v2로 옮긴다. v1은 늘 기본값 `right`를 저장했으므로 `left`만 유지하고 나머지는 `null`(다시 물어봄). 첫 저장 때 v2로 쓴다. v1 앱이 v2 기록을 만나면 "더 새 버전" 규칙대로 읽기 전용이 된다. 저장 키 이름(`manux.settings.v1`)은 그대로다.

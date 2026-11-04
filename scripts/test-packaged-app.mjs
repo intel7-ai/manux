@@ -44,6 +44,7 @@ try {
   const get = async pathname => fetch(`${origin}${pathname}`);
   assert.equal((await get('/health')).status, 200);
   assert.equal((await get('/')).status, 200);
+  assert.equal((await get('/studio.html')).status, 200);
   assert.equal((await get('/src/app.js')).status, 200);
   assert.equal((await get('/vendor/vision_bundle.mjs')).status, 200);
   const wasm = await get('/vendor/wasm/vision_wasm_internal.wasm');

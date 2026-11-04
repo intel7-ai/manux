@@ -9,6 +9,7 @@ import {extractOrientation, VIEW_LABELS} from './orientation.js';
 import {renderAngleCoverage} from './enrollment-view.js';
 import {MouseWorkspace} from './mouse-workspace.js';
 import {SettingsStore} from './settings-store.js';
+import {BrightnessSampler} from './camera-metrics.js';
 
 const $ = selector => document.querySelector(selector);
 const player = $('#player'), camera = $('#camera'), canvas = $('#landmarks');
@@ -27,6 +28,7 @@ let profiles = stored.profiles;
 let gate = new GestureController(), vision = null, stream = null, ready = false;
 let session = 0, raf = 0, lastVideoTime = -1, lastInference = 0, mediaUrl = null, actionBusy = false;
 let cameraInfo = null, lastResultAt = null, fps = 0, lastStatsAt = 0;
+const brightness = new BrightnessSampler();
 let enrollment = null, enrollmentModel = null, enrollmentContext = null, enrollmentError = null;
 let previewMoveId = 0;
 let controlMode = 'media';
@@ -336,6 +338,8 @@ function processResult(packet, now, roundTripMs) {
   if (now - lastStatsAt > 500) {
     lastStatsAt = now;
     $('#camera-stats').textContent = `실제 입력 ${cameraInfo.label}${cameraInfo.reduced ? ' · 요청보다 낮음' : ''} | 처리 ${fps.toFixed(1)} fps · 모델 ${Math.round(packet.inferenceMs)}ms · 왕복 ${Math.round(roundTripMs)}ms`;
+    showBrightness(brightness.sample(camera));
+    mouse.setFrameStats({fps, inferenceMs:packet.inferenceMs});
   }
   if (enrollment) {
     const match = enrollmentModel ? classifyPersonal(features, enrollmentModel) : undefined;
@@ -354,7 +358,7 @@ function processResult(packet, now, roundTripMs) {
   if (controlMode === 'mouse') {
     const state = mouse.update({landmarks, now, quality:quality.ok, handedness:result.handedness?.[0]?.[0]?.categoryName || null, ...dimensions, latency:roundTripMs});
     $('#recognition-label').textContent = !handPresent ? '손을 보여주세요' : !quality.ok ? '입력 보류' : $('#mouse-mode').textContent;
-    $('#confidence').textContent = '손바닥 위치 · 손가락 간격';
+    $('#confidence').textContent = mouse.pointer.engine === 'index' ? '검지 끝 · 엄지 방아쇠' : '손바닥 위치 · 손가락 간격';
     $('#hold-progress').style.width = `${Math.round((state?.progress || 0) * 100)}%`;
     if (!quality.ok) message('#camera-message', qualityText(quality, handPresent));
     else message('#camera-message', '손바닥 중심으로 이동합니다. 손가락을 붙여 클릭·스크롤을 사용하세요.');
@@ -389,6 +393,14 @@ function infer(token) {
     message('#camera-message', `인식이 중단되었습니다. 카메라를 다시 시작하세요. (${error.message})`, true);
   });
 }
+// Low-light warning from the Qt app: a dark camera loses fast-moving hands.
+function showBrightness(reading) {
+  const chip = $('#camera-light');
+  chip.hidden = reading.percent === null;
+  chip.textContent = reading.percent === null ? '' : `${reading.lowLight ? '어두움' : '밝기'} ${reading.percent}%`;
+  chip.classList.toggle('warn', reading.lowLight);
+  $('#low-light-banner').hidden = !reading.lowLight;
+}
 function stopCamera() {
   mouse.setReady(false);
   session++; ready = false;
@@ -402,7 +414,7 @@ function stopCamera() {
   $('#camera-start').disabled = false; $('#camera-start').textContent = '카메라 시작';
   $('#camera-stop').disabled = true; $('#resolution').disabled = false;
   $('#recognition-label').textContent = '대기 중'; $('#confidence').textContent = '';
-  badge('카메라 꺼짐'); refreshProfile(); syncMedia();
+  badge('카메라 꺼짐'); showBrightness({percent:null, lowLight:false}); refreshProfile(); syncMedia();
 }
 $('#camera-start').addEventListener('click', async () => {
   const token = ++session;

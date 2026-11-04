@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MANUX · Input Studio</title>
+<link rel="stylesheet" href="/studio.css">
+</head>
+<body>
+<!-- Onboarding (ported from hand-mouse/src/dashboard.qml): splash -> welcome -> one hand for 5 s -> main -->
+<section id="onboarding" class="onboarding" data-stage="splash">
+  <div class="onboarding-body">
+    <img class="onboarding-logo" src="/assets/manux.svg" alt="MANUX">
+    <h1 class="onboarding-title" id="onboarding-title">안녕하세요</h1>
+    <p class="onboarding-copy" id="onboarding-copy">편하게 쓸 손을 한 번 정하면, 다음부터 바로 시작할 수 있어요.</p>
+    <button id="onboarding-start" class="action accent" type="button">시작하기</button>
+    <div class="capture-preview" id="capture-host"></div>
+    <p class="capture-status" id="capture-status">한 손을 기다리는 중</p>
+    <div class="onboarding-actions"><button id="onboarding-cancel" class="action" type="button" hidden>취소</button></div>
+  </div>
+</section>
+
+<div id="studio" class="studio" hidden>
+  <header class="topbar">
+    <span class="brand">MANUX</span><span class="brand-sub">INPUT STUDIO</span>
+    <span class="spacer"></span>
+    <a class="action link" href="/" title="영상 제어와 동작 등록이 있는 기존 화면">영상 제어 · 동작 등록</a>
+    <button id="hand-setup" class="action" type="button">사용할 손 설정</button>
+    <button id="settings-open" class="action" type="button">설정</button>
+    <button id="control-toggle" class="action accent" type="button" disabled>제어 시작</button>
+  </header>
+  <main class="studio-main">
+    <aside class="sidebar">
+      <div class="sidebar-scroll">
+        <h2>포인터</h2>
+        <div class="segmented" data-setting="engine"><button type="button" data-value="index">검지 포인터</button><button type="button" data-value="palm">손바닥</button></div>
+        <div class="index-only">
+          <h3>클릭</h3>
+          <div class="segmented" data-setting="click"><button type="button" disabled title="Python 앱의 핀치 판정은 아직 이식하지 않았습니다.">핀치</button><button type="button" data-value="trigger">방아쇠</button><button type="button" data-value="off">끔</button></div>
+          <h3>커서 기준점</h3>
+          <div class="segmented" data-setting="anchor"><button type="button" data-value="index">검지 끝</button><button type="button" data-value="palm">손바닥 중심</button></div>
+        </div>
+        <p class="note">설정을 바꾸면 입력이 멈춥니다. 다시 제어 시작을 누르세요.</p>
+        <hr>
+        <h3>동작 안내</h3>
+        <dl id="guide-list" class="guide"></dl>
+        <p id="guide-note" class="note"></p>
+        <p id="contacts" class="note" hidden></p>
+        <hr>
+        <label class="check"><input id="overlay-toggle" type="checkbox" disabled> 화면에 손가락 표시</label>
+        <p class="note">데스크톱 앱에서 Windows 커서 주변에 손가락 위치와 현재 동작을 그립니다.</p>
+      </div>
+      <hr>
+      <p class="note shortcuts">Space 시작/정지 · Esc 정지 · O 설정 · Ctrl+Alt+M 어디서든 정지</p>
+    </aside>
+    <section class="camera-card">
+      <div class="camera-head">
+        <h2>카메라</h2><span class="spacer"></span>
+        <span id="chip-mode" class="chip" hidden></span><span id="chip-light" class="chip" hidden></span><span id="chip-tracking" class="chip">손 대기</span>
+      </div>
+      <div class="preview" id="preview-host">
+        <div class="preview-frame" id="preview-frame">
+          <video id="camera" playsinline muted autoplay></video>
+          <canvas id="landmarks"></canvas>
+          <p id="camera-empty" class="camera-empty">카메라를 준비하고 있습니다…</p>
+          <p id="low-light" class="low-light" hidden>어두워요. 움직일 때 손을 놓치기 쉽습니다. 조명을 켜거나 모니터를 밝게 하고, 손을 카메라에 조금 더 가까이 두세요.</p>
+        </div>
+      </div>
+      <div class="status-row">
+        <div class="status-text"><strong id="input-state">입력 꺼짐</strong><span id="current-action">제어 시작을 누르면 손짓으로 조작할 수 있어요.</span></div>
+        <button id="details-toggle" class="action" type="button">상세 정보</button>
+      </div>
+      <p id="details" class="details" hidden></p>
+      <p id="message" class="message" role="status"></p>
+    </section>
+  </main>
+</div>
+
+<dialog id="settings-dialog" class="settings-dialog">
+  <h2>검지 포인터 설정</h2>
+  <label class="slider-label">커서 감도 · <output id="sensitivity-output">100%</output>
+    <input id="sensitivity" type="range" min="900" max="2700" step="100" value="1800"></label>
+  <div class="slider-ends"><span>느리게</span><span>빠르게</span></div>
+  <label class="select-label">카메라 해상도 <select id="resolution"><option value="1080">1080p · 권장</option><option value="720">720p</option><option value="480">480p · 성능 비교</option></select></label>
+  <div class="dialog-actions"><button id="sensitivity-reset" class="action" type="button">기본값 복원</button><button id="settings-close" class="action accent" type="button">닫기</button></div>
+</dialog>
+
+<script type="module" src="/src/studio.js"></script>
+</body>
+</html>
