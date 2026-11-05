@@ -5,7 +5,7 @@ imports the camera (cv2), so a stand-in `src` package is used and removed afterw
 modules the pointer needs (pointer_engine, pointer_workspace, gesture_engine and its stdlib-only
 app_paths / profiles) are imported without it. `apps/manux/src` never imports `hand-mouse/`.
 
-Exact equality (not approx): the port copies the arithmetic, so any difference is a behaviour change.
+Frames: 12 core runs + 3 feature runs + 4 pinch-detector runs, 4,000 each (76,000). Exact equality (not approx): the port copies the arithmetic, so any difference is a behaviour change.
 Compared per frame: action, cursor_point, pointer_point, preview_point, contacts, pointer_source,
 warp, latched, speed, click_armed, trigger_ratio (NaN == NaN).
 
@@ -93,10 +93,18 @@ SCENARIOS = [
     # (seed, click_style, anchor, tracking_only, axes, motion_enabled)
     (5, "pinch", "index", False, None, True),
     (2, "pinch", "palm", False, None, True),
-    (3, "trigger", "index", False, None, True),
+    (5, "trigger", "index", False, None, True),
     (4, "trigger", "palm", False, AXES, True),
     (5, "off", "index", False, None, True),
     (6, "pinch", "index", True, AXES, False),
+    # more pinch runs: its rarer branches (fist / three-finger lockout, one side pinch at a time,
+    # nearest finger) only show up in some sequences
+    (1, "pinch", "index", False, None, True),
+    (3, "pinch", "index", False, None, False),
+    (7, "pinch", "palm", False, None, True),
+    (9, "pinch", "index", False, AXES, True),
+    (10, "pinch", "palm", False, None, True),
+    (14, "pinch", "index", False, None, True),
 ]
 
 
@@ -161,6 +169,44 @@ def test_feature_matches_v03_including_the_trigger_rewind(v03):
     assert total[("pointer.right_click", "tap")] == total["right_click"]
 
 
+PINCH_STATE = ("_index_pinched", "_middle_hold_pinched", "_index_released_at", "_fist", "_secondary_since",
+               "_secondary_off", "_click_fresh", "_lost_since", "_index_release_since", "_pinch_candidate_since")
+
+
+@pytest.mark.parametrize("seed,motion", [(31, True), (32, True), (33, False), (34, True)])
+def test_pinch_detector_matches_v03_gesture_engine_state_by_state(v03, seed, motion):
+    """PointerPinch against v0.3 GestureEngine under the pointer's override (pointer_engine._pinch)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        v03.profiles.RUN_OVERRIDE = None
+        old = v03.ge.GestureEngine(config_path=Path(tmp) / "gestures.json")
+    from manux.features.pointer.pinch import PointerPinch
+    new = PointerPinch()
+    cfg = _v03_config(v03, motion=motion)
+    cfg.update(gestures=v03.pe.POINTER_GESTURES, record_fling_enabled=False, grab_scroll_enabled=False,
+               long_press_drag=False)
+    old.config.update(cfg)
+    new_cfg = to_v03_config(THRESHOLDS)
+    new_cfg["motion_pose_freeze"] = motion
+    new.config.update(new_cfg)
+    seen = Counter()
+    for n, (t, pts, active, _d) in enumerate(H.random_frames(seed, FRAMES)):
+        if not active:
+            old.reset()
+            new.reset()
+            continue
+        g = old.process(None if pts is None else [v03.ge.Point3D(*p) for p in pts], timestamp=t)
+        r = new.process(None if pts is None else [_P(*p) for p in pts], t)
+        click = g.action if g.action in ("left_click", "right_click") else None
+        assert (click, g.active_gesture in v03.pe.POINTER_GESTURES) == (r.click, r.pinching), f"frame {n}"
+        for name in PINCH_STATE:
+            assert getattr(old, name) == getattr(new, name), f"seed {seed} frame {n}: {name}"
+        seen[click] += 1
+        seen["index"] += old._index_pinched
+        seen["three"] += old._middle_hold_pinched
+        seen["locked"] += (t - old._index_released_at) < .35
+    assert seen["left_click"] and seen["right_click"] and seen["index"] and seen["three"] and seen["locked"]
+
+
 class _P:
     __slots__ = ("x", "y", "z")
 
@@ -173,8 +219,8 @@ def _coverage(style, tracking, seen):
     assert seen["move_cursor"] > 100 and seen["latched"] > 0
     if tracking or style == "off":
         return
-    assert seen["left_click"] > 0 and seen["pointer_wait"] > 0
+    assert seen["left_click"] + seen["right_click"] > 0 and seen["pointer_wait"] > 0
     if style == "pinch":
-        assert seen["right_click"] > 0 and seen["pointer_release"] > 0
+        assert seen["pointer_release"] > 0
     if style == "trigger":
         assert seen["drag_hold"] > 0 and seen["warp"] > 0

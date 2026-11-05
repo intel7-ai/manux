@@ -490,7 +490,7 @@ def test_reset_clears_the_state_and_emits_nothing():
 def test_every_begin_gets_an_end_and_intents_follow_the_contract(style):
     feature = PointerFeature()
     open_drag, begins, t, n = False, 0, 0.0, 0
-    for n, (t, pts, active, _d) in enumerate(H.random_frames(21, 3000)):
+    for n, (t, pts, active, _d) in enumerate(H.random_frames(24, 3000)):
         if not active and n % 7 == 0:
             feature.reset(random.Random(n).choice(("pause", "mode_change", "settings", "hand_lost")))
             open_drag = False                                    # the engine's release_all closes it

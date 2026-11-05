@@ -89,6 +89,22 @@ def free_hand(rng: random.Random) -> List[Pt]:
     return pts
 
 
+def index_middle_hand(rng: random.Random) -> List[Pt]:
+    """Thumb among the index and middle tips (thumb + index pinch, three-finger hold, near misses)."""
+    pts = real_hand(False)
+    for tip_i, x in ((8, .46), (12, .47)):
+        tip_y = rng.uniform(.44, .58)
+        pts[tip_i - 1] = (x + rng.uniform(-.01, .01), (.60 + tip_y) / 2, 0.0)
+        pts[tip_i] = (x + rng.uniform(-.012, .012), tip_y, 0.0)
+    for tip_i in (16, 20):                     # ring and pinky half curled or extended
+        x, y, z = pts[tip_i]
+        pts[tip_i] = (x, rng.choice((y, .52, .58)), z)
+    a, b = pts[8], pts[12]
+    k = rng.random()
+    pts[4] = (a[0] + (b[0] - a[0]) * k + rng.gauss(0, .012), a[1] + (b[1] - a[1]) * k + rng.gauss(.01, .012), 0.0)
+    return pts
+
+
 def shifted(hand: Sequence[Pt], dx: float, dy: float = 0.0) -> List[Pt]:
     return [(x + dx, y + dy, z) for x, y, z in hand]
 
@@ -115,8 +131,10 @@ def _poses(rng: random.Random) -> List[Pt]:
     kind = rng.choice((
         "open", "open", "pointing", "pointing", "pointing", "middle", "middle", "ring", "ring",
         "trigger_press", "trigger_near", "fist", "thumbs_up", "index_pinch", "three_pinch",
-        "free", "free", "free", "free",
+        "free", "free", "free", "free", "index_middle", "index_middle",
     ))
+    if kind == "index_middle":
+        return index_middle_hand(rng)
     if kind == "free":
         return free_hand(rng)
     if kind == "open":
