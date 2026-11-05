@@ -278,11 +278,13 @@ class OutputSink(Protocol):
 
 **계약:**
 - 설정 키는 `<기능 ID>.<이름>` 또는 공용 `app.<이름>`, `camera.<이름>`, `tracking.<이름>`. 기능의 기본값은 그 기능의 `SETTINGS`에 있다.
-- 설정 파일에는 `"version"`이 있다. 읽을 때 이전 버전을 변환한다. v0.3 `gestures.json`과 프로필 파일 변환표는 S1에서 만든다.
+- 설정 파일은 `<설정 폴더>/settings.json` = `{"version": 1, "values": {키: 값}}`이다. 읽을 때 이전 버전을 변환한다.
+- v0.3 변환(`settings/migrate_v03.py`): 주인이 있는 키는 표(`RENAMES`)대로 새 키로 바꾸고, 나머지는 `v03.<키>`로 그대로 보존한다. 기능을 옮길 때 그 기능의 v0.3 키를 표에 추가한다. v0.3 파일은 읽기만 하고 고치지 않는다.
 - 잘못된 값(타입·범위)은 그 키만 기본값으로 되돌리고 경고를 남긴다. 앱은 멈추지 않는다. 모르는 키는 지우지 않고 보존한다.
 - 저장은 임시 파일에 쓰고 이름을 바꾸는 방식으로 한다. 저장이 실패해도 이전 파일은 그대로다.
 - 프로필은 사용자 값만 덮어쓴다. 프로필 이름 규칙은 v0.3 `profiles.NAME_RE`를 따른다.
-- 사용자 설정 위치는 v0.3 `app_paths`(설치본: 사용자 폴더)를 따른다. 저장소 안에 사용자 설정을 쓰지 않는다.
+- 사용자 폴더(`settings/paths.py`): 설치본 `%APPDATA%/MANUX/v04`, 소스 실행 `%APPDATA%/MANUX-dev/v04`, `MANUX_DATA_DIR`가 있으면 그 폴더. v0.3 설치본(`%APPDATA%/MANUX`)과 섞이지 않는다. 저장소 안에 사용자 설정을 쓰지 않는다.
+- 공용 계층의 설정(`app.`, `camera.`, `tracking.`)은 `settings/builtin.py`에 선언한다. 계층 규칙상 `capture`·`tracking`은 `settings`를 import할 수 없으므로 조립 지점이 값을 넘긴다.
 
 ## 12. 화면과 엔진 사이 (`Snapshot`, `UiCommand`)
 
