@@ -1,19 +1,30 @@
 # MANUX
 
-웹캠으로 손동작을 읽어 **앱 안의 영상과 Windows 마우스를 제어하는 팀 프로젝트**입니다. 영상과 손 추론은 사용하는 PC에서 처리합니다. Discord에서는 같은 프로젝트를 함께 개발할 수 있습니다.
+웹캠으로 손동작을 읽어 **Windows 마우스를 제어하는 팀 프로젝트**입니다. 영상과 손 추론은 사용하는 PC 안에서만 처리합니다. Discord에서 같은 프로젝트를 함께 개발할 수 있습니다.
 
-M1 제품 목표는 **Windows 데스크톱 앱, 비전 화면의 기본 마우스 프리셋, 사용자 정의 손동작과 컴퓨터 조작의 연결**입니다. 한 손·두 손 조작의 최종 선택은 평가 후 결정합니다. [확인된 목표와 현재 구현](docs/design/01-use-cases.md)을 함께 확인하세요.
+## MANUX는 `apps/manux/`입니다 (2026-11-05)
+
+앱 이름은 **MANUX**, 코드는 `apps/manux/`(v0.4, Python + Qt/QML) 한 곳입니다. 새 기능·수정·문서는 여기에 합니다. 나머지 폴더는 이전 버전입니다.
+
+| 폴더 | 지위 | 시작 문서 |
+| --- | --- | --- |
+| `apps/manux/` | **MANUX.** 이식 단계 S0~S5 병합, S6(데스크톱 화면) 진행 중 | [apps/manux/README.md](apps/manux/README.md) · [AGENTS.md](apps/manux/AGENTS.md) |
+| `hand-mouse/` | 이전 버전 v0.3. **`apps/manux`에 설치본이 생길 때까지만** Releases `v0.3.x` 설치파일을 이 폴더에서 빌드합니다. 설치본을 깨는 버그 수정만 받고 기능은 `apps/manux`로 옮깁니다 | [hand-mouse/README.md](hand-mouse/README.md) |
+| `src/`, `public/`, `desktop/`, `server.js` | 이전 웹앱·Electron(v0.2). 회귀 시험(`npm run verify`)만 CI에서 돕니다 | 아래 [이전 버전](#이전-버전) |
+
+문서 전체의 현재/기록 구분은 [docs/README.md](docs/README.md)에 있습니다.
 
 ## 무엇부터 하면 되나요?
 
 | 하고 싶은 일 | 시작할 곳 |
 | --- | --- |
 | 코드를 몰라도 기능 제안·오류 보고·개발 요청하기 | 아래 **Discord로 참여하기** |
-| 내 PC에서 앱을 실행하고 사용해 보기 | 아래 **Windows에서 처음 실행하기** |
-| 코드를 바꾸고 검사·리뷰받기 | [개발 참여 안내](CONTRIBUTING.md) |
-| 설치 오류나 빨간 검사 결과 해결하기 | [첫날 온보딩과 문제 해결](docs/onboarding.md) |
+| 앱을 설치해서 써 보기 | 아래 **설치해서 사용하기** |
+| 소스에서 실행하기 | 아래 **소스에서 실행하기** |
+| 코드를 바꾸고 PR 올리기 | [브랜치 흐름](docs/branch-flow.md) · [개발 참여 안내](CONTRIBUTING.md) |
+| MANUX 기능을 만들거나 고치기 | [apps/manux/AGENTS.md](apps/manux/AGENTS.md)부터 |
 
-새 작업은 최신 `origin/preview`에서 작업별 브랜치를 만듭니다. 개인 PC의 원하는 AI와 Discord worker 모두 같은 PR 검증·리뷰·배포 흐름을 사용합니다. 이미 작업 중인 브랜치는 그대로 보존하고 해당 브랜치에서 PR을 만듭니다.
+새 작업은 최신 `origin/preview`에서 작업별 브랜치를 만들고 `preview`로 PR을 엽니다. 이미 작업 중인 브랜치는 그대로 보존하고 그 브랜치에서 PR을 만듭니다.
 
 ## Discord로 참여하기
 
@@ -34,88 +45,64 @@ M1 제품 목표는 **Windows 데스크톱 앱, 비전 화면의 기본 마우�
 
 봇 운영자는 별도 봇 프로젝트의 `discord_bot.bat`를 실행하고 창을 유지해야 합니다. 팀원 모두가 봇을 설치할 필요는 없습니다. 응답이 없으면 호스트 운영자에게 실행 상태를 확인해 달라고 알려주세요.
 
-## 설치파일로 사용하기
+## 설치해서 사용하기
 
-[GitHub Releases](https://github.com/intel7-ai/manux/releases)의 정식 `MANUX-Setup-<버전>.exe`를 설치합니다. 모델과 실행 환경을 포함하므로 Node·Git은 필요 없습니다. 첫 정식 Release가 게시되기 전에는 아래 개발 실행을 사용합니다. 이후 앱이 새 정식 버전을 내려받고 사용자가 설치를 선택하면 재시작합니다.
+[GitHub Releases](https://github.com/intel7-ai/manux/releases)의 최신 버전에서 `MANUX-win-Setup.exe`를 받아 설치합니다. Python·Node·Git은 필요 없습니다. 앱은 시작할 때 새 버전을 확인해 내려받고, 앱을 닫으면 적용됩니다. 사용자 설정은 `%APPDATA%\MANUX`에 있어 업데이트해도 유지됩니다.
 
-PR 검토용 `MANUX Preview` 설치파일은 해당 PR의 Actions artifact에서 받습니다. 정식 앱과 설치 ID·설정 폴더·포트가 다르며 자동 업데이트는 꺼져 있습니다. [설치·PR 시험·자동 배포 상세](docs/desktop-release.md)
+지금 게시된 `v0.3.x`는 이전 버전(`hand-mouse/`) 코드입니다. `apps/manux`의 설치본·자동 업데이트(S6 남은 항목)가 준비되면 같은 Releases·같은 이름으로 교체합니다. 상세: [설치본과 자동 업데이트](hand-mouse/docs/packaging.md).
 
-## Windows 개발 환경에서 실행하기
+## 소스에서 실행하기
 
-준비물은 **Windows, Node.js 24, Git for Windows, 웹캠**, 그리고 팀이 공유한 이 프로젝트 폴더입니다. 명령은 `package.json`이 있는 `manux` 폴더에서 실행합니다.
-
-1. **`MANUX 개발 준비.cmd`**를 더블클릭합니다. 패키지를 설치하고 환경·공통 검사를 실행합니다.
-2. 같은 폴더의 PowerShell에서 최초 한 번 다음 두 명령을 실행합니다. 다운로드 때문에 인터넷이 필요합니다.
-
-   ```powershell
-   npm run setup
-   npm run desktop:setup
-   ```
-
-3. **`MANUX 마우스 실행.cmd`**를 더블클릭합니다.
-4. 카메라를 켜고 **이 화면에서 연습 → 마우스 제어 켜기**부터 사용합니다. 현재 브랜치의 [마우스 사용법](docs/air-mouse.md)에 있는 기본 자세와 클릭 동작을 확인한 뒤 손 전체를 움직입니다.
-5. 실제 커서를 제어하려면 데스크톱 앱에서 **Windows 마우스**를 직접 선택하고 제어를 다시 켭니다. **Ctrl + Alt + M**으로 다른 앱에서도 제어를 멈출 수 있습니다.
-
-다음부터는 `MANUX 마우스 실행.cmd`로 시작합니다. 코드나 의존성이 업데이트되면 다시 개발 준비·검사를 실행합니다. [자세한 마우스 사용법](docs/air-mouse.md)에서 클릭·드래그·스크롤 동작과 제한을 확인하세요.
-
-영상 모드나 브라우저 연습만 사용하려면 모델 준비 후 `npm start`를 실행하고 <http://127.0.0.1:4173>을 엽니다. 브라우저에서는 실제 Windows 커서에 명령을 보내지 않습니다. [영상·개인 등록 상세 사용법](docs/usage-video.md)
-
-### Python 손 마우스 앱 (`hand-mouse/`)
-
-Dan의 Python 가상 마우스(SCRUM-32·33·43~61)와 Qt 대시보드·검지 포인터 모드가 `hand-mouse/`에 있습니다. Electron 앱과 코드를 공유하지 않으며 설치파일·`npm run verify`·소스 패키지에 포함되지 않습니다. 실행 방법은 [hand-mouse/README.md](hand-mouse/README.md)를 따릅니다(예: `hand-mouse` 폴더에서 `uv run --locked --extra qt python main.py --ui qt --source 0`).
-
-원본 브랜치는 `manux-python-ui`(Qt 작업)와 `hand-mouse-gesture-overhaul`(Dan)입니다. 원본의 새 커밋은 `git merge -X subtree=hand-mouse/ origin/manux-python-ui`로 가져옵니다.
-
-## 현재 구현과 남은 일
-
-| 기능 | 현재 상태 |
-| --- | --- |
-| 영상 재생·정지·앞/뒤 이동 | 브라우저와 앱 안의 로컬 영상 제어 구현 |
-| 손 전체 이동·클릭·드래그·우클릭·스크롤 | 연습 화면과 Electron/Windows 입력 경로 구현. 실제 제어는 기본 꺼짐 |
-| 사용자·책상/소파별 개인 등록 | 코드가 있으나 일괄 등록 부담과 실제 등록 실패가 보고됨 |
-| 원하는 동작 하나만 등록, 임의 손 모양·액션 연결 | 후속 개발 과제 |
-| 실물 웹캠 사용 편의성·거리별 성능 | 별도 사용자 평가 필요. 자동 검사 통과로 보장하지 않음 |
-
-MediaPipe 손 추적 모델을 재학습하는 방식은 아닙니다. 개인 등록은 관절 특징 예시와 판정 기준을 저장합니다. 현재 동작의 자세한 계약은 [에어 마우스](docs/air-mouse.md)와 [Windows 입력 연결](desktop/README.md)을 먼저 확인하세요. 10월 29일 계획 문서는 당시의 기준선과 제안을 담고 있습니다.
-
-## 검사와 팀 전달
-
-**`MANUX 검사.cmd`**를 더블클릭하거나 아래 명령을 실행합니다. 같은 공통 검사를 팀원 PC와 CI에서 사용합니다.
+준비물: Windows, [uv](https://docs.astral.sh/uv/), 웹캠.
 
 ```powershell
-npm run verify
+cd apps/manux
+uv run --python 3.12 --extra ui --extra vision python -m manux --hand-model ..\..\hand-mouse\models\hand_landmarker.task
 ```
 
-| 검사 | 확인하는 것 |
+웹캠 없이 녹화 재생, 헤드리스 실행기, 테스터 데이터 수집 도구는 [apps/manux/README.md](apps/manux/README.md)에 있습니다. 시험은 `uv run --python 3.12 pytest -q`입니다.
+
+이전 버전 v0.3을 소스로 실행하려면 `cd hand-mouse` 후 `uv run --locked --extra qt python main.py --ui qt --source 0` ([hand-mouse/README.md](hand-mouse/README.md)).
+
+## 현재 구현과 확인하지 않은 것
+
+| 범위 | 상태 |
 | --- | --- |
-| `npm run doctor` | Node·Git·의존성 등 실행 준비 상태 |
-| `npm run verify` | 코드·설정 검사와 전체 단위·서버 회귀 |
-| `npm run test:browser` | 합성 입력으로 마우스 화면과 연결 흐름 확인. 최초 `npm run browser:install` 필요 |
-| `npm run test:native` | Windows 입력 helper의 dry-run. 실제 커서에 명령을 보내지 않음 |
-| 실물 사용자 평가 | 실제 웹캠·조명·거리·사용성 확인 |
+| MANUX 설정·카메라·손 인식·기능(포인터·핀치·모션)·엔진·Windows 출력·TCN 확인기 | `apps/manux/`에 병합. 실제 웹캠·실제 Windows 입력·Qt 화면·인식률은 확인하지 않음 |
+| MANUX 데스크톱 화면 (S6) | 진행 중. 남은 것: 트래킹 측정, 학습 센터 화면, 설치본·자동 업데이트 |
+| 사용자 정의 손동작 등록과 원하는 액션 연결 | 후속 과제 |
+| 이전 버전 v0.3 (현재 설치파일) | 커서·클릭·드래그·스크롤, 트래킹 측정, 실패 기록, 여러 모니터, 트레이. 실제 손 확인은 개발자 몇 명의 PC·웹캠에 한정 |
 
-빨간 결과가 나오면 실패한 단계와 오류 문구를 그대로 공유하세요. 검사 통과와 실제 사용성, GitHub 반영 여부를 구분합니다. [검사 선택·PR·소스 전달 절차](CONTRIBUTING.md)를 따라 변경을 검토합니다.
+MediaPipe 손 추적 모델을 재학습하지 않습니다. 자동 시험 통과는 실사용 인식률이나 사용성을 뜻하지 않습니다. 실제 사용자 평가는 [M1 평가 자료](docs/m1-webcam-mouse/README.md)의 절차를 따릅니다.
 
-PR은 Windows/Linux 검사, 브라우저 검사와 Windows 시험용 설치파일 빌드를 통과해야 합니다. PR은 `preview`로 열고 필수 검사 통과 후 병합합니다(리뷰어 승인 없음). preview에서 시험한 뒤 `preview → production` PR로 `production`에 병합하며, 병합되면 GitHub Actions가 정식 버전의 Windows 설치파일·업데이트 메타데이터를 검증하고 GitHub Release로 게시합니다. `release:prepare`는 별도의 소스 전달 도구이며 앱 배포와 구분합니다.
+## 검사와 CI
 
-## 구조와 다음 문서
+| 대상 | 로컬 명령 | CI |
+| --- | --- | --- |
+| MANUX (`apps/manux/`) | `cd apps/manux` 후 `uv run --python 3.12 pytest -q` | MANUX CI의 구조·계약 시험. 모든 PR |
+| 이전 v0.3 (`hand-mouse/`) | `cd hand-mouse` 후 `uv run --locked --extra qt python -m pytest -q` | `hand-mouse (Windows)` 시험과 설치파일 빌드. 이 폴더 변경 시 |
+| 이전 웹앱 | `npm ci --ignore-scripts` 후 `npm run verify` | MANUX CI `verify`. preview는 Ubuntu만, production은 Windows·브라우저·Electron 시험 설치본까지 |
 
-```text
-웹캠 → MediaPipe Worker → 손동작 판정 → 영상 / 마우스 연습
-                                      └→ Electron → Windows 입력
-개인 AI / Discord worker → 작업 브랜치 → PR 검사 → preview 시험 → production → Windows Release
-```
+필수 검사 이름은 **MANUX required**입니다. `preview` PR은 이 검사만 통과하면 작성자가 병합합니다(리뷰어 승인 없음). preview에서 시험한 뒤 `preview → production` PR로 병합하면 설치본이 GitHub Release로 게시됩니다(지금은 `hand-mouse-release.yml`, `apps/manux` 설치본이 생기면 교체). 상세: [브랜치 흐름](docs/branch-flow.md).
+
+## 이전 버전
+
+- **v0.3 (`hand-mouse/`)**: Dan의 Python 손 마우스와 Qt 화면. 기능은 `apps/manux`로 옮겼거나 옮기는 중이며([이식 기록](https://se4nchoi.atlassian.net/browse/SCRUM-118)), 문서는 [docs/README.md](docs/README.md)의 v0.3 절에 있습니다.
+- **v0.2 웹앱·Electron (`src/`·`desktop/`)**: 2026-11-04 전까지의 브라우저 영상 제어·에어 마우스·Electron 앱입니다. Electron 정식 Release는 게시된 적이 없고, 게시 workflow는 2026-11-05에 삭제했습니다.
+
+v0.2 웹앱:
+
+- 실행: Node.js 24에서 `npm ci --ignore-scripts`, `npm run setup`, `npm run desktop:setup` 후 `npm run desktop` (루트의 `MANUX 개발 준비.cmd`, `MANUX 마우스 실행.cmd`, `MANUX 검사.cmd`도 이 앱용입니다)
+- 브라우저만: `npm start` 후 <http://127.0.0.1:4173>
+- 문서: [온보딩](docs/onboarding.md), [에어 마우스](docs/air-mouse.md), [영상 사용법](docs/usage-video.md), [Windows 입력 연결](desktop/README.md), [모듈 계약](docs/contracts.md), [설계 문서](docs/design/README.md)
+
+## 저장소 규칙
 
 | 문서 | 용도 |
 | --- | --- |
-| [온보딩](docs/onboarding.md) | 첫 실행과 오류 해결 |
-| [공통 작업·결과 규칙](docs/harness.md) | 팀원과 에이전트가 같은 기준으로 작업·보고 |
-| [개발 참여](CONTRIBUTING.md) | 브랜치·검사·PR·소스 전달 |
-| [에이전트 규칙](AGENTS.md) | 저장소 작업 규칙의 원본; `CLAUDE.md`에서 참조 |
-| [모듈 계약](docs/contracts.md) · [작업 문서](docs/workstreams/) | 담당 영역과 연결 변경 |
-| [영상 사용법](docs/usage-video.md) · [마우스 사용법](docs/air-mouse.md) | 기능별 상세 사용 |
-| [데스크톱 설치본·자동 업데이트](docs/desktop-release.md) | Windows 설치파일, PR 시험용 앱, production 자동 배포·업데이트 |
-| [LAN 데모](docs/lan-demo.md) | 같은 네트워크에서 브라우저 데모. 주소는 현재 호스트에 확인 |
-| [마스터 플랜](docs/master-plan.md) | 기존 요구사항·후속 개발 계획 |
+| [AGENTS.md](AGENTS.md) | 사람·에이전트 공통 작업 규칙 (`CLAUDE.md`에서 참조) |
+| [docs/branch-flow.md](docs/branch-flow.md) | 작업 브랜치 → preview → production |
+| [docs/harness.md](docs/harness.md) | 작업·결과 보고 형식 |
+| [docs/README.md](docs/README.md) | 문서 목록과 현재/기록 구분 |
 
-소스 저장소: [intel7-ai/manux](https://github.com/intel7-ai/manux). 모델 출처·해시는 `public/models/model-source.json`에 기록합니다.
+소스 저장소: [intel7-ai/manux](https://github.com/intel7-ai/manux). 손 모델 파일은 지금 `hand-mouse/models/`에 있고(`apps/manux`도 이 경로를 씀), 웹앱 모델 출처는 `public/models/model-source.json`에 기록합니다.

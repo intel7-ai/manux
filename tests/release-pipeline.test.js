@@ -104,27 +104,17 @@ test('production PR checks require the isolated preview package and cannot acces
   assert.doesNotMatch(workflow, /contents: write|GH_TOKEN|secrets\.|pull_request_target|desktop:publish/);
 });
 
-test('production only deploys successful immutable artifacts with a separate publishing job', async () => {
-  const workflow = (await fs.readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
-  assert.match(workflow, /branches: \[production\]/);
-  assert.doesNotMatch(workflow, /tags:|workflow_dispatch:|pull_request_target|desktop:publish/);
-  assert.match(workflow, /^permissions: \{\}$/m);
-  assert.match(workflow, /cancel-in-progress: false\n  queue: max/);
-  const [build, publish] = workflow.split('\n  publish:');
-  assert.match(build, /contents: read/);
-  assert.doesNotMatch(build, /contents: write|GH_TOKEN|secrets\./);
-  for (const command of ['npm run verify', 'npm run test:browser', 'npm run test:native', 'npm run test:packaged', 'npm run test:update-download', 'release-version.mjs manifest dist']) assert.ok(build.includes(command));
-  assert.match(publish, /needs: build/);
-  assert.match(publish, /contents: write/);
-  assert.doesNotMatch(publish, /npm ci|desktop:dist|desktop:pack/);
-  assert.match(publish, /release-version\.mjs publish release-artifact/);
-  assert.match(build, /artifact_id: \$\{\{ steps\.release_artifact\.outputs\.artifact-id \}\}/);
-  assert.match(build, /id: release_artifact/);
-  assert.match(publish, /artifact-ids: \$\{\{ needs\.build\.outputs\.artifact_id \}\}/);
-  assert.match(publish, /merge-multiple: true/, 'publisher expects artifact contents directly in release-artifact');
-  assert.doesNotMatch(publish, /github\.run_attempt/, 'a publish-only rerun must reuse the successful build artifact, not its new attempt number');
-  assert.equal((workflow.match(/refs\/heads\/production/g) ?? []).length, 2);
-  for (const action of workflow.matchAll(/uses:\s*(\S+)/g)) assert.match(action[1], /@[0-9a-f]{40}$/);
+test('production publishes only the MANUX app (hand-mouse) release; the Electron release is retired', async () => {
+  // 2026-11-05: the installed app is hand-mouse (v0.3.x, Velopack). The Electron release refused to
+  // publish 0.2.x over it on every production merge, so it was removed rather than left failing.
+  const workflows = await fs.readdir(new URL('../.github/workflows/', import.meta.url));
+  assert.ok(!workflows.includes('release.yml'), 'Electron production release must stay retired');
+  const productionPublishers = [];
+  for (const name of workflows) {
+    const workflow = await fs.readFile(new URL(`../.github/workflows/${name}`, import.meta.url), 'utf8');
+    if (/contents: write/.test(workflow) && /branches: \[production\]/.test(workflow)) productionPublishers.push(name);
+  }
+  assert.deepEqual(productionPublishers, ['hand-mouse-release.yml']);
 });
 
 test('the MANUX app (hand-mouse) release builds read-only and publishes only that artifact from production', async () => {
