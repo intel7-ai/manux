@@ -29,3 +29,5 @@ exports/
 recordings/*.part
 .local/
 config/tcn-ui.ini
+config/recording-plans.json
+config/recording-plans.tmp

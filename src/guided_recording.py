@@ -14,8 +14,9 @@ the current frame, `view(now)` what the screen shows.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+from src.recording_plan import normalise, condition_key, description
+from src.gesture_catalog import Task, TASKS, tasks_for
 
 DEFAULTS: Dict[str, float] = {
     "rec_reps": 15.0,          # repetitions per set
@@ -32,40 +33,30 @@ CONDITIONS = (
 )
 
 
-@dataclass(frozen=True)
-class Task:
-    key: str          # the label of its "do it" frames
-    name: str
-    do: str           # what to do, on screen
-    free: bool = False
-
-
-TASKS = (
-    Task("thumb_ring", "엄지+약지 (우클릭)", "엄지를 약지 끝에 붙였다 떼세요"),
-    Task("thumb_index", "엄지+검지 (스크롤 잡기)", "엄지와 검지로 집어서 위나 아래로 조금 끌고 놓으세요"),
-    Task("none", "반주먹 이동 (아무 동작 아님)", "반주먹으로 커서를 이리저리 움직이고, 가끔 손을 폈다 다시 쥐세요", free=True),
-)
-
-
-def tasks_for(focus: str = ""):
-    """All tasks, or only the one gesture the training center asked to record more of ("focused recording")."""
-    picked = tuple(t for t in TASKS if t.key == focus)
-    return picked or TASKS
-
-
 class GuidedSession:
-    def __init__(self, config: Optional[Dict[str, Any]] = None, tasks=TASKS, conditions=CONDITIONS) -> None:
+    def __init__(self, config: Optional[Dict[str, Any]] = None, tasks=TASKS, conditions=CONDITIONS, plan=None) -> None:
         self.config: Dict[str, float] = dict(DEFAULTS)
         if config:
             self.config.update({k: float(v) for k, v in config.items() if k in DEFAULTS})
+        self.plan = normalise(plan) if plan is not None else None
+        self.rows = [r for r in self.plan["conditions"] if r["enabled"]] if self.plan else []
+        if self.rows:
+            conditions = tuple(r["name"] for r in self.rows)
         self.sets: List[Tuple[int, Task]] = [(c, t) for c in range(len(conditions)) for t in tasks]
         self.conditions = conditions
         self.index = 0                 # current set
         self.running = False           # False = waiting for "start"
         self._t0 = 0.0
         self.done = False
+        self.paused = False
+        self.hold_reason = ""
+        self._last_update = None
+        self._held = False
 
     def cfg(self, key: str) -> float:
+        names = {"rec_reps": "reps", "rec_prep": "prep", "rec_do": "hold", "rec_rest": "rest", "rec_free_seconds": "free_seconds"}
+        if self.rows and self.current is not None:
+            return float(self.rows[self.current[0]][names[key]])
         return float(self.config[key])
 
     @property
@@ -77,16 +68,26 @@ class GuidedSession:
         if not self.done and not self.running:
             self.running = True
             self._t0 = now
+            self._last_update = now
+            self._held = False
 
     def _set_length(self, task: Task) -> float:
         if task.free:
             return self.cfg("rec_free_seconds")
         return self.cfg("rec_reps") * (self.cfg("rec_prep") + self.cfg("rec_do") + self.cfg("rec_rest"))
 
-    def update(self, now: float) -> bool:
+    def update(self, now: float, available=True) -> bool:
         """Move on when the running set is over. True when a set just finished."""
         cur = self.current
         if cur is None or not self.running:
+            return False
+        held = self.paused or not available
+        if held or self._held:
+            self._t0 += max(0.0, now - (self._last_update if self._last_update is not None else now))
+        self._last_update = now
+        self._held = held
+        self.hold_reason = "일시정지 · 계속을 눌러주세요" if self.paused else "손의 3D 관절을 찾는 중 · 타이머가 멈췄어요" if not available else ""
+        if held:
             return False
         if now - self._t0 >= self._set_length(cur[1]):
             self.running = False
@@ -114,9 +115,12 @@ class GuidedSession:
             return {"target": "idle", "phase": "waiting"}
         cond, task = cur
         phase, rep, _ = self._step(now)
-        target = {"prep": "transition", "do": task.key, "rest": "none", "free": task.key}[phase]
-        return {"target": target, "task": task.key, "phase": phase, "rep": rep, "condition": self.conditions[cond],
-                "condition_index": cond, "set": self.index}
+        target = {"prep": "transition", "do": task.label, "rest": "none", "free": task.label}[phase]
+        label = {"target": "idle" if self._held else target, "task": task.key, "phase": "paused" if self._held else phase,
+                 "rep": rep, "condition": self.conditions[cond], "condition_index": cond, "set": self.index}
+        if self.rows:
+            label["condition_key"] = condition_key(self.rows[cond])
+        return label
 
     def view(self, now: float) -> Dict[str, Any]:
         """Big prompt, smaller line, progress of the set, progress of everything, waiting for start?"""
@@ -125,15 +129,19 @@ class GuidedSession:
             return {"prompt": "녹화 끝! 수고하셨어요", "sub": "", "progress": 1.0, "overall": 1.0, "waiting": False}
         cond, task = self.current
         head = f"[{self.index + 1}/{len(self.sets)}] {self.conditions[cond]} · {task.name}"
+        details = description(self.rows[cond]) if self.rows else ""
+        extra = {"condition_detail": details, "paused": self.paused,
+                 "position": self.rows[cond]["position"] if self.rows else "자유 이동"}
         if not self.running:
-            return {"prompt": f"{self.conditions[cond]}로 앉은 뒤 [시작]을 누르세요", "sub": head,
-                    "progress": 0.0, "overall": overall, "waiting": True}
+            return {"prompt": f"{self.conditions[cond]} 준비 후 [시작]을 누르세요", "sub": head,
+                    "progress": 0.0, "overall": overall, "waiting": True, **extra}
         phase, rep, progress = self._step(now)
         if phase == "free":
             prompt = task.do
             sub = f"{head} · 남은 시간 {max(0, int(self._set_length(task) - (now - self._t0)))}초"
         else:
-            prompt = {"prep": "준비…", "do": task.do, "rest": "쉬세요 (손을 편하게)"}[phase]
+            prompt = {"prep": "준비… " + task.do, "do": task.do,
+                      "rest": "쉬세요 · 시작 위치로 천천히 돌아오세요" if task.direction else "쉬세요 (손을 편하게)"}[phase]
             sub = f"{head} · {rep}/{int(self.cfg('rec_reps'))}회"
-        return {"prompt": prompt, "sub": sub, "progress": progress, "overall": overall + progress / len(self.sets),
-                "waiting": False, "phase": phase}
+        return {"prompt": self.hold_reason or prompt, "sub": sub, "progress": progress,
+                "overall": overall + progress / len(self.sets), "waiting": False, "phase": phase, **extra}

@@ -1,6 +1,7 @@
 """Qt Quick desktop shell. Shares the existing engine loop with the Tk shell."""
 from collections import deque
 from pathlib import Path
+import copy
 import time
 import math
 
@@ -100,6 +101,12 @@ class QtDashboard(QObject):
         self.rec_advance = 0                                    # +1 per press of "start" in guided recording
         self.rec_view = None                                    # latest recording view from the runtime
         self.rec_focus = ""                                     # guided recording of one gesture only
+        self.rec_plan = None
+        self.rec_paused = False
+        self._training_summary = {}
+        from src.recording_plan_editor import RecordingPlanEditor
+        self.recording_editor = RecordingPlanEditor()
+        self.recording_editor.startRequested.connect(self._start_focused_plan)
         self.model_version = 0                                  # +1 per newly trained model (runtime reloads the gate)
         from src.training_center import TrainingJob
         self.training_job = TrainingJob()
@@ -417,6 +424,28 @@ class QtDashboard(QObject):
     def recSub(self):
         return str(self._rec("sub", ""))
 
+    @Property(str, notify=stateChanged)
+    def recCondition(self):
+        return str(self._rec("condition_detail", ""))
+
+    @Property(str, notify=stateChanged)
+    def recPosition(self):
+        return str(self._rec("position", "자유 이동"))
+
+    @Property(bool, notify=stateChanged)
+    def recPaused(self):
+        return self.rec_paused
+
+    @Slot()
+    def toggleRecordingPause(self):
+        if self.rec_mode == "guided":
+            self.rec_paused = not self.rec_paused
+            self.stateChanged.emit()
+
+    @Property(QObject, constant=True)
+    def recordingPlan(self):
+        return self.recording_editor
+
     @Property(float, notify=stateChanged)
     def recProgress(self):
         return float(self._rec("progress", 0.0))
@@ -431,6 +460,8 @@ class QtDashboard(QObject):
             return
         self.rec_mode = mode
         self.rec_focus = ""
+        self.rec_plan = None
+        self.rec_paused = False
         self.stateChanged.emit()
 
     @Property(str, notify=stateChanged)
@@ -464,13 +495,16 @@ class QtDashboard(QObject):
                 rows = tc.gesture_rows(summary, report)
                 files = [f for f in summary["files"] if "error" not in f]
                 frames = sum(f.get("frames", 0) for f in files)
-                data = f"녹화 {len(files)}개 · {frames / 30 / 60:.0f}분 ({frames:,}프레임)"
+                minutes = sum(f.get("seconds", 0) for f in files) / 60
+                valid = sum(f.get("valid_frames", 0) for f in files)
+                data = f"녹화 {len(files)}개 · {minutes:.0f}분 · 3D 관절 {100 * valid / max(1, frames):.0f}%"
                 waiting = len(summary["files"]) - len(files)
                 if waiting:
                     data += f" · 다음 학습에 포함 {waiting}개 (끝나지 않았거나 받는 중)"
                 model = (f"모델: {report.get('trained')} 학습 · 녹화 {len(report.get('data', []))}개로" if report
                          else "모델: 아직 없음 (학습하세요)")
                 self.training_rows, self.training_info = rows, (data, model)
+                self._training_summary = summary
                 self.training_storage = tc.storage_text(summary)
             except Exception as exc:
                 self.training_note = f"읽지 못했어요: {exc}"
@@ -520,14 +554,26 @@ class QtDashboard(QObject):
         EXPORT_DIR.mkdir(exist_ok=True)
         os.startfile(str(EXPORT_DIR))  # noqa: S606 - Windows explorer on our own folder
 
-    @Slot(str)
+    @Slot(str, result=bool)
     def focusRecord(self, key):
-        """Guided recording of one gesture only (from a training center row)."""
-        if self.stage_name != "main" or self.use_index_pointer:
-            self.training_note = "집중 녹화는 손바닥(Dan) 포인터에서 돼요. 왼쪽에서 '손바닥 (Dan)'을 고르세요."
-            self.trainingChanged.emit()
+        """Open a draft plan; starting is a separate action in the editor."""
+        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running:
+            return False
+        from src.gesture_catalog import BY_KEY
+        if key and key not in BY_KEY:
+            return False
+        coverage = self._training_summary.get("coverage", {}).get(key, {})
+        self.recording_editor.open(key, coverage)
+        self.command(27)
+        return True
+
+    def _start_focused_plan(self, key, plan):
+        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running:
             return
-        self.rec_mode, self.rec_focus = "guided", key
+        self._pause_for_change()
+        self.use_index_pointer = False
+        self.rec_mode, self.rec_focus, self.rec_plan = "guided", key, copy.deepcopy(plan)
+        self.rec_paused = False
         self.stateChanged.emit()
 
     def _training_tick(self):
@@ -546,7 +592,28 @@ class QtDashboard(QObject):
 
     @Property("QVariantList", notify=trainingChanged)
     def trainingRows(self):
-        return list(self.training_rows)
+        category = getattr(self, "training_filter", "전체")
+        return [r for r in self.training_rows if category == "전체" or r["category"] == category]
+
+    @Property(str, notify=trainingChanged)
+    def trainingFilter(self):
+        return getattr(self, "training_filter", "전체")
+
+    @Property("QStringList", constant=True)
+    def trainingCategories(self):
+        from src.gesture_catalog import CATEGORIES
+        return CATEGORIES
+
+    @Property(str, notify=trainingChanged)
+    def trainingCatalog(self):
+        from src.gesture_catalog import TASKS
+        return f"전체 {len(TASKS)}개 녹화 항목 · {len(self.trainingRows)}개 표시 · 미학습 동작도 녹화 가능"
+
+    @Slot(str)
+    def setTrainingFilter(self, category):
+        if category in self.trainingCategories:
+            self.training_filter = category
+            self.trainingChanged.emit()
 
     @Property(str, notify=trainingChanged)
     def trainingData(self):
@@ -775,6 +842,7 @@ class QtDashboard(QObject):
             palm_axes_reset=self.palm_axes_requests[2],
             rec_mode=self.rec_mode, rec_advance=self.rec_advance, tcn_gate=self.tcn_gate,
             rec_focus=self.rec_focus, model_version=self.model_version,
+            rec_plan=copy.deepcopy(self.rec_plan), rec_paused=self.rec_paused,
         )
 
     def apply_snapshot(self, snap):

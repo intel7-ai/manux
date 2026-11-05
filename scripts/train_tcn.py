@@ -32,11 +32,10 @@ import numpy as np  # noqa: E402
 import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 
-from src.recorder import public_source, read_session  # noqa: E402
-from src.tcn_features import FEATURE_VERSION, FEATURES, windows, frame_features  # noqa: E402
+from src.recorder import public_source  # noqa: E402
+from src.tcn_features import FEATURE_VERSION, FEATURES  # noqa: E402
+from src.gesture_catalog import CLASSES, TASKS, BY_KEY  # noqa: E402
 
-CLASSES = ["none", "thumb_index", "thumb_ring"]
-RULE_ACTION = {"thumb_index": "scroll_grab", "thumb_ring": "right_click"}
 CLICKY = {"right_click", "left_click", "task_switcher"}
 STARTY = {"scroll_grab", "drag_hold"}
 WINDOW = 15
@@ -55,21 +54,8 @@ def emit(event: str, **info) -> None:
 
 # ---------------------------------------------------------------- data
 def load(paths):
-    sessions = []
-    for p in paths:
-        meta, frames, _ = read_session(Path(p))
-        feats = frame_features(frames, float(meta.get("frame_aspect", 0.5625)))
-        y = np.full(len(frames), -1, dtype=np.int64)
-        cond = np.full(len(frames), -1, dtype=np.int64)
-        for i, f in enumerate(frames):
-            lab = f.get("label") or {}
-            t = lab.get("target")
-            if t in CLASSES and "world" in f:
-                y[i] = CLASSES.index(t)
-            if lab.get("condition_index") is not None:
-                cond[i] = int(lab["condition_index"])
-        sessions.append({"path": str(p), "meta": meta, "frames": frames, "x": windows(feats, WINDOW), "y": y, "cond": cond})
-    return sessions
+    from src.capture_dataset import load_sessions
+    return load_sessions(paths, WINDOW)
 
 
 def pick(sessions, conds):
@@ -120,11 +106,12 @@ def augment(x: torch.Tensor) -> torch.Tensor:
     return x
 
 
-def train(x, y, epochs: int, seed: int = 0, stage: str = "", losses=None):
+def train(x, y, epochs: int, seed: int = 0, stage: str = "", losses=None, classes=None):
+    classes = classes or CLASSES
     torch.manual_seed(seed)
     np.random.seed(seed)
-    model = TCN()
-    counts = np.bincount(y, minlength=len(CLASSES)).astype(np.float64)
+    model = TCN(n_out=len(classes))
+    counts = np.bincount(y, minlength=len(classes)).astype(np.float64)
     weight = torch.tensor((counts.sum() / np.maximum(counts, 1)) ** 0.5, dtype=torch.float32)
     lossf = nn.CrossEntropyLoss(weight=weight / weight.mean())
     opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
@@ -170,76 +157,128 @@ def runs(mask: np.ndarray, k: int):
 def evaluate(session, conds, prob=None, thr=0.7, k=3):
     """{"reps": {task: (recognised, total)}, "misfires": {kind: n}, "confused": n} for the model (prob given) or rules."""
     frames = session["frames"]
+    classes = session.get("classes", CLASSES)
     rep_frames = defaultdict(list)
     free = []
     for i, f in enumerate(frames):
         lab = f.get("label") or {}
-        if lab.get("condition_index") not in conds:
+        group = int(session["cond"][i])
+        if group not in conds or session["y"][i] < 0:
             continue
-        if lab.get("task") in RULE_ACTION and lab.get("phase") in ("do", "rest"):
-            rep_frames[(lab["condition_index"], lab["task"], lab["rep"])].append(i)
-        elif lab.get("task") == "none" and lab.get("phase") == "free":
+        task = BY_KEY.get(lab.get("task"))
+        if task and not task.free and task.label in classes and lab.get("phase") in ("do", "rest"):
+            rep_frames[(group, lab["task"], lab.get("set"), lab["rep"])].append(i)
+        elif task and task.free and lab.get("phase") == "free":
             free.append(i)
+    # Rest alone is not a performed repetition.
+    rep_frames = {key: idx for key, idx in rep_frames.items()
+                  if any(frames[i]["label"].get("phase") == "do" and session["y"][i] == classes.index(BY_KEY[key[1]].label) for i in idx)}
     recog, total, confused = Counter(), Counter(), 0
     misfires = Counter()
+    from src.capture_dataset import frame_durations
+    durations = frame_durations(frames)
+    free_by_task = {}
+    for i in free:
+        entry = free_by_task.setdefault(frames[i]["label"]["task"], {"minutes": 0., "misfires": 0})
+        entry["minutes"] += durations[i] / 60
     if prob is not None:
-        fired = {c: np.zeros(len(frames), dtype=bool) for c in (1, 2)}
-        for c in (1, 2):
-            for s in runs(prob[:, c] >= thr, k):
-                fired[c][s] = True
-        for (cond, task, rep), idx in rep_frames.items():
+        active = [c for c, name in enumerate(classes) if name != "none"]
+        fired = {c: np.zeros(len(frames), dtype=bool) for c in active}
+        valid = (session["y"] >= 0) & np.isin(session["cond"], conds)
+        for c in active:
+            run, previous = 0, None
+            for i, f in enumerate(frames):
+                lab = f.get("label") or {}
+                token = (session["segments"][i], lab.get("set"), lab.get("rep"))
+                if token != previous:
+                    run = 0
+                run = run + 1 if valid[i] and prob[i, c] >= thr else 0
+                fired[c][i] = run == k
+                previous = token
+        for (_, task, _, _), idx in rep_frames.items():
             total[task] += 1
-            want = CLASSES.index(task)
-            other = 3 - want
+            want = classes.index(BY_KEY[task].label)
             if fired[want][idx].any():
                 recog[task] += 1
-            if fired[other][idx].any():
+            if any(fired[c][idx].any() for c in active if c != want):
                 confused += 1
         free_set = np.zeros(len(frames), dtype=bool)
         free_set[free] = True
-        for c in (1, 2):
-            misfires[CLASSES[c]] = int((fired[c] & free_set).sum())
+        for c in active:
+            misfires[classes[c]] = int((fired[c] & free_set).sum())
+        for i in free:
+            free_by_task[frames[i]["label"]["task"]]["misfires"] += sum(int(fired[c][i]) for c in active)
     else:
         acts = [(f.get("rule") or {}).get("action") for f in frames]
-        for (cond, task, rep), idx in rep_frames.items():
+        for (_, task, _, _), idx in rep_frames.items():
+            observed = [frames[i].get("rule") or {} for i in idx]
+            modern = any(r.get("evaluated") for r in observed)
+            if not modern and not BY_KEY[task].action:
+                continue  # old recordings never ran the sign/motion detectors
             total[task] += 1
             a = {acts[i] for i in idx}
-            if RULE_ACTION[task] in a:
+            targets = {key for r in observed for key in r.get("targets", [])}
+            if ((task in targets) if modern else (BY_KEY[task].action in a)):
                 recog[task] += 1
-            if a & ({"right_click", "scroll_grab"} - {RULE_ACTION[task]}):
+            if ((targets - {task}) if modern else (a & (CLICKY | STARTY) - {BY_KEY[task].action})):
                 confused += 1
-        prev = None
+        prev, previous_i = None, -2
         for i in free:
             a = acts[i]
+            if i != previous_i + 1:
+                prev = None
+            count = 0
             if a in CLICKY:
                 misfires[a] += 1
+                count += 1
             elif a in STARTY and prev != a:
                 misfires[a] += 1
+                count += 1
+            for target in (frames[i].get("rule") or {}).get("targets", []):
+                if target in BY_KEY and not BY_KEY[target].action:
+                    misfires[target] += 1
+                    count += 1
+            free_by_task[frames[i]["label"]["task"]]["misfires"] += count
             prev = a
-    return {"reps": {t: (recog[t], total[t]) for t in total}, "misfires": dict(misfires), "confused": confused}
+            previous_i = i
+    return {"reps": {t: (recog[t], total[t]) for t in total}, "misfires": dict(misfires), "confused": confused,
+            "free_by_task": free_by_task}
 
 
 def free_minutes(session, conds) -> float:
-    n = sum(1 for f in session["frames"] if (f.get("label") or {}).get("phase") == "free"
-            and (f.get("label") or {}).get("condition_index") in conds)
-    return n / 30.0 / 60.0
+    from src.capture_dataset import frame_durations
+    lengths = frame_durations(session["frames"])
+    return sum(lengths[i] for i, f in enumerate(session["frames"])
+               if (f.get("label") or {}).get("phase") == "free"
+               and session["cond"][i] in conds and session["y"][i] >= 0) / 60
 
 
-def per_gesture(summary, windows_per_class, train_acc):
+def per_gesture(summary, windows_per_class, train_acc, classes=None, *, by_task=False):
     """Scores per gesture for the training center: held-out recognition, misfires per minute, data, fit."""
     out = {}
-    for c, name in enumerate(CLASSES):
-        g = {"windows": int(windows_per_class.get(name, 0)), "train_accuracy": train_acc.get(name)}
-        if name in RULE_ACTION:
-            a = sum(m["tcn"]["reps"].get(name, (0, 0))[0] for m in summary)
-            b = sum(m["tcn"]["reps"].get(name, (0, 0))[1] for m in summary)
-            ra = sum(m["rules"]["reps"].get(name, (0, 0))[0] for m in summary)
+    classes = classes or CLASSES
+    names = [t.key for t in TASKS if t.label in classes] if by_task else classes
+    for name in names:
+        label = BY_KEY[name].label if by_task else name
+        keys = [name] if by_task else [t.key for t in TASKS if t.label == label]
+        g = {"windows": int(windows_per_class.get(label, 0)), "train_accuracy": train_acc.get(label)}
+        if label != "none":
+            a = sum(m["tcn"]["reps"].get(key, (0, 0))[0] for m in summary for key in keys)
+            b = sum(m["tcn"]["reps"].get(key, (0, 0))[1] for m in summary for key in keys)
+            ra = sum(m["rules"]["reps"].get(key, (0, 0))[0] for m in summary for key in keys)
+            rb = sum(m["rules"]["reps"].get(key, (0, 0))[1] for m in summary for key in keys)
             g.update(recognised=a, total=b, rate=round(a / b, 3) if b else None,
-                     rules_rate=round(ra / b, 3) if b else None)
+                     rules_rate=round(ra / rb, 3) if rb else None)
         else:
-            mins = sum(m.get("free_minutes", 0.0) for m in summary)
-            tcn = sum(sum(m["tcn"]["misfires"].values()) for m in summary)
-            rules = sum(sum(m["rules"]["misfires"].values()) for m in summary)
+            if by_task:
+                entries = [m["tcn"].get("free_by_task", {}).get(name, {}) for m in summary]
+                mins = sum(e.get("minutes", 0) for e in entries)
+                tcn = sum(e.get("misfires", 0) for e in entries)
+                rules = sum(m["rules"].get("free_by_task", {}).get(name, {}).get("misfires", 0) for m in summary)
+            else:
+                mins = sum(m.get("free_minutes", 0.0) for m in summary)
+                tcn = sum(sum(m["tcn"]["misfires"].values()) for m in summary)
+                rules = sum(sum(m["rules"]["misfires"].values()) for m in summary)
             g.update(free_minutes=round(mins, 2), misfires=tcn, rules_misfires=rules,
                      misfires_per_min=round(tcn / mins, 2) if mins else None,
                      rules_misfires_per_min=round(rules / mins, 2) if mins else None)
@@ -264,6 +303,7 @@ def main() -> int:
     ap.add_argument("--k", type=int, default=3, help="frames in a row above the threshold that count as the gesture")
     ap.add_argument("--no-export", action="store_true")
     ap.add_argument("--progress", action="store_true", help="JSON progress lines for the app")
+    ap.add_argument("--output-dir", type=Path, default=ROOT / "models", help="model output folder")
     a = ap.parse_args()
     global PROGRESS
     PROGRESS = a.progress
@@ -285,9 +325,19 @@ def main() -> int:
         return 1
     t0 = time.perf_counter()
     sessions = load(paths)
-    conds = sorted({int(c) for s in sessions for c in s["cond"] if c >= 0})
+    present = {int(y) for s in sessions for y in s["y"] if y >= 0}
+    classes = [name for i, name in enumerate(CLASSES) if i in present]
+    if "none" not in classes or len(classes) < 2:
+        emit("error", text="중립 구간과 한 가지 이상 동작의 유효 녹화가 필요합니다.")
+        return 1
+    for s in sessions:
+        original = s["y"].copy()
+        for c, name in enumerate(classes):
+            s["y"][original == CLASSES.index(name)] = c
+        s["classes"] = classes
+    conds = sorted({int(c) for s in sessions for c, y in zip(s["cond"], s["y"]) if c >= 0 and y >= 0})
     xa, ya = pick(sessions, conds)
-    per_class = dict(Counter(CLASSES[i] for i in ya))
+    per_class = dict(Counter(classes[i] for i in ya))
     if not PROGRESS:
         print(f"{len(paths)} recording(s), postures {conds}, {len(ya)} labelled windows {per_class}"
               f"  ({time.perf_counter() - t0:.1f} s to load)")
@@ -299,11 +349,14 @@ def main() -> int:
     for test in held:
         train_conds = [c for c in conds if c != test]
         x, y = pick(sessions, train_conds)
+        if test not in conds or not len(y) or len(set(y)) < len(classes):
+            emit("note", text=f"조건 {test} 제외 평가는 보류: 나머지 조건에도 학습할 모든 동작의 데이터가 필요합니다.")
+            continue
         if not PROGRESS:
             print(f"\n== held-out posture {test} (train on {train_conds}, {len(y)} windows)")
         emit("fold_start", posture=test, fold=held.index(test) + 1, folds=len(held))
         t1 = time.perf_counter()
-        model = train(x, y, a.epochs, stage=f"fold{test}")
+        model = train(x, y, a.epochs, stage=f"fold{test}", classes=classes)
         if not PROGRESS:
             print(f"    trained in {time.perf_counter() - t1:.0f} s")
         for s in sessions:
@@ -318,38 +371,34 @@ def main() -> int:
 
     if a.no_export:
         return 0
-    old = ROOT / "models" / "gesture_tcn.onnx.data"
-    if old.exists():
-        old.unlink()                         # an earlier export kept the weights apart
     if not PROGRESS:
         print(f"\n== final model on all postures {conds}")
     emit("final_start")
     losses: list = []
-    model = train(xa, ya, a.epochs, stage="final", losses=losses)
+    model = train(xa, ya, a.epochs, stage="final", losses=losses, classes=classes)
     pred = predict(model, xa).argmax(1)
-    train_acc = {name: round(float((pred[ya == c] == c).mean()), 3) for c, name in enumerate(CLASSES) if (ya == c).any()}
-    out = ROOT / "models" / "gesture_tcn.onnx"
+    train_acc = {name: round(float((pred[ya == c] == c).mean()), 3) for c, name in enumerate(classes) if (ya == c).any()}
+    a.output_dir.mkdir(parents=True, exist_ok=True)
+    out = a.output_dir / "gesture_tcn.onnx"
     model.eval()
     torch.onnx.export(model, torch.zeros(1, WINDOW, FEATURES), str(out), input_names=["x"], output_names=["logits"],
                       dynamic_axes={"x": {0: "batch"}, "logits": {0: "batch"}}, opset_version=18,
                       external_data=False)
-    if not summary and (ROOT / "models" / "gesture_tcn.json").exists():
-        # (--test-condition -1: only the final model; keep the held-out results of the last full run)
-        summary = [(r["posture"], r["rules"], r["tcn"], r.get("free_minutes", 0.0)) for r in
-                   json.loads((ROOT / "models" / "gesture_tcn.json").read_text(encoding="utf-8")).get("held_out_results", [])]
     results = [{"posture": t, "rules": r, "tcn": m, "free_minutes": round(fm, 2)} for t, r, m, fm in summary]
     info = {
-        "classes": CLASSES, "window": WINDOW, "features": FEATURES, "feature_version": FEATURE_VERSION,
+        "classes": classes, "window": WINDOW, "features": FEATURES, "feature_version": FEATURE_VERSION,
         "threshold": a.thr, "frames_in_a_row": a.k, "epochs": a.epochs,
         "trained": time.strftime("%Y-%m-%d %H:%M:%S"),
         "data": [{"file": Path(s["path"]).name, "pc": public_source(s["meta"])[0],
                   "camera": dict(s["meta"].get("camera") or {}, note=public_source(s["meta"])[1]),
                   "frames": len(s["frames"])} for s in sessions],
         "held_out_results": results,
+        "condition_groups": sessions[0]["condition_groups"],
         "loss_curve": losses, "train_accuracy": train_acc,
-        "per_gesture": per_gesture(results, per_class, train_acc),
+        "per_gesture": per_gesture(results, per_class, train_acc, classes),
+        "per_task": per_gesture(results, per_class, train_acc, classes, by_task=True),
     }
-    (ROOT / "models" / "gesture_tcn.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+    out.with_suffix(".json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
     if not PROGRESS:
         print(f"saved {out.name} ({out.stat().st_size // 1024} KB) and gesture_tcn.json")
     emit("done", model=out.name, kb=out.stat().st_size // 1024, per_gesture=info["per_gesture"])

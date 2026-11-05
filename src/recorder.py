@@ -24,6 +24,7 @@ import os
 import re
 import socket
 import time
+import uuid
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -68,7 +69,7 @@ class SessionRecorder:
     def __init__(self, folder: Path, mode: str, meta: Dict[str, Any], now: Optional[float] = None) -> None:
         folder = Path(folder)
         folder.mkdir(parents=True, exist_ok=True)
-        stamp = time.strftime("%Y%m%d-%H%M%S")
+        stamp = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
         # The PC name keeps files from several PCs apart in one shared folder (same second on two PCs).
         meta = dict(meta)
         who = machine_info(meta.pop("pc_alias", ""))

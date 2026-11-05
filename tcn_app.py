@@ -18,12 +18,15 @@ def check_model(model_path=None):
 
     path = Path(model_path) if model_path is not None else DEFAULT_MODEL
     predict, info = load_predictor(path)
-    if info.get("classes") != ["none", "thumb_index", "thumb_ring"]:
-        raise ValueError("TCN model must classify none, thumb_index and thumb_ring")
+    from src.gesture_catalog import CLASSES
+    classes = info.get("classes", [])
+    if ("none" not in classes or len(classes) < 2 or len(classes) != len(set(classes))
+            or any(c not in CLASSES for c in classes)):
+        raise ValueError("TCN model has unsupported or duplicate gesture classes")
     if info.get("features") != FEATURES or int(info.get("window", 0)) < 1:
         raise ValueError("TCN model input dimensions do not match this app")
     probs = predict(np.zeros((1, int(info["window"]), FEATURES), dtype=np.float32))
-    if (probs.shape != (3,) or not np.isfinite(probs).all()
+    if (probs.shape != (len(classes),) or not np.isfinite(probs).all()
             or (probs < 0).any() or not np.isclose(probs.sum(), 1.0)):
         raise ValueError("TCN model returned invalid probabilities")
     return {
@@ -53,7 +56,7 @@ def main(argv=None):
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     print(f"[MANUX TCN] 모델 검사 통과 · 학습 {result['trained']}")
-    print("손바닥 모드 · TCN 우클릭/스크롤 확인 켬 · 제어는 일시정지 상태로 시작합니다.")
+    print(f"손바닥 모드 · TCN {len(result['classes']) - 1}종 동작 확인 켬 · 제어는 일시정지 상태로 시작합니다.")
     from main import main as run_app
     original = sys.argv
     try:

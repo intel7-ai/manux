@@ -18,13 +18,13 @@ import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from src.gesture_catalog import BY_KEY, NAMES, CLASSES, is_free
 
 ROOT = Path(__file__).resolve().parents[1]
 REC_DIR = ROOT / "recordings"
 MODEL = ROOT / "models" / "gesture_tcn.onnx"
 EXPORT_DIR = ROOT / "exports"
 
-NAMES = {"thumb_index": "엄지+검지 (스크롤)", "thumb_ring": "엄지+약지 (우클릭)", "none": "아무 동작 아님 (반주먹 이동)"}
 GOAL_REPS = 30            # repetitions per gesture worth aiming for (docs: 3 postures x 10-15)
 GOAL_POSTURES = 3
 GOAL_RATE = 0.8           # recognition in postures the model did not train on
@@ -41,7 +41,7 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
     if cache.exists():
         try:
             data = json.loads(cache.read_text(encoding="utf-8"))
-            if data.get("size") == stat.st_size and data.get("mtime") == int(stat.st_mtime):
+            if data.get("summary_version") == 3 and data.get("size") == stat.st_size and data.get("mtime") == int(stat.st_mtime):
                 return data
         except Exception:
             pass
@@ -51,26 +51,46 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
     if not meta.get("complete"):
         raise ValueError("끝나지 않은 녹화 (학습에서 빠짐)")
     reps: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    seen = set()
-    free = defaultdict(int)
-    for f in frames:
+    from src.capture_dataset import frame_durations, usable
+    from src.recording_plan import label_condition_key
+    repetitions = defaultdict(lambda: {"do": 0.0, "rest": False})
+    free = defaultdict(float)
+    seconds = frame_durations(frames)
+    coverage = {k: {} for k in NAMES}
+    valid_frames = 0
+    for i, f in enumerate(frames):
         lab = f.get("label") or {}
-        if "lm" not in f:
+        if not usable(f):
             continue
-        if lab.get("phase") == "do" and lab.get("task"):
-            key = (lab["task"], lab.get("condition_index"), lab.get("set"), lab.get("rep"))
-            if key not in seen:
-                seen.add(key)
-                reps[lab["task"]][str(lab.get("condition_index"))] += 1
-        elif lab.get("phase") == "free":
-            free[str(lab.get("condition_index"))] += 1
+        valid_frames += 1
+        ck = label_condition_key(lab)
+        task = lab.get("task")
+        if lab.get("phase") in ("do", "rest") and task in BY_KEY and not is_free(task):
+            key = (lab["task"], ck, lab.get("set"), lab.get("rep"))
+            item = repetitions[key]
+            item["new"] = bool(lab.get("condition_key"))
+            if lab["phase"] == "do":
+                item["do"] += seconds[i]
+            else:
+                item["rest"] = True
+        elif lab.get("phase") == "free" and is_free(task):
+            free[(task, ck)] += seconds[i]
         elif meta.get("mode") == "free" and lab.get("target") == "none":
-            free["use"] += 1
+            free[("none", "use")] += seconds[i]
+    for (task, ck, _, _), item in repetitions.items():
+        if item["do"] > 0 and (not item.get("new") or (item["do"] >= 0.25 and item["rest"])):
+            reps[task][ck] += 1
+    for task, by_condition in reps.items():
+        coverage[task] = {ck: {"reps": n, "seconds": 0.0} for ck, n in by_condition.items()}
+    for (task, ck), value in free.items():
+        coverage[task][ck] = {"reps": 0, "seconds": value}
     data = {
+        "summary_version": 3,
         "file": path.name, "size": stat.st_size, "mtime": int(stat.st_mtime), "mode": meta.get("mode"),
         "created": meta.get("created"), "pc": public_source(meta)[0], "camera": public_source(meta)[1],
         "frames": len(frames), "reps": {k: dict(v) for k, v in reps.items()},
-        "free_minutes": {k: round(v / 30.0 / 60.0, 2) for k, v in free.items()},
+        "free_minutes": {task: sum(v for (t, _), v in free.items() if t == task) / 60 for task in NAMES if is_free(task)},
+        "coverage": coverage, "valid_frames": valid_frames, "seconds": float(seconds.sum()),
         "marks": sum(1 for e in events if e.get("kind") == "mark"),
     }
     try:
@@ -84,6 +104,7 @@ def dataset_summary(rec_dir: Path = REC_DIR) -> Dict[str, Any]:
     files = sorted(Path(rec_dir).glob("*.jsonl.gz"))
     per: Dict[str, Dict[str, Any]] = {k: {"reps": 0, "postures": {}, "minutes": 0.0} for k in NAMES}
     out_files = []
+    coverage = {k: {} for k in NAMES}
     for p in files:
         try:
             s = _summarise_file(p)
@@ -91,15 +112,21 @@ def dataset_summary(rec_dir: Path = REC_DIR) -> Dict[str, Any]:
             out_files.append({"file": p.name, "error": str(exc)})
             continue
         out_files.append(s)
+        for task, conditions in s.get("coverage", {}).items():
+            for key, values in conditions.items():
+                current = coverage[task].setdefault(key, {"reps": 0, "seconds": 0.0})
+                current["reps"] += values["reps"]
+                current["seconds"] += values["seconds"]
         for task, by_posture in s["reps"].items():
             g = per.setdefault(task, {"reps": 0, "postures": {}, "minutes": 0.0})
             for posture, n in by_posture.items():
                 g["reps"] += n
                 g["postures"][posture] = g["postures"].get(posture, 0) + n
-        per["none"]["minutes"] = round(per["none"]["minutes"] + sum(s["free_minutes"].values()), 2)
+        for task, minutes in s["free_minutes"].items():
+            per[task]["minutes"] += minutes
     newest = max((p.stat().st_mtime for p in files), default=0.0)
     total = sum(p.stat().st_size for p in files)
-    return {"files": out_files, "per_gesture": per, "newest": newest, "total_bytes": total}
+    return {"files": out_files, "per_gesture": per, "newest": newest, "total_bytes": total, "coverage": coverage}
 
 
 def storage_text(summary: Dict[str, Any]) -> Tuple[str, bool]:
@@ -128,23 +155,29 @@ def gesture_rows(summary: Dict[str, Any], report: Optional[Dict[str, Any]]) -> L
     pg = (report or {}).get("per_gesture", {})
     stale = report is not None and summary.get("newest", 0) > report.get("mtime", 0)
     for key, name in NAMES.items():
+        task = BY_KEY[key]
         d = summary["per_gesture"].get(key, {"reps": 0, "postures": {}, "minutes": 0.0})
-        m = pg.get(key, {})
+        m = (report or {}).get("per_task", {}).get(key, pg.get(key, {}) if key == task.label else {})
+        classes = (report or {}).get("classes", list(pg))
         row = {"key": key, "name": name, "reps": d["reps"], "postures": len(d["postures"]),
+               "category": task.category, "instruction": task.do,
+               "model_text": "TCN 학습됨" if task.label in classes else "TCN 학습 전 · 현재 규칙으로 동작",
                "minutes": d.get("minutes", 0.0), "train_accuracy": m.get("train_accuracy"),
                "rate": m.get("rate"), "rules_rate": m.get("rules_rate"),
                "misfires_per_min": m.get("misfires_per_min"), "rules_misfires_per_min": m.get("rules_misfires_per_min")}
         advice, level = [], "ok"
-        if key == "none":
+        if task.free:
             data_ok = row["minutes"] >= GOAL_FREE_MIN
             row["data_text"] = f"{row['minutes']:.1f}분 / 목표 {GOAL_FREE_MIN:.0f}분"
             row["data_ratio"] = min(1.0, row["minutes"] / GOAL_FREE_MIN)
             if not data_ok:
-                advice.append(f"반주먹 이동 녹화가 부족해요 ({GOAL_FREE_MIN:.0f}분 이상 권장)")
+                advice.append(f"이 이동 동작의 녹화가 부족해요 ({GOAL_FREE_MIN:.0f}분 이상 권장)")
             if row["misfires_per_min"] is not None and row["misfires_per_min"] > MAX_MISFIRES_PER_MIN:
                 advice.append("오작동이 많아요: 반주먹 이동을 더 녹화하세요")
             score = row["misfires_per_min"]
-            row["score_text"] = "아직 평가 없음" if score is None else f"오작동 {score:.1f}회/분 (규칙 {row['rules_misfires_per_min']:.1f})"
+            row["score_text"] = "아직 평가 없음" if score is None else f"오작동 {score:.1f}회/분"
+            if score is not None and row["rules_misfires_per_min"] is not None:
+                row["score_text"] += f" (규칙 {row['rules_misfires_per_min']:.1f})"
         else:
             data_ok = row["reps"] >= GOAL_REPS and row["postures"] >= GOAL_POSTURES
             row["data_text"] = f"{row['reps']}회 / 목표 {GOAL_REPS}회 · 자세 {row['postures']}/{GOAL_POSTURES}"
@@ -155,8 +188,9 @@ def gesture_rows(summary: Dict[str, Any], report: Optional[Dict[str, Any]]) -> L
                 advice.append("여러 자세로 녹화하세요")
             if row["rate"] is not None and row["rate"] < GOAL_RATE:
                 advice.append(f"인식률이 낮아요 ({row['rate'] * 100:.0f}%): 이 동작을 집중 녹화하세요")
-            row["score_text"] = ("아직 평가 없음" if row["rate"] is None else
-                                 f"인식 {row['rate'] * 100:.0f}% (규칙 {row['rules_rate'] * 100:.0f}%)")
+            row["score_text"] = "아직 평가 없음" if row["rate"] is None else f"인식 {row['rate'] * 100:.0f}%"
+            if row["rate"] is not None and row["rules_rate"] is not None:
+                row["score_text"] += f" (규칙 {row['rules_rate'] * 100:.0f}%)"
         if row["train_accuracy"] is not None:
             row["fit_text"] = f"학습 {row['train_accuracy'] * 100:.0f}%"
         else:
@@ -165,6 +199,8 @@ def gesture_rows(summary: Dict[str, Any], report: Optional[Dict[str, Any]]) -> L
             advice.append("새 녹화가 있어요: 다시 학습하세요")
         if report is None:
             advice.append("아직 학습한 모델이 없어요")
+        elif task.label not in classes:
+            advice.append("이 동작을 녹화하고 다시 학습하면 모델에 추가됩니다")
         if advice:
             level = "need" if any(("부족" in a or "낮아요" in a or "많아요" in a) for a in advice) else "retrain"
         row["advice"] = " · ".join(advice) if advice else "좋아요"
@@ -246,6 +282,8 @@ class TrainingJob:
                 s["per_gesture"] = ev.get("per_gesture")
             elif kind == "skipped":
                 s.setdefault("skipped", []).append(ev.get("file"))
+            elif kind == "note":
+                s["log"] = (s.get("log", []) + [ev.get("text", "")])[-20:]
             elif kind == "error":
                 s["error"] = ev.get("text")
             steps = s["folds"] + 1
@@ -337,18 +375,22 @@ def export_package(out_root: Path = EXPORT_DIR, with_dataset: bool = True) -> Pa
 def _export_dataset(path: Path, report: Dict[str, Any]) -> None:
     import numpy as np
 
-    from src.recorder import finished_recordings, read_session
-    from src.tcn_features import frame_features
+    from src.recorder import finished_recordings
+    from src.capture_dataset import load_sessions
 
-    classes = report["classes"]
-    xs, ys, ps, fs = [], [], [], []
-    for i, p in enumerate(finished_recordings(REC_DIR)[0]):
-        meta, frames, _ = read_session(p)
-        xs.append(frame_features(frames, float(meta.get("frame_aspect", 0.5625))))
-        ys.append(np.array([classes.index((f.get("label") or {}).get("target")) if (f.get("label") or {}).get("target") in classes
-                            and "world" in f else -1 for f in frames], dtype=np.int16))
-        ps.append(np.array([(f.get("label") or {}).get("condition_index", -1) if (f.get("label") or {}).get("condition_index") is not None
-                            else -1 for f in frames], dtype=np.int16))
-        fs.append(np.full(len(frames), i, dtype=np.int16))
+    classes = CLASSES
+    xs, ys, ps, fs, tasks, segments = [], [], [], [], [], []
+    sessions = load_sessions(finished_recordings(REC_DIR)[0], include_windows=False)
+    if not sessions:
+        raise ValueError("내보낼 완성된 녹화가 없습니다.")
+    for i, session in enumerate(sessions):
+        xs.append(session["features"])
+        ys.append(session["y"])
+        ps.append(session["cond"])
+        fs.append(np.full(len(session["frames"]), i, dtype=np.int32))
+        tasks.extend((f.get("label") or {}).get("task", "") for f in session["frames"])
+        segments.append(session["segments"])
     np.savez_compressed(path, x=np.concatenate(xs), y=np.concatenate(ys), posture=np.concatenate(ps),
-                        recording=np.concatenate(fs), classes=np.array(classes))
+                        recording=np.concatenate(fs), classes=np.array(classes),
+                        condition_keys=np.array(sessions[0]["condition_groups"]),
+                        task=np.array(tasks), segment=np.concatenate(segments), model_classes=np.array(report["classes"]))

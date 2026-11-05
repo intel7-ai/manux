@@ -26,7 +26,8 @@ def rows_by_key(s, r):
 
 def test_enough_data_and_good_scores_say_ok():
     rows = rows_by_key(summary(), report())
-    assert all(r["level"] == "ok" for r in rows.values())
+    assert all(rows[k]["level"] == "ok" for k in ("none", "thumb_index", "thumb_ring"))
+    assert rows["thumb_middle"]["level"] == "need"  # old model has no left-click examples
     assert rows["thumb_ring"]["score_text"].startswith("인식 90%")
 
 
@@ -51,7 +52,7 @@ def test_many_misfires_ask_for_more_half_fist_moving():
 
 def test_recordings_newer_than_the_model_ask_to_retrain():
     rows = rows_by_key(summary(newest=200.0), report(mtime=100.0))
-    assert all(r["level"] == "retrain" for r in rows.values())
+    assert all(rows[k]["level"] == "retrain" for k in ("none", "thumb_index", "thumb_ring"))
 
 
 def test_training_progress_lines_move_the_bar():

@@ -68,6 +68,8 @@ class UiState:
     tcn_gate: bool = False              # right click / scroll grab confirmed by the trained model (src/gesture_gate.py)
     rec_focus: str = ""                 # guided recording of one gesture only (training center "집중 녹화"); "" = all
     model_version: int = 0              # +1 when the training center saved a new model: reload the gate
+    rec_plan: Optional[Dict[str, Any]] = None
+    rec_paused: bool = False
 
 
 @dataclass
@@ -343,6 +345,8 @@ class QtRuntime:
         ok, frame = camera.read()
         t0 = time.perf_counter()
         if not ok or frame is None:
+            if self._guided is not None:
+                self._guided.update(t0, available=False)
             pointer.frame_missing()
             time.sleep(.03)
             return
@@ -382,7 +386,7 @@ class QtRuntime:
         else:
             self.hand_crop.reset()
         palm_calibrating = self._palm_axes(t0, ui, detections)
-        guided_recording = self._recording_mode(t0, ui)
+        guided_recording = self._recording_mode(t0, ui, detections)
         self._track_arm(t0, frame, ui, detections)
         if engine.config.get("elbow_pivot", False) and detections and not ui.use_index_pointer:
             self.elbow.observe(t0, engine.palm_anchor_point(detections[0].landmarks), mouse.frame_aspect)
@@ -391,6 +395,10 @@ class QtRuntime:
                 self._say("팔꿈치 위치를 찾았어요: 위아래·좌우를 팔꿈치 기준으로 펴서 움직여요", 3.0)
         else:
             self.elbow.observe(t0, None, mouse.frame_aspect)
+        gate = self._gate_for(ui) if not ui.use_index_pointer and ui.stage == "main" else None
+        if gate is not None:
+            gate.step(t0, detections[0] if detections else None, frame.shape[0] / max(1, frame.shape[1]))
+        self._rule_action = "none"
         toggle_hold = (not palm_calibrating) and self._toggle_sign(t0, ui, detections)
         motion_active = (not toggle_hold) and self._motion(t0, ui, detections)
         close_hold = (not motion_active) and (not toggle_hold) and self._close_sign(t0, ui, detections)
@@ -472,9 +480,7 @@ class QtRuntime:
             hand = detections[0]
             result = engine.process(hand.landmarks)
             rule_action = result.action
-            gate = self._gate_for(ui)
             if gate is not None:
-                gate.step(t0, hand, mouse.frame_aspect)
                 result = gate.filter(t0, result)
                 if gate.last_note:
                     self._say(gate.last_note, 1.2)
@@ -500,8 +506,6 @@ class QtRuntime:
                 self._say(f"FLING! ~{mouse.last_fling_distance:.0f}px", .8)
         elif not index_mode:
             result = engine.process(None)
-            if self.gate is not None:
-                self.gate.step(t0, None, mouse.frame_aspect)
 
         if roi is not None:
             cv2.rectangle(frame, roi[:2], roi[2:], (189, 229, 70), 2, cv2.LINE_AA)
@@ -551,12 +555,12 @@ class QtRuntime:
     def _toggle_sign(self, t0: float, ui, detections) -> bool:
         """The V sign held still switches the mouse control on / off (like the Space key). It keeps watching while the control is
         off. True while the sign is held with the control ON (the cursor and pinches are suspended, so the fingers do not move it)."""
-        ready = ui.stage == "main" and not ui.calibrating and not ui.use_index_pointer and self.test is None
+        ready = ui.stage == "main" and not ui.calibrating and not ui.use_index_pointer and self.test is None and self._guided is None
         if not ready or not detections:
             if self.toggle_sign.progress(t0) > 0 or self.toggle_sign.last_pose:
                 self.toggle_sign.update(t0, None)
             return False
-        blocked = False
+        blocked = self.paused and not self._intent("v_sign", t0)
         if not self.paused:
             quiet = self.toggle_sign.cfg("toggle_sign_quiet")
             for g in (self.engine, self.pointer.gestures):
@@ -591,7 +595,7 @@ class QtRuntime:
                 self.close_sign.update(t0, None)
             return False
         quiet = self.close_sign.cfg("close_sign_quiet")
-        blocked = False
+        blocked = not self._intent("rock_sign", t0)
         for g in (self.engine, self.pointer.gestures):
             last = max(g._index_released_at, g._scroll_released_at, g._pinky_fired_at,
                        max(g._last_trigger_times.values(), default=-1e9))
@@ -713,12 +717,16 @@ class QtRuntime:
             try:
                 predict, info = load_predictor(GATE_MODEL)
                 self.gate = GestureGate(predict, info, self.engine.config)
-                self._say("손짓 확인(TCN) 켜짐: 우클릭·스크롤을 학습 모델이 확인해요", 3.0)
+                self._say(f"손짓 확인(TCN) 켜짐: 학습된 {len(info['classes']) - 1}종 동작을 확인해요", 3.0)
             except Exception as exc:
                 self._gate_failed = True
                 self._say(f"손짓 확인(TCN)을 켜지 못했어요: {exc}", 5.0)
                 return None
         return self.gate
+
+    def _intent(self, target, now):
+        gate = self.gate if self.ui.tcn_gate and not self.ui.use_index_pointer else None
+        return gate is None or gate.allows(target, now)
 
     # ------------------------------------------------------------------ dataset recording
     def _rec_meta(self, mode: str) -> Dict[str, Any]:
@@ -743,7 +751,7 @@ class QtRuntime:
                            "right wrist (x, y, visibility)",
         }
 
-    def _recording_mode(self, t0: float, ui) -> bool:
+    def _recording_mode(self, t0: float, ui, detections=()) -> bool:
         """Start / stop / steer the recording. True while a guided recording runs (the mouse must not move)."""
         mode = ui.rec_mode if ui.stage == "main" and not ui.use_index_pointer else "off"
         focus = getattr(ui, "rec_focus", "") if mode == "guided" else ""
@@ -756,16 +764,29 @@ class QtRuntime:
                 meta = self._rec_meta(mode)
                 meta["focus"] = focus
                 meta["pc_alias"] = str(self.engine.config.get("pc_alias", ""))
+                plan = getattr(ui, "rec_plan", None) if mode == "guided" else None
+                self._guided = GuidedSession(self.engine.config, tasks=tasks_for(focus), plan=plan) if mode == "guided" else None
+                if self._guided is not None:
+                    from src.capture_rules import CaptureRules
+                    self._capture_rules = CaptureRules(self.engine.config)
+                    self._pause()
+                    if self._guided.plan:
+                        meta["capture_plan"] = self._guided.plan
                 self._rec = SessionRecorder(self.rec_dir, mode, meta, now=t0)
-                self._guided = GuidedSession(self.engine.config, tasks=tasks_for(focus)) if mode == "guided" else None
                 self._rec_adv_seen = ui.rec_advance
         if self._guided is not None:
+            if not self.paused:
+                self._pause()
+            self._guided.paused = getattr(ui, "rec_paused", False)
             if ui.rec_advance != self._rec_adv_seen:
                 self._rec_adv_seen = ui.rec_advance
                 self._guided.advance(t0)
-            if self._guided.update(t0) and self._rec is not None:
+            available = True
+            if self._guided.plan:
+                available = bool(detections and getattr(detections[0], "world", None))
+            if self._guided.update(t0, available=available) and self._rec is not None:
                 self._rec.event(t0, "set_done", {"set": self._guided.index - 1})
-        return self._guided is not None and not self._guided.done
+        return self._guided is not None
 
     def _stop_recording(self, t0: float) -> None:
         if self._rec is None:
@@ -792,6 +813,11 @@ class QtRuntime:
                     "dpi": round(float(getattr(result, "dpi_multiplier", 1.0) or 1.0), 2),
                     "curl": round(float(self.engine._curl_s), 3) if self.engine._curl_s is not None else None,
                     "size": round(float(dd.get("hand_size", 0.0)), 4)}
+            if self._guided is not None:
+                from types import SimpleNamespace
+                observed = SimpleNamespace(action=rule["action"], active_gesture=result.active_gesture)
+                rule["evaluated"] = True
+                rule["targets"] = self._capture_rules.observe(t0, hand, observed, label)
         self._rec.frame(t0, hand, pose, label, rule, self.mouse.last_screen_pos)
 
     def _rec_view(self, t0: float) -> Optional[Dict[str, Any]]:
@@ -860,7 +886,8 @@ class QtRuntime:
                 self.motion.update(t0, None, request="off")
             return False
         lm = detections[0].landmarks if detections else None
-        event = self.motion.update(t0, lm, request=request, blocked=self._motion_blocked(t0))
+        blocked = self._motion_blocked(t0) or (not self.motion.active and not request and not self._intent("thumbs_up", t0))
+        event = self.motion.update(t0, lm, request=request, blocked=blocked)
         if self._motion_last.startswith("창 닫기?") and self.motion.close_pending(t0) <= 0:
             self._motion_last = ""            # the question ran out
         if event is not None:
@@ -876,8 +903,10 @@ class QtRuntime:
                 self._motion_last = "창 닫기? 한 번 더 아래로"
                 self._say("창을 닫을까요? 3초 안에 손을 올렸다 한 번 더 아래로 쓸면 닫습니다", 3.0)
             elif event.kind == "swipe":
-                sent = self.mouse.send_motion_action(event.action)
-                self._motion_last = ACTION_LABELS.get(event.action, event.action) if sent else "닫을 수 없는 창"
+                from src.gesture_catalog import MOTION_TARGETS
+                confirmed = self._intent(MOTION_TARGETS.get(event.action, ""), t0)
+                sent = confirmed and self.mouse.send_motion_action(event.action)
+                self._motion_last = ACTION_LABELS.get(event.action, event.action) if sent else ("TCN 동작 확인 안 됨" if not confirmed else "닫을 수 없는 창")
                 self._say(f"모션: {self._motion_last}", 1.5)
             if self.failures.trigger(t0, f"motion_{event.kind}", note=json.dumps(event.info, ensure_ascii=False)):
                 pass
