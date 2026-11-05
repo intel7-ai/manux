@@ -10,6 +10,7 @@
 2. [docs/architecture.md](docs/architecture.md): 폴더·의존 규칙·프레임 흐름·이식 순서
 3. [docs/contracts.md](docs/contracts.md): 모듈 사이의 계약
 4. [docs/decisions.md](docs/decisions.md): 확정·제안된 결정
+5. [docs/dataset-hub.md](docs/dataset-hub.md): 팀 녹화 데이터(`.jsonl.gz`)·모델(`.onnx`) 수집 및 Hugging Face 허브(`tools/hub.py`) 동기화 가이드
 
 ## 데스크톱 앱 실행 (S6, 진행 중)
 
