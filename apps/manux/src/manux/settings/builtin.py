@@ -26,6 +26,8 @@ CAMERA = (
 )
 
 TRACKING = (
+    Setting("tracking.num_hands", 1, kind="int", minimum=1, maximum=2,
+            doc="maximum detected hands; one avoids searching continuously for a second hand"),
     Setting("tracking.min_detection_confidence", 0.6, minimum=0.05, maximum=0.95),
     Setting("tracking.min_presence_confidence", 0.5, minimum=0.05, maximum=0.95),
     Setting("tracking.min_tracking_confidence", 0.5, minimum=0.05, maximum=0.95),

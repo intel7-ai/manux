@@ -51,6 +51,9 @@
 
 규칙:
 - 엔진에는 **조작 손 하나만** 들어간다. 손 선택(`HandSelection`)은 `tracking`이 끝낸다. 손이 없으면 `None`.
+- 기본 검출 수 `tracking.num_hands`는 v0.3과 같은 1이다. 필요하면 2를 명시할 수 있지만,
+  한 손만 보이는 상태에서 추가 손을 찾는 비용이 늘 수 있다. 선택한 조작 손이 검출되지 않으면
+  다른 손으로 대체하지 않고 `None`을 넘긴다.
 - 실패하면: 관절이 21개가 아니거나 숫자가 유한하지 않거나 `score`가 범위 밖이면 생성 시 `ValueError`. `tracking`은 이런 검출을 버리고 `None`을 넘긴다.
 
 ## 4. 특징 (`perception`)
@@ -346,6 +349,10 @@ class OutputSink(Protocol):
 - 공용 계층의 설정(`app.`, `camera.`, `tracking.`)은 `settings/builtin.py`에 선언한다. 계층 규칙상 `capture`·`tracking`은 `settings`를 import할 수 없으므로 조립 지점이 값을 넘긴다.
 
 ## 12. 화면과 엔진 사이 (`Snapshot`, `UiCommand`)
+
+- `ViewFrame.frame_age_ms`는 앱이 카메라 프레임을 받은 시각부터 런타임 처리 후 화면 상태를
+  발행하기 직전까지의 경과 시간이다. `None`은 측정값 없음이다. UI는 측정값만 표시한다.
+  드라이버 내부 버퍼·모니터 표시 지연까지 포함하는 실제 손짓→화면 지연은 아니다.
 
 ### 학습 센터 사용 흐름 (2026-11-05)
 

@@ -1702,7 +1702,9 @@ class Bridge(QObject):
             "제어 시작을 누르면 손짓으로 조작할 수 있어요." if paused and self.stage_name == "main"
             else action if detected else "손을 카메라에 보여주세요.",
             "제어 시작" if paused else "일시정지",
-            f"{view.fps:.1f} fps  ·  추론 {view.detect_ms:.1f} ms" + (f"  ·  {view.model_status}" if view.model_status else ""),
+            f"{view.fps:.1f} fps  ·  추론 {view.detect_ms:.1f} ms"
+            + (f"  ·  앱 내 프레임 지연 {view.frame_age_ms:.1f} ms" if view.frame_age_ms is not None else "")
+            + (f"  ·  {view.model_status}" if view.model_status else ""),
         )
         if self.stage_name != "main":
             reception = ("paused", "손 설정 필요" if self.stage_name in ("welcome", "capture") else "연습 중")

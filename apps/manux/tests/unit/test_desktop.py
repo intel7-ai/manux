@@ -59,6 +59,27 @@ def test_pointer_gain_and_overrides(tmp_path):
     assert runtime.engine.settings_for("pointer")["axes"] == (1.0, 0.0, 0.0, -1.0)
 
 
+def test_runtime_reports_capture_to_publish_age_separately_from_inference(monkeypatch):
+    import pytest
+    import manux.desktop as desktop
+    from manux.core.contracts import FrameInfo
+    class Source:
+        fps = 30.0
+        def read(self, *args):
+            return FrameInfo(0, 100.0, 640, 480, True), None, None, (), 7.0
+        def mode_text(self): return "synthetic"
+        def close(self): pass
+    runtime = build(Settings(schema()), Source(), windows=False)
+    monkeypatch.setattr(desktop.time, "perf_counter", lambda: 100.2)
+    try:
+        runtime.step()
+        _, view = runtime.latest()
+        assert view.frame_age_ms == pytest.approx(200.0)
+        assert view.detect_ms == 7.0 and view.fps == 30.0
+    finally:
+        runtime.stop()
+
+
 def test_a_missing_camera_is_a_message_not_a_crash(tmp_path):
     settings = Settings(schema())
     source = CameraInput(settings, tmp_path / "missing.task", source="99")
