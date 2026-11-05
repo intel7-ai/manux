@@ -108,6 +108,7 @@ PR은 Windows/Linux 검사, 브라우저 검사와 Windows 시험용 설치파�
 
 | 문서 | 용도 |
 | --- | --- |
+| [제품 방향](docs/product-direction.md) | 첫 제품(책상 손 마우스) → 최종 제품(누워서 쓰는 컴퓨터), 위험과 침대 시험 계획 |
 | [온보딩](docs/onboarding.md) | 첫 실행과 오류 해결 |
 | [공통 작업·결과 규칙](docs/harness.md) | 팀원과 에이전트가 같은 기준으로 작업·보고 |
 | [개발 참여](CONTRIBUTING.md) | 브랜치·검사·PR·소스 전달 |
