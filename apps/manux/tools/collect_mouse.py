@@ -270,7 +270,7 @@ def main(argv=None):
     if args.preset != "pinch":
         settings.apply_profile({"pointer.click_style": "trigger" if args.preset == "trigger" else "pinch"})
     hand_side = args.control_hand or settings.get("tracking.control_hand") or "Right"
-    bundled = Path(__file__).resolve().parents[3] / "hand-mouse" / "models" / "hand_landmarker.task"
+    bundled = Path(__file__).resolve().parents[1] / "models" / "hand_landmarker.task"
     user_model = paths.data_dir / "models" / bundled.name
     model = args.hand_model or (user_model if user_model.is_file() else bundled)
     print(f"Recording folder: {folder}", flush=True)

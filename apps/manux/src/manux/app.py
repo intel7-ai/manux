@@ -141,7 +141,7 @@ def main() -> int:
             if args.replay is not None:
                 snapshots = replay_snapshots(engine, args.replay)
             else:
-                model_path = args.hand_model or (paths.data_dir / "models" / "hand_landmarker.task")
+                model_path = args.hand_model or paths.hand_model
                 camera, tracker = resources.enter_context(camera_session(settings, args.source, model_path))
                 hand = args.control_hand or settings.get("tracking.control_hand") or "Right"
                 snapshots = camera_snapshots(engine, camera, tracker, hand)

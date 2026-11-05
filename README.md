@@ -49,7 +49,7 @@
 
 [GitHub Releases](https://github.com/intel7-ai/manux/releases)의 최신 버전에서 `MANUX-win-Setup.exe`를 받아 설치합니다. Python·Node·Git은 필요 없습니다. 앱은 시작할 때 새 버전을 확인해 내려받고, 앱을 닫으면 적용됩니다. 사용자 설정은 `%APPDATA%\MANUX`에 있어 업데이트해도 유지됩니다.
 
-지금 게시된 `v0.3.x`는 이전 버전(`hand-mouse/`) 코드입니다. `apps/manux`의 설치본·자동 업데이트(S6 남은 항목)가 준비되면 같은 Releases·같은 이름으로 교체합니다. 상세: [설치본과 자동 업데이트](hand-mouse/docs/packaging.md).
+지금 게시된 `v0.3.x`는 이전 버전(`hand-mouse/`) 코드입니다. `apps/manux`의 설치본은 PR마다 **MANUX Preview**로 만들어지며(v0.3과 나란히 설치, [시험용 설치파일](apps/manux/README.md#시험용-설치파일-manux-preview)), 실제 PC에서 확인한 뒤 같은 Releases·같은 이름으로 전환합니다. 상세: [설치본과 자동 업데이트](hand-mouse/docs/packaging.md).
 
 ## 소스에서 실행하기
 
@@ -57,7 +57,7 @@
 
 ```powershell
 cd apps/manux
-uv run --python 3.12 --extra ui --extra vision python -m manux --hand-model ..\..\hand-mouse\models\hand_landmarker.task
+uv run --python 3.12 --extra ui --extra vision python -m manux
 ```
 
 웹캠 없이 녹화 재생, 헤드리스 실행기, 테스터 데이터 수집 도구는 [apps/manux/README.md](apps/manux/README.md)에 있습니다. 시험은 `uv run --python 3.12 pytest -q`입니다.
@@ -69,7 +69,7 @@ uv run --python 3.12 --extra ui --extra vision python -m manux --hand-model ..\.
 | 범위 | 상태 |
 | --- | --- |
 | MANUX 설정·카메라·손 인식·기능(포인터·핀치·모션)·엔진·Windows 출력·TCN 확인기 | `apps/manux/`에 병합. 실제 웹캠·실제 Windows 입력·Qt 화면·인식률은 확인하지 않음 |
-| MANUX 데스크톱 화면 (S6) | 진행 중. 남은 것: 트래킹 측정, 학습 센터 화면, 설치본·자동 업데이트 |
+| MANUX 데스크톱 화면 (S6) | 진행 중. 시험용 설치파일(MANUX Preview)·트래킹 측정 포함. 남은 것: 학습 센터 화면, 실제 PC 확인 뒤 배포 채널 전환 |
 | 사용자 정의 손동작 등록과 원하는 액션 연결 | 후속 과제 |
 | 이전 버전 v0.3 (현재 설치파일) | 커서·클릭·드래그·스크롤, 트래킹 측정, 실패 기록, 여러 모니터, 트레이. 실제 손 확인은 개발자 몇 명의 PC·웹캠에 한정 |
 
@@ -105,4 +105,4 @@ v0.2 웹앱:
 | [docs/harness.md](docs/harness.md) | 작업·결과 보고 형식 |
 | [docs/README.md](docs/README.md) | 문서 목록과 현재/기록 구분 |
 
-소스 저장소: [intel7-ai/manux](https://github.com/intel7-ai/manux). 손 모델 파일은 지금 `hand-mouse/models/`에 있고(`apps/manux`도 이 경로를 씀), 웹앱 모델 출처는 `public/models/model-source.json`에 기록합니다.
+소스 저장소: [intel7-ai/manux](https://github.com/intel7-ai/manux). 손 모델 출처는 [apps/manux/models/README.md](apps/manux/models/README.md), 웹앱 모델 출처는 `public/models/model-source.json`에 기록합니다.

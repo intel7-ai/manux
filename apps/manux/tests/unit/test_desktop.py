@@ -68,3 +68,49 @@ def test_a_missing_camera_is_a_message_not_a_crash(tmp_path):
     _, view = runtime.latest()
     assert not view.camera_ok and view.message
     runtime.stop()
+
+
+def windows_runtime(tmp_path, settings):
+    from manux.core.contracts import OutputTarget
+    from manux.output.windows import WindowsOutputSink
+    from manux.output.windows.backend import FakeBackend
+    from manux.platform.monitors import ScreenLayout
+    runtime = build(settings, ReplayInput(recording(tmp_path / "r.jsonl.gz", frames=60)), windows=False)
+    backend = FakeBackend((960, 540))
+    runtime.engine.sinks[OutputTarget.WINDOWS] = WindowsOutputSink(backend, ScreenLayout.single(1920, 1080), threaded=False)
+    return runtime, backend
+
+
+def test_tracking_test_needs_windows_output(tmp_path):
+    runtime = build(Settings(schema()), ReplayInput(recording(tmp_path / "r.jsonl.gz")), windows=False)
+    assert runtime.start_tracking_test()            # a reason, not started
+    runtime.step()
+    assert runtime.tracking is None
+
+
+def test_tracking_test_runs_on_the_runtime_thread_and_never_clicks(tmp_path):
+    from manux.engine.commands import SetBaseMode
+    settings = Settings(schema(), {"tracking.control_hand": "Right"})
+    runtime, backend = windows_runtime(tmp_path, settings)
+    runtime.log_dir = tmp_path / "logs"
+    runtime.engine.commands.put(SetStage(Stage.MAIN))
+    runtime.engine.commands.put(SetBaseMode("pointer"))
+    assert runtime.start_tracking_test() == ""
+    views = run_frames(runtime, 5)
+    assert runtime.tracking is not None and runtime.settings_for("pointer")["tracking_only"] is True
+    assert views[-1].tracking is not None and views[-1].tracking["paused"]       # starts paused (control off)
+    runtime.engine.commands.put(SetControl(True))
+    views = run_frames(runtime, 30)
+    assert not views[-1].tracking["paused"] and runtime.tracking.frames > 0
+    assert not any(e[0] == "button" for e in backend.events)                    # tracking only: no clicks
+    assert any(e[0] == "move" for e in backend.events)                         # ... but the cursor follows
+    runtime.tracking.index = len(runtime.tracking.targets)                     # finish: results are written once
+    runtime.tracking.finished_at = runtime.tracking.started_at
+    views = run_frames(runtime, 2)
+    assert views[-1].tracking["done"] and runtime.tracking.saved is not None
+    assert runtime.tracking.saved.parent == tmp_path / "logs" and runtime.recent
+    runtime.close_tracking_test()
+    views = run_frames(runtime, 2)
+    assert runtime.tracking is None and views[-1].tracking is None
+    assert runtime.settings_for("pointer")["tracking_only"] is False
+    runtime.engine.shutdown()
