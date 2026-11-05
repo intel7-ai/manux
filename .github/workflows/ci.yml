@@ -78,10 +78,29 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # v0.4 (apps/manux): layer import rules and contract types. No camera or model needed. Runs at both depths.
+  apps-manux:
+    name: apps/manux (v0.4 structure and contracts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/manux
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Python 3.12+ with pytest
+        run: |
+          python3 -c "import sys; assert sys.version_info >= (3, 12), sys.version"
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet "pytest>=8"
+      - run: PYTHONPATH=src "$RUNNER_TEMP/venv/bin/python" -m pytest -q
+
   required:
     name: MANUX required
     if: always()
-    needs: [verify, browser, windows-package]
+    needs: [verify, browser, windows-package, apps-manux]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -91,8 +110,10 @@ jobs:
           VERIFY_RESULT: ${{ needs.verify.result }}
           BROWSER_RESULT: ${{ needs.browser.result }}
           PACKAGE_RESULT: ${{ needs.windows-package.result }}
+          MANUX_RESULT: ${{ needs.apps-manux.result }}
         run: |
           test "$VERIFY_RESULT" = success
+          test "$MANUX_RESULT" = success
           if [ "$FULL" = true ]; then
             test "$BROWSER_RESULT" = success && test "$PACKAGE_RESULT" = success
           else

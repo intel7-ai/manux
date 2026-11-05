@@ -85,7 +85,8 @@ test('reruns accept only identical published assets and never overwrite a draft 
 
 test('production PR checks require the isolated preview package and cannot access a release write token', async () => {
   const workflow = (await fs.readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
-  assert.match(workflow, /needs: \[verify, browser, windows-package\]/);
+  assert.match(workflow, /needs: \[verify, browser, windows-package, apps-manux\]/);
+  assert.match(workflow, /test "\$MANUX_RESULT" = success/);
   assert.match(workflow, /PACKAGE_RESULT.*needs\.windows-package\.result/);
   assert.match(workflow, /test "\$PACKAGE_RESULT" = success/);
   // 2026-11-05: browser and installer jobs run only for production (and manual runs); preview gets the fast gate.
