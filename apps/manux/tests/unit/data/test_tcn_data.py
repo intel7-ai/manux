@@ -99,3 +99,19 @@ def test_swipe_frames_that_did_not_move_the_asked_way_are_not_training_targets(t
 
 def test_axes():
     assert AXES == ("person", "posture", "condition")
+
+
+def test_rule_baseline_counts_v03_recordings():
+    """v0.3 recordings keep a v0.3 gesture name in rule.gesture ("thumb_ring_pinch"); the rule baseline must
+    fall back to the recorded action instead of scoring 0 (found comparing TCN architectures, 2026-11-05)."""
+    import numpy as np
+    from tcn_data import Segment, evaluate
+    frames, labels = [], ["none"] * 10 + ["thumb_ring"] * 10 + ["none"] * 10
+    for i, target in enumerate(labels):
+        rule = {"action": "right_click", "gesture": "thumb_ring_pinch"} if i == 12 else {"action": "none", "gesture": "NONE"}
+        frames.append({"t": i / 30, "label": {"target": target}, "rule": rule})
+    seg = Segment("p", "0", frames, np.zeros((len(frames), 133), dtype=np.float32))
+    classes = ["none", "thumb_ring"]
+    never = lambda w: np.tile(np.array([[1.0, 0.0]], dtype=np.float32), (len(w), 1))
+    result = evaluate([seg], classes, {"thumb_ring": "pinch.thumb_ring"}, never, 15, 0.7, 3)
+    assert result["per_gesture"]["thumb_ring"] == {"attempts": 1, "tcn_hits": 0, "rule_hits": 1}

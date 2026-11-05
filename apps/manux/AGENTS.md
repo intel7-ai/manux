@@ -8,6 +8,7 @@
 2. [docs/contracts.md](docs/contracts.md): 고칠 계층의 절 전체와 §1 공통 규칙
 3. [docs/decisions.md](docs/decisions.md): **확정**과 **제안**을 구분한다. 제안을 확정된 규칙처럼 설명하지 않는다
 4. [`src/manux/core/contracts.py`](src/manux/core/contracts.py): 계약 타입의 실제 코드
+5. [docs/next-steps.md](docs/next-steps.md): 지금 상태, TCN 구조 결정(비교 실험), 다음 할 일 순서
 
 읽은 뒤 작업 계획에 "어느 계층·어느 기능 ID·어느 계약 절"을 고치는지 적는다. 그 범위 밖의 파일은 고치지 않는다.
 
