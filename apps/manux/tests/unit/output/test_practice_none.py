@@ -82,3 +82,16 @@ def test_practice_and_none_cannot_reach_windows(name):
     modules = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     modules |= {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
     assert modules <= {"__future__", "collections", "typing", "manux.core.contracts"}, modules
+
+
+def test_holding_follows_open_spans_and_none_never_holds():
+    from manux.core.contracts import ActionCommand
+    from manux.output.null import NullSink
+    from manux.output.practice import PracticeSink
+    p = PracticeSink()
+    begin = ActionCommand(t=0.0, action="mouse.drag", phase="begin", gesture="pinch.drag", point=(.5, .5))
+    assert not p.holding()
+    p.apply(begin)
+    assert p.holding()
+    p.release_all("test")
+    assert not p.holding() and not NullSink().holding()

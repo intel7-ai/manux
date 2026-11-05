@@ -81,3 +81,11 @@ def test_only_main_reaches_windows_and_the_tutorial_only_practice():
     assert {s for s, o in STAGE_OUTPUT.items() if o is OutputTarget.WINDOWS} == {Stage.MAIN}
     assert STAGE_OUTPUT[Stage.TUTORIAL] is OutputTarget.PRACTICE
     assert set(STAGE_OUTPUT) == set(Stage)
+
+
+def test_intent_scale_is_a_positive_number_or_none():
+    assert Intent(t=1.0, source="pinch", gesture="pinch.move", phase="hold", scale=2.5).scale == 2.5
+    assert Intent(t=1.0, source="pinch", gesture="pinch.move", phase="hold").scale is None
+    for bad in (0.0, -1.0, math.inf, math.nan):
+        with pytest.raises(ValueError):
+            Intent(t=1.0, source="pinch", gesture="pinch.move", phase="hold", scale=bad)

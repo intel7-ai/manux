@@ -1,6 +1,8 @@
 """Router: Intent -> ActionCommand through the bindings (docs/contracts.md section 7).
 
 `phase` and `point` are copied unchanged; `params` come from the binding, never from `Intent.info`.
+The one per-frame value is `Intent.scale`: for an action that takes a `gain`, the command's gain is
+binding gain (default 1) x scale. Actions without a gain ignore it.
 """
 from __future__ import annotations
 
@@ -41,8 +43,12 @@ class Router:
             return Routed(intent, None, "unknown_action")
         if intent.phase not in s.phases:
             return Routed(intent, None, "phase_mismatch")
+        params = binding.params
+        if intent.scale is not None and "gain" in s.params:
+            params = dict(binding.params)
+            params["gain"] = float(params.get("gain", 1.0)) * intent.scale
         cmd = ActionCommand(t=intent.t, action=binding.action, phase=intent.phase,
-                            gesture=intent.gesture, point=intent.point, params=binding.params)
+                            gesture=intent.gesture, point=intent.point, params=params)
         return Routed(intent, cmd)
 
     def route_all(self, intents: Sequence[Intent]) -> Tuple[List[ActionCommand], List[Routed]]:

@@ -28,6 +28,7 @@ from manux.engine.snapshot import FeatureError, Snapshot
 from manux.engine.state import EngineState
 
 SettingsFor = Callable[[str], Mapping[str, object]]   # feature id -> its settings section
+OUTPUT_ACTIVITY = "output"   # pseudo feature id under which the arbiter sees the output's held state
 
 
 @dataclass
@@ -73,6 +74,16 @@ class Engine:
             f.reset(reason)
         for flt in self.filters:
             flt.reset(reason)
+
+    def _output_holding(self) -> bool:
+        """The current sink's optional `holding()` (contracts section 8). Missing or failing = not holding."""
+        holding = getattr(self.sink(self._sink_target), "holding", None)
+        if not callable(holding):
+            return False
+        try:
+            return bool(holding())
+        except Exception:
+            return False
 
     def _active(self) -> List[Feature]:
         return [f for f in self.features if self.arbiter.mode in f.modes]
@@ -161,9 +172,13 @@ class Engine:
                 self._release("error")
                 self._reset([f], "error")
 
-        # mode intents go to the arbiter
+        # mode intents go to the arbiter. Besides the features' Activity it sees the output's own state
+        # (a drag button down, scroll inertia still coasting), which v0.3 also blocked motion entry on.
         before = self._active()
-        intents, changes = self.arbiter.handle(now, intents, self._activities())
+        arbiter_view = self._activities()
+        if self._output_holding():
+            arbiter_view[OUTPUT_ACTIVITY] = Activity(holding=True)
+        intents, changes = self.arbiter.handle(now, intents, arbiter_view)
         for change in changes:
             if not change.why.startswith("refused"):
                 self._apply_mode_change(change, before)

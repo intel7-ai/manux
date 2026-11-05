@@ -38,7 +38,7 @@ def test_declarations_fit_the_contract_and_the_catalog():
     assert all(g.startswith("pinch.") for g in GESTURES)
     bindings, problems = resolve_bindings(DEFAULT_BINDINGS, gesture_phases=GESTURE_PHASES)
     assert not problems and set(bindings) == set(GESTURES)
-    assert bindings[MOVE_FIST].params["gain"] == 25.0
+    assert "gain" not in bindings[MOVE_FIST].params        # fist speed comes from Intent.scale
     assert all(k.startswith("pinch.") for k in SETTINGS)
     assert SETTINGS["pinch.pinch_threshold"] == 0.025 and SETTINGS["pinch.release_threshold"] == 0.045
 
@@ -54,16 +54,16 @@ def test_open_hand_moves_the_palm_anchor_and_a_fist_moves_fast():
     f = PinchFeature()
     out, t = run(f, [H.open_hand()] * 3)
     assert gestures(out) == [MOVE] * 3
-    assert out[0].phase == "hold" and out[0].point == pytest.approx((0.49, 0.7)) and out[0].info["gain"] == 1.0
+    assert out[0].phase == "hold" and out[0].point == pytest.approx((0.49, 0.7)) and out[0].scale is None   # open hand: 1x
     out, _ = run(f, [H.fist()] * 10, t0=t)
     assert MOVE_FIST in gestures(out)                  # after fist_confirm_time (0.12 s)
-    assert out[-1].info["hand_shape"] == "fist"
+    assert out[-1].info["hand_shape"] == "fist" and out[-1].scale == 25.0   # fist_dpi_multiplier
 
 
 def test_curled_hand_reports_the_hand_shape_gain():
     out, _ = run(PinchFeature(), [H.half_fist()] * 10)
     moves = [i for i in out if i.gesture == MOVE]
-    assert moves and moves[-1].info["gain"] > 1.15 and moves[-1].info["hand_shape"] in ("half", "fist")
+    assert moves and moves[-1].scale > 1.15 and moves[-1].info["hand_shape"] in ("half", "fist")
 
 
 def test_a_finger_approaching_the_thumb_freezes_the_cursor():
@@ -107,7 +107,7 @@ def test_long_press_on_thumb_middle_becomes_a_drag():
     out, t = run(f, [H.middle_pinch(shift=(0.002 * k, 0)) for k in range(45)])
     assert gestures(out, "tap") == [THUMB_MIDDLE]
     drag = [i for i in out if i.gesture == DRAG]
-    assert drag[0].phase == "begin" and drag[0].info["gain"] == 15.0
+    assert drag[0].phase == "begin" and drag[0].scale == 15.0
     out2, _ = run(f, [H.open_hand()] * 10, t0=t)
     phases = [i.phase for i in out2 if i.gesture == DRAG]
     assert phases[-1] == "end" and phases.count("end") == 1   # after the release grace
@@ -173,3 +173,10 @@ def test_short_hand_loss_keeps_a_drag_until_the_engine_resets():
 
 def test_last_release_is_minus_infinity_before_anything_happened():
     assert PinchFeature().activity().last_release_t == -math.inf
+
+
+def test_the_fist_speed_setting_reaches_the_intent():
+    """pinch.fist_dpi_multiplier used to be baked into the fist binding (fixed 25); now it is Intent.scale."""
+    out, _ = run(PinchFeature(), [H.fist()] * 10, settings={"fist_dpi_multiplier": 10.0})
+    fist = [i for i in out if i.gesture == MOVE_FIST]
+    assert fist and fist[-1].scale == 10.0

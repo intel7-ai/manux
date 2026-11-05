@@ -25,5 +25,8 @@ class NullSink:
     def release_all(self, reason: str) -> None:
         return None
 
+    def holding(self) -> bool:
+        return False
+
     def close(self) -> None:
         return None

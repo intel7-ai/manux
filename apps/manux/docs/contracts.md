@@ -90,6 +90,7 @@ class Feature(Protocol):
 | `point` | `(x, y)` 0..1 또는 `None` | 보정된 기준점(포인터 이동·드래그·스크롤). 화면 픽셀 변환은 출력 계층 몫 |
 | `confidence` | 0..1 또는 `None` | 있으면 |
 | `info` | 읽기 전용 dict | 진단용. 출력 동작을 바꾸는 데 쓰지 않는다 |
+| `scale` | 양수 또는 `None` | 프레임마다 바뀌는 속도 배율(v0.3 손 모양 가속·길게 누른 드래그). 라우터가 `gain`을 받는 액션의 바인딩 `gain`(기본 1)에 곱한다. 다른 액션에는 영향 없음. `None` = 1 (2026-11-05 계약 변경) |
 
 ### `Activity` (중재기에 공개하는 상태)
 
@@ -128,6 +129,7 @@ class Feature(Protocol):
 - 모드 진입 요청은 기능이 `Intent(gesture="<id>.enter")`로 내거나 UI 명령으로 온다. 진입을 막는 조건(예: 어떤 기능이 `holding`이거나 `last_release_t`가 `motion.enter_quiet`초 안)은 중재기가 `others`로 판단한다.
 - 구현(`engine/arbiter.py`): 기본 모드는 주 입력 방식(`pointer` 또는 `pinch`), 덧씌우는 모드는 그 모드를 가진 기능 ID와 같은 이름이다(예: `motion`). 기능은 `<id>.enter`로 들어가고 `<id>.exit`로 나온다. 이 두 의도는 `gestures`에 선언하지 않아도 되고, 중재기가 받아서 **라우터로 보내지 않는다**. 거절도 Snapshot `events`에 `refused:<이유>`로 남는다. UI 요청(`RequestMode`)은 조용함 조건 없이 바로 바꾼다.
 - 진입 감시가 필요한 기능은 기본 모드도 `modes`에 넣는다(예: `motion.modes = {"pointer", "pinch", "motion"}`).
+- 중재기는 출력의 상태도 본다(2026-11-05 계약 변경): 현재 출력 싱크의 `holding()`이 참이면(드래그 버튼이 눌려 있거나 스크롤이 진행·관성 중) 진입을 거절한다(`refused:output holding`). v0.3도 이 경우 모션 진입을 막았다. 기능의 `others`에는 넣지 않는다.
 
 ## 6. 의도 필터 (`IntentFilter`, 예: TCN 확인기)
 
@@ -170,7 +172,7 @@ v0.4 확인기는 모델 정보 파일의 클래스 → 동작 ID 대응표를 �
 | `mouse.move` | hold | `gain` | `move_cursor` |
 | `mouse.left_click` | tap | — | `left_click` |
 | `mouse.right_click` | tap | — | `right_click` |
-| `mouse.drag` | begin / hold / end | — | `drag_hold`, `drag_toggle` |
+| `mouse.drag` | begin / hold / end | `gain` | `drag_hold`, `drag_toggle` |
 | `mouse.scroll` | begin / hold / end | `gain` | `scroll_grab` |
 | `window.task_switcher` | tap | — | `task_switcher`, `alt_tab` |
 | `window.show_desktop` | tap | — | `show_desktop` |
@@ -180,7 +182,7 @@ v0.4 확인기는 모델 정보 파일의 클래스 → 동작 ID 대응표를 �
 
 이 표는 코드 [`actions/catalog.py`](../src/manux/actions/catalog.py)와 같아야 한다(`tests/unit/actions/test_actions.py`가 비교한다). **제안** 줄은 목록에 넣지 않는다.
 
-- `params`(S3 추가, 계약 변경): 바인딩이 줄 수 있는 키. `gain`은 양수 배율(`mouse.move`: 커서 이동 배율, 예: 주먹 빠른 이동을 별도 동작 + `gain`으로 연결 / `mouse.scroll`: 스크롤 배율). 프레임마다 바뀌는 값은 `params`가 아니다.
+- `params`(S3 추가, 계약 변경): 바인딩이 줄 수 있는 키. `gain`은 양수 배율(`mouse.move`: 커서 이동 배율 / `mouse.drag`: 드래그 중 커서 이동 배율 / `mouse.scroll`: 스크롤 배율). 프레임마다 바뀌는 값은 `params`가 아니라 `Intent.scale`로 온다(§5).
 - `window.task_switcher`는 S3에서 Alt+Tab 한 번(v0.3 `alt_tab`)이다. v0.3의 Alt를 누른 채 손으로 고르는 전환기(`task_switcher`)는 확인·취소 동작이 필요한 모드라 S4(중재기)에서 정한다.
 
 v0.3 `grab`의 실제 용도는 이식 때 확인하고 이 표에 추가한다.
@@ -188,7 +190,7 @@ v0.3 `grab`의 실제 용도는 이식 때 확인하고 이 표에 추가한다.
 ### 바인딩과 라우터
 
 - 바인딩: `동작 ID → 액션 ID`. 기능의 `DEFAULT_BINDINGS` 위에 프로필 값이 덮어쓴다.
-- 라우터는 `Intent`를 `ActionCommand`로 바꾼다. `phase`와 `point`는 그대로 옮긴다.
+- 라우터는 `Intent`를 `ActionCommand`로 바꾼다. `phase`와 `point`는 그대로 옮긴다. `Intent.scale`이 있고 액션이 `gain`을 받으면 명령의 `gain` = 바인딩 `gain`(기본 1) × `scale`. `info`는 옮기지 않는다.
 - **바인딩 없는 동작:** 아무것도 실행하지 않는다. Snapshot에 "연결 없음"으로 보이고 실패 기록에 남는다.
 - **모르는 액션 ID:** 설정을 읽을 때 거부하고 그 바인딩만 기본값으로 되돌린다(앱은 계속).
 - 한 액션의 `phase` 짝이 맞지 않는 바인딩(예: `tap` 동작 → `mouse.drag`)은 읽을 때 거부한다. 동작이 내는 phase를 읽을 때 알 수 없으면 라우터가 실행 때 거부한다(`phase_mismatch`, 명령 없음).
@@ -231,6 +233,7 @@ class OutputSink(Protocol):
 - `begin`이 열려 있지 않은 `end`(예: `release_all` 뒤)는 `ok`이고 아무것도 하지 않는다. `begin` 없는 `hold`는 `blocked`이다. 버튼을 저절로 누르지 않는다(S3 추가).
 - `close()` 뒤의 `apply`는 `blocked`이다(S3 추가).
 - `windows` 싱크만 실제 입력을 보낸다. 실제 마우스가 움직이면 제어를 멈추는 감시(v0.3 Electron의 watchdog)는 **제안**.
+- 선택 메서드 `holding() -> bool`: 드래그·스크롤처럼 끝나지 않은 입력이 있으면 참. 예외를 던지지 않는다. 없거나 실패하면 엔진은 거짓으로 본다. `windows`(드래그·스크롤·관성), `practice`(끝나지 않은 `begin`), `none`(항상 거짓)이 구현한다.
 
 ## 9. 학습 녹화 형식
 
