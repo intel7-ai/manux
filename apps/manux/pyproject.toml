@@ -4,9 +4,14 @@ version = "0.4.0.dev0"
 description = "MANUX v0.4: webcam hand control for Windows (Qt/QML + Python)"
 readme = "README.md"
 requires-python = ">=3.12"
-# Runtime dependencies are added stage by stage (docs/architecture.md section 8):
-# S1 numpy, opencv-python, mediapipe / S5 onnxruntime / S6 pyside6-essentials
-dependencies = []
+# Added stage by stage (docs/architecture.md section 8). numpy is needed everywhere frames or
+# features are handled. OpenCV and MediaPipe are imported lazily (only when a real camera or
+# model is opened), so the tests and CI run without them.
+dependencies = ["numpy>=2"]
+
+[project.optional-dependencies]
+vision = ["opencv-python>=5.0.0.93", "mediapipe>=1.2.0"]   # S1: real camera and hand tracking
+test = ["pytest>=8"]                                        # CI: pip install -e ".[test]"
 
 [dependency-groups]
 dev = ["pytest>=8"]

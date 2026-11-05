@@ -90,12 +90,14 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - name: Python 3.12+ with pytest
+      # Installs apps/manux with its core dependencies (numpy) and pytest. OpenCV and MediaPipe are an
+      # optional extra ("vision") that the tests do not need.
+      - name: Python 3.12+ with apps/manux and pytest
         run: |
           python3 -c "import sys; assert sys.version_info >= (3, 12), sys.version"
           python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/pip" install --quiet "pytest>=8"
-      - run: PYTHONPATH=src "$RUNNER_TEMP/venv/bin/python" -m pytest -q
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet -e ".[test]"
+      - run: '"$RUNNER_TEMP/venv/bin/python" -m pytest -q'
 
   required:
     name: MANUX required
