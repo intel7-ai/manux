@@ -31,11 +31,17 @@ from manux.core.contracts import Activity, FrameContext, HandObservation, Intent
 from manux.features.pointer.engine import PointerCore, PointerFrame
 from manux.features.pointer.settings import SETTINGS, PointerSettings, from_mapping
 
-__all__ = ["ID", "GESTURES", "DEFAULT_BINDINGS", "SETTINGS", "PointerFeature", "PointerSettings"]
+__all__ = ["ID", "GESTURES", "GESTURE_PHASES", "DEFAULT_BINDINGS", "SETTINGS", "PointerFeature", "PointerSettings"]
 
 ID = "pointer"
 MOVE, LEFT_CLICK, RIGHT_CLICK, DRAG = "pointer.move", "pointer.left_click", "pointer.right_click", "pointer.drag"
 GESTURES: Tuple[str, ...] = (MOVE, LEFT_CLICK, RIGHT_CLICK, DRAG)
+GESTURE_PHASES = {
+    MOVE: frozenset({"hold"}),
+    LEFT_CLICK: frozenset({"tap"}),
+    RIGHT_CLICK: frozenset({"tap"}),
+    DRAG: frozenset({"begin", "hold", "end"}),
+}
 DEFAULT_BINDINGS = {
     MOVE: "mouse.move",
     LEFT_CLICK: "mouse.left_click",

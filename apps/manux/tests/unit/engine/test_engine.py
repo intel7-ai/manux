@@ -265,3 +265,35 @@ def test_mark_and_shutdown():
     assert "mark:wrong click" in eng.step(frame(0, 1.0), None).events
     eng.shutdown()
     assert all(s.closed for s in sinks.values()) and "shutdown" in sinks[OutputTarget.NONE].releases
+
+
+def test_camera_timeout_releases_output_and_resets_filter_once():
+    eng, pointer, _, sinks = build()
+
+    class Filter:
+        def __init__(self):
+            self.reasons = []
+
+        def reset(self, reason):
+            self.reasons.append(reason)
+
+        def observe(self, hand, ctx):
+            pass
+
+        def filter(self, intents, ctx):
+            return intents
+
+    flt = Filter()
+    eng.filters.append(flt)
+    eng.commands.put(SetStage(Stage.MAIN))
+    eng.commands.put(SetControl(True))
+    eng.commands.put(Mark("camera delayed"))
+    eng.frame_missing(1.0)
+    eng.frame_missing(1.2)
+    eng.frame_missing(1.31)
+    eng.frame_missing(1.6)
+    assert flt.reasons.count("hand_lost") == 1
+    assert pointer.resets.count("hand_lost") == 1
+    assert sinks[OutputTarget.WINDOWS].releases == ["hand_lost"]
+    resumed = frame(0, 1.7)
+    assert eng.step(resumed, hand(resumed)).events == ("mark:camera delayed", "hand_lost")
