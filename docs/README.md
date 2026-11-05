@@ -9,7 +9,7 @@
 | [../AGENTS.md](../AGENTS.md) | 사람·에이전트 공통 작업 규칙 |
 | [branch-flow.md](branch-flow.md) | 작업 브랜치 → preview → production, 검사 깊이 |
 | [harness.md](harness.md) | 작업 접수·결과 보고 형식 (`harness/`) |
-| [../CONTRIBUTING.md](../CONTRIBUTING.md) | PR·검사 절차. 검사 명령 부분은 이전 웹앱 기준이다 |
+| [../CONTRIBUTING.md](../CONTRIBUTING.md) | 현재 v0.4 실행·pytest, 공통 하네스·PR 절차, 이전 웹앱 명령의 구분 |
 
 ## 현재: MANUX (`apps/manux/`, v0.4)
 
@@ -20,16 +20,19 @@
 | [../apps/manux/docs/architecture.md](../apps/manux/docs/architecture.md) | 계층·의존 규칙·이식 순서 |
 | [../apps/manux/docs/contracts.md](../apps/manux/docs/contracts.md) | 모듈 계약 |
 | [../apps/manux/docs/decisions.md](../apps/manux/docs/decisions.md) | 확정·제안 결정 (D-001~) |
+| [../apps/manux/docs/direct-tcn.md](../apps/manux/docs/direct-tcn.md) | 명시적 직접 판정·개인 모델 검증/설치·교체 |
+| [../apps/manux/docs/dataset-hub.md](../apps/manux/docs/dataset-hub.md) | 팀 녹화·모델 허브 CLI. 앱 연결은 PR 상태를 구분 |
+| [../apps/manux/docs/next-steps.md](../apps/manux/docs/next-steps.md#현재-작업-순서-preview-589cc9a) | 현재 작업 순서와 11/05 최초 계획의 기록 구분 |
 | [unified-rebuild/selection.md](unified-rebuild/selection.md) | v0.4 착수 때 팀 자료에서 고른 것과 뺀 것 (11/05) |
 
 ## 이전 버전 v0.3 (`hand-mouse/`)
 
-`apps/manux`에 설치본이 생길 때까지 Releases `v0.3.x` 설치파일은 이 폴더에서 빌드한다. 기능 설명은 `apps/manux`로 옮긴 기능의 출처로 참고한다.
+v0.4 정식 배포 채널 전환 전까지 Releases `v0.3.x` 설치파일은 이 폴더에서 빌드한다. MANUX Preview 시험 설치본이 있다는 사실과 정식 릴리스 전환을 구분한다. 기능 설명은 `apps/manux`로 옮긴 기능의 출처로 참고한다.
 
 | 문서 | 내용 |
 | --- | --- |
 | [../hand-mouse/README.md](../hand-mouse/README.md) | 실행 옵션·설정 키·트래킹 측정·실패 기록 |
-| [../hand-mouse/docs/packaging.md](../hand-mouse/docs/packaging.md) | 현재 설치본·자동 업데이트·릴리스 (`apps/manux` 설치본이 생기면 교체) |
+| [../hand-mouse/docs/packaging.md](../hand-mouse/docs/packaging.md) | 현재 v0.3 정식 설치본·자동 업데이트·릴리스 (v0.4 배포 채널 전환 때 교체) |
 | [../hand-mouse/docs/engine-contract.md](../hand-mouse/docs/engine-contract.md) | 검지 포인터 엔진의 입력·출력 |
 | [../hand-mouse/docs/motion-mode.md](../hand-mouse/docs/motion-mode.md) | 모션 모드 |
 | [../hand-mouse/docs/hand-shape-speed.md](../hand-mouse/docs/hand-shape-speed.md) | 손 모양으로 커서 속도 정하기 |

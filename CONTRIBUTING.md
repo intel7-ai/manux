@@ -1,10 +1,10 @@
 # MANUX 개발 참여 안내
 
-팀원과 에이전트는 같은 작업 규칙과 검사 명령을 사용합니다. 먼저 [README](README.md), [공통 작업·결과 규칙](docs/harness.md), [AGENTS.md](AGENTS.md)를 읽으세요. 파일 경계는 [설계 문서](docs/design/README.md), 영역별 작업은 [작업 문서](docs/workstreams/), 모듈 연결은 [계약](docs/contracts.md)을 따릅니다.
+팀원과 에이전트는 같은 작업 규칙과 검사 명령을 사용합니다. 먼저 [README](README.md), [공통 작업·결과 규칙](docs/harness.md), [AGENTS.md](AGENTS.md)를 읽으세요. **현재 MANUX 개발은 `apps/manux/`에서 합니다.** 파일·계층 경계와 모듈 연결은 [v0.4 작업 지침](apps/manux/AGENTS.md), [구조](apps/manux/docs/architecture.md), [계약](apps/manux/docs/contracts.md)을 따릅니다.
 
-> **2026-11-05:** 아래 npm 명령·`.cmd` 파일·Electron 설명은 **이전 웹앱(`src/`·`desktop/`)** 기준입니다. MANUX는 `apps/manux/`(Python, `uv`)이고 새 개발은 모두 여기서 합니다. 이전 버전 `hand-mouse/`(v0.3)는 `apps/manux` 설치본이 생길 때까지 설치파일 빌드에만 씁니다. 폴더별 실행·검사 명령은 [README](README.md#검사와-ci)와 각 폴더 README를 따르세요. 브랜치·PR·보고 규칙(1·3·5절)은 모든 폴더에 같습니다.
+> **2026-11-05:** 브랜치·PR·보고 규칙(1·3·5절)은 모든 폴더에 같습니다. `hand-mouse/`(v0.3)는 v0.4 정식 배포 채널 전환 전까지 Releases 설치본을 빌드합니다. `src/`·`desktop/`(v0.2)의 설계·실행법은 기록이며, 해당 코드를 수정할 때만 [설계 문서](docs/design/README.md)·[작업 문서](docs/workstreams/)·[웹앱 계약](docs/contracts.md)을 참고합니다.
 
-코드를 직접 수정하지 않는 팀원은 [Discord 참여 안내](README.md#discord로-참여하기)만으로 시작할 수 있습니다. 설치가 익숙하지 않으면 [첫날 온보딩](docs/onboarding.md)을 사용하세요.
+코드를 직접 수정하지 않는 팀원은 [Discord 참여 안내](README.md#discord로-참여하기)만으로 시작할 수 있습니다. 현재 앱의 설치·소스 실행은 [README](README.md#설치해서-사용하기)를 따릅니다. [첫날 온보딩](docs/onboarding.md)은 이전 웹앱 안내입니다.
 
 ## 1. 작업 위치와 기준 확인
 
@@ -41,6 +41,31 @@ git remote -v
 
 ## 2. 한 번 준비하고 같은 명령으로 검사
 
+### 현재 MANUX (v0.4)
+
+Windows·Git·[uv](https://docs.astral.sh/uv/)를 준비합니다. 저장소 루트에서:
+
+```powershell
+cd apps/manux
+uv sync --locked --python 3.12 --extra ui --extra vision
+uv run --locked --python 3.12 pytest -q
+uv run --locked --python 3.12 --extra ui --extra vision python -m manux
+```
+
+실제 카메라 실행에는 웹캠이 필요합니다. 재생·추가 학습 의존성·Preview 설치본은 [v0.4 README](apps/manux/README.md)를 따릅니다. Python 시험만 실행할 때는 `ui`·`vision`이 없어도 기본 구조·계약 시험이 실행되며, 설치하지 않은 선택 구성요소의 시험은 건너뛸 수 있습니다.
+
+루트의 공통 하네스·이전 웹앱 회귀 검사도 유지합니다. Node.js 24에서:
+
+```powershell
+cd ../..
+npm ci --ignore-scripts
+npm run verify
+```
+
+이 검사는 v0.4 pytest를 대신하지 않습니다. 루트의 `MANUX 개발 준비.cmd`·`MANUX 마우스 실행.cmd`는 아래 이전 웹앱용입니다.
+
+### 이전 웹앱·Electron (v0.2 기록)
+
 기준 환경은 Node.js **24**이며 Git도 필요합니다. Windows에서는 `MANUX 개발 준비.cmd`를 더블클릭하면 아래 준비와 공통 검사를 실행합니다. 다른 운영체제에서도 같은 npm 명령을 사용합니다.
 
 ```powershell
@@ -63,7 +88,7 @@ npm run desktop:setup
 요청자가 **목표·현재 문제·완료 기준**을 적으면 에이전트가 [하네스 계약](docs/harness.md)의 작업 기록으로 정리합니다. 비전공자가 JSON을 직접 작성할 필요는 없습니다.
 
 1. 현재 구현과 제안 기능을 구분하고, 재현 순서와 예상/실제 동작을 기록합니다.
-2. 가져간 영역에서 작은 변경을 구현합니다. `src/app.js`와 여러 모듈의 연결은 [03 인터페이스](docs/design/03-interfaces.md) 계약을 먼저 고치고 최소 diff로 넣습니다.
+2. 가져간 영역에서 작은 변경을 구현합니다. v0.4는 [모듈 계약](apps/manux/docs/contracts.md)을 먼저 확인합니다. v0.2의 `src/app.js`와 여러 모듈의 연결은 [03 인터페이스](docs/design/03-interfaces.md) 계약을 먼저 고치고 최소 diff로 넣습니다.
 3. 변경에 해당하는 검사를 실행하고, 통합 전에 `npm run verify`를 통과합니다.
 4. 공통 형식 **상태 → 요약 → 변경 → 검증 → 다음**으로 결과를 공유합니다. 실제 실행 결과와 미실행 이유를 포함합니다.
 5. 본인 브랜치를 push하고 `preview` 대상 PR을 엽니다. 개인 PC의 AI와 Discord worker가 같은 경로를 사용합니다. 공유 호스트에 코드를 먼저 모을 필요는 없습니다. 다른 작업자의 실행 중인 폴더와 브랜치는 보존합니다.
@@ -82,11 +107,12 @@ npm run task:report -- TASK.json RESULT.json
 
 | 변경 또는 목적 | 실행 | 확인 범위 |
 | --- | --- | --- |
+| 현재 MANUX의 구조·계약·기능·재생 | `cd apps/manux` 후 `uv run --locked --python 3.12 pytest -q` | v0.4 Python 시험. 선택 구성요소의 설치 여부와 skip도 보고 |
 | 설치·환경 문제 | `npm run doctor` | Node·Git·의존성 등 준비 상태 |
 | 코드·설정의 빠른 확인 | `npm run check` | 정적 검사와 설정·잠금 파일 일관성 |
 | 모든 코드 변경의 공통 관문 | `npm run verify` 또는 `MANUX 검사.cmd` | 정적 검사와 전체 단위·서버 회귀 |
-| 마우스 화면·브리지 연결 | `npm run test:browser` | 합성 관절 입력을 사용한 브라우저 통합 |
-| Windows 입력 helper | `npm run test:native` | 실제 helper의 dry-run. 실제 커서 입력은 하지 않음 |
+| 이전 웹앱 마우스 화면·브리지 연결 | `npm run test:browser` | v0.2 합성 관절 입력을 사용한 브라우저 통합 |
+| 이전 Electron Windows 입력 helper | `npm run test:native` | v0.2 helper의 dry-run. v0.4 실제 입력 검사를 대신하지 않음 |
 | 웹캠·등록·사용성 변화 | 실제 사용자 평가 | 실물 카메라·조명·거리·사용자별 성공/실패 |
 
 브라우저 검사를 처음 실행하기 전에는 잠금 파일에 지정된 Playwright의 Chromium을 설치합니다.
@@ -120,7 +146,7 @@ node --max-old-space-size=512 scripts/test-enrollment-browser.mjs
 
 한 PR에는 재현 가능한 문제 또는 합의된 작은 기능을 담습니다. [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)에 따라 문제·변경·검증·미실행 이유·남은 한계를 기록합니다. PR 대상은 `preview`이며 리뷰어 승인 없이 MANUX required 통과 후 병합합니다. `production`에는 preview에서 시험한 뒤 `preview` PR로만 병합합니다([브랜치 흐름](docs/branch-flow.md)). 계약·프로필 형식·다른 담당 영역에 영향이 있으면 소비 모듈 담당자를 연결합니다.
 
-GitHub Actions의 **MANUX CI**는 preview 대상에서 Ubuntu 공통 검사와 `apps/manux` 구조·계약 시험을, production 대상에서 Windows·브라우저·native·Electron 패키징 검사까지 실행합니다. `hand-mouse/`를 바꾸면 `hand-mouse (Windows)` 시험과 시험용 설치파일 빌드가 따로 돕니다. 집계 검사 이름은 **MANUX required**입니다. **로컬 검사 통과와 원격 CI 통과를 각각 기록**합니다. 자동 검사는 실제 웹캠·사용성 검사를 대신하지 않습니다.
+GitHub Actions의 **MANUX CI**는 preview 대상에서 Ubuntu 공통 검사와 `apps/manux` 구조·계약 시험을, production 대상에서 Windows·이전 웹앱 브라우저·native·Electron 패키징 검사까지 실행합니다. 별도 **MANUX app (apps/manux, Windows)** workflow는 v0.4 변경 PR에서 Python 시험·Preview 설치본 빌드·자가 진단·창 열기·설치를 확인합니다. `hand-mouse/`를 바꾸면 `hand-mouse (Windows)` 시험과 시험용 설치파일 빌드가 따로 돕니다. 집계 검사 이름은 **MANUX required**입니다. **로컬 검사 통과와 원격 CI 통과를 각각 기록**합니다. 자동 검사는 실제 웹캠·사용성 검사를 대신하지 않습니다.
 
 PR의 base는 **preview**로 지정합니다. preview·production은 필수 검사 통과와 대화 해결을 요구하고 리뷰어 승인은 요구하지 않습니다. 직접 push·force push로 우회하지 않습니다. 충돌은 본인 브랜치에서 해결하며 다른 사람의 브랜치를 재작성하지 않습니다.
 
@@ -129,11 +155,13 @@ git push -u origin HEAD
 gh pr create --base preview
 ```
 
-PR과 preview push의 Actions artifact에서 시험용 Preview 앱을 내려받아 확인합니다. preview에서 시험한 뒤 `preview → production` PR로 병합하면 `hand-mouse-release.yml`이 설치본을 빌드해 GitHub Release로 게시하고(`apps/manux` 설치본이 생길 때까지 v0.3 코드), 설치된 앱의 업데이터가 새 버전을 확인합니다(2026-11-05부터 Electron 앱은 게시하지 않음). 로컬 개발 실행과 PR 시험본이 정식 업데이트를 받는 것처럼 설명하지 않습니다. 자세한 설치·업데이트 동작은 [데스크톱 배포](docs/desktop-release.md)를 확인하세요.
+PR과 preview push의 Actions artifact에서 시험용 Preview 앱을 내려받아 확인합니다. preview에서 시험한 뒤 `preview → production` PR로 병합하면 `hand-mouse-release.yml`이 설치본을 빌드해 GitHub Release로 게시합니다(v0.4 정식 배포 채널 전환 전까지 v0.3 코드). 설치된 정식 앱의 업데이터가 새 버전을 확인하며, MANUX Preview는 자동 업데이트하지 않습니다. 현재 릴리스는 [v0.3 패키징](hand-mouse/docs/packaging.md), v0.4 시험 설치본은 [MANUX Preview](apps/manux/README.md#시험용-설치파일-manux-preview)를 따릅니다. [이전 Electron 배포 기록](docs/desktop-release.md)은 현재 릴리스 안내와 구분합니다.
 
 사용자 프로필·원시 영상·토큰·계정 정보·로컬 산출물을 커밋하지 않습니다. 다른 사람의 Node·Chrome·Claude 프로세스를 일괄 종료하지 않습니다. GitHub/Jira 게시와 이슈 완료는 요청 범위와 실제 완료 기준에 따라 수행합니다.
 
 ## 6. 보조 도구: 검증된 소스 전달
+
+이 절의 소스 전달 도구는 이전 웹앱·Node 실행 환경 기준입니다. v0.4 Windows 앱의 시험 배포는 위의 MANUX Preview 설치본을 사용합니다.
 
 배포 담당자는 **커밋된 깨끗한 작업 폴더**에서 같은 코드로 검사를 통과한 뒤 소스 후보를 준비합니다.
 

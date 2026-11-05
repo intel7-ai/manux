@@ -8,8 +8,8 @@
 
 | 폴더 | 지위 | 시작 문서 |
 | --- | --- | --- |
-| `apps/manux/` | **MANUX.** 이식 단계 S0~S5 병합, S6(데스크톱 화면) 진행 중 | [apps/manux/README.md](apps/manux/README.md) · [AGENTS.md](apps/manux/AGENTS.md) |
-| `hand-mouse/` | 이전 버전 v0.3. **`apps/manux`에 설치본이 생길 때까지만** Releases `v0.3.x` 설치파일을 이 폴더에서 빌드합니다. 설치본을 깨는 버그 수정만 받고 기능은 `apps/manux`로 옮깁니다 | [hand-mouse/README.md](hand-mouse/README.md) |
+| `apps/manux/` | **MANUX.** 이식 단계 S0~S5 코드 병합, S6 진행 중. PR용 Preview 설치본 제공 | [apps/manux/README.md](apps/manux/README.md) · [AGENTS.md](apps/manux/AGENTS.md) |
+| `hand-mouse/` | 이전 버전 v0.3. **v0.4 정식 배포 채널 전환 전까지** Releases `v0.3.x` 설치파일을 이 폴더에서 빌드합니다. 설치본을 깨는 버그 수정만 받고 기능은 `apps/manux`로 옮깁니다 | [hand-mouse/README.md](hand-mouse/README.md) |
 | `src/`, `public/`, `desktop/`, `server.js` | 이전 웹앱·Electron(v0.2). 회귀 시험(`npm run verify`)만 CI에서 돕니다 | 아래 [이전 버전](#이전-버전) |
 
 문서 전체의 현재/기록 구분은 [docs/README.md](docs/README.md)에 있습니다.
@@ -68,8 +68,9 @@ uv run --python 3.12 --extra ui --extra vision python -m manux
 
 | 범위 | 상태 |
 | --- | --- |
-| MANUX 설정·카메라·손 인식·기능(포인터·핀치·모션)·엔진·Windows 출력·TCN 확인기 | `apps/manux/`에 병합. 실제 웹캠·실제 Windows 입력·Qt 화면·인식률은 확인하지 않음 |
-| MANUX 데스크톱 화면 (S6) | 진행 중. 시험용 설치파일(MANUX Preview)·트래킹 측정 포함. 남은 것: 학습 센터 화면, 실제 PC 확인 뒤 배포 채널 전환 |
+| MANUX 설정·카메라·손 인식·기능(포인터·핀치·모션)·엔진·Windows 출력·TCN 확인기·직접 판정 | preview에 코드 병합. 직접 TCN은 명시적으로 켜는 경로이며 특징 캐시·검증 후 모델 설치/교체 포함. 실제 웹캠·실제 Windows 입력·인식률은 별도 확인 필요 |
+| MANUX 데스크톱 화면 (S6) | Preview 설치본·트래킹 측정 포함. CI의 설치·자가 진단·창 열기 확인과 실제 사용자 시험을 구분. 실제 PC 확인 뒤 정식 배포 채널 전환 예정 |
+| 학습 센터·사용자별 HF 공유 | [PR #72](https://github.com/intel7-ai/manux/pull/72)에서 별도 검증 중. 이 표의 preview 병합 상태와 구분 |
 | 사용자 정의 손동작 등록과 원하는 액션 연결 | 후속 과제 |
 | 이전 버전 v0.3 (현재 설치파일) | 커서·클릭·드래그·스크롤, 트래킹 측정, 실패 기록, 여러 모니터, 트레이. 실제 손 확인은 개발자 몇 명의 PC·웹캠에 한정 |
 
@@ -83,7 +84,7 @@ MediaPipe 손 추적 모델을 재학습하지 않습니다. 자동 시험 통�
 | 이전 v0.3 (`hand-mouse/`) | `cd hand-mouse` 후 `uv run --locked --extra qt python -m pytest -q` | `hand-mouse (Windows)` 시험과 설치파일 빌드. 이 폴더 변경 시 |
 | 이전 웹앱 | `npm ci --ignore-scripts` 후 `npm run verify` | MANUX CI `verify`. preview는 Ubuntu만, production은 Windows·브라우저·Electron 시험 설치본까지 |
 
-필수 검사 이름은 **MANUX required**입니다. `preview` PR은 이 검사만 통과하면 작성자가 병합합니다(리뷰어 승인 없음). preview에서 시험한 뒤 `preview → production` PR로 병합하면 설치본이 GitHub Release로 게시됩니다(지금은 `hand-mouse-release.yml`, `apps/manux` 설치본이 생기면 교체). 상세: [브랜치 흐름](docs/branch-flow.md).
+필수 검사 이름은 **MANUX required**입니다. `preview` PR은 이 검사만 통과하면 작성자가 병합합니다(리뷰어 승인 없음). preview에서 시험한 뒤 `preview → production` PR로 병합하면 설치본이 GitHub Release로 게시됩니다(지금은 `hand-mouse-release.yml`, v0.4 정식 배포 채널 전환 때 교체). Preview 설치본이 있다는 사실만으로 정식 릴리스가 전환된 것은 아닙니다. 상세: [브랜치 흐름](docs/branch-flow.md).
 
 ## 이전 버전
 

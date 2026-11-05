@@ -6,15 +6,15 @@
 
 | 폴더 | 지위 (2026-11-05) |
 | --- | --- |
-| `apps/manux/` | **MANUX.** 이식 S0~S5 병합, S6(데스크톱 화면) 진행 중. 아직 설치본이 아니다. 상태는 [apps/manux/AGENTS.md](apps/manux/AGENTS.md) "현재 상태"가 기준이다 |
-| `hand-mouse/` | 이전 버전 v0.3. `apps/manux`에 설치본이 생길 때까지만 Releases `v0.3.x`를 여기서 빌드한다(`hand-mouse-release.yml`). 설치본에 필요한 버그 수정만 받고, 새 기능·데이터 수집은 `apps/manux`에 한다. PR 본문에 `apps/manux` 반영 여부를 적는다 |
+| `apps/manux/` | **MANUX.** 이식 S0~S5 코드 병합, S6 진행 중. PR용 **MANUX Preview 설치본이 있으며**, 정식 Releases 채널 전환은 아직이다. 상태는 [apps/manux/AGENTS.md](apps/manux/AGENTS.md) "현재 상태"가 기준이다 |
+| `hand-mouse/` | 이전 버전 v0.3. v0.4 배포 채널 전환 전까지 Releases `v0.3.x`를 여기서 빌드한다(`hand-mouse-release.yml`). 설치본에 필요한 버그 수정만 받고, 새 기능·데이터 수집은 `apps/manux`에 한다. PR 본문에 `apps/manux` 반영 여부를 적는다 |
 | `src/`, `public/`, `server.js`, `desktop/` | 이전 웹앱·Electron(v0.2). 새 기능을 넣지 않는다. 정식 게시 workflow는 2026-11-05 삭제했다. 아래의 웹앱 문서(`docs/contracts.md`, `docs/design/`)는 이 코드의 기록이다 |
 
 문서별 현재/기록 구분은 [docs/README.md](docs/README.md)를 본다.
 
 ---
 
-이 저장소는 로컬 웹캠으로 영상과 Windows 마우스를 제어하는 MANUX의 공동 작업 공간이다. 먼저 [README](README.md)와 [하네스](docs/harness.md)를 읽고, 작업에 필요한 [설계 문서 5종](docs/design/README.md)·[모듈 계약](docs/contracts.md)과 관련 영역의 [작업 문서](docs/workstreams/)만 추가로 읽는다. 설계 문서의 컴포넌트 **하지 않는 것** 열이 파일 경계이고, 코드에 문서에 없던 판단이 생기면 같은 PR에서 문서를 고친다. [마스터 플랜](docs/master-plan.md)은 과거 계획을 포함하므로 현재 구현과 구분한다. 사람의 현재 요청이 이 문서보다 우선한다.
+이 저장소는 로컬 웹캠으로 영상과 Windows 마우스를 제어하는 MANUX의 공동 작업 공간이다. 먼저 [README](README.md)와 [하네스](docs/harness.md)를 읽는다. v0.4 작업은 위의 `apps/manux/` 읽기 순서와 계층·기능 경계를 따른다. [설계 문서 5종](docs/design/README.md)·[웹앱 모듈 계약](docs/contracts.md)·[작업 문서](docs/workstreams/)는 **v0.2 코드를 수정할 때만** 추가로 읽는다. 그 설계의 컴포넌트 **하지 않는 것** 열은 v0.2의 파일 경계다. 코드에 문서에 없던 판단이 생기면 같은 PR에서 해당 세대의 문서를 고친다. [마스터 플랜](docs/master-plan.md)은 과거 기록이며 현재 범위는 최신 Jira와 각 앱의 상태 문서를 따른다. 사람의 현재 요청이 이 문서보다 우선한다.
 
 ## 현재 상태
 
@@ -42,7 +42,7 @@
 
 **작업 가져가기.** 담당이 없거나 막혀 있는 일(설계 문서의 "미구현"·"제안"·교차 검수 항목, Jira의 미배정 태스크)은 누구나 가져갈 수 있다. 가져가는 사람의 에이전트는 시작할 때 Jira 해당 이슈의 담당자·상태를 바꾸거나 코멘트를 남기고, 또는 GitHub에 브랜치·draft PR을 올려 작업 중임을 표시한다. 둘 다 할 수 없으면 사람에게 알린다. 표시 없이 같은 파일을 두 사람이 고치지 않도록, 시작 전에 Jira와 열린 PR·원격 브랜치를 새로 조회한다. 사람이 시키지 않은 담당 변경·이슈 완료 처리는 하지 않는다.
 
-**파일 경계.** 어떤 파일이 어느 컴포넌트에 속하고 무엇을 하지 않는지는 [02 컴포넌트](docs/design/02-components.md) 표가 기준이다. 사람별 담당 파일은 두지 않는다. 고친 파일의 대응 테스트는 고친 사람이 같은 PR에서 맞춘다. `src/app.js`처럼 여러 컴포넌트를 묶는 파일은 [03 인터페이스](docs/design/03-interfaces.md) 계약을 먼저 고치고 최소 연결 diff만 넣는다. 한 PR에서 컴포넌트 경계 밖의 대규모 리팩터링을 하지 않는다. 계약을 바꾸면 PR 본문에 영향받는 컴포넌트를 적는다.
+**파일 경계.** v0.4는 [구조 §4·§5](apps/manux/docs/architecture.md#4-의존-규칙)와 [모듈 계약](apps/manux/docs/contracts.md)을 따른다. v0.2는 [02 컴포넌트](docs/design/02-components.md) 표를 따른다. 사람별 담당 파일은 두지 않는다. 고친 파일의 대응 테스트는 고친 사람이 같은 PR에서 맞춘다. v0.2의 `src/app.js`를 연결할 때는 [03 인터페이스](docs/design/03-interfaces.md) 계약을 먼저 고치고 최소 연결 diff만 넣는다. 한 PR에서 컴포넌트 경계 밖의 대규모 리팩터링을 하지 않는다. 계약을 바꾸면 PR 본문에 영향받는 컴포넌트를 적는다.
 
 ## 작업 순서
 
@@ -73,7 +73,7 @@
 
 ## 검증과 주장
 
-`npm ci --ignore-scripts` 후 `npm run verify`가 로컬·CI 공통 검사다. 모델·웹캠 없이 실행되는 단위 시험과 합성 브라우저 시험, 실제 사용자 시험을 구분한다. 브라우저 검사 준비와 CI 실패 해결은 [CONTRIBUTING](CONTRIBUTING.md)을 따른다.
+v0.4는 `apps/manux`에서 `uv run --locked --python 3.12 pytest -q`로 구조·계약·단위·재생 시험을 실행한다. 루트의 `npm ci --ignore-scripts` 후 `npm run verify`는 하네스와 이전 웹앱의 공통 회귀 검사이며 v0.4 pytest를 대신하지 않는다. 모델·웹캠 없이 실행되는 단위 시험과 합성 브라우저 시험, 실제 사용자 시험을 구분한다. 환경 준비와 CI 실패 해결은 [CONTRIBUTING](CONTRIBUTING.md)을 따른다.
 
 같은 손 자세의 인접 프레임은 독립적인 사용자 시도가 아니다. 등록과 평가 수행을 분리하고 성공률과 함께 오실행·지연·등록 실패를 기록한다. 테스트 수나 프레임 점수를 제품 정확도로 설명하지 않는다. 실행하지 않은 검사와 아직 측정하지 않은 수치를 완료로 표시하지 않는다.
 
