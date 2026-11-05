@@ -63,7 +63,8 @@ def measure(segments, mapping, model=None, mode="pinch", known_labels=None):
             "tcn_misfires_per_minute": misfires * 60 / neutral_seconds if neutral_seconds else None}
 
 
-def validate_and_install(candidate_path, recordings, store, *, mode="pinch", cache_dir=None, loader=load_model):
+def validate_and_install(candidate_path, recordings, store, *, mode="pinch", cache_dir=None, loader=load_model,
+                         cancelled=None):
     token = active_token(store)
     current = load_active(store, FEATURE_VERSION, FEATURES) if token is not None else None
     before_model = sha256(Path(candidate_path).read_bytes()).hexdigest()
@@ -104,7 +105,7 @@ def validate_and_install(candidate_path, recordings, store, *, mode="pinch", cac
               "evaluation_sha256": hashes, "mode": mode, "candidate": metrics, "baseline": baseline}
     if [sha256(path.read_bytes()).hexdigest() for path in paths] != hashes:
         raise ValueError("evaluation recordings changed during validation")
-    installed = install(Path(store), candidate, report, token)
+    installed = install(Path(store), candidate, report, token, cancelled=cancelled)
     return installed, report
 
 

@@ -347,6 +347,29 @@ class OutputSink(Protocol):
 
 ## 12. 화면과 엔진 사이 (`Snapshot`, `UiCommand`)
 
+### 학습 센터 사용 흐름 (2026-11-05)
+
+- 녹화 식별자는 `RecordingIdentity(profile, preset, split)`이다. 별명은 영문·숫자·`_`·`-` 1~32자,
+  split은 `train` 또는 `eval`, preset은 `pinch`·`pointer`·`trigger`다. 사용자 폴더의
+  `recordings/profile-<별명>/<preset>/<split>/`에 저장하며 동일 값을 meta에도 쓴다. UI에서 별명을
+  정하기 전에는 녹화·업로드를 시작하지 않는다. 요약·학습은 하위 폴더도 읽고 eval은 학습에 넣지 않는다.
+- 학습 센터는 사용 중 모델 파일을 덮어쓰지 않는다. 별도 작업 폴더에 후보와 `decisions`를 만들고,
+  별도 eval 녹화로 §10 검증을 통과한 경우에만 개인 store를 바꾼다. 동작을 선택한 학습도 현재
+  모델의 다른 클래스를 유지해 전체 모델을 재학습한다. 독립 이진 모델 bank를 실행 경로에 추가하지 않는다.
+- 학습·HF 작업은 별도 worker 프로세스에서 실행한다. 소스는 Python + `tools/app_worker.py`,
+  설치본은 함께 배포한 `worker/MANUXWorker.exe`를 사용한다. 앱 프로세스는 torch를 import하지 않는다.
+  요청·진행·성공·실패를 JSON으로 주고받으며 성공 코드만으로 모델 적용을 주장하지 않는다.
+- 설치 성공은 `RuntimeRequest(kind="activate_model", path=<store>)`로 런타임 요청 큐에 전달한다.
+  런타임이 프레임 경계에서 모델을 검사·교체한다. UI는 엔진 필드를 직접 바꾸지 않는다.
+  다음 실행은 사용자 기본 store의 active를 자동으로 읽는다. 첫 설치 전에는 기존 규칙으로 동작한다.
+- HF 설정은 사용자 config의 `hub.env`(토큰 포함, 로그 묶음 제외)와 `training-center.json`(별명·repo만)에
+  저장한다. UI에는 토큰 값을 돌려주지 않는다. 소스 `.env`/HF 로그인 환경도 지원한다.
+  설정 변경은 접근 권한을 부여하지 않으며 해당 HF Dataset에 읽기/쓰기 권한이 있어야 한다.
+- 업로드는 사용자가 누른 경우에만 현재 별명의 완료된 녹화에 대해 기존 `hub.py` 검증을 거쳐 수행한다.
+  팀에서 내려받은 다른 별명의 녹화를 다시 올리지 않는다. 화면에 대상 repo와 영상 미포함을 표시한다.
+  다운로드는 별도 버튼으로 팀 녹화를 사용자 폴더에 가져온다. 실패는 완료/0건 성공으로 바꾸지 않는다.
+  토큰은 요청 JSON·명령행·진행 로그·내보내기 패키지에 넣지 않는다.
+
 출처: `qt_runtime.Snapshot`, `UiState`, `qt_dashboard.py`.
 
 - 엔진은 프레임마다 **불변** `Snapshot`을 하나 만든다. UI는 가장 최근 것만 읽는다. 지난 Snapshot을 쌓지 않는다.

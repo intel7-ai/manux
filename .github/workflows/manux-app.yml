@@ -24,7 +24,7 @@ jobs:
   installer:
     name: MANUX Preview installer (apps/manux, windows-latest)
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: apps/manux
@@ -34,9 +34,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
-      - run: uv sync --locked --python 3.12 --extra ui --extra vision --extra package
+      - run: uv sync --locked --python 3.12 --extra ui --extra vision --extra ml --extra train --extra hub --extra package
       - name: pytest (Windows)
-        run: uv run --locked --python 3.12 --extra ui --extra vision --extra package pytest -q -p no:cacheprovider
+        run: uv run --locked --python 3.12 --extra ui --extra vision --extra ml --extra train --extra hub --extra package pytest -q -p no:cacheprovider
       - name: Self-check from source (bundled model, MediaPipe, OpenCV, Qt)
         run: |
           uv run --locked --python 3.12 --extra ui --extra vision python -m manux --self-check "$env:RUNNER_TEMP/source-check.json"
@@ -53,6 +53,10 @@ jobs:
           Write-Output "MANUX Preview $version"
       - run: dotnet tool install -g vpk --version 1.2.161
       - run: ./packaging/build.ps1 -Version ${{ steps.version.outputs.version }} -SourceSha ${{ github.sha }}
+      - name: Packaged worker trains, validates and installs a synthetic model (offline)
+        run: |
+          uv run --locked --python 3.12 --extra ui --extra vision --extra ml --extra train --extra hub --extra package python tools/smoke_worker.py --worker build/dist/MANUX/worker/MANUXWorker.exe --report "$env:RUNNER_TEMP/worker-check.json"
+          if ($LASTEXITCODE -ne 0) { throw "packaged worker end-to-end failed" }
       - name: Built app passes its self-check
         run: |
           $out = "$env:RUNNER_TEMP/built-check.json"

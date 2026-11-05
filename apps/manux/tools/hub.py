@@ -20,10 +20,12 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
+import tempfile
 from collections import Counter
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Protocol, Sequence, Tuple
 
 from manux.data.recorder import FORBIDDEN_META, public_source
@@ -152,6 +154,9 @@ def validate_recording(path: Path, root: Optional[Path] = None) -> ValidatedReco
     person = str(rec.meta.get("person") or rec.meta.get("profile") or "unknown").lower()
     preset = str(rec.meta.get("preset") or "pinch").lower()
     split = str(rec.meta.get("split") or "train").lower()
+    if (not re.fullmatch(r"[a-z0-9_-]{1,32}", person) or preset not in ("pinch", "pointer", "trigger")
+            or split not in ("train", "eval")):
+        raise HubError("recording requires a valid anonymous alias, preset and train/eval split")
     counts = dict((rec.end or {}).get("counts") or {})
     tasks = sorted({
         str((f.get("label") or {}).get("task"))
@@ -379,10 +384,25 @@ def pull_from_hub(hub: RemoteHub, recordings_dir: Path, *,
     if not dry_run:
         for row in to_download:
             remote_path = str(row["path"])
-            rel = remote_path[len("recordings/"):] if remote_path.startswith("recordings/") else remote_path
-            dest = recordings_dir / Path(rel)
+            parts = PurePosixPath(remote_path).parts
+            if (not remote_path.startswith("recordings/") or "\\" in remote_path or ":" in remote_path
+                    or any(p in ("..", ".") for p in remote_path.split("/")) or len(parts) < 2):
+                raise HubError("invalid remote recording path")
+            dest = recordings_dir.joinpath(*parts[1:])
+            if not dest.resolve().is_relative_to(recordings_dir.resolve()):
+                raise HubError("remote recording leaves destination folder")
+            if dest.exists():
+                raise HubError("local recording conflicts with remote path; keeping local file")
             dest.parent.mkdir(parents=True, exist_ok=True)
-            hub.download_file(remote_path, dest)
+            with tempfile.TemporaryDirectory(prefix=".hub-", dir=dest.parent) as staging:
+                candidate = Path(staging) / dest.name
+                hub.download_file(remote_path, candidate)
+                checked = validate_recording(candidate)
+                if checked.sha256 != row.get("sha256") or any(
+                        checked.entry[key] != row.get(key) for key in ("person", "preset", "split")):
+                    raise HubError("remote recording does not match its manifest")
+                # Exclusive destination creation: a second downloader cannot overwrite local work.
+                os.link(candidate, dest)
             downloaded.append(dest)
 
     models_downloaded = 0
@@ -414,7 +434,7 @@ def pull_from_hub(hub: RemoteHub, recordings_dir: Path, *,
 class HfDatasetHub:
     """Production implementation backed by `huggingface_hub.HfApi` (dataset repo)."""
 
-    def __init__(self, repo_id: str, token: Optional[str] = None) -> None:
+    def __init__(self, repo_id: str, token: Optional[str] = None, *, create_repo: bool = True) -> None:
         if not repo_id or "/" not in repo_id:
             raise HubError(
                 f"Hugging Face dataset repo id must look like '<org-or-user>/<repo-name>' "
@@ -428,20 +448,34 @@ class HfDatasetHub:
         self.repo_id = repo_id
         self.token = token or os.environ.get(ENV_TOKEN) or None
         self.api = hf.HfApi(token=self.token)
+        self.create_repo = create_repo
 
     def ensure_repo(self) -> None:
-        self.api.create_repo(repo_id=self.repo_id, repo_type="dataset", private=True, exist_ok=True)
+        if self.create_repo:
+            self.api.create_repo(repo_id=self.repo_id, repo_type="dataset", private=True, exist_ok=True)
+        else:
+            self.api.repo_info(repo_id=self.repo_id, repo_type="dataset")
 
     def read_manifest(self) -> List[Dict[str, Any]]:
         try:
+            revision = self.api.repo_info(repo_id=self.repo_id, repo_type="dataset").sha
+        except Exception as exc:
+            if self.create_repo and type(exc).__name__ == "RepositoryNotFoundError":
+                return []  # CLI push may create a new repo; the app always uses create_repo=False
+            raise
+        return self._manifest_at(revision)
+
+    def check_upload_access(self):
+        self.api.auth_check(repo_id=self.repo_id, repo_type="dataset", write=True)
+
+    def _manifest_at(self, revision) -> List[Dict[str, Any]]:
+        try:
             local = self._hf.hf_hub_download(
-                repo_id=self.repo_id, filename=MANIFEST_FILE, repo_type="dataset", token=self.token,
+                repo_id=self.repo_id, filename=MANIFEST_FILE, repo_type="dataset", token=self.token, revision=revision,
             )
         except Exception as exc:
             name = type(exc).__name__
-            if name in ("EntryNotFoundError", "RepositoryNotFoundError", "RevisionNotFoundError"):
-                return []
-            if "404" in str(exc):
+            if name in ("EntryNotFoundError", "RemoteEntryNotFoundError"):
                 return []
             raise HubError(f"failed to read {MANIFEST_FILE} from {self.repo_id}: {exc}") from exc
         rows: List[Dict[str, Any]] = []
@@ -453,18 +487,27 @@ class HfDatasetHub:
     def push_files(self, uploads: Sequence[Tuple[Path, str]], manifest_lines: Sequence[Dict[str, Any]],
                    message: str) -> int:
         self.ensure_repo()
-        ops = [
-            self._hf.CommitOperationAdd(path_in_repo=remote, path_or_fileobj=str(local))
-            for local, remote in uploads
-        ]
-        manifest_bytes = (
-            "\n".join(json.dumps(r, ensure_ascii=False, separators=(",", ":")) for r in manifest_lines) + "\n"
-        ).encode("utf-8")
-        ops.append(self._hf.CommitOperationAdd(path_in_repo=MANIFEST_FILE, path_or_fileobj=manifest_bytes))
-        self.api.create_commit(
-            repo_id=self.repo_id, repo_type="dataset", operations=ops, commit_message=message,
-        )
-        return len(uploads)
+        for attempt in range(4):
+            revision = self.api.repo_info(repo_id=self.repo_id, repo_type="dataset").sha
+            latest = self._manifest_at(revision)
+            paths = {r["path"]: r.get("sha256") for r in latest}
+            for row in manifest_lines:
+                if row["path"] in paths and paths[row["path"]] != row.get("sha256"):
+                    raise HubError("remote path already belongs to another recording; use a unique alias/file")
+            merged = merge_manifest(latest, manifest_lines)
+            ops = [self._hf.CommitOperationAdd(path_in_repo=remote, path_or_fileobj=str(local))
+                   for local, remote in uploads]
+            manifest_bytes = ("\n".join(json.dumps(r, ensure_ascii=False, separators=(",", ":"))
+                                         for r in merged) + "\n").encode("utf-8")
+            ops.append(self._hf.CommitOperationAdd(path_in_repo=MANIFEST_FILE, path_or_fileobj=manifest_bytes))
+            try:
+                self.api.create_commit(repo_id=self.repo_id, repo_type="dataset", operations=ops,
+                                       commit_message=message, parent_commit=revision)
+                return len(uploads)
+            except Exception as exc:
+                if getattr(getattr(exc, "response", None), "status_code", None) not in (409, 412) or attempt == 3:
+                    raise
+        raise HubError("concurrent upload did not finish; retry")
 
     def download_file(self, remote_path: str, dest: Path) -> Path:
         cached = Path(

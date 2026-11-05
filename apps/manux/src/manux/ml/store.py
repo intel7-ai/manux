@@ -120,9 +120,11 @@ def validate_report(report, card, model_digest, card_digest):
         raise ValueError("evaluation recordings overlap training")
 
 
-def install(folder: Path, candidate, report: dict, expected_active: bytes | None) -> Path:
+def install(folder: Path, candidate, report: dict, expected_active: bytes | None, *, cancelled=None) -> Path:
     """Called after held-out evaluation. A failed install leaves the old pointer and files intact."""
     folder = Path(folder)
+    if cancelled is not None and cancelled():
+        raise ValueError("작업을 취소했습니다. 사용 중 모델은 유지됩니다.")
     model_bytes, card_bytes = candidate.path.read_bytes(), card_path(candidate.path).read_bytes()
     model_digest, card_digest = hashlib.sha256(model_bytes).hexdigest(), hashlib.sha256(card_bytes).hexdigest()
     if candidate.card.kind != "personal" or not candidate.card.decisions:
@@ -169,6 +171,8 @@ def install(folder: Path, candidate, report: dict, expected_active: bytes | None
                 json.dump(pointer, file)
                 file.flush()
                 os.fsync(file.fileno())
+            if cancelled is not None and cancelled():
+                raise ValueError("작업을 취소했습니다. 사용 중 모델은 유지됩니다.")
             os.replace(temporary, folder / "active.json")
             return version / "model.onnx"
         finally:

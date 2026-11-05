@@ -37,8 +37,9 @@ class FakeRuntime:
     def set_override(self, fid, key, value):
         self.overrides[(fid, key)] = value
 
-    def set_recording(self, mode, focus="", plan=None):
+    def set_recording(self, mode, focus="", plan=None, **identity):
         self.rec_call = (mode, focus, plan)
+        self.rec_identity = identity
 
     def advance_recording(self):
         self.advanced = getattr(self, "advanced", 0) + 1
@@ -119,6 +120,7 @@ def test_training_center_and_recording_plan_in_bridge(tmp_path):
     settings = Settings(schema())
     runtime = FakeRuntime(settings)
     tc = TrainingCenterService(tmp_path / "config", tmp_path / "data", tmp_path / "recordings")
+    tc.configure("tester01", "team/dataset")
     b = Bridge(runtime, settings, tmp_path / "config", services={"training_center": tc})
     try:
         b.control_hand = "Right"
@@ -129,9 +131,48 @@ def test_training_center_and_recording_plan_in_bridge(tmp_path):
         assert b.recordingPlan.start() is True
         assert b.recMode == "guided" and b.recFocus == "thumb_ring"
         assert runtime.rec_call[0] == "guided" and runtime.rec_call[1] == "thumb_ring"
+        assert runtime.rec_identity == {"profile": "tester01", "split": "train"}
         b.toggleRecordingPause()
         assert b.recPaused is True and runtime.rec_paused is True
         b.setRecMode("off")
         assert b.recMode == "off"
+    finally:
+        b.close()
+
+
+def test_training_center_profile_eval_and_confirmed_upload(tmp_path, monkeypatch):
+    from PySide6.QtCore import QObject, QMetaObject
+    from PySide6.QtTest import QTest
+    from manux.data.training_center import TrainingCenterService
+    from manux.ui.bridge import Bridge
+    settings = Settings(schema())
+    runtime = FakeRuntime(settings)
+    tc = TrainingCenterService(tmp_path / "config", tmp_path / "data", tmp_path / "recordings")
+    b = Bridge(runtime, settings, tmp_path / "config", services={"training_center": tc})
+    calls = []
+    monkeypatch.setattr(tc, "hub_action", lambda action: calls.append(action))
+    try:
+        b.control_hand = "Right"
+        b.finishSplash()
+        assert not b.focusRecord("thumb_ring")
+        b.saveHubSettings("synthetic", "team/data", "hf_synthetic_test_only")
+        b.setRecordingSplit("eval")
+        b.setRecMode("guided")
+        assert runtime.rec_identity["split"] == "eval"
+        b.runHub("upload")
+        assert calls == []  # active recording prevents uploading incomplete work
+        b.setRecMode("off")
+        popup = b.window.findChild(QObject, "trainingCenter")
+        confirmation = b.window.findChild(QObject, "uploadConfirm")
+        assert popup is not None and confirmation is not None
+        assert QMetaObject.invokeMethod(popup, "open")
+        QTest.qWait(100)
+        assert popup.property("visible")
+        assert QMetaObject.invokeMethod(confirmation, "open")
+        QTest.qWait(100)
+        assert confirmation.property("visible") and calls == []
+        assert QMetaObject.invokeMethod(confirmation, "accept")
+        QTest.qWait(100)
+        assert calls == ["upload"]
     finally:
         b.close()

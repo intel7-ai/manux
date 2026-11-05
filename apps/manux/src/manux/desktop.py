@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import queue
 import sys
 import threading
 import time
@@ -19,16 +20,16 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, Mapping, Optional, Tuple
 
 from manux.actions.bindings import Binding
-from manux.app import _FEATURES, _camera_config, build_engine, schema, pipeline_parts, read_bindings
+from manux.app import _FEATURES, _camera_config, build_engine, schema, pipeline_parts, read_bindings, training_specs
 from manux.capture.camera import LatestFrameCamera, brightness
-from manux.core.contracts import FrameInfo, HandObservation, OutputTarget
+from manux.core.contracts import FrameInfo, HandObservation, OutputTarget, RecordingIdentity, RuntimeRequest
 from manux.data.catalog import tasks_for
 from manux.data.guided import GuidedSession
 from manux.data.recorder import SessionRecorder
 from manux.data.recording import read, replay
 from manux.data.tracking_test import TrackingTest, load_recent_results, result_line, view as tracking_view
 from manux.data.training_center import TrainingCenterService
-from manux.engine.commands import RequestMode, SetBusy
+from manux.engine.commands import RequestMode, SetBusy, SetControl
 from manux.engine.pipeline import Engine
 from manux.features import tcn_gate
 from manux.ml.card import ModelError
@@ -191,6 +192,9 @@ class DesktopRuntime:
         self._rec_note_until = 0.0
         self._rec_marks = 0
         self._rec_marks_seen = 0
+        self._rec_identity = RecordingIdentity("local")
+        self._rec_identity_active = None
+        self._runtime_requests = queue.SimpleQueue()
 
     # ------------------------------------------------------------------ settings the UI changes
     def settings_for(self, fid: str) -> Mapping[str, object]:
@@ -271,8 +275,13 @@ class DesktopRuntime:
         self.recent = (result_line({**run, **test.summary()}, time.strftime("%m/%d %H:%M")),) + self.recent[:4]
 
     # ------------------------------------------------------------------ dataset recording (UI thread calls these)
-    def set_recording(self, mode: str, focus: str = "", plan: Optional[Mapping[str, Any]] = None) -> None:
+    def set_recording(self, mode: str, focus: str = "", plan: Optional[Mapping[str, Any]] = None,
+                      *, profile="local", split="train", preset="pinch") -> None:
+        identity = RecordingIdentity(profile.lower(), preset, split)
+        if mode not in ("off", "guided", "free"):
+            raise ValueError("invalid recording mode")
         with self._lock:
+            self._rec_identity = identity
             _, _, _, adv, _ = self._rec_want
             self._rec_want = (mode, focus, copy.deepcopy(dict(plan)) if plan is not None else None, adv, False)
 
@@ -293,25 +302,41 @@ class DesktopRuntime:
     def _recording_step(self, now: float, frame: Optional[FrameInfo], hand: Optional[HandObservation]) -> None:
         with self._lock:
             mode, focus, plan, adv, paused = self._rec_want
-        if (mode, focus) != (self._rec_mode, self._rec_focus):
+            identity = self._rec_identity
+        if (mode, focus, identity) != (self._rec_mode, self._rec_focus, self._rec_identity_active):
             self._stop_recording(now)
             self._rec_mode, self._rec_focus = mode, focus
+            self._rec_identity_active = identity
             if mode in ("guided", "free") and self.recordings_dir is not None:
-                self.engine.commands.put(SetBusy("recording", True))
-                meta: Dict[str, Any] = {
-                    "camera": {"mode": self.source.mode_text(),
-                               "mirror": frame.mirrored if frame is not None else bool(self.settings.get("camera.mirror"))},
-                    "frame_aspect": round(float(frame.aspect), 5) if frame is not None else 0.5625,
-                    "control_hand": self.control_hand,
-                    "focus": focus,
-                }
-                if mode == "guided":
-                    self._guided = GuidedSession(tasks_for(focus), plan=plan, settle=0.35)
-                    meta["guided"] = self._guided.describe()
-                    if self._guided.plan:
-                        meta["capture_plan"] = self._guided.plan
-                self._rec = SessionRecorder(self.recordings_dir, mode, meta, now=now)
-                self._rec_adv_seen = adv
+                try:
+                    self.engine.commands.put(SetBusy("recording", True))
+                    meta: Dict[str, Any] = {
+                        "camera": {"mode": [frame.width, frame.height, float(self.source.fps)] if frame else None,
+                                   "mirror": frame.mirrored if frame is not None else bool(self.settings.get("camera.mirror"))},
+                        "frame_aspect": round(float(frame.aspect), 5) if frame is not None else 0.5625,
+                        "control_hand": self.control_hand,
+                        "focus": focus,
+                        "person": identity.profile, "profile": identity.profile,
+                        "preset": identity.preset, "split": identity.split,
+                    }
+                    if mode == "guided":
+                        self._guided = GuidedSession(tasks_for(focus), plan=plan, settle=0.35)
+                        meta["guided"] = self._guided.describe()
+                        if self._guided.plan:
+                            meta["capture_plan"] = self._guided.plan
+                    folder = self.recordings_dir / f"profile-{identity.profile}" / identity.preset / identity.split
+                    self._rec = SessionRecorder(folder, mode, meta, now=now, alias=identity.profile,
+                                                stamp=time.strftime("%Y%m%d-%H%M%S") + f"-{time.time_ns() % 1000000000:09d}")
+                    self._rec_adv_seen = adv
+                except (OSError, ValueError):
+                    self._rec, self._guided = None, None
+                    self._rec_mode = "off"
+                    self.engine.commands.put(SetBusy("recording", False))
+                    self.engine.commands.put(SetControl(False))
+                    with self._lock:
+                        self._rec_want = ("off", "", None, adv, False)
+                    self._rec_note = "녹화를 시작하지 못했습니다. 저장 공간·권한과 녹화 설정을 확인하세요."
+                    self._rec_note_until = now + 8.0
         if self._guided is not None:
             self._guided.paused = paused
             if adv != self._rec_adv_seen:
@@ -340,6 +365,11 @@ class DesktopRuntime:
         sink = self.engine.sinks.get(OutputTarget.WINDOWS)
         cursor = getattr(sink, "cursor_pos", None)
         self._rec.frame(now, hand, label=label, rule=rule, cursor=cursor)
+        if self._guided is not None and self._guided.done:
+            self._stop_recording(now)
+            with self._lock:
+                self._rec_want = ("off", "", None, self._rec_adv_seen, False)
+            self._rec_mode = "off"
 
     def _stop_recording(self, now: float) -> None:
         if self._rec is None:
@@ -401,6 +431,7 @@ class DesktopRuntime:
                 time.sleep(0.2)
 
     def step(self) -> None:
+        self._drain_runtime_requests()
         self._tracking_requests()
         self.reload_model()
         if self._stop.is_set():
@@ -438,6 +469,23 @@ class DesktopRuntime:
             fps=float(self.source.fps), detect_ms=float(detect_ms), actions=actions,
             model_status=self.model_status, tracking=tracking, recent=self.recent,
             rec=self._rec_view(frame.t)))
+
+    def request(self, command: RuntimeRequest):
+        if self._stop.is_set():
+            return False
+        self._runtime_requests.put(command)
+        return True
+
+    def _drain_runtime_requests(self):
+        while not self._runtime_requests.empty():
+            command = self._runtime_requests.get_nowait()
+            if command.kind == "activate_model":
+                previous = self.model_store, self._model_token, self._attempted_model_token
+                self.model_store = Path(command.path)
+                self._attempted_model_token = None
+                self._model_token = None
+                if not self.reload_model(force=True):
+                    self.model_store, self._model_token, self._attempted_model_token = previous
 
     def reload_model(self, *, force=False) -> bool:
         """Runtime thread only, at a frame boundary. A bad update keeps the live recognizer."""
@@ -521,6 +569,9 @@ def main(argv=None) -> int:
     updater = Updater(info, paths.frozen)
     updater.start()
     settings = load(schema(), paths.config_dir)
+    default_store = paths.data_dir / "models" / "personal"
+    if args.tcn_model is None and args.tcn_store is None and (default_store / "active.json").is_file():
+        args.tcn_store, args.tcn_mode = default_store, "direct"
     try:
         source = ReplayInput(args.replay) if args.replay else CameraInput(
             settings, args.hand_model or default_hand_model(paths), args.source)
@@ -545,7 +596,9 @@ def main(argv=None) -> int:
     from manux.platform import hotkeys
     from manux.platform.tray import QtTray
     from manux.ui.bridge import run
-    tc = TrainingCenterService(paths.config_dir, paths.data_dir, paths.recordings_dir, model_path=args.tcn_model)
+    tc = TrainingCenterService(paths.config_dir, paths.data_dir, paths.recordings_dir, model_path=args.tcn_model,
+                               specs=training_specs(), on_ready=lambda event: runtime.request(
+                                   RuntimeRequest("activate_model", event["store"])))
     return run(runtime, settings, paths, tray=not args.no_tray, screenshot=args.screenshot,
                services={
                    "pointer_axes": pointer_axes,

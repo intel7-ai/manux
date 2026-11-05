@@ -96,6 +96,19 @@ def read_bindings(path: Path | None):
     return data
 
 
+def training_specs():
+    """Gesture/phase metadata for the external trainer; actions stay in bindings."""
+    result = {}
+    for module, _ in _FEATURES:
+        mode = module.ID
+        for gid, phases in module.GESTURE_PHASES.items():
+            if phases == frozenset({"tap"}):
+                result[gid] = {"kind": "tap", "modes": [mode], "point": "none"}
+            elif phases == frozenset({"begin", "hold", "end"}):
+                result[gid] = {"kind": "span", "modes": [mode], "point": "index" if mode == "pointer" else "palm"}
+    return result
+
+
 def replay_snapshots(engine: Engine, path: Path) -> Iterator[Snapshot]:
     recording = read(path)
     if not recording.complete or recording.bad_lines:

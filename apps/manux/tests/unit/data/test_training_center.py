@@ -95,7 +95,7 @@ def test_dataset_summary_and_gesture_rows_with_v04_held_out_results(tmp_path: Pa
     rows = gesture_rows(summary, report)
     assert [r["key"] for r in rows] == list(DISPLAY_KEYS)
     by_key = {r["key"]: r for r in rows}
-    assert by_key["thumb_ring"]["score_text"] == "인식 90% (규칙 60%)"
+    assert by_key["thumb_ring"]["score_text"] == "인식 90% (이전 기준 60%)"
     assert by_key["thumb_ring"]["can_train"] is True
     assert by_key["none"]["can_train"] is False
     assert "오작동 0.2회/분" in by_key["none"]["score_text"]

@@ -23,9 +23,14 @@ try {
     $info = [ordered]@{ version = $Version; pack_id = $packId; channel = $channel; updates = $updates; source_sha = $SourceSha }
     [IO.File]::WriteAllText((Join-Path $root "build/build_info.json"), ($info | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
 
-    uv run --locked --python 3.12 --extra ui --extra vision --extra package pyinstaller --noconfirm --clean `
+    uv run --locked --python 3.12 --extra ui --extra vision --extra ml --extra train --extra hub --extra package pyinstaller --noconfirm --clean `
         --distpath build/dist --workpath build/work packaging/manux.spec
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
+    uv run --locked --python 3.12 --extra ui --extra vision --extra ml --extra train --extra hub --extra package pyinstaller --noconfirm --clean `
+        --distpath build/dist --workpath build/worker-work packaging/worker.spec
+    if ($LASTEXITCODE -ne 0) { throw "Worker PyInstaller failed" }
+    New-Item -ItemType Directory -Force build/dist/MANUX/worker | Out-Null
+    Get-ChildItem -LiteralPath build/dist/MANUXWorker | Copy-Item -Destination build/dist/MANUX/worker -Recurse -Force
     if ($SkipPack) { return }
     vpk pack --packId $packId --packVersion $Version --packDir build/dist/MANUX --mainExe MANUX.exe `
         --packTitle $title --packAuthors "MANUX team" --icon packaging/manux.ico `

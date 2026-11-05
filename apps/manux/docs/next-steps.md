@@ -4,6 +4,13 @@
 > 먼저 [AGENTS.md](../AGENTS.md) → [architecture.md](architecture.md) → [contracts.md](contracts.md) → [decisions.md](decisions.md)를 읽는다.
 > 이 브랜치(`scrum-105-next-steps`)에는 이 문서와 함께 **아직 preview에 없는 작업 1번**이 들어 있다.
 
+## 최신 보충: 학습 센터 연결 (2026-11-05)
+
+- 기준 preview `589cc9a`: #69 직접 TCN/모델 수명주기, #70 설치본·업데이트, #68 HF CLI가 병합됐다. 아래 초기 계획 표는 당시 기록이다.
+- `scrum-105-training-center`: Gemini의 학습 센터를 보존하고 프로필·train/eval·재귀 데이터 탐색, 별도 worker, 통합 학습→독립 eval→원자적 설치→앱 적용, 사용자별 HF 업로드/팀 다운로드를 연결한다. [사용 순서](learning-center.md).
+- 직접 재학습 적용은 pinch tap/span 범위다. 다른 과제는 수집·공유한다. 사용자 정의 카탈로그·바인딩 편집·기본 모델 릴리스·실제 기기 시험은 남아 있다.
+- 합성/Qt/설치 worker 검증과 실제 사용자 인식률은 구분한다. HF 권한은 사용자의 토큰으로 연결 확인한다.
+
 ## 1. 지금 상태 (preview `8bbff09`)
 
 - S0~S5 병합: settings·capture·tracking·features(pointer/pinch/motion)·actions·output(windows/practice/null)·engine·perception(local3d)·ml·data(녹화 읽기/쓰기, 안내 녹화)·tcn_gate·도구(train/evaluate/collect).

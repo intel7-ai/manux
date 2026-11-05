@@ -83,10 +83,17 @@ class _NullTrainingService:
     }
     names: Dict[str, str] = {}
     all_names: Dict[str, str] = {}
+    profile = "local"
+    repo = "se4nchoi/manux-datasets"
+    split = "train"
+    preset_name = "pinch"
 
     def __init__(self, config_dir: Path) -> None:
         self.exports_dir = Path(config_dir) / "exports"
         self.job = _NullJob()
+        self.hub_job = _NullJob()
+
+    def close(self): pass
 
     def has_task(self, key: str) -> bool:
         return True
@@ -794,13 +801,19 @@ class Bridge(QObject):
         if mode not in ("off", "guided", "free") or (mode != "off" and (self.stage_name != "main" or self.use_index_pointer)):
             return
         if mode != "off":
+            if self.training_job.running or self.tc.hub_job.running:
+                return
+            if not getattr(self.tc, "profile", ""):
+                self.training_note = "학습 센터에서 내 별명을 먼저 저장하세요."
+                self.trainingChanged.emit()
+                return
             self._pause()
         self.rec_mode = mode
         self.rec_focus = ""
         self.rec_plan = None
         self.rec_paused = False
         if hasattr(self.runtime, "set_recording"):
-            self.runtime.set_recording(mode, "", None)
+            self.runtime.set_recording(mode, "", None, profile=self.tc.profile or "local", split=self.tc.split)
         self.stateChanged.emit()
 
     @Property(str, notify=stateChanged)
@@ -820,7 +833,7 @@ class Bridge(QObject):
 
     @Slot()
     def closeTraining(self):
-        if not self.training_job.running:
+        if not self.training_job.running and not self.tc.hub_job.running:
             self.training_timer.stop()
 
     @Slot()
@@ -838,6 +851,7 @@ class Bridge(QObject):
                 minutes = sum(f.get("seconds", 0) for f in files) / 60.0
                 valid = sum(f.get("valid_frames", 0) for f in files)
                 data = f"녹화 {len(files)}개 · {minutes:.0f}분 · 3D 관절 {100 * valid / max(1, frames):.0f}%"
+                data += f" · train {sum(f.get('split') == 'train' for f in files)} / eval {sum(f.get('split') == 'eval' for f in files)}"
                 waiting = len(summary["files"]) - len(files)
                 if waiting:
                     data += f" · 다음 학습에 포함 {waiting}개 (끝나지 않았거나 받는 중)"
@@ -855,6 +869,9 @@ class Bridge(QObject):
 
     @Slot()
     def startTraining(self):
+        if self.rec_mode != "off" or self.tc.hub_job.running:
+            return
+        self._pause()
         if self.training_job.start():
             self.training_note = ""
             self._training_was_running = True
@@ -868,14 +885,14 @@ class Bridge(QObject):
 
     @Slot(str)
     def trainSelectedGesture(self, key):
-        if self.rec_mode != "off" or self.training_job.running:
+        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
             return
         task = self.tc.task_info(key)
         if task is None or task.get("label") == "none":
             return
         self._pause()
         if self.training_job.start(gestures=[key]):
-            self.training_note = str(task.get("name", key)) + " 선택 학습을 시작합니다."
+            self.training_note = str(task.get("name", key)) + "을 포함해 통합 재학습합니다. 기존 동작도 유지합니다."
             self._training_was_running = True
             self.training_timer.start()
             self.trainingChanged.emit()
@@ -915,7 +932,11 @@ class Bridge(QObject):
 
     @Slot(str, result=bool)
     def focusRecord(self, key):
-        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running:
+        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+            return False
+        if not self.tc.profile:
+            self.training_note = "내 별명을 먼저 저장한 뒤 녹화를 시작하세요."
+            self.trainingChanged.emit()
             return False
         if key and not self.tc.has_task(key):
             return False
@@ -925,7 +946,11 @@ class Bridge(QObject):
         return True
 
     def _start_focused_plan(self, key: str, plan: Dict[str, Any]) -> None:
-        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running:
+        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+            return
+        if not self.tc.profile:
+            self.training_note = "학습 센터에서 내 별명을 먼저 저장하세요."
+            self.trainingChanged.emit()
             return
         self._pause()
         if self.use_index_pointer:
@@ -933,10 +958,14 @@ class Bridge(QObject):
         self.rec_mode, self.rec_focus, self.rec_plan = "guided", key, copy.deepcopy(plan)
         self.rec_paused = False
         if hasattr(self.runtime, "set_recording"):
-            self.runtime.set_recording("guided", key, self.rec_plan)
+            self.runtime.set_recording("guided", key, self.rec_plan, profile=self.tc.profile, split=self.tc.split)
         self.stateChanged.emit()
 
     def _training_tick(self) -> None:
+        hub_state = self.tc.hub_job.snapshot()
+        if hub_state.get("finished") and hub_state.get("finished") != getattr(self, "_hub_finished", None):
+            self._hub_finished = hub_state["finished"]
+            self.refreshTraining()
         job = self.training_job
         if self._training_was_running and not job.running:
             self._training_was_running = False
@@ -944,7 +973,7 @@ class Bridge(QObject):
             if s.get("error"):
                 self.training_note = str(s["error"])
             else:
-                self.training_note = "학습 끝! 새 모델의 성적을 보여 드려요."
+                self.training_note = "별도 평가를 통과해 모델을 설치했습니다. 앱 적용 상태는 메인 화면에서 확인하세요."
                 self.stateChanged.emit()
             self.refreshTraining()
         self.trainingChanged.emit()
@@ -999,6 +1028,55 @@ class Bridge(QObject):
     @Property(bool, notify=trainingChanged)
     def trainingRunning(self):
         return bool(self.training_job.running)
+
+    @Property(str, notify=trainingChanged)
+    def trainingProfile(self):
+        return self.tc.profile
+
+    @Property(str, notify=trainingChanged)
+    def hubRepo(self):
+        return self.tc.repo
+
+    @Property(str, notify=trainingChanged)
+    def recordingSplit(self):
+        return self.tc.split
+
+    @Slot(str)
+    def setRecordingSplit(self, split):
+        if split in ("train", "eval") and self.rec_mode == "off":
+            self.tc.split = split
+            self.refreshTraining()
+            self.trainingChanged.emit()
+
+    @Slot(str, str, str)
+    def saveHubSettings(self, profile, repo, token):
+        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+            return
+        try:
+            self.tc.configure(profile, repo, token)
+            self.training_note = "별명·허브 설정을 저장했습니다. 연결 확인을 눌러 주세요."
+        except (ValueError, OSError):
+            self.training_note = "별명(영문·숫자·_·- 1~32자)과 저장소 주소를 확인하세요."
+        self.trainingChanged.emit()
+
+    @Slot(str)
+    def runHub(self, action):
+        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+            return
+        if action not in ("status", "upload", "download"):
+            return
+        self.tc.hub_action(action)
+        self.training_timer.start()
+        self.trainingChanged.emit()
+
+    @Property(bool, notify=trainingChanged)
+    def hubRunning(self):
+        return self.tc.hub_job.running
+
+    @Property(str, notify=trainingChanged)
+    def hubStatus(self):
+        state = self.tc.hub_job.snapshot()
+        return str(state.get("error") or state.get("stage") or "내 별명과 HF 접근 토큰을 저장한 뒤 연결을 확인하세요.")
 
     @Property(str, notify=trainingChanged)
     def trainingStage(self):
@@ -1486,6 +1564,8 @@ class Bridge(QObject):
         rec_view = dict(view.rec) if view.rec is not None else None
         if rec_view != self.rec_view:
             self.rec_view = rec_view
+            if rec_view is not None and rec_view.get("mode") == "off":
+                self.rec_mode = "off"
             self.stateChanged.emit()
         if self.tracking_view is not None and view.tracking is not None and view.tracking != self.tracking_view:
             self._set_tracking_view(dict(view.tracking))
@@ -1578,6 +1658,7 @@ class Bridge(QObject):
         self._closed_qml = True
         self.timer.stop()
         self.training_timer.stop()
+        self.tc.close()
         if self.hotkeys is not None:
             self.hotkeys.stop()
         for root in self.engine.rootObjects():

@@ -18,7 +18,7 @@ v0.3과 같은 화면(`ui/qml/dashboard.qml`)이 v0.4 엔진 위에서 돕니다
 
 ```powershell
 cd apps/manux
-uv run --python 3.12 --extra ui --extra vision python -m manux
+uv run --locked --python 3.12 --extra ui --extra vision --extra train --extra hub python -m manux
 ```
 
 - 웹캠 없이 화면 확인: `uv run --python 3.12 --extra ui python -m manux --replay <녹화.jsonl.gz> --no-windows-input`
@@ -27,7 +27,8 @@ uv run --python 3.12 --extra ui --extra vision python -m manux
 - 손 모델은 `models/hand_landmarker.task`(번들)를 씁니다. 다른 파일은 `--hand-model`로 지정합니다.
 - 설치본 없이 빠르게 점검: `python -m manux --self-check out.json` (번들 모델·MediaPipe·OpenCV·Qt를 확인하고 결과를 씁니다)
 - 트래킹 측정: 왼쪽 패널의 **트래킹 측정 (클릭 없음)**. v0.3과 같은 표적·수치이며, 측정 중에는 검지 포인터로 바꾸고 클릭을 끕니다. 결과는 `%APPDATA%\MANUX-dev\v04\logs\tracking-*.csv`(설치본은 해당 앱의 `logs`)에 저장되고 최근 결과 목록에 나옵니다. 실제 Windows 출력이 있어야 합니다(`--no-windows-input`이면 측정하지 않음).
-- 아직 없는 것: 미리보기 위 손가락 번호 그리기, 학습 센터 화면.
+- [학습 센터](docs/learning-center.md): 별명·train/eval 녹화, HF 연결/본인 업로드/팀 다운로드, 통합 재학습·독립 평가·검증 후 앱 적용. 설치본에는 별도 worker가 포함됩니다.
+- 아직 없는 것: 미리보기 위 손가락 번호 그리기, 사용자 정의 카탈로그·바인딩 편집 화면.
 
 ## 시험용 설치파일 (MANUX Preview)
 

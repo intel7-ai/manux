@@ -1032,9 +1032,25 @@ ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: uploadConfirm
+        objectName: "uploadConfirm"
+        anchors.centerIn: parent
+        width: Math.min(540, window.width - 40)
+        title: "내 녹화 공유"
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        contentItem: TextLabel {
+            text: dashboard.trainingProfile + " 별명의 완료된 손 관절 기록을\n" + dashboard.hubRepo
+                  + " 에 올립니다.\n학습·평가 라벨을 포함하며 영상은 포함하지 않습니다."
+            wrapMode: Text.Wrap
+        }
+        onAccepted: dashboard.runHub("upload")
+    }
     // Training center (data/training_center.py): data per gesture, scores, focused recording, training, export
     Popup {
         id: trainingCenter
+        objectName: "trainingCenter"
         anchors.centerIn: parent
         width: Math.min(1040, window.width - 40)
         height: Math.min(820, window.height - 40)
@@ -1050,10 +1066,13 @@ ApplicationWindow {
             RowLayout {
                 Layout.fillWidth: true
                 ColumnLayout {
+                    Layout.fillWidth: true
                     spacing: 2
                     TextLabel { text: "학습 센터"; font.pixelSize: 22; font.bold: true }
                     TextLabel {
-                        text: "녹화 → 학습 → 동작별 성적 확인 → 부족한 동작 집중 녹화 → 다시 학습 → 내보내기"
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        text: "내 별명 설정 → 학습·평가 따로 녹화 → 팀 공유 → 통합 학습 → 검증 통과 후 앱 적용"
                         font.pixelSize: 12; color: window.muted
                     }
                 }
@@ -1061,7 +1080,40 @@ ApplicationWindow {
                 ActionButton { text: "새로고침"; enabled: dashboard.trainingBusy === ""; onClicked: dashboard.refreshTraining() }
                 ActionButton { text: "닫기"; onClicked: trainingCenter.close() }
             }
+            GridLayout {
+                Layout.fillWidth: true
+                columns: trainingCenter.width < 900 ? 2 : 4
+                TextLabel { text: "내 별명 (실명 제외)"; font.pixelSize: 12 }
+                TextField { id: captureAlias; Layout.fillWidth: true; Layout.minimumWidth: 0; text: dashboard.trainingProfile; placeholderText: "영문·숫자 별명" }
+                TextLabel { text: "이번 녹화"; font.pixelSize: 12 }
+                ComboBox {
+                    model: ["학습용 train", "별도 평가용 eval"]
+                    currentIndex: dashboard.recordingSplit === "eval" ? 1 : 0
+                    enabled: !dashboard.recActive
+                    onActivated: dashboard.setRecordingSplit(currentIndex === 1 ? "eval" : "train")
+                }
+                TextLabel { text: "HF Dataset"; font.pixelSize: 12 }
+                TextField { id: hubRepository; Layout.fillWidth: true; Layout.minimumWidth: 0; text: dashboard.hubRepo; placeholderText: "소유자/저장소" }
+                TextField { id: hubCredential; Layout.fillWidth: true; Layout.minimumWidth: 0; echoMode: TextInput.Password; placeholderText: "접근 토큰 (저장된 값 유지 시 비움)" }
+                ActionButton {
+                    text: "설정 저장"
+                    enabled: !dashboard.recActive && !dashboard.trainingRunning && !dashboard.hubRunning
+                    onClicked: { dashboard.saveHubSettings(captureAlias.text, hubRepository.text, hubCredential.text); hubCredential.clear() }
+                }
+            }
             RowLayout {
+                Layout.fillWidth: true
+                ActionButton { text: "연결 확인"; enabled: !dashboard.hubRunning && !dashboard.recActive; onClicked: dashboard.runHub("status") }
+                ActionButton { text: "내 녹화 업로드"; enabled: !dashboard.hubRunning && !dashboard.recActive && !dashboard.trainingRunning; onClicked: uploadConfirm.open() }
+                ActionButton { text: "팀 데이터 받기"; enabled: !dashboard.hubRunning && !dashboard.recActive && !dashboard.trainingRunning; onClicked: dashboard.runHub("download") }
+                TextLabel { Layout.fillWidth: true; text: dashboard.hubStatus; wrapMode: Text.Wrap; font.pixelSize: 11; color: window.muted }
+            }
+            TextLabel {
+                Layout.fillWidth: true
+                text: "완료된 손 관절 녹화만 공유합니다. 영상은 포함하지 않습니다. 평가용은 학습과 다른 시도로 녹화하세요."
+                wrapMode: Text.Wrap; font.pixelSize: 11; color: window.muted
+            }
+            Flow {
                 Layout.fillWidth: true
                 spacing: 8
                 Chip { text: dashboard.trainingData !== "" ? dashboard.trainingData : "녹화 읽는 중…" }
@@ -1070,7 +1122,6 @@ ApplicationWindow {
                     visible: dashboard.trainingStorage !== "" && !dashboard.trainingStorageWarn
                     text: dashboard.trainingStorage
                 }
-                Item { Layout.fillWidth: true }
                 TextLabel { visible: dashboard.trainingBusy !== ""; text: dashboard.trainingBusy; font.pixelSize: 12; color: window.muted }
             }
             Rectangle {
@@ -1092,7 +1143,7 @@ ApplicationWindow {
             }
             TextLabel {
                 Layout.fillWidth: true
-                text: "인식 = 학습에 쓰지 않은 자세에서 맞힌 비율 (처음 보는 상황에서의 실력) · 학습 = 학습한 데이터를 맞힌 비율 · 괄호는 규칙만 썼을 때"
+                text: "인식 = 학습에 쓰지 않은 평가의 적중 비율 · 검증을 통과한 모델만 앱에 적용됩니다."
                 font.pixelSize: 11; color: window.muted; wrapMode: Text.Wrap
             }
             RowLayout {
@@ -1186,15 +1237,15 @@ ApplicationWindow {
                                 }
                                 ColumnLayout {
                                     ActionButton {
-                                        text: "이 동작만 학습"
+                                        text: "이 동작 포함 재학습"
                                         visible: row.modelData.can_train
                                         accent: true
-                                        enabled: !dashboard.trainingRunning && !dashboard.recActive && dashboard.trainingBusy === ""
+                                        enabled: !dashboard.trainingRunning && !dashboard.hubRunning && !dashboard.recActive && dashboard.trainingBusy === ""
                                         onClicked: dashboard.trainSelectedGesture(row.modelData.key)
                                     }
                                     TextLabel {
                                         visible: !row.modelData.can_train
-                                        text: "선택 학습의 공통 오답 자료"
+                                        text: row.modelData.label === "none" ? "공통 중립 자료" : "녹화·공유 지원"
                                         font.pixelSize: 11
                                         color: window.muted
                                     }
@@ -1224,7 +1275,7 @@ ApplicationWindow {
                     TextLabel {
                         Layout.fillWidth: true
                         text: dashboard.trainingStage !== "" ? dashboard.trainingStage
-                              : "학습: 자세 하나씩 빼고 평가한 뒤 전체로 최종 모델을 만들어요 (CPU로 몇 분)"
+                              : "통합 학습 → 별도 eval 검증 → 통과 시 앱 적용 (CPU)"
                         font.pixelSize: 13; wrapMode: Text.Wrap
                     }
                     Rectangle {
@@ -1271,7 +1322,7 @@ ApplicationWindow {
                 ActionButton {
                     text: dashboard.trainingRunning ? "학습 멈춤" : "전체 통합 학습"
                     accent: !dashboard.trainingRunning
-                    enabled: dashboard.trainingBusy === "" && !dashboard.recActive
+                    enabled: dashboard.trainingBusy === "" && !dashboard.recActive && !dashboard.hubRunning
                     onClicked: dashboard.trainingRunning ? dashboard.stopTraining() : dashboard.startTraining()
                 }
                 ActionButton {

@@ -7,11 +7,11 @@ gesture training) into the v0.4 `data` layer (`manux.data.training_center`). Pur
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
-import subprocess
-import sys
-import threading
+import re
+import tempfile
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -24,6 +24,8 @@ from manux.data import capture_plan as plans
 from manux.data.catalog import ALL_TASKS, BY_KEY, CATEGORIES, DISPLAY_KEYS, NONE, TASKS, is_free
 from manux.data.recorder import public_source
 from manux.data.recording import read
+from manux.core.contracts import RecordingIdentity
+from manux.data.worker_job import WorkerJob
 
 GOAL_REPS = 30            # repetitions per gesture worth aiming for (3 postures x 10)
 GOAL_POSTURES = 3
@@ -60,7 +62,7 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
     if cache.exists():
         try:
             data = json.loads(cache.read_text(encoding="utf-8"))
-            if data.get("summary_version") == 3 and data.get("size") == stat.st_size and data.get("mtime") == int(stat.st_mtime):
+            if data.get("summary_version") == 4 and data.get("size") == stat.st_size and data.get("mtime") == int(stat.st_mtime):
                 return data
         except Exception:
             pass
@@ -103,11 +105,14 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
         coverage.setdefault(task, {})[ck] = {"reps": 0, "seconds": value}
     pc, cam_note = public_source(meta)
     data = {
-        "summary_version": 3,
+        "summary_version": 4,
         "file": path.name,
         "size": stat.st_size,
         "mtime": int(stat.st_mtime),
         "mode": meta.get("mode"),
+        "profile": meta.get("person") or meta.get("profile") or "",
+        "split": meta.get("split") or "unclassified",
+        "preset": meta.get("preset") or "pinch",
         "created": meta.get("created"),
         "pc": pc,
         "camera": cam_note,
@@ -126,9 +131,9 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
     return data
 
 
-def dataset_summary(rec_dir: Path) -> Dict[str, Any]:
+def dataset_summary(rec_dir: Path, *, profile=None, split=None) -> Dict[str, Any]:
     rec_dir = Path(rec_dir)
-    files = sorted(rec_dir.glob("*.jsonl.gz")) if rec_dir.is_dir() else []
+    files = sorted(rec_dir.rglob("*.jsonl.gz")) if rec_dir.is_dir() else []
     per: Dict[str, Dict[str, Any]] = {k: {"reps": 0, "postures": {}, "minutes": 0.0} for k in NAMES}
     out_files = []
     coverage: Dict[str, Dict[str, Dict[str, Any]]] = {k: {} for k in NAMES}
@@ -137,6 +142,8 @@ def dataset_summary(rec_dir: Path) -> Dict[str, Any]:
             s = _summarise_file(p)
         except Exception as exc:
             out_files.append({"file": p.name, "error": str(exc)})
+            continue
+        if (profile is not None and s.get("profile") != profile) or (split is not None and s.get("split") != split):
             continue
         out_files.append(s)
         for task, conditions in s.get("coverage", {}).items():
@@ -234,7 +241,22 @@ def model_report(model: Path) -> Optional[Dict[str, Any]]:
     if not (model.is_file() and info_path.is_file()) and not entries:
         return None
     if model.is_file() and info_path.is_file():
-        info = _normalise_card_metrics(json.loads(info_path.read_text(encoding="utf-8")))
+        raw = json.loads(info_path.read_text(encoding="utf-8"))
+        validation = model.parent / "validation.json"
+        if validation.is_file():
+            report = json.loads(validation.read_text(encoding="utf-8"))
+            candidate, baseline = report["candidate"], report["baseline"]
+            pg = {}
+            for name, metric in candidate["per_gesture"].items():
+                total = metric["attempts"]
+                pg[name] = {"recognised": metric["tcn_hits"], "total": total,
+                            "rate": metric["tcn_hits"] / total,
+                            "rules_rate": baseline["per_gesture"].get(name, {}).get("tcn_hits", 0) / total}
+            pg[NONE] = {"misfires_per_min": candidate["tcn_misfires_per_minute"],
+                        "rules_misfires_per_min": baseline["tcn_misfires_per_minute"]}
+            raw["per_gesture"] = pg
+            raw["evaluation_source"] = "independent_eval"
+        info = _normalise_card_metrics(raw)
         info["mtime"] = model.stat().st_mtime
     else:
         info = {"classes": [NONE], "trained": "선택 학습 전용", "data": [], "per_gesture": {}, "mtime": 0.0}
@@ -294,7 +316,7 @@ def gesture_rows(summary: Mapping[str, Any], report: Optional[Mapping[str, Any]]
             score = row["misfires_per_min"]
             row["score_text"] = "아직 평가 없음" if score is None else f"오작동 {score:.1f}회/분"
             if score is not None and row["rules_misfires_per_min"] is not None:
-                row["score_text"] += f" (규칙 {row['rules_misfires_per_min']:.1f})"
+                row["score_text"] += f" (이전 기준 {row['rules_misfires_per_min']:.1f})"
         else:
             data_ok = row["reps"] >= GOAL_REPS and row["postures"] >= GOAL_POSTURES
             row["data_text"] = f"{row['reps']}회 / 목표 {GOAL_REPS}회 · 자세 {row['postures']}/{GOAL_POSTURES}"
@@ -307,11 +329,11 @@ def gesture_rows(summary: Mapping[str, Any], report: Optional[Mapping[str, Any]]
                 advice.append(f"인식률이 낮아요 ({row['rate'] * 100:.0f}%): 이 동작을 집중 녹화하세요")
             row["score_text"] = "아직 평가 없음" if row["rate"] is None else f"인식 {row['rate'] * 100:.0f}%"
             if row["rate"] is not None and row["rules_rate"] is not None:
-                row["score_text"] += f" (규칙 {row['rules_rate'] * 100:.0f}%)"
+                row["score_text"] += f" (이전 기준 {row['rules_rate'] * 100:.0f}%)"
         if row["train_accuracy"] is not None:
             row["fit_text"] = f"학습 {row['train_accuracy'] * 100:.0f}%"
         else:
-            row["fit_text"] = "학습 전"
+            row["fit_text"] = "별도 평가" if current.get("evaluation_source") else "학습 점수 미측정"
         if stale:
             advice.append("새 녹화가 있어요: 다시 학습하세요")
         if report is None:
@@ -326,204 +348,69 @@ def gesture_rows(summary: Mapping[str, Any], report: Optional[Mapping[str, Any]]
     return rows
 
 
-def terminate_training_process(proc: subprocess.Popen) -> None:
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), check=False)
-    else:
-        proc.terminate()
-
-
-def _finished_recordings(rec_dir: Path) -> Tuple[List[Path], List[str]]:
-    good: List[Path] = []
-    skipped: List[str] = []
-    if not Path(rec_dir).is_dir():
-        return good, skipped
-    for path in sorted(Path(rec_dir).glob("*.jsonl.gz")):
+def recording_sets(folder: Path, identity: RecordingIdentity):
+    """Team train data and the current user's separate eval trials, one preset, no duplicates."""
+    train, evaluation, seen = [], [], set()
+    for path in sorted(Path(folder).rglob("*.jsonl.gz")):
         try:
             rec = read(path)
-            if rec.complete and not rec.bad_lines and rec.meta.get("split") != "eval":
-                good.append(path)
-            elif not rec.complete or rec.bad_lines:
-                skipped.append(path.name)
-        except Exception:
-            skipped.append(path.name)
-    return good, skipped
+            if not rec.complete or rec.bad_lines or rec.meta.get("preset", "pinch") != identity.preset:
+                continue
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if digest in seen:
+                continue
+            seen.add(digest)
+            split = rec.meta.get("split")
+            if split == "train":
+                train.append(path)
+            elif split == "eval" and str(rec.meta.get("person") or rec.meta.get("profile") or "").lower() == identity.profile.lower():
+                evaluation.append(path)
+        except (OSError, ValueError, TypeError):
+            continue
+    return train, evaluation
 
 
-class TrainingJob:
-    """Runs `tools/train_tcn.py` in a background process (keeping torch out of the app process)."""
+def _atomic_text(path: Path, text: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as file:
+            temporary = Path(file.name)
+            file.write(text)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
-    def __init__(self, rec_dir: Path, model_path: Path, *,
-                 tools_dir: Optional[Path] = None, cache_dir: Optional[Path] = None) -> None:
+
+class TrainingJob(WorkerJob):
+    """Unified model training + separate validation + atomic installation in the worker."""
+
+    def __init__(self, rec_dir, model_path, *, tools_dir=None, cache_dir=None,
+                 specs=None, identity=None, store_dir=None, on_done=None):
+        model_path = Path(model_path)
+        super().__init__(model_path.parent / "jobs", on_done=on_done, tools_dir=tools_dir)
         self.rec_dir = Path(rec_dir)
-        self.model_path = Path(model_path)
-        self.tools_dir = Path(tools_dir) if tools_dir is not None else Path(__file__).resolve().parents[3] / "tools"
-        self.cache_dir = Path(cache_dir) if cache_dir is not None else self.model_path.parent.parent / "features"
-        self.proc: Optional[subprocess.Popen] = None
-        self.state: Dict[str, Any] = {"running": False}
-        self._lock = threading.Lock()
+        self.model_path = model_path
+        self.cache_dir = Path(cache_dir) if cache_dir else model_path.parent / "features"
+        self.store_dir = Path(store_dir) if store_dir else model_path.parent / "personal"
+        self.specs, self.identity = specs or {}, identity
 
-    @property
-    def running(self) -> bool:
-        return bool(self.state.get("running"))
-
-    def start(self, epochs: int = 20, gestures: Optional[Sequence[str]] = None) -> bool:
-        if self.running:
-            return False
-        if gestures is not None:
-            if not gestures or any(key not in BY_KEY or BY_KEY[key].label == NONE for key in gestures):
-                raise ValueError("학습할 동작을 선택하세요. 중립은 오답 자료로 함께 사용됩니다.")
-        recordings, skipped = _finished_recordings(self.rec_dir)
-        if not recordings:
-            with self._lock:
-                self.state = {
-                    "running": False,
-                    "error": "학습할 완료된 녹화가 없습니다. 먼저 안내 녹화를 진행하세요.",
-                    "skipped": skipped,
-                }
-            return False
-        script = self.tools_dir / "train_tcn.py"
-        target_key = gestures[0] if gestures else ""
-        target_label = BY_KEY[target_key].label if target_key else ""
-        if target_label:
-            out_path = self.model_path.parent / "gestures" / f"{target_label}.onnx"
-        else:
-            out_path = self.model_path
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        args = [
-            sys.executable,
-            str(script),
-            *(str(p) for p in recordings),
-            "--output",
-            str(out_path),
-            "--epochs",
-            str(epochs),
-            "--cache-dir",
-            str(self.cache_dir),
-        ]
-        if target_label:
-            args.extend(["--classes", NONE, target_label])
-        env = dict(os.environ, PYTHONIOENCODING="utf-8")
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        self.proc = subprocess.Popen(
-            args,
-            cwd=str(self.tools_dir.parent),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=env,
-            creationflags=flags,
-        )
-        with self._lock:
-            self.state = {
-                "running": True,
-                "stage": ("선택 동작 학습 · " + NAMES.get(target_key, target_key)) if target_key else "데이터 읽는 중 및 평가·최종 학습 중",
-                "target": target_key,
-                "fold": 0,
-                "folds": 0,
-                "epoch": 0,
-                "epochs": epochs,
-                "progress": 0.15,
-                "started": time.time(),
-                "skipped": skipped,
-                "log": [],
-            }
-        threading.Thread(target=self._read, args=(target_label, out_path), daemon=True).start()
-        return True
-
-    def _read(self, target_label: str, out_path: Path) -> None:
-        assert self.proc is not None and self.proc.stdout is not None
-        for line in self.proc.stdout:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                ev = json.loads(line)
-            except ValueError:
-                with self._lock:
-                    self.state["log"] = (self.state.get("log", []) + [line])[-20:]
-                continue
-            if isinstance(ev, dict) and "event" in ev:
-                self._apply(ev)
-        code = self.proc.wait()
-        with self._lock:
-            self.state["running"] = False
-            if code == 0:
-                if target_label:
-                    self._record_specialist(target_label, out_path)
-                self.state["stage"] = "끝! 새 모델 저장됨"
-                self.state["progress"] = 1.0
-            elif not self.state.get("error"):
-                tail = " / ".join(self.state.get("log", [])[-3:])
-                self.state["error"] = "학습이 실패했어요" + (f": {tail}" if tail else "")
-            self.state["finished"] = time.time()
-
-    def _record_specialist(self, label: str, out_path: Path) -> None:
-        bank_dir = out_path.parent
-        entries = read_bank(bank_dir)
-        entries[label] = {"model": out_path.name, "card": out_path.with_suffix(".json").name}
-        manifest = bank_dir / "manifest.json"
-        manifest.write_text(
-            json.dumps({"schema": SPECIALIST_SCHEMA, "models": entries}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        if not self.model_path.exists():
-            shutil.copy2(out_path, self.model_path)
-            shutil.copy2(out_path.with_suffix(".json"), self.model_path.with_suffix(".json"))
-
-    def _apply(self, ev: Dict[str, Any]) -> None:
-        with self._lock:
-            s = self.state
-            kind = ev.get("event")
-            if kind == "gesture_start":
-                s["gesture_index"], s["gesture_count"] = ev["index"], ev["count"]
-                s["target"] = ev["target"]
-                s["stage"] = "선택 동작 학습 · " + NAMES.get(ev["target"], ev["target"])
-            elif kind == "loaded":
-                s["folds"] = int(ev.get("folds", 0))
-                s["windows"] = ev.get("windows")
-                s["stage"] = f"데이터 {ev.get('windows')}개 구간"
-            elif kind == "fold_start":
-                s["fold"] = int(ev.get("fold", 0))
-                s["stage"] = f"평가 학습 {s['fold']}/{s['folds']} (자세 {ev.get('posture')} 빼고)"
-                s["epoch"], s["losses"] = 0, []
-            elif kind == "final_start":
-                s["fold"] = s["folds"] + 1
-                s["stage"] = "최종 모델 학습"
-                s["epoch"], s["losses"] = 0, []
-            elif kind == "epoch":
-                s["epoch"], s["loss"] = int(ev["epoch"]), float(ev["loss"])
-                s.setdefault("losses", []).append(float(ev["loss"]))
-            elif kind == "fold_result":
-                s.setdefault("results", []).append(ev)
-            elif kind == "done":
-                s["stage"] = "끝! 새 모델 저장됨"
-                s["per_gesture"] = ev.get("per_gesture")
-            elif kind == "skipped":
-                s.setdefault("skipped", []).append(ev.get("file"))
-            elif kind == "note":
-                s["log"] = (s.get("log", []) + [ev.get("text", "")])[-20:]
-            elif kind == "error":
-                s["error"] = ev.get("text")
-            steps = s["folds"] + 1
-            done = (max(0, s["fold"] - 1) + s["epoch"] / max(1, s["epochs"])) / max(1, steps)
-            s["progress"] = 1.0 if kind == "done" else round(min(0.99, done), 3)
-            if kind != "done" and s.get("gesture_count"):
-                s["progress"] = round((s["gesture_index"] - 1 + s["progress"]) / s["gesture_count"], 3)
-
-    def snapshot(self) -> Dict[str, Any]:
-        with self._lock:
-            return dict(self.state)
-
-    def stop(self) -> None:
-        if self.proc is not None and self.running:
-            with self._lock:
-                self.state["error"] = "학습 중단을 요청했습니다. 게시 전 모델은 적용되지 않습니다."
-            terminate_training_process(self.proc)
+    def start(self, epochs=20, gestures=None):
+        try:
+            identity = self.identity() if self.identity else RecordingIdentity("local")
+            if not self.specs:
+                raise ValueError("학습 가능한 동작 구성이 없습니다.")
+            if gestures is not None and (not gestures or any(k not in BY_KEY or BY_KEY[k].label == NONE for k in gestures)):
+                raise ValueError("학습할 동작을 선택하세요.")
+            return self.start_request({"kind": "train", "recordings_dir": str(self.rec_dir),
+                "profile": identity.profile, "preset": identity.preset, "mode": identity.preset if identity.preset != "trigger" else "pointer",
+                "store": str(self.store_dir), "cache_dir": str(self.cache_dir), "specs": self.specs,
+                "epochs": max(1, int(epochs)), "focus_label": BY_KEY[gestures[0]].label if gestures else ""})
+        except (ValueError, OSError) as error:
+            return self.fail(str(error))
 
 
 def export_package(model_path: Path, out_root: Path) -> Path:
@@ -538,6 +425,8 @@ def export_package(model_path: Path, out_root: Path) -> Path:
     if model_path.is_file() and model_path.with_suffix(".json").is_file():
         shutil.copy2(model_path, out / "gesture_tcn.onnx")
         shutil.copy2(model_path.with_suffix(".json"), out / "gesture_tcn.json")
+        if (model_path.parent / "validation.json").is_file():
+            shutil.copy2(model_path.parent / "validation.json", out / "validation.json")
     bank_dir = model_path.parent / "gestures"
     entries = read_bank(bank_dir)
     if entries:
@@ -587,14 +476,70 @@ class TrainingCenterService:
     """Service bundle injected into `ui.bridge.Bridge` by `desktop.py` so `ui` never imports `data`."""
 
     def __init__(self, config_dir: Path, data_dir: Path, recordings_dir: Path, *,
-                 model_path: Optional[Path] = None) -> None:
+                 model_path: Optional[Path] = None, specs=None, on_ready=None) -> None:
         self.config_dir = Path(config_dir)
         self.data_dir = Path(data_dir)
         self.recordings_dir = Path(recordings_dir)
         self.plans_path = plans.plans_file(self.config_dir)
         self.model_path = Path(model_path) if model_path is not None else self.data_dir / "models" / "gesture_tcn.onnx"
         self.exports_dir = self.data_dir / "exports"
-        self.job = TrainingJob(self.recordings_dir, self.model_path, cache_dir=self.data_dir / "features")
+        self.store_dir = self.data_dir / "models" / "personal"
+        self.profile = ""
+        self.split = "train"
+        self.preset_name = "pinch"
+        self.repo = "se4nchoi/manux-datasets"
+        self.preferences_path = self.config_dir / "training-center.json"
+        try:
+            saved = json.loads(self.preferences_path.read_text(encoding="utf-8"))
+            if not isinstance(saved, dict):
+                raise ValueError("invalid preferences")
+            self.profile = str(saved.get("profile", "")).lower()
+            self.repo = str(saved.get("repo", self.repo))
+        except (OSError, ValueError, TypeError):
+            pass
+        self.job = TrainingJob(self.recordings_dir, self.model_path, cache_dir=self.data_dir / "features",
+                               specs=specs, identity=self.identity, store_dir=self.store_dir, on_done=on_ready)
+        self.hub_job = WorkerJob(self.data_dir / "hub-jobs")
+
+    def identity(self) -> RecordingIdentity:
+        return RecordingIdentity(self.profile, self.preset_name, self.split)
+
+    def configure(self, profile: str, repo: str, token: str = "") -> None:
+        identity = RecordingIdentity(profile.strip().lower(), self.preset_name, self.split)
+        repo = repo.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+            raise ValueError("HF 저장소는 소유자/저장소 형식으로 입력하세요.")
+        if "\n" in token or "\r" in token:
+            raise ValueError("토큰에 줄바꿈을 넣을 수 없습니다.")
+        if token.strip():
+            _atomic_text(self.config_dir / "hub.env", "HF_TOKEN=" + token.strip() + "\n")
+        _atomic_text(self.preferences_path, json.dumps({"profile": identity.profile, "repo": repo}))
+        self.profile, self.repo = identity.profile, repo
+
+    def hub_action(self, action: str):
+        try:
+            identity = self.identity()
+            if self.job.running:
+                raise ValueError("학습이 끝난 뒤 허브 작업을 시작하세요.")
+            return self.hub_job.start_request({"kind": "hub", "action": action, "profile": identity.profile,
+                "preset": identity.preset, "repo": self.repo, "config_dir": str(self.config_dir),
+                "recordings_dir": str(self.recordings_dir)})
+        except (ValueError, OSError) as error:
+            return self.hub_job.fail(str(error))
+
+    def current_model(self):
+        try:
+            pointer = json.loads((self.store_dir / "active.json").read_text(encoding="utf-8"))
+            version = pointer.get("version", "")
+            if re.fullmatch(r"[0-9a-f]{32}", str(version)):
+                return self.store_dir / "versions" / version / "model.onnx"
+        except (OSError, ValueError, TypeError):
+            pass
+        return self.model_path
+
+    def close(self):
+        self.job.stop()
+        self.hub_job.stop()
 
     # catalog & capture_plan helpers for RecordingPlanEditor and Bridge
     categories = CATEGORIES
@@ -647,10 +592,18 @@ class TrainingCenterService:
     # training center operations
     def summary_and_rows(self) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], List[Dict[str, Any]], Tuple[str, bool]]:
         summary = dataset_summary(self.recordings_dir)
-        report = model_report(self.model_path)
+        summary["coverage"] = dataset_summary(self.recordings_dir, profile=self.profile, split=self.split)["coverage"]
+        report = model_report(self.current_model())
         rows = gesture_rows(summary, report)
+        mode = self.preset_name if self.preset_name != "trigger" else "pointer"
+        for row in rows:
+            declaration = self.job.specs.get(BY_KEY[row["key"]].gesture, {})
+            if mode not in declaration.get("modes", []):
+                row["can_train"] = False
+                if BY_KEY[row["key"]].label != NONE:
+                    row["advice"] = "녹화·공유 가능 · 이 모드의 직접 학습 적용은 아직 지원하지 않습니다."
         storage = storage_text(summary)
         return summary, report, rows, storage
 
     def export(self) -> Path:
-        return export_package(self.model_path, self.exports_dir)
+        return export_package(self.current_model(), self.exports_dir)
