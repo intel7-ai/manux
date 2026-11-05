@@ -20,7 +20,7 @@ from manux.data.recorder import public_source
 from manux.data.recording import read
 from manux.ml.card import CLASS_RE, validate_card
 from manux.perception.local3d import FEATURES, FEATURE_VERSION
-from tcn_data import class_mapping, class_names, evaluate, groups, load, samples
+from tcn_data import AXES, class_mapping, class_names, evaluate, groups, load, samples
 
 WINDOW = 15
 AUGMENT = True
@@ -100,7 +100,8 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--classes", nargs="+")
     parser.add_argument("--kind", choices=("base", "personal"), default="personal")
-    parser.add_argument("--hold-out", choices=("posture", "person", "both"), default="both")
+    parser.add_argument("--hold-out", choices=("person", "posture", "condition", "both", "all"), default="all",
+                        help="held-out folds: by person, by posture index, by physical condition (capture-plan condition_key); both = person + posture; all = the three")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--threshold", type=float, default=0.7)
     parser.add_argument("--frames-in-a-row", type=int, default=3)
@@ -134,9 +135,10 @@ def main() -> None:
         card = {"classes": classes, "gestures": mapping, "kind": args.kind, "window": WINDOW,
                 "features": FEATURES, "feature_version": FEATURE_VERSION, "threshold": args.threshold,
                 "frames_in_a_row": args.frames_in_a_row, "trained": datetime.now(timezone.utc).isoformat(),
-                "data": sources, "held_out_results": results}
+                "data": sources, "condition_groups": sorted(groups(segments, "condition")),
+                "held_out_results": results}
         validate_card(card, FEATURE_VERSION, FEATURES)
-        axes = ("person", "posture") if args.hold_out == "both" else (args.hold_out,)
+        axes = {"both": ("person", "posture"), "all": AXES}.get(args.hold_out, (args.hold_out,))
         for axis in axes:
             held_out = groups(segments, axis)
             if len(held_out) < 2:

@@ -11,14 +11,14 @@ from manux.features.tcn_gate import gestures_for
 from manux.ml.card import ModelError
 from manux.ml.predictor import load_model
 from manux.perception.local3d import FEATURES, FEATURE_VERSION
-from tcn_data import evaluate, groups, load
+from tcn_data import AXES, evaluate, groups, load
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model", type=Path)
     parser.add_argument("recordings", nargs="+", type=Path)
-    parser.add_argument("--group-by", choices=("person", "posture"))
+    parser.add_argument("--group-by", choices=AXES, help="score each person / posture / physical condition apart")
     args = parser.parse_args()
     try:
         model = load_model(args.model, FEATURE_VERSION, FEATURES)

@@ -44,18 +44,26 @@ cd apps/manux
 uv run --locked --extra vision python tools/collect_mouse.py --profile tester01 --source 0
 ```
 
-- 기본 프리셋은 손바닥 이동·주먹 빠른 이동, 좌·우클릭과 더블클릭, 가로·세로 스크롤,
-  길게 누르기와 세 손가락 드래그, 창 전환, 바탕화면, 엄지 척, 뒤로·앞으로, 이전·다음 탭,
-  중립 자세를 안내합니다. `--preset pointer`는 검지 포인터와 핀치 클릭,
-  `--preset trigger`는 검지 옆을 엄지로 눌러 클릭·드래그하는 방식입니다.
-  v0.3의 Record & Fling도 궤적 과제로 수집하며, 같은 엄지·검지 핀치 클래스를 공유합니다.
+- 과제는 하나의 과제 목록(`src/manux/data/catalog.py`)에서 가져옵니다. rasp-jun의 18개 과제
+  (클릭·드래그, 창·모드, 방향 모션, 이동·중립)와 더블클릭·가로 스크롤·Record & Fling입니다.
+  `--preset pinch`(기본)는 손 모양 조작, `--preset pointer`는 검지 포인터와 핀치 클릭,
+  `--preset trigger`는 검지 옆을 엄지로 눌러 클릭·드래그하는 방식의 과제를 고릅니다.
+  더블클릭처럼 같은 손 모양을 쓰는 과제는 같은 학습 클래스를 씁니다. 커서 이동 과제는 `none`
+  클래스입니다. `v_sign`·`rock_sign`·`swipe_down`은 v0.4 기능이 아직 없어 녹화만 합니다.
+- 자세·위치·거리·카메라·조명 조건과 반복 시간은 녹화 설정(`--plan`)이 정합니다.
+  `basic`(기본: 정면 중앙·왼쪽·오른쪽), `positions`(화면 9구역), `diverse`(9가지 조건),
+  `saved`(사용자 설정 폴더의 `config/capture-plans.json`에 저장한 설정) 또는 설정 JSON 파일
+  경로를 쓸 수 있습니다. 설정의 켜진 조건마다 모든 과제를 한 번씩 녹화합니다.
+  `--condition 2` 또는 `--condition "화면 위"`로 일부 조건만, `--reps 5`·`--free-seconds 30`으로
+  반복 횟수와 자유 동작 시간만 바꿀 수 있습니다.
 - 카메라 창에서 `SPACE`로 세트를 시작하고 `GO`가 보일 때 동작합니다. `REST`에서 손을
   편하게 되돌리세요. `R`은 현재 세트 재시도, 대기 중 `N`은 건너뛰기, `Esc`는 종료입니다.
+  손의 3D 관절을 잃으면 세트 시간이 멈춥니다(`PAUSED`). 과제 설명(한국어)은 콘솔에 나옵니다.
   완료한 세트는 즉시 저장되고 손 추적이 부족하거나 취소한 세트는 학습 입력에서 제외됩니다.
-- `--list`로 프리셋의 과제 키를 확인합니다. 예를 들어 `--focus none thumb_middle drag`는
-  세 과제만 수집합니다. `--control-hand Left`로 왼손을 고르고 `--reps 8`로 반복 횟수를
-  바꿀 수 있습니다. `--condition reclined`와 `--condition camera_shift`로 자세나 카메라 위치를
-  바꾼 세트를 구분하세요. 평가 시도는 `--split eval`로 따로 수집합니다.
+- `--list`로 과제 키·학습 클래스·동작 ID, 조건 목록과 예상 녹화 시간을 확인합니다.
+  예: `--list --plan positions --focus thumb_ring`. `--focus none thumb_middle thumb_index_middle`은
+  세 과제만 수집합니다. `--control-hand Left`로 왼손을 고릅니다. 평가 시도는 `--split eval`로
+  따로 수집합니다.
 - 원본 영상은 화면에만 표시합니다. 손 관절 좌표·과제 라벨·규칙 판정은
   `%APPDATA%/MANUX-dev/v04/recordings/profile-tester01/pinch/train/` 아래에 세트별
   `.jsonl.gz`로 저장합니다. 실제 Windows 마우스·키보드 입력은 꺼져 있습니다.
@@ -73,7 +81,7 @@ $data = "$env:APPDATA/MANUX-dev/v04/recordings/profile-tester01/pinch"
 $train = (Get-ChildItem "$data/train/*.jsonl.gz").FullName
 $eval = (Get-ChildItem "$data/eval/*.jsonl.gz").FullName
 uv run --locked --python 3.12 --extra train python tools/train_tcn.py $train --output "$data/personal.onnx"
-uv run --locked --python 3.12 --extra ml python tools/evaluate_tcn.py "$data/personal.onnx" $eval --group-by person
+uv run --locked --python 3.12 --extra ml python tools/evaluate_tcn.py "$data/personal.onnx" $eval --group-by condition
 ```
 
 의존성: 앱에서 모델을 실행하려면 `ml` extra(onnxruntime), 학습하려면 `train` extra(torch·onnx·onnxruntime)가
@@ -81,13 +89,14 @@ uv run --locked --python 3.12 --extra ml python tools/evaluate_tcn.py "$data/per
 학습 도구는 저장소 안에 모델을 쓰지 않습니다(D-006).
 
 학습 도구는 클래스 목록을 녹화에서 읽습니다. `--classes`로 클래스와 순서를
-지정할 수 있습니다. 모델마다 한 프리셋을 사용하세요. 기존 파일은 이전에 이동으로
-수집한 중립 `none`을 포함할 수 있으므로, 새 커서 이동 클래스를 학습할 때는 새 수집분을
-사용하세요. 기본 평가는 사람과 자세를 각각 하나씩 제외해 학습을 반복합니다.
+지정할 수 있습니다. 모델마다 한 프리셋을 사용하세요. 기본 평가(`--hold-out all`)는 사람, 자세, 물리 조건을 각각 하나씩 제외해
+학습을 반복합니다(`person`·`posture`·`condition`·`both`(사람+자세)로 고를 수 있습니다).
 사람 그룹은 `meta.person` 별명을 우선하고, 없으면 `meta.pc` 별명을 씁니다.
 PC를 공유하면 사람마다 다른 별명이 필요합니다. 자세 그룹은 `condition_index`를
-우선하고, 없으면 `condition`을 씁니다. 같은 인덱스는 여러 녹화에서 같은 자세를
-뜻해야 합니다. 그룹 또는 학습 클래스가 부족한 분할은 그 사유를 모델 정보에 남깁니다.
+우선하고, 없으면 `condition`을 씁니다. 물리 조건 그룹은 녹화 설정의 `condition_key`이며,
+이름이나 순서가 달라도 같은 조건이면 같은 그룹입니다. 키가 없는 이전 녹화는
+`legacy-<condition_index>`로 묶습니다. 그룹 또는 학습 클래스가 부족한 분할은 그 사유를
+모델 정보에 남깁니다. 스와이프 과제에서 요청한 방향으로 움직이지 않은 프레임은 학습에서 뺍니다.
 
 평가는 동작 시도별 TCN·규칙 적중 횟수와 중립 구간의 분당 오실행을 기록합니다.
 규칙 적중은 녹화에 저장된 `rule`을 사용합니다. 비교하려는 동작의 규칙 출력을

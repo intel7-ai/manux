@@ -1,13 +1,18 @@
-"""Collect a local, labeled mouse dataset from a webcam, with Windows output disabled."""
+"""Collect a local, labeled mouse dataset from a webcam, with Windows output disabled.
+
+Tasks come from the one catalog (`manux.data.catalog`), conditions and timing from a capture plan
+(`manux.data.capture_plan`, `--plan basic|positions|diverse|saved|<file>`). One completed set
+(one task in one plan condition) = one recording in the user's data folder, never the repository.
+
+    uv run --python 3.12 --extra vision python tools/collect_mouse.py --list --plan positions
+    uv run --python 3.12 --extra vision python tools/collect_mouse.py --profile tester01 --focus thumb_ring
+"""
 from __future__ import annotations
 
 import argparse
 import re
-import sys
-import textwrap
 from collections import Counter
 from contextlib import ExitStack
-from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter, strftime
 from uuid import uuid4
@@ -15,7 +20,9 @@ from uuid import uuid4
 import numpy as np
 
 from manux.app import build_engine, camera_session, schema
-from manux.data.guided import NONE, GestureSpec, GuidedSession
+from manux.data import capture_plan
+from manux.data.catalog import BY_KEY, MODES, NONE, tasks_for
+from manux.data.guided import GuidedSession
 from manux.data.recorder import SessionRecorder
 from manux.engine.commands import RequestMode
 from manux.perception.local3d import hand_frame
@@ -23,86 +30,32 @@ from manux.settings.paths import resolve
 from manux.settings.store import load
 
 
-@dataclass(frozen=True)
-class Exercise:
-    key: str
-    spec: GestureSpec
-    seconds: float = 1.6
-    label_delay: float = 0.0
+def preset_tasks(mode):
+    """The catalog's tasks for one hand-control mode: neutral first, then the mode's own, then the shared ones."""
+    pool = tasks_for(mode=mode)
+    return (BY_KEY[NONE], *(t for t in pool if t.modes), *(t for t in pool if not t.modes and t.key != NONE))
 
 
-def exercise(key, title, prompt, gesture=None, *, target=None, seconds=1.6, free=False, label_delay=0.0):
-    return Exercise(key, GestureSpec(target or key, title, prompt, free=free, gesture=gesture),
-                    seconds, label_delay)
-
-
-NEUTRAL = exercise(NONE, "Neutral", "Keep the hand visible and relaxed. Avoid pinches and deliberate swipes.", free=True)
-MOTION = (
-    exercise("thumbs_up", "Motion toggle", "Hold a thumbs-up for about 1 second, then relax.", "motion.enter"),
-    exercise("swipe_left", "Back", "Swipe left with an open hand and thumb out.", "motion.swipe_left"),
-    exercise("swipe_right", "Forward", "Swipe right with an open hand and thumb out.", "motion.swipe_right"),
-    exercise("tab_left", "Previous tab", "Tuck the thumb and swipe left with the other fingers open.",
-             "motion.swipe_left_tucked"),
-    exercise("tab_right", "Next tab", "Tuck the thumb and swipe right with the other fingers open.",
-             "motion.swipe_right_tucked"),
-)
-PINCH = (
-    exercise("palm_move", "Cursor move", "Move an open hand slowly to trace small shapes.", "pinch.move"),
-    exercise("fist_move", "Fast cursor move", "Make a fist and move it across the screen.", "pinch.move_fist"),
-    exercise("thumb_middle", "Left click", "Touch thumb to middle finger once, then release.", "pinch.thumb_middle"),
-    exercise("double_click", "Double-click", "Quickly tap thumb and middle finger together twice.",
-             "pinch.thumb_middle", target="thumb_middle"),
-    exercise("thumb_ring", "Right click", "Touch thumb to ring finger once, then release.", "pinch.thumb_ring"),
-    exercise("thumb_index", "Vertical scroll", "Pinch thumb and index; move up or down, then release.", "pinch.scroll"),
-    exercise("scroll_horizontal", "Horizontal scroll", "Pinch thumb and index; move left or right, then release.",
-             "pinch.scroll", target="thumb_index"),
-    exercise("record_fling", "Record and Fling", "Pinch thumb and index, trace a path, then release with a flick.",
-             "pinch.scroll", target="thumb_index", seconds=2.4),
-    exercise("drag", "Long-press drag", "Pinch thumb and middle for one second, then move and release.",
-             "pinch.drag", seconds=2.6, label_delay=1.0),
-    exercise("drag_three_fingers", "Three-finger drag", "Pinch thumb, index and middle together; move and release.",
-             "pinch.drag", target="drag"),
-    exercise("thumb_pinky", "Window switcher", "Touch thumb to pinky, then release.", "pinch.thumb_pinky"),
-    exercise("thumb_tucked_open", "Show desktop", "Tuck your thumb, open the other four fingers and hold still.",
-             "pinch.thumb_tucked_open"),
-)
-POINTER_MOVE = exercise("pointer_move", "Pointer move", "Point with your index finger and trace small shapes.",
-                        "pointer.move")
-POINTER = (
-    POINTER_MOVE,
-    exercise("pointer_left", "Left click", "Hold the pointer still; tap thumb to middle finger and release.",
-             "pointer.left_click"),
-    exercise("double_click", "Double-click", "Hold still; quickly tap thumb to middle finger twice.",
-             "pointer.left_click", target="pointer_left"),
-    exercise("pointer_right", "Right click", "Hold the pointer still; tap thumb to ring finger and release.",
-             "pointer.right_click"),
-)
-TRIGGER = (
-    POINTER_MOVE,
-    exercise("trigger_left", "Left click", "Keep the index extended; briefly press its side with the thumb.",
-             "pointer.left_click"),
-    exercise("double_click", "Double-click", "With the index extended, press its side with the thumb twice.",
-             "pointer.left_click", target="trigger_left"),
-    exercise("trigger_right", "Right click", "Press the side of the index with the thumb and hold still.",
-             "pointer.right_click", label_delay=0.55),
-    exercise("trigger_drag", "Drag", "Press the side of the index with the thumb, move, then release.", "pointer.drag"),
-)
-PRESETS = {key: (NEUTRAL, *items, *MOTION)
-           for key, items in (("pinch", PINCH), ("pointer", POINTER), ("trigger", TRIGGER))}
-CONDITIONS = {"usual": "Usual posture", "reclined": "Reclined or sideways", "camera_shift": "Camera height or position changed"}
+PRESETS = {mode: preset_tasks(mode) for mode in MODES}
+SETTLE = 0.35   # s of each rest still labelled transition (the hand on its way back)
 TITLE = "MANUX Dataset"
 MIN_FRAMES = 3
 
 
-class Take:
-    """Keep a single take open; only usable completed takes become training input."""
+def tracked(hand):
+    return hand is not None and hand.world is not None
 
-    def __init__(self, task, condition, reps, folder, meta, now):
+
+class Take:
+    """Keep a single take open; only usable completed takes become training input.
+
+    One take = one task in one plan condition. The session spans the whole plan so `condition_index`
+    stays the row's index in the plan; `condition_key` names the physical condition."""
+
+    def __init__(self, task, plan, condition, folder, meta, now):
         self.task = task
-        self.started = now
-        self.session = GuidedSession([task.spec], tuple(CONDITIONS.values()),
-                                     {"reps": reps, "do": task.seconds, "free_seconds": 12.0})
-        self.session.index = list(CONDITIONS).index(condition)
+        self.session = GuidedSession([task], plan=plan, settle=SETTLE)
+        self.session.index = condition
         self.session.advance(now)
         self.valid = Counter()
         stamp = f"{strftime('%Y%m%d-%H%M%S')}-{task.key}-{uuid4().hex}"
@@ -111,17 +64,7 @@ class Take:
 
     def add(self, frame, hand, intents):
         label = self.session.label(frame.t)
-        label["task"] = self.task.key
-        if label["phase"] in ("do", "rest"):
-            prep, do, rest = (self.session.config[key] for key in ("prep", "do", "rest"))
-            cycle = prep + do + rest
-            elapsed_in_rep = frame.t - self.started - (label["rep"] - 1) * cycle
-            if label["phase"] == "rest" and elapsed_in_rep < prep + do + 0.35:
-                label["target"] = "transition"
-            if label["phase"] == "do" and elapsed_in_rep < prep + self.task.label_delay:
-                label["target"] = "transition"
-                label.pop("gesture", None)
-        if label["target"] == self.task.spec.key and hand is not None and hand.world is not None:
+        if label["target"] == self.task.label and tracked(hand):
             if hand_frame(np.round(hand.world, 5)) is not None:
                 self.valid[label["rep"]] += 1
         active = [(gesture, phase) for gesture, phase in intents if phase != "end"]
@@ -129,14 +72,14 @@ class Take:
         self.recorder.frame(frame.t, hand, label=label, rule={"gesture": rule} if rule else None)
 
     def finish(self, now):
-        reps = range(1, self.session.reps + 1) if not self.task.spec.free else (0,)
-        missing = [rep for rep in reps if self.valid[rep] < (15 if self.task.spec.free else MIN_FRAMES)]
+        reps = range(1, self.session.reps + 1) if not self.task.free else (0,)
+        missing = [rep for rep in reps if self.valid[rep] < (15 if self.task.free else MIN_FRAMES)]
         if missing:
             self.abort()
             return None, f"Retry: {len(missing)} attempt(s) lacked usable hand tracking."
         self.recorder.event(now, "set_done")
         path = self.recorder.close()
-        return path, f"Saved {self.task.spec.name} ({sum(self.valid.values())} tracked frames)."
+        return path, f"Saved {self.task.key} ({sum(self.valid.values())} tracked frames)."
 
     def abort(self):
         if not self.recorder.closed:
@@ -158,15 +101,22 @@ def draw(cv2, image, hand, lines, progress):
     cv2.imshow(TITLE, np.vstack((panel, preview)))
 
 
-def capture(cv2, camera, tracker, engine, hand_side, tasks, args, folder, settings):
+def capture(cv2, camera, tracker, engine, hand_side, sets, args, folder, settings, plan):
+    """Record `sets` = [(plan condition index, task), ...] one take at a time."""
     index, take, start = 0, None, False
     message = ""
     last_frame = perf_counter()
     try:
         cv2.namedWindow(TITLE, cv2.WINDOW_NORMAL)
         cv2.imshow(TITLE, np.zeros((320, 800, 3), dtype=np.uint8))
-        while index < len(tasks):
-            task = tasks[index]
+        rows = capture_plan.enabled(plan)
+        shown = None
+        while index < len(sets):
+            cond, task = sets[index]
+            if shown != index:
+                shown = index
+                print(f"[{index + 1}/{len(sets)}] {rows[cond]['name']} ({capture_plan.description(rows[cond])})"
+                      f" - {task.name}: {task.do}", flush=True)
             item = camera.read(timeout=0.05)
             if item is None and perf_counter() - last_frame > 5:
                 raise OSError("No camera frames for 5 seconds. Completed sets are saved.")
@@ -185,14 +135,14 @@ def capture(cv2, camera, tracker, engine, hand_side, tasks, args, folder, settin
                                                if isinstance(v, (bool, int, float))}
                                        for owner in ("pinch", "pointer", "motion", "tracking")},
                     }
-                    take = Take(task, args.condition, args.reps, folder, meta, frame.t)
-                    engine.commands.put(RequestMode("motion" if task.key in SWIPES else None))
+                    take = Take(task, plan, cond, folder, meta, frame.t)
+                    engine.commands.put(RequestMode("motion" if task.direction else None))
                     start, message = False, ""
                 snapshot = engine.step(frame, hand)
                 progress = 0.0
                 if take is None:
                     prompt = "Press SPACE to start this set."
-                elif take.session.update(frame.t):
+                elif take.session.update(frame.t, available=tracked(hand)):
                     saved, message = take.finish(frame.t)
                     take = None
                     print(message if saved is None else f"{message} {saved.name}", flush=True)
@@ -205,13 +155,15 @@ def capture(cv2, camera, tracker, engine, hand_side, tasks, args, folder, settin
                     label = take.session.label(frame.t)
                     progress = take.session.view(frame.t)["progress"]
                     phase = label["phase"]
-                    prompt = {"prep": "GET READY", "rest": "REST - relax your hand", "free": "GO", "do": "GO"}[phase]
+                    prompt = {"prep": "GET READY", "rest": "REST - relax your hand", "free": "GO", "do": "GO",
+                              "paused": "PAUSED - show your hand (timer stopped)"}[phase]
                     if label["rep"]:
-                        prompt += f"  {label['rep']}/{args.reps}"
+                        prompt += f"  {label['rep']}/{take.session.reps}"
                 status = ("Hand tracked" if hand is not None and hand.world is not None
                           else f"Show your {hand_side.lower()} hand to the camera")
-                lines = [f"{index + 1}/{len(tasks)}  {task.spec.name}  |  {CONDITIONS[args.condition]}",
-                         *textwrap.wrap(task.spec.do, 75), prompt, message, status,
+                # OpenCV cannot draw Korean: the window shows ids, the console the Korean prompt.
+                lines = [f"{index + 1}/{len(sets)}  {task.key} (class {task.label})  |  condition {cond + 1}",
+                         prompt, message, status,
                          "SPACE Start   R Retry   N Skip (idle)   ESC Exit"]
                 draw(cv2, image, hand, [line for line in lines if line], progress)
             key = cv2.waitKey(1) & 0xFF
@@ -231,39 +183,87 @@ def capture(cv2, camera, tracker, engine, hand_side, tasks, args, folder, settin
         cv2.destroyAllWindows()
 
 
-SWIPES = frozenset(task.key for task in MOTION if task.key != "thumbs_up")
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--list", action="store_true", help="list the exercises in the selected preset")
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--list", action="store_true", help="list the tasks and plan conditions, then exit")
     parser.add_argument("--profile", help="anonymous tester alias (1-32 letters, digits, _ or -)")
-    parser.add_argument("--preset", choices=PRESETS, default="pinch")
-    parser.add_argument("--focus", nargs="+", help="exercise keys to collect, or omit for all")
-    parser.add_argument("--condition", choices=CONDITIONS, default="usual")
+    parser.add_argument("--preset", choices=PRESETS, default="pinch", help="hand-control mode")
+    parser.add_argument("--focus", nargs="+", help="catalog task keys to collect, or omit for the preset's tasks")
+    parser.add_argument("--plan", default="basic",
+                        help="capture plan: basic | positions | diverse | saved (your stored plan) | <plan.json>")
+    parser.add_argument("--condition", nargs="+",
+                        help="only these plan conditions (names or 1-based numbers); default: every enabled one")
     parser.add_argument("--split", choices=("train", "eval"), default="train")
-    parser.add_argument("--reps", type=int, default=5)
+    parser.add_argument("--reps", type=int, help="override the plan's repetitions per set (1-30)")
+    parser.add_argument("--free-seconds", type=int, help="override the plan's seconds per free task (10-900)")
     parser.add_argument("--source", help="camera index or stream URL (defaults to configured camera)")
     parser.add_argument("--hand-model", type=Path)
     parser.add_argument("--control-hand", choices=("Left", "Right"))
-    args = parser.parse_args()
-    tasks = PRESETS[args.preset]
+    return parser, parser.parse_args(argv)
+
+
+def resolve_tasks(parser, args):
+    if not args.focus:
+        return PRESETS[args.preset]
+    allowed = {task.key for task in PRESETS[args.preset]}
+    unknown = [key for key in args.focus if key not in allowed]
+    if unknown:
+        parser.error(f"task(s) not in the {args.preset} preset: {', '.join(unknown)}; see --list")
+    return tasks_for(args.focus)
+
+
+def resolve_plan(parser, args, config_dir):
+    """The plan (CLI overrides applied) and the indices of its enabled rows to record."""
+    focus = args.focus[0] if args.focus and len(args.focus) == 1 else ""
+    try:
+        if args.reps is not None and not 1 <= args.reps <= 30:
+            raise ValueError("--reps must be between 1 and 30")
+        plan = capture_plan.plan_from(args.plan, focus, config_dir)
+        for row in plan["conditions"]:
+            if args.reps is not None:
+                row["reps"] = args.reps
+            if args.free_seconds is not None:
+                row["free_seconds"] = args.free_seconds
+        plan = capture_plan.normalise(plan)
+    except ValueError as error:
+        parser.error(str(error))
+    rows = capture_plan.enabled(plan)
+    if not args.condition:
+        return plan, list(range(len(rows)))
+    picked = []
+    for choice in args.condition:
+        index = (int(choice) - 1 if choice.isdigit()
+                 else next((i for i, row in enumerate(rows) if row["name"] == choice), -1))
+        if not 0 <= index < len(rows):
+            parser.error(f"unknown plan condition {choice!r}; see --list")
+        picked.append(index)
+    return plan, list(dict.fromkeys(picked))
+
+
+def list_plan(tasks, plan, conditions):
+    for task in tasks:
+        gesture = task.gesture or (f"({task.related})" if task.related else "capture-only")
+        print(f"{task.key:22} class={task.label:18} {gesture:28} {task.name}")
+    rows = capture_plan.enabled(plan)
+    for i in conditions:
+        print(f"condition {i + 1}: {rows[i]['name']} [{capture_plan.condition_key(rows[i])}] "
+              f"{capture_plan.description(rows[i])}")
+    seconds = capture_plan.duration({"conditions": [rows[i] for i in conditions]}, tasks)
+    print(f"about {seconds / 60:.0f} min of recording, without the waits between sets")
+
+
+def main(argv=None):
+    parser, args = parse_args(argv)
+    paths = resolve()
+    tasks = resolve_tasks(parser, args)
+    plan, conditions = resolve_plan(parser, args, paths.config_dir)
     if args.list:
-        for task in tasks:
-            print(f"{task.key:23} {task.spec.name:22} {task.spec.do}")
+        list_plan(tasks, plan, conditions)
         return 0
     if not args.profile or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}", args.profile):
         parser.error("--profile requires an anonymous alias of 1-32 letters, digits, _ or -")
-    if not 1 <= args.reps <= 30:
-        parser.error("--reps must be between 1 and 30")
-    if args.focus:
-        lookup = {task.key: task for task in tasks}
-        invalid = set(args.focus) - lookup.keys()
-        if invalid:
-            parser.error(f"unknown exercise(s): {', '.join(sorted(invalid))}; see --list")
-        tasks = tuple(lookup[key] for key in dict.fromkeys(args.focus))
+    sets = [(cond, task) for cond in conditions for task in tasks]
 
-    paths = resolve()
     args.profile = args.profile.lower()
     folder = paths.recordings_dir / f"profile-{args.profile}" / args.preset / args.split
     settings = load(schema(), paths.config_dir)
@@ -283,7 +283,7 @@ def main():
             camera, tracker = resources.enter_context(camera_session(settings, args.source, model))
             engine = build_engine(settings, "pinch" if args.preset == "pinch" else "pointer", recording=True)
             resources.callback(engine.shutdown)
-            capture(cv2, camera, tracker, engine, hand_side, tasks, args, folder, settings)
+            capture(cv2, camera, tracker, engine, hand_side, sets, args, folder, settings, plan)
     except KeyboardInterrupt:
         return 130
     except (OSError, ValueError, ImportError, cv2.error) as error:

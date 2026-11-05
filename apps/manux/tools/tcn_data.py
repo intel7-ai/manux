@@ -9,7 +9,8 @@ from pathlib import Path
 
 import numpy as np
 
-from manux.data.guided import NONE, RESERVED
+from manux.data.capture_plan import label_condition_key
+from manux.data.catalog import BY_KEY, NONE, RESERVED
 from manux.data.recording import read
 from manux.data.rule_replay import rule_action
 from manux.features.tcn_gate import LEGACY_GESTURES
@@ -20,15 +21,37 @@ LEGACY_RULES = {"scroll_grab": "pinch.scroll", "right_click": "pinch.thumb_ring"
                 "task_switcher": "pinch.thumb_pinky", "show_desktop": "pinch.thumb_tucked_open"}
 
 
+AXES = ("person", "posture", "condition")
+MIN_SWIPE_SPEED = 0.03   # palm speed (features 130:132) a swipe's "do" frame needs to count (rasp-jun)
+
+
 @dataclass(frozen=True)
 class Segment:
+    """Consecutive frames of one recording with one posture and one physical condition.
+
+    `condition` is the plan row's `condition_key` (`legacy-<condition_index>` for recordings made
+    before capture plans), so a held-out fold never shares a physical setup with training."""
     person: str
     posture: str
     frames: list[dict]
     features: np.ndarray
+    condition: str = ""
 
     def labels(self) -> list[str | None]:
         return [(f.get("label") or {}).get("target") for f in self.frames]
+
+    def targets(self) -> list[str | None]:
+        """Training labels: `labels()` without swipe "do" frames that did not move the asked way."""
+        out = self.labels()
+        for i, frame in enumerate(self.frames):
+            label = frame.get("label") or {}
+            task = BY_KEY.get(label.get("task"))
+            if task is None or not task.direction or label.get("phase") != "do" or out[i] != task.label:
+                continue
+            vx, vy = self.features[i, 130:132]
+            if {"left": -vx, "right": vx, "down": vy}[task.direction] < MIN_SWIPE_SPEED:
+                out[i] = None
+        return out
 
 
 def load(paths: list[Path], *, split: str | None = None) -> list[Segment]:
@@ -48,9 +71,9 @@ def load(paths: list[Path], *, split: str | None = None) -> list[Segment]:
         person = recording.meta.get("person") or recording.meta.get("pc")
         group = hashlib.sha256(str(person).encode()).hexdigest()[:12] if person else ""
         width, height, _ = recording.frame_size()
-        for posture, frames in groupby(recording.frames, _posture):
+        for (posture, condition), frames in groupby(recording.frames, _group):
             batch = list(frames)
-            segments.append(Segment(group, posture, batch, frame_features(batch, height / width)))
+            segments.append(Segment(group, posture, batch, frame_features(batch, height / width), condition))
     return segments
 
 
@@ -58,6 +81,11 @@ def _posture(frame: dict) -> str:
     label = frame.get("label") or {}
     posture = label.get("condition_index")
     return str(posture) if posture is not None else str(label.get("condition") or "")
+
+
+def _group(frame: dict) -> tuple[str, str]:
+    key = label_condition_key(frame.get("label") or {})
+    return _posture(frame), "" if key == "unassigned" else key
 
 
 def class_mapping(segments: list[Segment], classes: list[str]) -> dict[str, str]:
@@ -84,6 +112,9 @@ def class_names(segments: list[Segment]) -> list[str]:
 
 
 def groups(segments: list[Segment], axis: str) -> dict[str, list[Segment]]:
+    """Segments per person / posture / condition; segments without that value are left out."""
+    if axis not in AXES:
+        raise ValueError(f"group axis must be one of {AXES}, got {axis!r}")
     grouped = defaultdict(list)
     for segment in segments:
         value = getattr(segment, axis)
@@ -96,7 +127,7 @@ def samples(segments: list[Segment], classes: list[str], length: int) -> tuple[n
     lookup = {name: i for i, name in enumerate(classes)}
     inputs, targets = [], []
     for segment in segments:
-        y = np.array([lookup.get(name, -1) for name in segment.labels()], dtype=np.int64)
+        y = np.array([lookup.get(name, -1) for name in segment.targets()], dtype=np.int64)
         keep = (y >= 0) & (segment.features[:, -1] == 1)
         if keep.any():
             inputs.append(windows(segment.features, length)[keep])
