@@ -275,11 +275,13 @@ class DesktopRuntime:
         self.recent = (result_line({**run, **test.summary()}, time.strftime("%m/%d %H:%M")),) + self.recent[:4]
 
     # ------------------------------------------------------------------ dataset recording (UI thread calls these)
-    def set_recording(self, mode: str, focus: str = "", plan: Optional[Mapping[str, Any]] = None,
+    def set_recording(self, mode: str, focus="", plan: Optional[Mapping[str, Any]] = None,
                       *, profile="local", split="train", preset="pinch") -> None:
         identity = RecordingIdentity(profile.lower(), preset, split)
         if mode not in ("off", "guided", "free"):
             raise ValueError("invalid recording mode")
+        if not isinstance(focus, str):
+            focus = tuple(task.key for task in tasks_for(focus))
         with self._lock:
             self._rec_identity = identity
             _, _, _, adv, _ = self._rec_want
@@ -597,6 +599,7 @@ def main(argv=None) -> int:
     from manux.platform.tray import QtTray
     from manux.ui.bridge import run
     tc = TrainingCenterService(paths.config_dir, paths.data_dir, paths.recordings_dir, model_path=args.tcn_model,
+                               env_files=(Path(sys.executable).parent / ".env",) if paths.frozen else (),
                                specs=training_specs(), on_ready=lambda event: runtime.request(
                                    RuntimeRequest("activate_model", event["store"])))
     return run(runtime, settings, paths, tray=not args.no_tray, screenshot=args.screenshot,

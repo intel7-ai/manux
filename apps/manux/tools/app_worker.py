@@ -48,8 +48,8 @@ def run_training(request, send=emit):
     classes = ["none", *sorted(c for c, g in mapping.items() if g in specs)]
     if len(classes) < 2:
         raise ValueError("학습할 동작의 유효한 녹화가 없습니다.")
-    focus = request.get("focus_label")
-    if focus and focus not in classes:
+    focused = request.get("focus_labels", [request["focus_label"]] if request.get("focus_label") else [])
+    if set(focused) - set(classes):
         raise ValueError("선택한 동작의 학습 녹화가 없습니다.")
     store = Path(request["store"])
     token = active_token(store)
@@ -101,11 +101,12 @@ def run_training(request, send=emit):
 def run_hub(request, send=emit, client=None):
     import hub
     identity = RecordingIdentity(request["profile"], request.get("preset", "pinch"))
-    repo = request["repo"]
+    if not getattr(sys, "frozen", False):
+        hub.load_dotenv()
+    hub.load_dotenv([Path(path) for path in request.get("env_files", ())], override=True)
+    repo = os.environ.get(hub.ENV_REPO) or request.get("repo") or hub.DEFAULT_REPO
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
         raise ValueError("HF 저장소는 소유자/저장소 형식으로 입력하세요.")
-    hub.load_dotenv([Path(request["config_dir"]) / "hub.env"], override=True)
-    hub.load_dotenv()
     client = client or hub.HfDatasetHub(repo, create_repo=False)
     root = Path(request["recordings_dir"])
     action = request["action"]
@@ -132,7 +133,7 @@ def run_hub(request, send=emit, client=None):
         message = f"읽기·업로드 권한 확인 · 팀 녹화 {result['files']}개"
     else:
         raise ValueError("알 수 없는 허브 작업입니다.")
-    send("done", stage=message, summary=result, job_id=request["job_id"])
+    send("done", stage=message, summary=result, repo=repo, job_id=request["job_id"])
 
 
 def main(argv=None):

@@ -21,7 +21,7 @@ from uuid import uuid4
 import numpy as np
 
 from manux.data import capture_plan as plans
-from manux.data.catalog import ALL_TASKS, BY_KEY, CATEGORIES, DISPLAY_KEYS, NONE, TASKS, is_free
+from manux.data.catalog import ALL_TASKS, BY_KEY, CATEGORIES, DISPLAY_KEYS, NONE, TASKS, is_free, tasks_for
 from manux.data.recorder import public_source
 from manux.data.recording import read
 from manux.core.contracts import RecordingIdentity
@@ -408,7 +408,7 @@ class TrainingJob(WorkerJob):
             return self.start_request({"kind": "train", "recordings_dir": str(self.rec_dir),
                 "profile": identity.profile, "preset": identity.preset, "mode": identity.preset if identity.preset != "trigger" else "pointer",
                 "store": str(self.store_dir), "cache_dir": str(self.cache_dir), "specs": self.specs,
-                "epochs": max(1, int(epochs)), "focus_label": BY_KEY[gestures[0]].label if gestures else ""})
+                "epochs": max(1, int(epochs)), "focus_labels": sorted({BY_KEY[k].label for k in gestures}) if gestures else []})
         except (ValueError, OSError) as error:
             return self.fail(str(error))
 
@@ -476,7 +476,7 @@ class TrainingCenterService:
     """Service bundle injected into `ui.bridge.Bridge` by `desktop.py` so `ui` never imports `data`."""
 
     def __init__(self, config_dir: Path, data_dir: Path, recordings_dir: Path, *,
-                 model_path: Optional[Path] = None, specs=None, on_ready=None) -> None:
+                 model_path: Optional[Path] = None, specs=None, on_ready=None, env_files=()) -> None:
         self.config_dir = Path(config_dir)
         self.data_dir = Path(data_dir)
         self.recordings_dir = Path(recordings_dir)
@@ -488,13 +488,13 @@ class TrainingCenterService:
         self.split = "train"
         self.preset_name = "pinch"
         self.repo = "se4nchoi/manux-datasets"
+        self.env_files = tuple(map(Path, env_files)) + (self.config_dir / ".env",)
         self.preferences_path = self.config_dir / "training-center.json"
         try:
             saved = json.loads(self.preferences_path.read_text(encoding="utf-8"))
             if not isinstance(saved, dict):
                 raise ValueError("invalid preferences")
             self.profile = str(saved.get("profile", "")).lower()
-            self.repo = str(saved.get("repo", self.repo))
         except (OSError, ValueError, TypeError):
             pass
         self.job = TrainingJob(self.recordings_dir, self.model_path, cache_dir=self.data_dir / "features",
@@ -504,17 +504,10 @@ class TrainingCenterService:
     def identity(self) -> RecordingIdentity:
         return RecordingIdentity(self.profile, self.preset_name, self.split)
 
-    def configure(self, profile: str, repo: str, token: str = "") -> None:
+    def configure(self, profile: str) -> None:
         identity = RecordingIdentity(profile.strip().lower(), self.preset_name, self.split)
-        repo = repo.strip()
-        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
-            raise ValueError("HF 저장소는 소유자/저장소 형식으로 입력하세요.")
-        if "\n" in token or "\r" in token:
-            raise ValueError("토큰에 줄바꿈을 넣을 수 없습니다.")
-        if token.strip():
-            _atomic_text(self.config_dir / "hub.env", "HF_TOKEN=" + token.strip() + "\n")
-        _atomic_text(self.preferences_path, json.dumps({"profile": identity.profile, "repo": repo}))
-        self.profile, self.repo = identity.profile, repo
+        _atomic_text(self.preferences_path, json.dumps({"profile": identity.profile}))
+        self.profile = identity.profile
 
     def hub_action(self, action: str):
         try:
@@ -523,7 +516,7 @@ class TrainingCenterService:
                 raise ValueError("학습이 끝난 뒤 허브 작업을 시작하세요.")
             return self.hub_job.start_request({"kind": "hub", "action": action, "profile": identity.profile,
                 "preset": identity.preset, "repo": self.repo, "config_dir": str(self.config_dir),
-                "recordings_dir": str(self.recordings_dir)})
+                "env_files": [str(path) for path in self.env_files], "recordings_dir": str(self.recordings_dir)})
         except (ValueError, OSError) as error:
             return self.hub_job.fail(str(error))
 
@@ -581,13 +574,19 @@ class TrainingCenterService:
         return plans.normalise(plan, require_enabled=require_enabled)
 
     def duration(self, plan: Mapping[str, Any], focus: str = "") -> float:
-        return plans.duration(plan, focus)
+        return plans.duration(plan, tasks_for(focus))
+
+    @staticmethod
+    def _plan_key(focus):
+        if isinstance(focus, str):
+            return focus
+        return "selection-" + hashlib.sha256("|".join(sorted(focus)).encode()).hexdigest()[:16]
 
     def load_plan(self, focus: str) -> Dict[str, Any]:
-        return plans.load_plan(focus, self.plans_path)
+        return plans.load_plan(self._plan_key(focus), self.plans_path)
 
     def save_plan(self, plan: Mapping[str, Any], focus: str) -> Dict[str, Any]:
-        return plans.save_plan(plan, focus, self.plans_path)
+        return plans.save_plan(plan, self._plan_key(focus), self.plans_path)
 
     # training center operations
     def summary_and_rows(self) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], List[Dict[str, Any]], Tuple[str, bool]]:

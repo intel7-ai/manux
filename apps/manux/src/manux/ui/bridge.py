@@ -142,7 +142,7 @@ class RecordingPlanEditor(QObject):
     """Qt state for `RecordingPlanDialog.qml`; edits are drafts until saved or started."""
 
     changed = Signal()
-    startRequested = Signal(str, object)
+    startRequested = Signal(object, object)
 
     def __init__(self, tc, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -165,6 +165,8 @@ class RecordingPlanEditor(QObject):
 
     @Property(str, notify=changed)
     def title(self):
+        if not isinstance(self.focus, str):
+            return f"선택한 동작 {len(self.focus)}개 · 녹화 계획"
         name = self.tc.all_names.get(self.focus) or self.tc.names.get(self.focus, "전체 동작")
         return (name if self.focus else "전체 동작") + " · 집중 녹화 설정"
 
@@ -173,7 +175,7 @@ class RecordingPlanEditor(QObject):
         out = []
         for row in self.plan["conditions"]:
             data = self.coverage.get(self.tc.condition_key(row), {})
-            if self.tc.is_free(self.focus):
+            if self.neutral:
                 count = f"수집 {data.get('seconds', 0) / 60:.1f}분"
             else:
                 count = f"수집 {data.get('reps', 0)}회"
@@ -194,10 +196,13 @@ class RecordingPlanEditor(QObject):
 
     @Property(bool, notify=changed)
     def neutral(self):
-        return bool(self.tc.is_free(self.focus))
+        keys = (self.focus,) if isinstance(self.focus, str) else self.focus
+        return bool(keys) and all(self.tc.is_free(key) for key in keys)
 
     @Property(str, notify=changed)
     def instruction(self):
+        if not isinstance(self.focus, str):
+            return " → ".join(self.tc.all_names.get(key, key) for key in self.focus)
         task = self.tc.task_info(self.focus) if self.focus else None
         if task is None:
             return "전체 동작을 차례로 녹화합니다."
@@ -206,7 +211,7 @@ class RecordingPlanEditor(QObject):
 
     @Property(bool, notify=changed)
     def allGestures(self):
-        return not self.focus
+        return not self.focus or (not isinstance(self.focus, str) and any(self.tc.is_free(key) for key in self.focus))
 
     @Property(str, notify=changed)
     def summary(self):
@@ -367,6 +372,7 @@ class Bridge(QObject):
         self.recording_editor.startRequested.connect(self._start_focused_plan)
         self.training_job = self.tc.job
         self.training_rows = []
+        self.training_selected = []
         self.training_filter = "전체"
         self.training_info = ("", "")
         self.training_storage = ("", False)
@@ -818,7 +824,7 @@ class Bridge(QObject):
 
     @Property(str, notify=stateChanged)
     def recFocus(self):
-        return self.rec_focus
+        return self.rec_focus if isinstance(self.rec_focus, str) else ", ".join(self.rec_focus)
 
     @Slot()
     def recStart(self):
@@ -981,7 +987,67 @@ class Bridge(QObject):
     @Property("QVariantList", notify=trainingChanged)
     def trainingRows(self):
         category = getattr(self, "training_filter", "전체")
-        return [r for r in self.training_rows if category == "전체" or r["category"] == category]
+        return [{**r, "selected": r["key"] in self.training_selected} for r in self.training_rows
+                if category == "전체" or r["category"] == category]
+
+    @Property("QStringList", notify=trainingChanged)
+    def selectedTrainingKeys(self):
+        return list(self.training_selected)
+
+    @Property("QVariantList", notify=trainingChanged)
+    def selectedTrainingRows(self):
+        rows = {r["key"]: r for r in self.training_rows}
+        return [rows[key] for key in self.training_selected if key in rows]
+
+    @Property(bool, notify=trainingChanged)
+    def selectionCanTrain(self):
+        rows = self.selectedTrainingRows
+        return bool(rows) and any(r["can_train"] for r in rows) and all(r["can_train"] or r["label"] == "none" for r in rows)
+
+    @Slot(str, bool)
+    def setTrainingSelected(self, key, selected):
+        if not self.tc.has_task(key):
+            return
+        if selected and key not in self.training_selected:
+            self.training_selected = [*self.training_selected, key]
+        elif not selected:
+            self.training_selected = [k for k in self.training_selected if k != key]
+        self.trainingChanged.emit()
+
+    @Slot(bool)
+    def selectVisibleTraining(self, selected):
+        visible = [r["key"] for r in self.trainingRows]
+        self.training_selected = (list(dict.fromkeys([*self.training_selected, *visible])) if selected
+                                  else [k for k in self.training_selected if k not in visible])
+        self.trainingChanged.emit()
+
+    @Slot(result=bool)
+    def recordTrainingSelection(self):
+        if not self.training_selected or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+            return False
+        if not self.tc.profile:
+            self.training_note = "녹화 별명을 먼저 정해 주세요."
+            self.trainingChanged.emit()
+            return False
+        # The exact checked subset, not a focus string that could fall back to the full catalog.
+        keys = tuple(self.training_selected)
+        self.recording_editor.open(keys)
+        self._pause()
+        return True
+
+    @Slot()
+    def trainTrainingSelection(self):
+        if not self.selectionCanTrain or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+            return
+        keys = [r["key"] for r in self.selectedTrainingRows if r["can_train"]]
+        self._pause()
+        if self.training_job.start(gestures=keys):
+            self._training_was_running = True
+            self.training_note = f"선택한 {len(keys)}개 동작을 포함해 기존 모델과 통합 재학습합니다."
+            self.training_timer.start()
+        else:
+            self.training_note = str(self.training_job.snapshot().get("error") or "학습을 시작하지 못했습니다.")
+        self.trainingChanged.emit()
 
     @Property(str, notify=trainingChanged)
     def trainingFilter(self):
@@ -1035,7 +1101,7 @@ class Bridge(QObject):
 
     @Property(str, notify=trainingChanged)
     def hubRepo(self):
-        return self.tc.repo
+        return str(self.tc.hub_job.snapshot().get("result", {}).get("repo") or self.tc.repo)
 
     @Property(str, notify=trainingChanged)
     def recordingSplit(self):
@@ -1048,15 +1114,15 @@ class Bridge(QObject):
             self.refreshTraining()
             self.trainingChanged.emit()
 
-    @Slot(str, str, str)
-    def saveHubSettings(self, profile, repo, token):
+    @Slot(str)
+    def saveTrainingProfile(self, profile):
         if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
             return
         try:
-            self.tc.configure(profile, repo, token)
-            self.training_note = "별명·허브 설정을 저장했습니다. 연결 확인을 눌러 주세요."
+            self.tc.configure(profile)
+            self.training_note = "녹화 별명을 저장했습니다. 동작을 체크해 시작하세요."
         except (ValueError, OSError):
-            self.training_note = "별명(영문·숫자·_·- 1~32자)과 저장소 주소를 확인하세요."
+            self.training_note = "별명은 영문·숫자·_·- 1~32자로 입력하세요."
         self.trainingChanged.emit()
 
     @Slot(str)
@@ -1076,7 +1142,7 @@ class Bridge(QObject):
     @Property(str, notify=trainingChanged)
     def hubStatus(self):
         state = self.tc.hub_job.snapshot()
-        return str(state.get("error") or state.get("stage") or "내 별명과 HF 접근 토큰을 저장한 뒤 연결을 확인하세요.")
+        return str(state.get("error") or state.get("stage") or ".env 설정으로 연결합니다.")
 
     @Property(str, notify=trainingChanged)
     def trainingStage(self):
