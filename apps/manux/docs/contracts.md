@@ -254,6 +254,20 @@ class OutputSink(Protocol):
 - 녹화 중 출력 대상은 `none`이다(§8).
 - 저장 위치는 [D-006](decisions.md#d-006-학습-데이터-위치): v0.4 동안은 팀 공유 허용, 릴리스(기본 모드)부터는 사용자 PC에만.
 
+테스터 수집기는 위 형식으로 완료한 세트마다 파일 하나를 쓴다. `meta.person`에는 테스터 별명,
+`meta.preset`에는 손 조작 방식, `meta.split`에는 `train` 또는 `eval`을 기록한다. `label.task`는
+실제 과제(예: 더블클릭), `label.target`은 학습 클래스(예: `thumb_middle`)다. 같은 제스처를
+쓰는 클릭과 더블클릭은 같은 클래스를 쓴다. 자세·카메라 조건은 실행을 바꿔도 고정된 인덱스를 쓴다.
+`rule.gesture`는 프레임의 대표 규칙 판정이며 학습 라벨은 가이드에서 따로 부여한다.
+복귀 동작은 `transition`으로 기록한다. 유효한 세계 좌표가 부족한 세트는 완료 파일로 확정하지 않는다.
+
+**계약 변경 (2026-11-05, 과제 목록·녹화 설정):** 영향받는 계층은 `data`, `tools/`(수집기·TCN 도구), 이후 `ui`(학습 센터 화면)다.
+- **과제 목록은 하나**: `manux.data.catalog`. rasp-jun 브랜치의 18개 과제(키·학습 클래스 그대로)와 수집기 추가 과제(더블클릭, 가로 스크롤, Record & Fling, 포인터·트리거 클릭)다. 수집기·학습·화면은 이 목록만 읽는다. 과제에는 동작 ID(`gesture`, 클래스가 뜻하는 v0.4 동작)만 있고 액션 이름은 없다(D-004). `v_sign`·`rock_sign`·`swipe_down`은 v0.4 기능이 아직 없어 **녹화만** 한다(`gesture` 없음). 커서 이동 과제(`open_move`·`fist_move`·`pointer_move`)는 `none` 클래스로 기록한다.
+- **녹화 설정(`manux-capture-plan/1`)**: `{"schema", "conditions": [행...]}`. 행 = `name`, `enabled`, `notes`, 물리 조건 6개(`orientation`, `position`(화면 9구역 + 자유 이동), `distance`, `posture`, `camera`, `lighting`, 각각 정해진 값 중 하나), 시간(`reps` 1~100, `prep`·`hold`·`rest` 0.5~10초, `free_seconds` 10~900초). 기본 설정 `basic`(중앙·왼쪽·오른쪽), `positions`(9구역), `diverse`(9개). 사용자 설정 폴더의 `config/capture-plans.json`에 과제별로 저장하고(`{"schema", "plans": {과제 키 또는 "all": 설정}}`), 저장소 안에는 쓰지 않는다. 잘못된 설정은 기존 파일을 바꾸지 않는다.
+- **라벨 추가 필드**: 녹화 설정으로 녹화한 프레임의 `label`에 `condition_key`(물리 조건 6개 + 메모의 해시, `pose-` + 16자리)를 넣는다. 이름·순서·시간은 키에 들어가지 않으므로 같은 물리 조건은 녹화가 달라도 같은 키다. `condition_index`(켜진 행의 순서)는 이전 읽기 도구를 위해 계속 쓴다. `meta.guided.capture_plan`에 사용한 설정 전체를 남긴다.
+- **읽기 규칙**: 학습·평가는 `condition_key`로 조건 그룹을 만들고, 키가 없는 이전 녹화는 `legacy-<condition_index>`로 읽는다. 사람·자세 그룹과 함께 조건 그룹 하나를 통째로 빼고 학습하는 평가를 지원한다. 스와이프 과제의 `do` 프레임 중 요청한 방향으로 움직이지 않은 프레임은 학습 대상에서 뺀다.
+- 손의 3D 좌표가 없거나 일시정지한 동안에는 세트 시간이 멈추고, 그 프레임은 `target: idle`, `phase: paused`로 기록한다(학습 제외).
+
 ## 10. 모델 파일
 
 출처: Dan 브랜치 `models/gesture_tcn.onnx` + `models/gesture_tcn.json`, `scripts/train_tcn.py`.
@@ -276,6 +290,7 @@ class OutputSink(Protocol):
 - 하나라도 틀리면 모델을 읽지 않고 그 모델을 쓰는 기능·필터를 끈다. Snapshot에 이유("모델 없음", "특징 버전 다름")를 보인다. 규칙만으로 동작하는 v0.3 방식으로 계속 간다.
 - 모델 종류는 [D-005](decisions.md#d-005-기본-모델과-개인-모델)를 따른다: 릴리스에 들어가는 **기본 모델**과 사용자가 학습하는 **개인 모델**.
 - 확인기가 읽는 선택 필드는 `kind`(`base` / `personal`)와 `gestures`(클래스 → 동작 ID 대응표)다. 기존 정보 파일은 `kind=base`로 읽는다. 정보 파일에 액션 ID를 넣지 않는다(액션은 바인딩, §7).
+- 수집한 클래스 중 `hold`만 내는 커서 이동과 중재기에서 소비되는 모드 진입은 학습·평가에 쓸 수 있다. 실행기는 `tap` 또는 `begin`으로 시작하고 바인딩이 있는 동작만 TCN 확인기에 연결한다.
 - **제안:** 개인 모델은 자기가 선언한 동작에 대해서만 기본 모델보다 먼저 쓰인다. 개인 모델이 거절한 입력은 기본 모델로 다시 판정하지 않는다.
 
 ## 11. 설정과 프로필

@@ -237,12 +237,16 @@ class GateLoad:
 
 def create_gate(model_path: Path, settings: Optional[Mapping[str, Any]] = None,
                 gestures: Optional[Mapping[str, str]] = None,
-                session_factory: Optional[Callable[[Path], Any]] = None) -> GateLoad:
+                session_factory: Optional[Callable[[Path], Any]] = None,
+                *, eligible: Optional[set[str]] = None) -> GateLoad:
     """A gate for `<model>.onnx` + `<model>.json`, or no gate and why (never raises for a bad model)."""
     try:
         model = load_model(model_path, FEATURE_VERSION, FEATURES, session_factory=session_factory)
     except ModelError as exc:
         return GateLoad(None, exc.code)
+    if eligible is not None:
+        mapping = gestures_for(model.card) if gestures is None else gestures
+        gestures = {name: gid for name, gid in mapping.items() if gid in eligible}
     try:
         return GateLoad(TcnGate(model.predictor, model.card, settings, gestures))
     except ValueError:
