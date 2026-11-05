@@ -95,10 +95,11 @@ jobs:
             ${{ runner.temp }}/window.png
           if-no-files-found: ignore
           retention-days: 14
+      # Setup.exe only: the portable zip and update packages are for releases (a preview build never updates)
       - name: MANUX Preview installer
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: MANUX-Preview-${{ steps.version.outputs.version }}
-          path: apps/manux/build/releases/
+          path: apps/manux/build/releases/*-Setup.exe
           if-no-files-found: error
           retention-days: 14
