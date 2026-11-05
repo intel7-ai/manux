@@ -83,11 +83,19 @@ test('reruns accept only identical published assets and never overwrite a draft 
   ]) assert.throws(() => validateExistingRelease(altered, manifest, context.sourceSha));
 });
 
-test('PR checks require the isolated preview package and cannot access a release write token', async () => {
+test('production PR checks require the isolated preview package and cannot access a release write token', async () => {
   const workflow = (await fs.readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
   assert.match(workflow, /needs: \[verify, browser, windows-package\]/);
   assert.match(workflow, /PACKAGE_RESULT.*needs\.windows-package\.result/);
   assert.match(workflow, /test "\$PACKAGE_RESULT" = success/);
+  // 2026-11-05: browser and installer jobs run only for production (and manual runs); preview gets the fast gate.
+  const full = "github.base_ref == 'production' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch'";
+  for (const job of ['\n  browser:', '\n  windows-package:']) {
+    const body = workflow.slice(workflow.indexOf(job), workflow.indexOf('runs-on:', workflow.indexOf(job)));
+    assert.ok(body.includes(`if: ${full}`), `${job.trim()} must be limited to production`);
+  }
+  assert.ok(workflow.includes(`FULL: \${{ ${full} }}`));
+  assert.match(workflow, /if \[ "\$FULL" = true \]; then\n\s+test "\$BROWSER_RESULT" = success && test "\$PACKAGE_RESULT" = success/);
   assert.match(workflow, /MANUX_BUILD_CHANNEL: preview/);
   assert.match(workflow, /release-version\.mjs prepare preview/);
   assert.ok(workflow.indexOf('npm run desktop:dist') < workflow.indexOf('npm run test:packaged'));

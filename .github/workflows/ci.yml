@@ -13,13 +13,18 @@ concurrency:
   group: manux-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Two depths (2026-11-05):
+# - preview (PRs into preview, pushes to preview and other branches): fast gate, verify on Ubuntu only.
+# - production (PRs into production, pushes to production) and manual runs: every job below.
+# "full" is this expression, repeated where needed because jobs.<id>.if cannot read workflow env:
+#   github.base_ref == 'production' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch'
 jobs:
   verify:
     name: verify (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: ${{ fromJSON((github.base_ref == 'production' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch') && '["windows-latest","ubuntu-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -50,6 +55,7 @@ jobs:
 
   browser:
     name: Synthetic browser integration
+    if: github.base_ref == 'production' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -81,10 +87,17 @@ jobs:
     steps:
       - name: Every gate must pass
         env:
+          FULL: ${{ github.base_ref == 'production' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch' }}
           VERIFY_RESULT: ${{ needs.verify.result }}
           BROWSER_RESULT: ${{ needs.browser.result }}
           PACKAGE_RESULT: ${{ needs.windows-package.result }}
-        run: test "$VERIFY_RESULT" = success && test "$BROWSER_RESULT" = success && test "$PACKAGE_RESULT" = success
+        run: |
+          test "$VERIFY_RESULT" = success
+          if [ "$FULL" = true ]; then
+            test "$BROWSER_RESULT" = success && test "$PACKAGE_RESULT" = success
+          else
+            echo "preview gate: verify (ubuntu) only; browser and installer run for production"
+          fi
       # production takes changes only after they were merged and tested on preview (docs/branch-flow.md).
       - name: production accepts PRs from preview only
         if: github.event_name == 'pull_request' && github.base_ref == 'production'
@@ -100,6 +113,7 @@ jobs:
 
   windows-package:
     name: Windows preview installer
+    if: github.base_ref == 'production' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 30
     env:

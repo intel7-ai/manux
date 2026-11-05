@@ -30,3 +30,12 @@ production  ── 배포 기준
 | `production` | 예 | 0 | MANUX required (최신 기준 브랜치 필요) | 예 | 금지 |
 
 승인이 없어졌으므로 실수를 막는 장치는 자동 검사와 preview 시험뿐이다. preview 시험을 건너뛰지 않는다.
+
+## 검사 깊이 (2026-11-05)
+
+| 대상 | MANUX CI에서 도는 것 |
+| --- | --- |
+| `preview` PR·push, 그 밖의 브랜치 | `verify (ubuntu-latest)`만 (빠른 확인) |
+| `production` PR·push, 수동 실행(`workflow_dispatch`) | `verify` Windows·Ubuntu, Synthetic browser integration, Windows preview installer 전부 |
+
+필수 검사 이름은 두 브랜치 모두 그대로 **MANUX required**다. preview에서 생략한 검사가 필요한 변경은 Actions에서 MANUX CI를 수동 실행한다. `hand-mouse/` 시험과 설치본 빌드(`hand-mouse.yml`, `hand-mouse-release.yml`)는 이 변경과 상관없이 그대로 돈다.
