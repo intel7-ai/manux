@@ -38,7 +38,7 @@ _SPECS = (
     ActionSpec("mouse.move", HOLD, params=("gain",), v03=("move_cursor",)),
     ActionSpec("mouse.left_click", TAP, v03=("left_click",)),
     ActionSpec("mouse.right_click", TAP, v03=("right_click",)),
-    ActionSpec("mouse.drag", SPAN, v03=("drag_hold", "drag_toggle")),
+    ActionSpec("mouse.drag", SPAN, params=("gain",), v03=("drag_hold", "drag_toggle")),
     ActionSpec("mouse.scroll", SPAN, params=("gain",), v03=("scroll_grab",)),
     ActionSpec("window.task_switcher", TAP, v03=("task_switcher", "alt_tab")),
     ActionSpec("window.show_desktop", TAP, v03=("show_desktop",)),

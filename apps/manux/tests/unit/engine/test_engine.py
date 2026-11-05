@@ -297,3 +297,28 @@ def test_camera_timeout_releases_output_and_resets_filter_once():
     assert sinks[OutputTarget.WINDOWS].releases == ["hand_lost"]
     resumed = frame(0, 1.7)
     assert eng.step(resumed, hand(resumed)).events == ("mark:camera delayed", "hand_lost")
+
+
+def test_motion_enter_is_refused_while_the_output_holds_a_drag_or_coasts():
+    """v0.3 also blocked motion entry on the mouse's own state (drag button down, scroll inertia)."""
+    eng, pointer, motion, sinks = build()
+    go_main(eng)
+    out = sinks[OutputTarget.WINDOWS]
+    out.holding = lambda: True
+    motion.queue = [("motion.enter", "tap")]
+    snap = eng.step(frame(1, 5.0), hand(frame(1, 5.0)))
+    assert snap.mode == "pointer" and any("refused:output holding" in e for e in snap.events)
+    out.holding = lambda: False
+    motion.queue = [("motion.enter", "tap")]
+    assert eng.step(frame(2, 5.1), hand(frame(2, 5.1))).mode == "motion"
+
+
+def test_a_failing_output_holding_counts_as_not_holding():
+    eng, _, motion, sinks = build()
+    go_main(eng)
+
+    def boom():
+        raise RuntimeError("no")
+    sinks[OutputTarget.WINDOWS].holding = boom
+    motion.queue = [("motion.enter", "tap")]
+    assert eng.step(frame(1, 5.0), hand(frame(1, 5.0))).mode == "motion"

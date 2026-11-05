@@ -110,8 +110,13 @@ class Intent:
     point: Optional[Point] = None
     confidence: Optional[float] = None
     info: Mapping[str, object] = field(default_factory=dict)
+    # Per-frame speed factor (v0.3 hand-shape / long-press multiplier). The router multiplies it into the
+    # binding's "gain" for actions that take a gain; other actions ignore it. None = 1.
+    scale: Optional[float] = None
 
     def __post_init__(self) -> None:
+        if self.scale is not None and not (_finite(self.scale) and self.scale > 0):
+            raise ValueError("scale must be a positive finite number")
         if not GESTURE_ID_RE.match(self.gesture):
             raise ValueError(f"gesture id must look like '<feature>.<name>', got {self.gesture!r}")
         if self.gesture.split(".", 1)[0] != self.source:

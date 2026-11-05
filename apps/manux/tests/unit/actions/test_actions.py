@@ -135,3 +135,19 @@ def test_each_catalog_action_routes_for_each_of_its_phases(action):
     for phase in CATALOG[action].phases:
         r = router.route(_intent("test.g", phase, (0.5, 0.5)))
         assert r.command is not None and r.command.action == action
+
+
+def test_router_multiplies_intent_scale_into_the_gain():
+    """Per-frame speed (v0.3 hand-shape / long-press multiplier) arrives as Intent.scale (2026-11-05)."""
+    router = Router({"pinch.move": Binding("mouse.move", {"gain": 2.0}), "pinch.drag": Binding("mouse.drag"),
+                     "pinch.thumb_middle": Binding("mouse.left_click")})
+
+    def scaled(gesture, phase, scale):
+        intent = Intent(t=1.0, source="pinch", gesture=gesture, phase=phase, point=(0.5, 0.5), scale=scale)
+        return dict(router.route(intent).command.params)
+
+    assert scaled("pinch.move", "hold", 12.5) == {"gain": 25.0}       # binding gain x scale
+    assert scaled("pinch.move", "hold", None) == {"gain": 2.0}
+    assert scaled("pinch.drag", "hold", 15.0) == {"gain": 15.0}       # default gain 1
+    assert scaled("pinch.thumb_middle", "tap", 3.0) == {}             # no gain on a click: ignored
+    assert dict(router.bindings["pinch.move"].params) == {"gain": 2.0}   # the binding itself is unchanged

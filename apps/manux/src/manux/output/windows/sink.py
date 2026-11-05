@@ -175,6 +175,11 @@ class WindowsOutputSink:
     def scroll_coasting(self) -> bool:
         return self.scroll.coasting
 
+    def holding(self) -> bool:
+        """A drag button is down or a scroll is active / still coasting (the arbiter refuses mode entry then)."""
+        with self._lock:
+            return bool(self.dragging or self.scroll.active or self.scroll.coasting)
+
     # ------------------------------------------------------------------ helpers
     def _collect(self, errors: List[str]) -> None:
         self.errors.extend(errors)
@@ -294,7 +299,7 @@ class WindowsOutputSink:
             if self.scroll.active:
                 self.scroll.end(cmd.t, launch=False)
             if cmd.point is not None:
-                self._move(cmd)
+                self._move(cmd, self._gain(cmd))
             self.buttons.press("left")
             self.dragging = True
             return OK
@@ -302,12 +307,12 @@ class WindowsOutputSink:
             if not self.dragging:
                 return BLOCKED
             if cmd.point is not None:
-                self._move(cmd)
+                self._move(cmd, self._gain(cmd))
             return OK
         # end
         if self.dragging:
             if cmd.point is not None:
-                self._move(cmd)
+                self._move(cmd, self._gain(cmd))
             self._end_drag()
         return OK
 

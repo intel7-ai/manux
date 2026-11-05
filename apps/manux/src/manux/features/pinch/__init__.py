@@ -10,7 +10,7 @@ Gestures (v0.3 frame action -> intent):
 | gesture id               | phase              | when (v0.3 action / gesture)                            | point        | default binding |
 | ------------------------ | ------------------ | ------------------------------------------------------- | ------------ | --------------- |
 | `pinch.move`             | hold               | `move_cursor` (no pinch, any hand shape but a fist)     | palm anchor  | `mouse.move` |
-| `pinch.move_fist`        | hold               | `move_cursor` from a fist (v0.3 x`fist_dpi_multiplier`) | palm anchor  | `mouse.move` gain 25 |
+| `pinch.move_fist`        | hold               | `move_cursor` from a fist (v0.3 x`fist_dpi_multiplier`) | palm anchor  | `mouse.move` |
 | `pinch.thumb_middle`     | tap                | `left_click`                                            | None         | `mouse.left_click` |
 | `pinch.thumb_ring`       | tap                | `right_click`                                           | None         | `mouse.right_click` |
 | `pinch.thumb_pinky`      | tap                | `task_switcher`                                         | None         | `window.task_switcher` |
@@ -29,10 +29,10 @@ Phase rules:
   release is confirmed.
 - The thumbs-up (motion mode entry pose) gives no intent: the cursor stays (v0.3 `motion_pose_freeze`).
 
-Speed: `pinch.move` carries `info["gain"]`, the v0.3 hand-shape multiplier (1 = open hand, up to 25 for a
-curled hand) and `pinch.drag` the long-press multiplier (15). `info` must not change output (contracts
-section 5), so until a per-frame gain is in the contract the output moves these at gain 1. Only the fist has
-its own gesture id, bound with `gain` (S3 hand-over).
+Speed: every move and drag intent carries `Intent.scale`, the v0.3 per-frame multiplier: the hand-shape speed
+for `pinch.move` (1 = open hand, up to `fist_dpi_multiplier` for a curled hand), `fist_dpi_multiplier` for
+`pinch.move_fist`, and `long_press_drag_multiplier` (15) for a long-press `pinch.drag`. The router multiplies
+it into the binding's `gain` (contracts sections 5 and 7), so changing those settings changes the speed.
 
 Not ported: Record & Fling (thumb+index `grab`, off by default in v0.3). The Alt-held task switcher of v0.3
 (hand navigation inside the switcher) is not here: `window.task_switcher` is one Alt+Tab (contracts section 7).
@@ -71,7 +71,7 @@ GESTURE_PHASES: Mapping[str, frozenset] = {
 }
 DEFAULT_BINDINGS: Mapping[str, Any] = {
     MOVE: "mouse.move",
-    MOVE_FIST: {"action": "mouse.move", "params": {"gain": DEFAULTS["fist_dpi_multiplier"]}},
+    MOVE_FIST: "mouse.move",          # speed comes from Intent.scale (fist_dpi_multiplier), not a fixed gain
     THUMB_MIDDLE: "mouse.left_click",
     THUMB_RING: "mouse.right_click",
     THUMB_PINKY: "window.task_switcher",
@@ -84,6 +84,15 @@ _TAPS = {"left_click": THUMB_MIDDLE, "right_click": THUMB_RING, "task_switcher":
 _SPANS = {"scroll_grab": SCROLL, "drag_hold": DRAG}
 
 
+def _scale(multiplier: Any) -> Optional[float]:
+    """The v0.3 per-frame multiplier as Intent.scale (None for 1 or an unusable value)."""
+    try:
+        m = float(multiplier)
+    except (TypeError, ValueError):
+        return None
+    return m if math.isfinite(m) and m > 0 and m != 1.0 else None
+
+
 class IntentMapper:
     """Turns v0.3-shaped frame results (`PinchFrame`, or a v0.3 `GestureResult` in the parity test) into intents.
 
@@ -92,10 +101,12 @@ class IntentMapper:
     def __init__(self) -> None:
         self.open: Optional[str] = None
         self.point: Optional[Tuple[float, float]] = None
+        self.scale: Optional[float] = None
 
     def clear(self) -> None:
         self.open = None
         self.point = None
+        self.scale = None
 
     def map(self, t: float, frame: Any) -> List[Intent]:
         if frame is None:
@@ -104,27 +115,28 @@ class IntentMapper:
         action = frame.action
         span = _SPANS.get(action)
         if self.open is not None and span != self.open:
-            out.append(Intent(t, ID, self.open, "end", point=self.point))
+            out.append(Intent(t, ID, self.open, "end", point=self.point, scale=self.scale))
             self.open = None
+            self.scale = None
         if span is not None:
             info: Dict[str, Any] = {"gesture": frame.active_gesture}
-            if span == DRAG and frame.dpi_multiplier != 1.0:
-                info["gain"] = frame.dpi_multiplier
+            # long-press drag moves at long_press_drag_multiplier (v0.3); scroll speed is the scroll's own gain
+            scale = _scale(frame.dpi_multiplier) if span == DRAG else None
             if self.open is None:
                 self.point = frame.cursor_point
                 self.open = span
-                out.append(Intent(t, ID, span, "begin", point=self.point, info=info))
+                self.scale = scale
+                out.append(Intent(t, ID, span, "begin", point=self.point, info=info, scale=scale))
             elif span == SCROLL and frame.releasing:
                 pass                                   # page frozen while the fingers open
             else:
                 self.point = frame.cursor_point
-                out.append(Intent(t, ID, span, "hold", point=self.point, info=info))
+                self.scale = scale
+                out.append(Intent(t, ID, span, "hold", point=self.point, info=info, scale=scale))
         elif action == "move_cursor" and frame.cursor_point is not None:
             fist = frame.active_gesture == "fist"
-            info = {"hand_shape": frame.hand_shape}
-            if not fist:
-                info["gain"] = frame.dpi_multiplier
-            out.append(Intent(t, ID, MOVE_FIST if fist else MOVE, "hold", point=frame.cursor_point, info=info))
+            out.append(Intent(t, ID, MOVE_FIST if fist else MOVE, "hold", point=frame.cursor_point,
+                              info={"hand_shape": frame.hand_shape}, scale=_scale(frame.dpi_multiplier)))
         elif action in _TAPS:
             out.append(Intent(t, ID, _TAPS[action], "tap"))
         return out
