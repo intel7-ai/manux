@@ -1,5 +1,17 @@
 # MANUX 팀 에이전트 작업 지침
 
+## 가장 먼저: v0.4 구조 (`apps/manux/`)
+
+2026-11-05부터 새 개발은 `apps/manux/`(v0.4, Qt/QML + Python)에서 한다. **`apps/manux/` 안의 작업, `hand-mouse/` 기능을 옮기는 작업, 손짓·TCN·출력·화면 구조에 관한 작업은 시작 전에 [apps/manux/AGENTS.md](apps/manux/AGENTS.md)와 거기서 지정한 [구조](apps/manux/docs/architecture.md)·[계약](apps/manux/docs/contracts.md)·[결정 기록](apps/manux/docs/decisions.md)을 먼저 읽는다.** 계약과 다른 구현을 하지 않는다. 계약을 바꿔야 하면 계약 문서부터 고친다.
+
+| 폴더 | 지위 (2026-11-05) |
+| --- | --- |
+| `apps/manux/` | v0.4 개발 위치. 지금은 골격·계약·구조 시험만 있다 |
+| `hand-mouse/` | v0.3 설치본. 버그 수정과 데이터 수집만. PR 본문에 v0.4 반영 여부를 적는다 |
+| `src/`, `public/`, `server.js`, `desktop/` | 이전 웹앱·Electron. 새 기능을 넣지 않는다. 아래의 웹앱 문서(`docs/contracts.md`, `docs/design/`)는 이 코드의 기록이다 |
+
+---
+
 이 저장소는 로컬 웹캠으로 영상과 Windows 마우스를 제어하는 MANUX의 공동 작업 공간이다. 먼저 [README](README.md)와 [하네스](docs/harness.md)를 읽고, 작업에 필요한 [설계 문서 5종](docs/design/README.md)·[모듈 계약](docs/contracts.md)과 관련 영역의 [작업 문서](docs/workstreams/)만 추가로 읽는다. 설계 문서의 컴포넌트 **하지 않는 것** 열이 파일 경계이고, 코드에 문서에 없던 판단이 생기면 같은 PR에서 문서를 고친다. [마스터 플랜](docs/master-plan.md)은 과거 계획을 포함하므로 현재 구현과 구분한다. 사람의 현재 요청이 이 문서보다 우선한다.
 
 ## 현재 상태

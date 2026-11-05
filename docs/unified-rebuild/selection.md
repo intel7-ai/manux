@@ -1,5 +1,7 @@
 # 2026-11-05 새 앱 구성 기준
 
+> **다음 문서 (2026-11-05):** 이 선별을 바탕으로 한 v0.4 구조·계약·결정은 [apps/manux/AGENTS.md](../../apps/manux/AGENTS.md)에서 시작한다. UI 플랫폼은 Qt/QML + Python으로 확정했다([D-001](../../apps/manux/docs/decisions.md#d-001-ui-플랫폼-qtqml--python-한-프로세스)).
+
 사용자 요청: 현재 앱을 보완하는 대신 GitHub와 Jira의 팀 자료를 모두 확인하고, 잘된 부분을 골라 새 앱으로 구성한다.
 새 앱은 `apps/manux/`에서 실행하며 기존 웹앱, `hand-mouse/`, 각 팀원 브랜치는 보존한다.
 시작 기준은 preview `36c3a01`이다. 원격 12개 브랜치와 Jira SCRUM 113개 작업을 확인했다.

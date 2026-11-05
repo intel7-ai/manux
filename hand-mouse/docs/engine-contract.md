@@ -1,5 +1,7 @@
 # 포인터 엔진 계약 (이식용)
 
+> **v0.4 (2026-11-05):** 이 엔진은 `apps/manux/`의 `pointer` 기능으로 옮긴다([구조 §5·§8](../../apps/manux/docs/architecture.md), [계약](../../apps/manux/docs/contracts.md)). 아래 입력·출력과 24,000프레임 비교가 그 이식의 비교 기준이다. 새 기능은 v0.4 계약을 따른다.
+
 `src/pointer_engine.py`의 `PointerEngine`은 Qt 검지 포인터 모드의 판정 로직 전체다. 카메라, MediaPipe, Qt, OpenCV, OS 입력 코드가 없다. 다른 셸(예: Tauri + TypeScript)로 옮길 때 이 문서의 입력·출력과 동작 규칙을 맞추고, 같은 사례로 시험한다.
 
 ## 계층
