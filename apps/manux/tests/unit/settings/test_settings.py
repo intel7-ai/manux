@@ -98,11 +98,13 @@ def test_v03_conversion_renames_known_keys_and_keeps_the_rest(tmp_path: Path):
     v03 = tmp_path / "v03"
     (v03 / "profiles").mkdir(parents=True)
     (v03 / "gestures.json").write_text(json.dumps({
-        "tracker_min_presence_confidence": 0.4, "pinch_threshold": 0.05, "gestures": {"a": 1}}), encoding="utf-8")
+        "tracker_min_presence_confidence": 0.4, "pinch_threshold": 0.05, "smoothing": 0.3,
+        "gestures": {"a": 1}}), encoding="utf-8")
     (v03 / "profiles" / "p1.json").write_text(json.dumps({"updates": {"hand_lost_reset": 0.5}}), encoding="utf-8")
     before = (v03 / "gestures.json").read_text(encoding="utf-8")
     base, profs, warnings = migrate_v03.read_v03(v03)
-    assert base == {"tracking.min_presence_confidence": 0.4, "v03.pinch_threshold": 0.05, "v03.gestures": {"a": 1}}
+    assert base == {"tracking.min_presence_confidence": 0.4, "pinch.pinch_threshold": 0.05,   # owned since S4
+                    "v03.smoothing": 0.3, "v03.gestures": {"a": 1}}
     assert profs == {"p1": {"app.hand_lost_reset": 0.5}}
     assert not warnings
     assert (v03 / "gestures.json").read_text(encoding="utf-8") == before   # never modified
