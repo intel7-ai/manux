@@ -15,13 +15,14 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterator, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, Mapping, Optional, Tuple
 
 from manux.actions.bindings import Binding
 from manux.app import _FEATURES, _camera_config, build_engine, schema
 from manux.capture.camera import LatestFrameCamera, brightness
 from manux.core.contracts import FrameInfo, HandObservation, OutputTarget
 from manux.data.recording import read, replay
+from manux.data.tracking_test import TrackingTest, load_recent_results, result_line, view as tracking_view
 from manux.engine.pipeline import Engine
 from manux.settings.paths import AppPaths, resolve
 from manux.settings.store import Settings, load
@@ -155,6 +156,12 @@ class DesktopRuntime:
         self._metrics = ("", -1, False)
         self._frames = 0
         engine.settings_for = self.settings_for
+        # tracking test (S6): owned by this thread; the UI asks with start/close and reads ViewFrame.tracking
+        self.log_dir: Optional[Path] = None
+        self.run_info: Callable[[], Dict[str, Any]] = dict    # settings written into the result CSV
+        self.tracking: Optional[TrackingTest] = None
+        self._tracking_request: Optional[str] = None
+        self.recent: Tuple[str, ...] = ()
 
     # ------------------------------------------------------------------ settings the UI changes
     def settings_for(self, fid: str) -> Mapping[str, object]:
@@ -174,6 +181,65 @@ class DesktopRuntime:
         if old is not None:
             bindings[POINTER_MOVE] = Binding(old.action, {**old.params, "gain": max(0.1, float(gain))})
             self.engine.router.set_bindings(bindings)
+
+    def pointer_gain(self) -> float:
+        binding = self.engine.router.bindings.get(POINTER_MOVE)
+        return float(binding.params.get("gain", 1.0)) if binding is not None else 1.0
+
+    # ------------------------------------------------------------------ tracking test (UI thread calls these)
+    def start_tracking_test(self) -> str:
+        """Ask for a new test (starts paused). Returns why it cannot start, or "" when asked."""
+        if self.engine.sinks.get(OutputTarget.WINDOWS) is None:
+            return "Windows 입력이 꺼져 있어 트래킹을 측정할 수 없습니다."
+        with self._lock:
+            self._tracking_request = "start"
+        return ""
+
+    def close_tracking_test(self) -> None:
+        with self._lock:
+            self._tracking_request = "close"
+
+    def _tracking_requests(self) -> None:
+        with self._lock:
+            request, self._tracking_request = self._tracking_request, None
+        sink = self.engine.sinks.get(OutputTarget.WINDOWS)
+        if request == "start" and self.tracking is None and sink is not None:
+            sink.release_all("tracking test")
+            self.tracking = TrackingTest(sink.screens.primary)
+            self.set_override("pointer", "tracking_only", True)     # follow the hand, never click
+        elif request == "close" and self.tracking is not None:
+            self.tracking = None
+            self.set_override("pointer", "tracking_only", False)
+
+    def _tracking_step(self, snap, hand, detect_ms: float) -> Optional[Dict[str, Any]]:
+        test = self.tracking
+        sink = self.engine.sinks.get(OutputTarget.WINDOWS)
+        if test is None or sink is None:
+            return None
+        pos = sink.cursor_pos
+        test.update(snap.t, pos, hand=hand is not None, active=snap.control_on and snap.mode == "pointer",
+                    fps=float(self.source.fps), detect_ms=detect_ms)
+        if test.done and test.saved is None and not test.result_text:
+            self._save_tracking(test)
+        return tracking_view(test, pos)
+
+    def _save_tracking(self, test: TrackingTest) -> None:
+        monitor = test.monitor
+        run = {"monitor_px": f"{monitor.width}x{monitor.height}", "camera_mode": self.source.mode_text(),
+               "hand_crop": self.use_crop, "control_hand": self.control_hand, "app": "manux-v0.4",
+               "sensitivity_pct": round(100 * self.pointer_gain()),
+               **self.run_info()}
+        text = test.summary_text()
+        if self.log_dir is None:
+            test.result_text = text
+            return
+        try:
+            test.saved = test.save_csv(self.log_dir, run)
+            text += f" · {test.saved.name}"
+        except OSError as exc:
+            text += f" · 저장 실패: {exc}"
+        test.result_text = text
+        self.recent = (result_line({**run, **test.summary()}, time.strftime("%m/%d %H:%M")),) + self.recent[:4]
 
     # ------------------------------------------------------------------ thread
     def start(self) -> None:
@@ -205,6 +271,7 @@ class DesktopRuntime:
                 time.sleep(0.2)
 
     def step(self) -> None:
+        self._tracking_requests()
         item = self.source.read(self.control_hand, self.use_crop)
         if item is None:
             self.engine.frame_missing(time.perf_counter())
@@ -217,6 +284,7 @@ class DesktopRuntime:
         if sink is not None and hasattr(sink, "set_frame_aspect"):
             sink.set_frame_aspect(frame.aspect)
         snap = self.engine.step(frame, hand)
+        tracking = self._tracking_step(snap, hand, float(detect_ms))
         self._frames += 1
         if image is not None and self._frames % 10 == 1:
             level = int(brightness(image))
@@ -229,7 +297,8 @@ class DesktopRuntime:
             snapshot=snap, image=image if self.want_image else None, hands=hands,
             landmarks=hand.landmarks if hand is not None else None, mirrored=frame.mirrored, aspect=frame.aspect,
             camera_mode=self._metrics[0], brightness=self._metrics[1], low_light=self._metrics[2],
-            fps=float(self.source.fps), detect_ms=float(detect_ms), actions=actions))
+            fps=float(self.source.fps), detect_ms=float(detect_ms), actions=actions,
+            tracking=tracking, recent=self.recent))
 
 
 def build(settings: Settings, source, *, windows: bool = True) -> DesktopRuntime:
@@ -271,6 +340,11 @@ def main(argv=None) -> int:
         print(exc, file=sys.stderr)
         return 1
     runtime = build(settings, source, windows=not args.no_windows_input and sys.platform == "win32")
+    runtime.log_dir = paths.log_dir
+    runtime.recent = tuple(load_recent_results(paths.log_dir))
+    runtime.run_info = lambda: {"anchor": settings.get("pointer.anchor"), "version": info.label,
+                                "tracker_min_detection_confidence": settings.get("tracking.min_detection_confidence"),
+                                "tracker_min_tracking_confidence": settings.get("tracking.min_tracking_confidence")}
     from manux.features.pointer.workspace import pointer_axes
     from manux.platform import hotkeys
     from manux.platform.tray import QtTray

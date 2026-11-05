@@ -1167,7 +1167,7 @@ ApplicationWindow {
             }
             Label {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: dashboard.trackingDone ? "Esc 닫기 · 결과는 hand-mouse/logs/tracking-*.csv"
+                text: dashboard.trackingDone ? "Esc 닫기 · 결과는 MANUX 로그 폴더의 tracking-*.csv"
                                              : "Space 제어 시작/일시정지 · Esc 그만두기 · 클릭은 하지 않습니다"
                 color: "#9FB3C2"
                 font.pixelSize: 14
