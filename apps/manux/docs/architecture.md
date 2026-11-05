@@ -1,6 +1,6 @@
 # MANUX v0.4 구조 (apps/manux)
 
-> 상태: **합의안 초안 (2026-11-05, Sean Choi)**. UI 플랫폼(Qt/QML + Python)과 새 앱 위치(`apps/manux/`)는 확정이다([결정 기록](decisions.md) D-001·D-002). 나머지는 팀 검토 전 초안이다.
+> 상태: **합의안 초안 (2026-11-05, Sean Choi)**. 결정 D-001~D-004·D-006과 D-005의 방향은 확정이다([결정 기록](decisions.md)). "제안"으로 표시된 부분은 팀 검토 전 초안이다.
 > 현재 `apps/manux/`에는 **폴더 골격·계약 코드·구조 시험만** 있다. 기능 코드는 아직 없다. 지금 설치본은 계속 `hand-mouse/`(v0.3)이다.
 
 ## 1. 목표
@@ -96,13 +96,14 @@ apps/manux/
 
 기능은 서로 import하지 않는다. 다른 기능의 상태가 필요하면 중재기가 `activity()`를 모아서 `FrameContext`로 넘긴다. 기능 등록은 `app.py`의 목록 한 줄이다.
 
+**기능을 나누는 기준 ([D-003](decisions.md#d-003-기능-모듈과-조립-지점-하나)):** 상태를 공유하며 겹치는 동작은 한 기능 안에 둔다. 독립적으로 켜고 끌 수 있는 것만 별도 기능으로 나눈다.
+
 v0.3에서 옮길 첫 기능 후보 (이름은 제안):
 
 | 기능 ID | 출처 (v0.3) | 비고 |
 | --- | --- | --- |
 | `pointer` | `pointer_engine.py`, `pointer_workspace.py` | 이미 분리됨. 먼저 옮긴다 |
-| `pinch` | `gesture_engine.py`의 핀치 판정 | 좌·우클릭, 다시 누름 히스테리시스 |
-| `scroll` | `gesture_engine.py`의 스크롤 잡기 + `mouse_controller.ScrollPump` | 판정과 관성 출력 분리 |
+| `pinch` | `gesture_engine.py`의 핀치 판정과 스크롤 잡기·드래그 | 좌·우클릭, 스크롤 잡기, 드래그가 누름 상태와 다시 누름 히스테리시스를 공유하므로 한 기능. 스크롤 관성(`mouse_controller.ScrollPump`)은 출력 쪽 |
 | `motion` | `motion_mode.py` | 스와이프 → 뒤로/앞으로/탭 |
 | `tcn_gate` | Dan `hand-mouse-gesture-overhaul@7448e4a`의 `gesture_gate.py`, `tcn_features.py` | `IntentFilter`로 구현 (§6) |
 
@@ -145,7 +146,7 @@ capture ─► tracking ─► HandObservation | None
 | S1 | `core` 보강, `settings`(v0.3 `gestures.json` 변환), `capture`, `tracking`, 재생 도구 | v0.3 녹화를 읽어 `HandObservation` 열로 재생 |
 | S2 | `pointer` 기능 + `output/practice`·`output/null` | 같은 입력 열에서 v0.3 `PointerEngine`과 출력 불일치 0 |
 | S3 | `output/windows` (커서 매핑·클릭·스크롤 관성·창 전환을 `mouse_controller.py`에서 분리) | 실제 Windows에서 이동·클릭·드래그·스크롤 수동 확인 기록 |
-| S4 | `pinch`, `scroll`, `motion` 기능, 중재기(비공개 필드 읽기 제거) | v0.3 재생 비교, 모션 진입 차단 시험 |
+| S4 | `pinch`(클릭·스크롤 잡기·드래그), `motion` 기능, 중재기(비공개 필드 읽기 제거) | v0.3 재생 비교, 모션 진입 차단 시험 |
 | S5 | `tcn_gate`, `ml`, `data/recorder`, `tools/train_tcn.py` (Dan 브랜치에서) | 모델 정보 검증, 확인기 켬/끔 재생 비교 |
 | S6 | QML 셸: 페이지·튜토리얼·설정·트레이·단축키·업데이트, 설치본 | 설치본으로 v0.3 기능 목록 수동 확인 후 배포 채널 전환 |
 
