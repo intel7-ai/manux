@@ -20,6 +20,17 @@ RENAMES: Dict[str, str] = {
     "tracker_min_presence_confidence": "tracking.min_presence_confidence",
     "tracker_min_tracking_confidence": "tracking.min_tracking_confidence",
     "tracker_detect_max_width": "tracking.detect_max_width",
+    # S2 pointer: keys only the v0.3 pointer read. Shared pinch thresholds (click_threshold ...)
+    # stay v03.* until S4 decides how pointer.* and pinch.* split them (one v0.3 key -> one row).
+    "pointer_move_latch": "pointer.move_latch",
+    "pointer_move_speed": "pointer.move_speed",
+    "pointer_still_speed": "pointer.still_speed",
+    "trigger_press_ratio": "pointer.trigger_press_ratio",
+    "trigger_release_ratio": "pointer.trigger_release_ratio",
+    "trigger_approach_ratio": "pointer.trigger_approach_ratio",
+    "trigger_long_press": "pointer.trigger_long_press",
+    "trigger_drag_move": "pointer.trigger_drag_move",
+    "trigger_rewind": "pointer.trigger_rewind",
 }
 PASSTHROUGH = "v03."
 
