@@ -72,7 +72,7 @@ def drag_pinch(shift=(0.0, 0.0)) -> Hand:
     """Thumb, index and middle tips together (three-finger drag)."""
     sx, sy = shift
     h = scroll_pinch(shift)
-    h = _set(h, 12, 0.445 + sx, 0.49 + sy)
+    h = _set(h, 12, 0.45 + sx, 0.485 + sy)
     return _set(h, 11, 0.46 + sx, 0.53 + sy)
 
 
@@ -110,15 +110,15 @@ def desktop_hand(shift=(0.0, 0.0)) -> Hand:
 def thumbs_up(shift=(0.0, 0.0)) -> Hand:
     """Four fingers folded, thumb out and above the index knuckle (motion mode entry pose)."""
     sx, sy = shift
-    return _set(real_hand(True, shift), 4, 0.40 + sx, 0.52 + sy)
+    return _set(real_hand(True, shift), 4, 0.34 + sx, 0.50 + sy)
 
 
 def approach(shift=(0.0, 0.0)) -> Hand:
-    """Middle tip 0.04 from the thumb: inside the approach zone, no click."""
+    """Index tip 0.035 from the thumb: past the pinch threshold, inside the approach zone (cursor frozen)."""
     sx, sy = shift
     h = real_hand(False, shift)
-    h = _set(h, 12, 0.48 + sx, 0.48 + sy)
-    return _set(h, 4, 0.48 + sx, 0.52 + sy)
+    h = _set(h, 8, 0.44 + sx, 0.48 + sy)
+    return _set(h, 4, 0.44 + sx, 0.515 + sy)
 
 
 PINCH_POSES = {
@@ -142,7 +142,7 @@ def pinch_sequence(seed: int, frames: int) -> List[Tuple[float, Optional[Hand]]]
     landmark jitter, uneven frame times and hand losses (short and longer than app.hand_lost_reset)."""
     rnd = random.Random(seed)
     names = list(PINCH_POSES)
-    weights = [3, 2, 1, 4, 2, 4, 3, 2, 3, 1, 1]
+    weights = [3, 2, 1, 4, 2, 4, 3, 2, 3, 2, 1]
     out: List[Tuple[float, Optional[Hand]]] = []
     t = 1.0
     prev = open_hand()
