@@ -1,0 +1,126 @@
+"""Train Dan's causal TCN on the gesture classes declared in MANUX recordings."""
+from __future__ import annotations
+
+import argparse
+from hashlib import file_digest
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+import numpy as np
+
+from manux.ml.card import CLASS_RE, validate_card
+from manux.perception.local3d import FEATURES, FEATURE_VERSION
+from tcn_data import class_mapping, class_names, evaluate, groups, load, samples
+
+WINDOW = 15
+
+
+def train(segments, classes, epochs):
+    import torch
+    from torch import nn
+
+    x, y = samples(segments, classes, WINDOW)
+    counts = np.bincount(y, minlength=len(classes))
+    if not counts.all():
+        missing = [name for name, count in zip(classes, counts) if not count]
+        raise ValueError(f"no usable training windows for {', '.join(missing)}")
+
+    class TCN(nn.Module):
+        def __init__(self):
+            super().__init__()
+            layers = []
+            channels = FEATURES
+            for dilation in (1, 2, 4):
+                layers.extend((nn.ConstantPad1d((2 * dilation, 0), 0), nn.Conv1d(channels, 64, 3, dilation=dilation),
+                               nn.ReLU(), nn.Dropout(0.2)))
+                channels = 64
+            self.body = nn.Sequential(*layers)
+            self.head = nn.Linear(channels, len(classes))
+
+        def forward(self, inputs):
+            return self.head(self.body(inputs.transpose(1, 2))[:, :, -1])
+
+    torch.manual_seed(0)
+    model = TCN()
+    weights = torch.tensor(counts ** -0.5, dtype=torch.float32)
+    loss_fn = nn.CrossEntropyLoss(weight=weights / weights.mean())
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    inputs, labels = torch.from_numpy(x), torch.from_numpy(y)
+    for _ in range(epochs):
+        for batch in torch.randperm(len(inputs)).split(256):
+            optimizer.zero_grad()
+            loss_fn(model(inputs[batch]), labels[batch]).backward()
+            optimizer.step()
+    return model.eval()
+
+
+def predict(model, inputs):
+    import torch
+
+    with torch.inference_mode():
+        batches = torch.from_numpy(inputs).split(1024)
+        return torch.cat([model(batch).softmax(dim=1) for batch in batches]).numpy()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("recordings", nargs="+", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--classes", nargs="+")
+    parser.add_argument("--kind", choices=("base", "personal"), default="personal")
+    parser.add_argument("--hold-out", choices=("posture", "person", "both"), default="both")
+    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--threshold", type=float, default=0.7)
+    parser.add_argument("--frames-in-a-row", type=int, default=3)
+    args = parser.parse_args()
+    if args.output.suffix.lower() != ".onnx" or args.epochs < 1:
+        parser.error("use an .onnx output and at least one epoch")
+    try:
+        recordings = list(dict.fromkeys(path.resolve() for path in args.recordings))
+        segments = load(recordings)
+        classes = args.classes or class_names(segments)
+        if ("none" not in classes or len(classes) < 2 or len(set(classes)) != len(classes)
+                or not all(CLASS_RE.fullmatch(name) for name in classes)):
+            raise ValueError("classes must include none and at least one distinct lowercase gesture class")
+        mapping = class_mapping(segments, classes)
+        results = []
+        sources = []
+        for path in recordings:
+            with path.open("rb") as file:
+                sources.append({"sha256": file_digest(file, "sha256").hexdigest()})
+        card = {"classes": classes, "gestures": mapping, "kind": args.kind, "window": WINDOW,
+                "features": FEATURES, "feature_version": FEATURE_VERSION, "threshold": args.threshold,
+                "frames_in_a_row": args.frames_in_a_row, "trained": datetime.now(timezone.utc).isoformat(),
+                "data": sources, "held_out_results": results}
+        validate_card(card, FEATURE_VERSION, FEATURES)
+        axes = ("person", "posture") if args.hold_out == "both" else (args.hold_out,)
+        for axis in axes:
+            held_out = groups(segments, axis)
+            if len(held_out) < 2:
+                results.append({"axis": axis, "status": "insufficient_groups", "groups": len(held_out)})
+                continue
+            for key, test in held_out.items():
+                fit = [s for other, rows in held_out.items() if other != key for s in rows]
+                try:
+                    fold = train(fit, classes, args.epochs)
+                except ValueError as error:
+                    results.append({"axis": axis, "group": key, "status": "insufficient_data", "reason": str(error)})
+                    continue
+                metrics = evaluate(test, classes, mapping, lambda x: predict(fold, x),
+                                   WINDOW, args.threshold, args.frames_in_a_row)
+                results.append({"axis": axis, "group": key, "status": "evaluated", **metrics})
+        model = train(segments, classes, args.epochs)
+        import torch
+
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        torch.onnx.export(model, torch.zeros(1, WINDOW, FEATURES), str(args.output),
+                          input_names=["features"], output_names=["logits"], opset_version=17, dynamo=False)
+        args.output.with_suffix(".json").write_text(json.dumps(card, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps(results, indent=2))
+    except (ValueError, OSError, ImportError) as error:
+        parser.exit(1, f"{error}\n")
+
+
+if __name__ == "__main__":
+    main()
