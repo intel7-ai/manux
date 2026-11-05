@@ -27,7 +27,8 @@ def check_model(model_path=None):
         raise ValueError("TCN model input dimensions do not match this app")
     probs = predict(np.zeros((1, int(info["window"]), FEATURES), dtype=np.float32))
     if (probs.shape != (len(classes),) or not np.isfinite(probs).all()
-            or (probs < 0).any() or not np.isclose(probs.sum(), 1.0)):
+            or (probs < 0).any() or (probs > 1).any()
+            or (not info.get("independent_gestures") and not np.isclose(probs.sum(), 1.0))):
         raise ValueError("TCN model returned invalid probabilities")
     return {
         "model": path.name,

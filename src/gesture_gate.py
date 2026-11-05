@@ -31,19 +31,9 @@ GATED = {"right_click": "thumb_ring", "left_click": "thumb_middle", "scroll_grab
 
 def load_predictor(model_path: Path = DEFAULT_MODEL) -> Tuple[Callable[[np.ndarray], np.ndarray], Dict[str, Any]]:
     """(window -> class probabilities, model info). Raises if the model or onnxruntime is missing."""
-    import onnxruntime as ort
-
-    info = json.loads(Path(model_path).with_suffix(".json").read_text(encoding="utf-8"))
-    if info.get("feature_version") != FEATURE_VERSION:
-        raise ValueError(f"model features {info.get('feature_version')} != app features {FEATURE_VERSION}")
-    sess = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
-
-    def predict(x: np.ndarray) -> np.ndarray:
-        logits = sess.run(None, {"x": x.astype(np.float32)})[0][0]
-        e = np.exp(logits - logits.max())
-        return e / e.sum()
-
-    return predict, info
+    from src.gesture_models import load_single, compose_predictor
+    predict, info = load_single(model_path, FEATURE_VERSION)
+    return compose_predictor(model_path, predict, info)
 
 
 class GestureGate:
@@ -55,6 +45,8 @@ class GestureGate:
         self.window = int(info["window"])
         self.threshold = float(cfg.get("gate_threshold", info.get("threshold", 0.7)))
         self.k = int(cfg.get("gate_frames", info.get("frames_in_a_row", 3)))
+        self.thresholds = {} if "gate_threshold" in cfg else info.get("gesture_thresholds", {})
+        self.frame_counts = {} if "gate_frames" in cfg else info.get("gesture_frames", {})
         self.lookback = float(cfg.get("gate_lookback", 0.5))
         self.wait = float(cfg.get("gate_wait", 0.3))
         self._frames: Deque[Dict[str, Any]] = deque(maxlen=self.window + 1)
@@ -91,12 +83,14 @@ class GestureGate:
         if name not in self.classes:
             return False
         c = self.classes.index(name)
+        threshold = self.thresholds.get(name, self.threshold)
+        required = self.frame_counts.get(name, self.k)
         run = 0
         for t, p in self._probs:
             if now - t > self.lookback:
                 continue
-            run = run + 1 if p[c] >= self.threshold else 0
-            if run >= self.k:
+            run = run + 1 if p[c] >= threshold else 0
+            if run >= required:
                 return True
         return False
 

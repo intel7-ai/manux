@@ -708,20 +708,25 @@ class QtRuntime:
     def _gate_for(self, ui) -> Optional[GestureGate]:
         """The intent checker when it is switched on (and the model loads), else None."""
         version = getattr(ui, "model_version", 0)
-        if version != getattr(self, "_model_version", 0):     # a new model was trained: load it next time
+        reload = version != getattr(self, "_model_version", 0)
+        if reload:
             self._model_version = version
-            self.gate, self._gate_failed = None, False
+            self._gate_failed = False
         if not ui.tcn_gate or self._gate_failed:
             return None
-        if self.gate is None:
+        if self.gate is None or reload:
             try:
                 predict, info = load_predictor(GATE_MODEL)
-                self.gate = GestureGate(predict, info, self.engine.config)
+                replacement = GestureGate(predict, info, self.engine.config)
+                self.mouse.release_all()
+                self.engine.reset()
+                self.pointer.reset()
+                self.gate = replacement
                 self._say(f"손짓 확인(TCN) 켜짐: 학습된 {len(info['classes']) - 1}종 동작을 확인해요", 3.0)
             except Exception as exc:
-                self._gate_failed = True
+                self._gate_failed = self.gate is None
                 self._say(f"손짓 확인(TCN)을 켜지 못했어요: {exc}", 5.0)
-                return None
+                return self.gate
         return self.gate
 
     def _intent(self, target, now):
