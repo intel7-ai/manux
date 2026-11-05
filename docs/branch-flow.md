@@ -9,8 +9,10 @@
 preview  ── 병합된 코드로 실제 앱 시험 (웹캠·Windows 입력·설치본)
    │ PR (head = preview) · MANUX required 통과 · 리뷰어 승인 불필요
    ▼
-production  ── 배포 기준
+production  ── 배포 기준: hand-mouse-release.yml이 설치본을 GitHub Release로 게시
 ```
+
+2026-11-05부터 production 병합으로 게시되는 것은 `hand-mouse/` 설치본(v0.3.x)뿐이다. 이전 Electron 게시 workflow(`release.yml`)는 v0.3보다 낮은 0.2.x를 게시하려다 매번 실패해 삭제했다.
 
 ## 규칙
 

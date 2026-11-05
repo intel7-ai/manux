@@ -1,4 +1,6 @@
-# Windows 앱 배포와 자동 업데이트
+# Windows 앱 배포와 자동 업데이트 (이전 Electron 앱)
+
+> **2026-11-05: 이 문서는 이전 Electron 앱(`desktop/`)의 기록이다.** 설치되는 MANUX 앱은 2026-11-04부터 Python 손 마우스 앱(`hand-mouse/`, v0.3.x)이며 빌드·게시·자동 업데이트는 [hand-mouse/docs/packaging.md](../hand-mouse/docs/packaging.md)와 `.github/workflows/hand-mouse-release.yml`을 따른다. Electron 정식 게시 workflow(`release.yml`)는 v0.3 릴리스보다 낮은 0.2.x를 게시하려다 production 병합마다 실패해 삭제했다. 아래의 production 게시·앱 업데이트 절은 더 이상 실행되지 않는다. production 대상 PR의 `Windows preview installer`(Electron 시험용 설치파일) 빌드는 `ci.yml`에 남아 있다.
 
 개인 PC의 AI와 Discord worker가 각각 작업 브랜치에서 개발하고 PR로 제출한다. `production`은 검사와 리뷰를 통과한 코드만 받으며, 병합 뒤 Windows 설치본과 업데이트를 자동 게시한다.
 
@@ -9,9 +11,9 @@
 3. 브랜치를 푸시하고 `preview` 대상 PR을 만든다. PR에는 목적·변경·검증·남은 한계를 적는다.
 4. PR의 `MANUX CI`가 Windows/Linux, 합성 브라우저, Windows helper, 실제 패키지 실행·업데이트 다운로드·설치본 교체를 검사한다. `MANUX-preview-...` artifact에는 시험용 설치파일이 있다.
 5. `MANUX required`가 통과하면 작성자가 preview에 병합한다(리뷰어 승인 없음). preview push의 artifact 설치파일로 실제 앱을 시험한다.
-6. preview에서 시험한 뒤 `preview → production` PR을 병합한다([브랜치 흐름](branch-flow.md)). `production`에 병합되면 `MANUX production release`가 검증·빌드하고 [GitHub Releases](https://github.com/intel7-ai/manux/releases)에 정식 버전을 게시한다.
+6. preview에서 시험한 뒤 `preview → production` PR을 병합한다([브랜치 흐름](branch-flow.md)). (2026-11-05 이전) `production`에 병합되면 `MANUX production release`가 검증·빌드하고 [GitHub Releases](https://github.com/intel7-ai/manux/releases)에 정식 버전을 게시했다. 지금은 `hand-mouse-release.yml`이 게시한다.
 
-검사 실패, 승인 대기, 머지 완료, 정식 Release 게시는 다른 상태다. 첫 Release가 게시되기 전에는 설치된 사용자 앱으로 전달할 정식 업데이트가 없다.
+검사 실패, 승인 대기, 머지 완료, 정식 Release 게시는 다른 상태다. Electron 정식 Release는 게시된 적이 없다(v0.2.1은 draft로 남아 있다).
 
 ## 정식 앱과 PR 시험용 앱
 
@@ -47,7 +49,7 @@ npm run test:update-download
 
 `asar: false`로 패키징하여 PowerShell helper와 로컬 파일 서버가 필요한 파일을 실제 경로로 읽는다. 모델은 저장된 SHA-256·크기와 일치해야 빌드된다. 빌드 도구는 고정 버전 electron-builder 26.18.0, 런타임 업데이트는 electron-updater 6.8.11이다.
 
-## 자동 배포의 경계
+## 자동 배포의 경계 (삭제된 `release.yml` 기준)
 
 PR job은 읽기 권한만 가진다. 설치파일을 만들지만 정식 Release를 게시하지 않는다. 태그를 푸시하는 것만으로 배포되지 않는다.
 

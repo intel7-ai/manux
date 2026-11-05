@@ -24,7 +24,7 @@
 
 **트레이로 실행 (Qt):** `uv run --locked --extra qt python main.py --ui qt --headless`로 시작하면 창 없이 알림 영역(트레이)에서 돌고, 화면 구석에 작은 상태 표시(클릭이 통과함)가 뜹니다. 트레이 아이콘 색: 초록 = 손 인식 중, 노랑 = 어두워 인식이 약함, 회색 = 손이 안 보임, 어두운 회색 = 입력 꺼짐. 트레이 메뉴에서 제어 시작/일시정지, 화면 열기, 트래킹 측정, 상태 표시 켜기/끄기, 종료를 합니다. 트레이가 있으면 창의 X는 종료가 아니라 트레이로 숨기기입니다. `--no-tray`, `--overlay`, `--no-overlay`, `--overlay-corner top-left|top-right|bottom-left|bottom-right`는 기본 실행과 같은 뜻입니다. 사용할 손을 아직 고르지 않았으면 처음에는 창이 뜹니다.
 
-MANUX Qt Quick 화면을 시험하려면 `uv run --locked --extra qt python main.py --ui qt --source 0`을 실행하세요. Tkinter 화면은 `--ui tk`로 선택할 수 있습니다. 두 화면 모두 시작할 때 OS 입력은 일시정지되어 있습니다. `--ui`를 주지 않으면 카메라 창·트레이 아이콘 모드(추론 스레드 분리)로 실행됩니다. `--ui tk|qt` 화면은 아직 트레이·`--headless`·상태 오버레이·UI 조준 보조를 쓰지 않습니다. `--ui qt`에서는 카메라·손 인식·포인터 판정·커서 제어가 별도 스레드(`src/qt_runtime.py`)에서 돌고, 화면 스레드는 결과만 그립니다. 판정 로직의 입력·출력은 [엔진 계약](docs/engine-contract.md)에 있습니다.
+MANUX Qt Quick 화면을 시험하려면 `uv run --locked --extra qt python main.py --ui qt --source 0`을 실행하세요. Tkinter 화면은 `--ui tk`로 선택할 수 있습니다. 두 화면 모두 시작할 때 OS 입력은 일시정지되어 있습니다. `--ui`를 주지 않으면 카메라 창·트레이 아이콘 모드(추론 스레드 분리)로 실행됩니다. `--ui qt`는 트레이·`--headless`·상태 오버레이·버튼 근처 자동 감속을 기본 실행과 같은 옵션으로 씁니다. `--ui tk`는 아직 이것들을 쓰지 않습니다. `--ui qt`에서는 카메라·손 인식·포인터 판정·커서 제어가 별도 스레드(`src/qt_runtime.py`)에서 돌고, 화면 스레드는 결과만 그립니다. 판정 로직의 입력·출력은 [엔진 계약](docs/engine-contract.md)에 있습니다.
 
 Qt 화면의 검지 포인터 모드에는 클릭 방식이 두 가지 있습니다. 왼쪽 패널의 **클릭 · …** 버튼으로 바꾸며, 바꾸면 제어가 일시정지됩니다.
 
