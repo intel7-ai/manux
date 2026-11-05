@@ -37,13 +37,15 @@ def test_hand_needs_21_finite_points_and_a_physical_side():
         HandObservation(frame(), HAND, "Left", 1.5)
 
 
-def test_intent_ids_are_namespaced_by_their_feature():
+def test_intent_ids_keep_the_logical_namespace_and_identify_the_producer():
     ok = Intent(t=1.0, source="pinch", gesture="pinch.thumb_middle", phase="tap", point=(0.5, 0.5))
     assert ok.gesture == "pinch.thumb_middle"
     with pytest.raises(ValueError):
         Intent(t=1.0, source="pinch", gesture="left_click", phase="tap")          # v0.3 action name
+    direct = Intent(t=1.0, source="tcn", gesture="pinch.thumb_middle", phase="tap")
+    assert direct.source == "tcn" and direct.gesture == "pinch.thumb_middle"
     with pytest.raises(ValueError):
-        Intent(t=1.0, source="motion", gesture="pinch.thumb_middle", phase="tap")  # wrong owner
+        Intent(t=1.0, source="TCN", gesture="pinch.thumb_middle", phase="tap")
     with pytest.raises(ValueError):
         Intent(t=1.0, source="pinch", gesture="pinch.thumb_middle", phase="press")
     with pytest.raises(ValueError):

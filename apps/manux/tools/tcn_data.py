@@ -15,6 +15,7 @@ from manux.data.recording import read
 from manux.data.rule_replay import rule_action
 from manux.features.tcn_gate import LEGACY_GESTURES
 from manux.perception.local3d import frame_features, windows
+from feature_cache import FeatureCache
 
 LEGACY_RULES = {"scroll_grab": "pinch.scroll", "right_click": "pinch.thumb_ring",
                 "left_click": "pinch.thumb_middle", "drag_hold": "pinch.drag",
@@ -36,6 +37,7 @@ class Segment:
     frames: list[dict]
     features: np.ndarray
     condition: str = ""
+    aspect: float = 0.5625
 
     def labels(self) -> list[str | None]:
         return [(f.get("label") or {}).get("target") for f in self.frames]
@@ -54,11 +56,15 @@ class Segment:
         return out
 
 
-def load(paths: list[Path], *, split: str | None = None) -> list[Segment]:
+def load(paths: list[Path], *, split: str | None = None, cache_dir: Path | None = None) -> list[Segment]:
     segments = []
     presets = set()
+    cache = FeatureCache(cache_dir) if cache_dir is not None else None
     for path in paths:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest() if cache is not None else ""
         recording = read(path)
+        if cache is not None and hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise ValueError(f"{path.name}: recording changed while reading")
         if not recording.complete or recording.bad_lines:
             raise ValueError(f"{path.name}: incomplete or corrupt recording")
         recorded_split = recording.meta.get("split")
@@ -71,9 +77,13 @@ def load(paths: list[Path], *, split: str | None = None) -> list[Segment]:
         person = recording.meta.get("person") or recording.meta.get("pc")
         group = hashlib.sha256(str(person).encode()).hexdigest()[:12] if person else ""
         width, height, _ = recording.frame_size()
+        offset = 0
         for (posture, condition), frames in groupby(recording.frames, _group):
             batch = list(frames)
-            segments.append(Segment(group, posture, batch, frame_features(batch, height / width), condition))
+            features = (cache.get(batch, height / width, digest, offset) if cache is not None
+                        else frame_features(batch, height / width))
+            segments.append(Segment(group, posture, batch, features, condition, height / width))
+            offset += len(batch)
     return segments
 
 

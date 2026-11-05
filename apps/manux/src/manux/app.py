@@ -19,6 +19,11 @@ from manux.engine.commands import SetBusy, SetStage
 from manux.engine.pipeline import Engine, EngineConfig
 from manux.engine.snapshot import Snapshot
 from manux.features import motion, pinch, pointer, tcn_gate
+from manux.features.tcn import TcnFeature, SETTINGS as TCN_SETTINGS
+from manux.ml.card import ModelError
+from manux.ml.predictor import LoadedModel, load_model
+from manux.ml.store import load_active
+from manux.perception.local3d import FEATURES, FEATURE_VERSION
 from manux.output.null import NullSink
 from manux.output.practice import PracticeSink
 from manux.settings.builtin import ALL
@@ -41,27 +46,54 @@ def schema() -> Schema:
     for module in [*(module for module, _ in _FEATURES), tcn_gate]:
         settings.add(Setting(key, default, kind=_SETTING_TYPES[type(default)])
                      for key, default in module.SETTINGS.items() if default is not None)
+    settings.add(Setting(key, value, kind="float") for key, value in TCN_SETTINGS.items())
     return settings
 
 
 def build_engine(settings: Settings, mode: str = "pointer", filters: tuple[IntentFilter, ...] = (),
-                 *, recording: bool = False) -> Engine:
+                 *, recording: bool = False, direct_model: LoadedModel | None = None,
+                 binding_overrides=None) -> Engine:
+    features, router, sources = pipeline_parts(direct_model, binding_overrides)
+    if direct_model is not None and filters:
+        raise ValueError("direct mode and confirmation filters cannot be used together")
+    engine = Engine(features, filters, router,
+                    {OutputTarget.NONE: NullSink(), OutputTarget.PRACTICE: PracticeSink()},
+                    settings.section, EngineConfig(hand_lost_reset=settings.get("app.hand_lost_reset"),
+                                                   base_mode=mode, motion_quiet=settings.get("motion.enter_quiet")),
+                    gesture_sources=sources)
+    if recording:
+        engine.commands.put(SetBusy("recording", True))
+    engine.commands.put(SetStage(Stage.MAIN if recording else Stage.TUTORIAL))
+    return engine
+
+
+def pipeline_parts(direct_model=None, binding_overrides=None):
+    """Assemble recognizers and checked bindings; no stage or output side effects."""
     defaults = {}
     phases = {}
     for module, _ in _FEATURES:
         defaults.update(module.DEFAULT_BINDINGS)
         phases.update(module.GESTURE_PHASES)
-    bindings, problems = resolve_bindings(defaults, gesture_phases=phases)
+    features = [factory() for _, factory in _FEATURES]
+    sources = {}
+    if direct_model is not None:
+        direct = TcnFeature(direct_model.predictor, direct_model.card)
+        phases.update(direct.gesture_phases)
+        sources = {g: direct.id for g in direct.gestures}
+        features.append(direct)
+    bindings, problems = resolve_bindings(defaults, binding_overrides, gesture_phases=phases)
     if problems:
-        raise ValueError(f"invalid feature defaults: {problems}")
-    engine = Engine([factory() for _, factory in _FEATURES], filters, Router(bindings),
-                    {OutputTarget.NONE: NullSink(), OutputTarget.PRACTICE: PracticeSink()},
-                    settings.section, EngineConfig(hand_lost_reset=settings.get("app.hand_lost_reset"),
-                                                   base_mode=mode, motion_quiet=settings.get("motion.enter_quiet")))
-    if recording:
-        engine.commands.put(SetBusy("recording", True))
-    engine.commands.put(SetStage(Stage.MAIN if recording else Stage.TUTORIAL))
-    return engine
+        raise ValueError(f"invalid bindings: {problems}")
+    return features, Router(bindings), sources
+
+
+def read_bindings(path: Path | None):
+    if path is None:
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("bindings must be an object mapping gesture IDs to actions")
+    return data
 
 
 def replay_snapshots(engine: Engine, path: Path) -> Iterator[Snapshot]:
@@ -113,6 +145,9 @@ def main() -> int:
     parser.add_argument("--source", help="camera index or network stream URL")
     parser.add_argument("--hand-model", type=Path, help="MediaPipe hand_landmarker.task")
     parser.add_argument("--tcn-model", type=Path, help="optional TCN .onnx file with its JSON card")
+    parser.add_argument("--tcn-mode", choices=("gate", "direct"), default="gate")
+    parser.add_argument("--tcn-store", type=Path, help="verified direct personal model store")
+    parser.add_argument("--bindings", type=Path, help="user gesture -> action bindings JSON")
     parser.add_argument("--config-dir", type=Path)
     parser.add_argument("--mode", choices=("pointer", "pinch"), default="pointer")
     parser.add_argument("--control-hand", choices=("Left", "Right"))
@@ -125,7 +160,11 @@ def main() -> int:
     for warning in settings.warnings:
         print(warning, file=sys.stderr)
     filters = ()
-    if args.tcn_model is not None:
+    if args.tcn_store is not None and (args.tcn_model is not None or args.tcn_mode != "direct"):
+        parser.error("--tcn-store requires direct mode and cannot be combined with --tcn-model")
+    if args.tcn_mode == "direct" and args.tcn_model is None and args.tcn_store is None:
+        parser.error("--tcn-mode direct needs --tcn-model or --tcn-store")
+    if args.tcn_model is not None and args.tcn_mode == "gate":
         eligible = {gid for module, _ in _FEATURES for gid in module.DEFAULT_BINDINGS
                     if module.GESTURE_PHASES[gid] & {"tap", "begin"}}
         loaded = tcn_gate.create_gate(args.tcn_model, settings.section("tcn_gate"), eligible=eligible)
@@ -136,7 +175,12 @@ def main() -> int:
 
     try:
         with ExitStack() as resources, ExitStack() as output:
-            engine = build_engine(settings, args.mode, filters)
+            direct = None
+            if args.tcn_mode == "direct":
+                direct = (load_active(args.tcn_store, FEATURE_VERSION, FEATURES) if args.tcn_store is not None
+                          else load_model(args.tcn_model, FEATURE_VERSION, FEATURES))
+            engine = build_engine(settings, args.mode, filters, direct_model=direct,
+                                  binding_overrides=read_bindings(args.bindings))
             output.callback(engine.shutdown)
             if args.replay is not None:
                 snapshots = replay_snapshots(engine, args.replay)
@@ -151,7 +195,7 @@ def main() -> int:
                     break
     except KeyboardInterrupt:
         return 130
-    except (ImportError, OSError, ValueError) as error:
+    except (ImportError, OSError, ValueError, ModelError) as error:
         print(error, file=sys.stderr)
         return 1
     return 0

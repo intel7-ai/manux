@@ -41,13 +41,15 @@ class EngineConfig:
 class Engine:
     def __init__(self, features: Sequence[Feature], filters: Sequence[IntentFilter], router: Router,
                  sinks: Mapping[OutputTarget, OutputSink], settings_for: SettingsFor,
-                 config: Optional[EngineConfig] = None, commands: Optional[CommandQueue] = None) -> None:
+                 config: Optional[EngineConfig] = None, commands: Optional[CommandQueue] = None,
+                 gesture_sources: Optional[Mapping[str, str]] = None) -> None:
         if OutputTarget.NONE not in sinks:
             raise ValueError("a sink for OutputTarget.NONE is required")
         ids = [f.id for f in features]
         if len(set(ids)) != len(ids):
             raise ValueError(f"feature ids must be unique: {ids}")
         self.features = list(features)
+        self.gesture_sources = self._check_sources(features, gesture_sources or {})
         self.filters = list(filters)
         self.router = router
         self.sinks = dict(sinks)
@@ -60,6 +62,38 @@ class Engine:
         self._lost_reset_done = True
         self._sink_target = OutputTarget.NONE
         self._pending_events: List[str] = []
+        self._claiming_sources: set[str] = set()
+
+    @staticmethod
+    def _check_sources(features, sources):
+        by_id = {f.id: f for f in features}
+        if len(by_id) != len(features):
+            raise ValueError("feature ids must be unique")
+        for gid, fid in sources.items():
+            if fid not in by_id or gid not in by_id[fid].gestures:
+                raise ValueError(f"gesture source {gid}: {fid} is not a declaring feature")
+        return dict(sources)
+
+    def replace_pipeline(self, features, filters, router, gesture_sources) -> None:
+        """Composition root, engine thread only. Validate before releasing or mutating anything."""
+        checked = self._check_sources(features, gesture_sources)
+        self._release("settings")
+        self._reset(self.features, "settings")
+        for feature in features:
+            feature.reset("settings")
+        for flt in filters:
+            flt.reset("settings")
+        self.features, self.filters = list(features), list(filters)
+        self.router, self.gesture_sources = router, checked
+        self._claiming_sources.clear()
+        self._pending_events.append("model:reloaded")
+
+    def prepare_model_reload(self) -> None:
+        """Release before potentially slow model IO; retain the current pipeline on load failure."""
+        self._release("settings")
+        self._reset(self.features, "settings")
+        self._claiming_sources.clear()
+        self._pending_events.append("model:loading")
 
     # ------------------------------------------------------------------ helpers
     def sink(self, target: Optional[OutputTarget] = None) -> OutputSink:
@@ -166,11 +200,24 @@ class Engine:
                 for intent in out:
                     if intent.source != f.id or intent.gesture not in f.gestures and not _mode_gesture(intent, f.id):
                         raise ValueError(f"undeclared gesture {intent.gesture!r} from {f.id}")
-                intents.extend(out)
+                intents.extend(i for i in out if self.gesture_sources.get(i.gesture, f.id) == f.id)
             except Exception as exc:
                 errors.append(FeatureError(f.id, repr(exc)))
                 self._release("error")
                 self._reset([f], "error")
+
+        # An authoritative classifier owns the frame while confirming/holding a recognized pose.
+        # Keep end events from competing features, but never execute a second rule action or cursor
+        # movement alongside it. A takeover from a rule span releases it before the new model action.
+        authoritative = set(self.gesture_sources.values())
+        claiming = {fid for fid, act in self._activities().items() if fid in authoritative and act.holding}
+        claiming.update(i.source for i in intents if i.source in authoritative and i.phase in ("tap", "begin", "hold"))
+        if claiming:
+            if claiming - self._claiming_sources and self._output_holding():
+                self._release("settings")
+                self._reset([f for f in self._active() if f.id not in claiming], "settings")
+            intents = [i for i in intents if i.source in claiming or i.phase == "end"]
+        self._claiming_sources = claiming
 
         # mode intents go to the arbiter. Besides the features' Activity it sees the output's own state
         # (a drag button down, scroll inertia still coasting), which v0.3 also blocked motion entry on.
@@ -196,6 +243,7 @@ class Engine:
                 self._release("error")
                 flt.reset("error")
 
+        intents.sort(key=lambda intent: intent.phase != "end")
         commands, routed = self.router.route_all(intents)
         sink = self.sink(self._sink_target)
         results: List[Tuple[str, str, OutputResult]] = []

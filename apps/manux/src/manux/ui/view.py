@@ -35,5 +35,6 @@ class ViewFrame:
     camera_ok: bool = True
     message: str = ""                          # one-line status from the runtime (camera errors ...)
     actions: Tuple[str, ...] = field(default=())   # action ids routed this frame (cards, tutorial, HUD)
+    model_status: str = ""                     # composed by the runtime, no UI model decisions
     tracking: Optional[Mapping[str, Any]] = None   # tracking test window state (data.tracking_test.view), None = closed
     recent: Tuple[str, ...] = ()               # tracking test result lines, newest first

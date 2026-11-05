@@ -1,7 +1,7 @@
 # MANUX v0.4 구조 (apps/manux)
 
 > 상태: **합의안 초안 (2026-11-05, Sean Choi)**. 결정 D-001~D-004·D-006과 D-005의 방향은 확정이다([결정 기록](decisions.md)). "제안"으로 표시된 부분은 팀 검토 전 초안이다.
-> 진행 상황은 [§8 이식 순서](#8-이식-순서)의 상태 열이 기준이다. Releases 설치파일은 S6의 배포 채널 전환 전까지 `hand-mouse/`(v0.3)에서 빌드한다.
+> 진행 상황은 [§8 이식 순서](#8-이식-순서)의 상태 열이 기준이다. 직접 TCN 판정·개인 모델 검증/설치·교체는 [사용법](direct-tcn.md)을 참고한다. Releases 설치파일은 S6의 배포 채널 전환 전까지 `hand-mouse/`(v0.3)에서 빌드한다.
 
 ## 1. 목표
 
@@ -106,6 +106,7 @@ v0.3에서 옮길 첫 기능 후보 (이름은 제안):
 | `pinch` | `gesture_engine.py`의 핀치 판정과 스크롤 잡기·드래그 | 좌·우클릭, 스크롤 잡기, 드래그가 누름 상태와 다시 누름 히스테리시스를 공유하므로 한 기능. 스크롤 관성(`mouse_controller.ScrollPump`)은 출력 쪽 |
 | `motion` | `motion_mode.py` | 스와이프 → 뒤로/앞으로/탭 |
 | `tcn_gate` | Dan `hand-mouse-gesture-overhaul@7448e4a`의 `gesture_gate.py`, `tcn_features.py` | `IntentFilter`로 구현 (§6) |
+| `tcn` | v0.4 직접 판정 | `Feature`; 모델 정보의 동작·phase·모드로 의도를 냄. 규칙과의 출처 선택은 엔진이 담당 |
 
 ## 6. 프레임 흐름
 

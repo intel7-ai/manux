@@ -8,6 +8,7 @@ actually loaded (`ml` extra), so the tests and CI run without it.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Optional, Protocol, Sequence, runtime_checkable
 
@@ -93,6 +94,9 @@ def load_model(path: Path, feature_version: str, features: Optional[int] = None,
     card = load_card(card_path(path), feature_version, features)
     if not path.is_file():
         raise ModelError("missing", path.name)
+    expected = card.raw.get("model_sha256")
+    if expected is not None and sha256(path.read_bytes()).hexdigest() != expected:
+        raise ModelError("checksum", path.name)
     session = (session_factory or _onnx_session)(path)
     try:
         predictor = OnnxPredictor(session, card)
@@ -100,4 +104,6 @@ def load_model(path: Path, feature_version: str, features: Optional[int] = None,
         raise
     except Exception as exc:
         raise ModelError("shape", f"{type(exc).__name__}: {exc}") from exc
+    if expected is not None and sha256(path.read_bytes()).hexdigest() != expected:
+        raise ModelError("checksum", "model changed while opening the session")
     return LoadedModel(path=path, card=card, predictor=predictor)

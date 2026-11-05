@@ -111,6 +111,37 @@ def test_only_main_with_control_on_reaches_windows():
         EngineState().with_busy("napping", True)
 
 
+def test_classifier_confirmation_releases_a_competing_rule_span_before_its_first_event():
+    from manux.output.practice import PracticeSink
+    eng, pointer, motion, _ = build()
+    model = Scripted("tcn", {"pointer"}, ["custom.drag"])
+    eng.features.append(model)
+    eng.gesture_sources = {"custom.drag": "tcn"}
+    eng.router.set_bindings({"pointer.drag": Binding("mouse.drag"), "custom.drag": Binding("mouse.drag")})
+    sink = PracticeSink()
+    eng.sinks[OutputTarget.PRACTICE] = sink
+    eng.commands.put(SetStage(Stage.TUTORIAL))
+    pointer.queue = [("pointer.drag", "begin")]
+    eng.step(frame(0, 1.), hand(frame(0, 1.)))
+    assert sink.holding()
+    model.holding = True                 # the classifier is confirming, not emitting yet
+    pointer.queue = [("pointer.drag", "hold")]
+    snap = eng.step(frame(1, 1.03), hand(frame(1, 1.03)))
+    assert not sink.holding() and snap.results == ()
+    model.queue = [("custom.drag", "begin")]
+    eng.step(frame(2, 1.06), hand(frame(2, 1.06)))
+    model.queue = [("custom.drag", "hold")]
+    eng.step(frame(3, 1.09), hand(frame(3, 1.09)))
+    assert sink.holding()                 # keeping the same claim must not release its own span
+    model.holding = False
+    model.queue = [("custom.drag", "end")]
+    pointer.queue = [("pointer.drag", "begin")]
+    snap = eng.step(frame(4, 1.12), hand(frame(4, 1.12)))
+    assert snap.results == (("mouse.drag", "end", "ok"), ("mouse.drag", "begin", "ok"))
+    assert sink.holding()
+    eng.shutdown()
+
+
 def test_engine_needs_a_none_sink_and_unique_ids():
     with pytest.raises(ValueError):
         Engine([], [], Router({}), {}, settings_for=lambda f: {})

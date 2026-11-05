@@ -23,6 +23,7 @@ PHASES: Tuple[str, ...] = ("tap", "begin", "hold", "end")
 
 GESTURE_ID_RE = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
 ACTION_ID_RE = GESTURE_ID_RE
+FEATURE_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 RESET_REASONS: Tuple[str, ...] = (
     "hand_lost", "stage_change", "mode_change", "pause", "settings", "shutdown", "error",
@@ -119,8 +120,8 @@ class Intent:
             raise ValueError("scale must be a positive finite number")
         if not GESTURE_ID_RE.match(self.gesture):
             raise ValueError(f"gesture id must look like '<feature>.<name>', got {self.gesture!r}")
-        if self.gesture.split(".", 1)[0] != self.source:
-            raise ValueError(f"gesture {self.gesture!r} must start with its source feature id {self.source!r}")
+        if not isinstance(self.source, str) or not FEATURE_ID_RE.fullmatch(self.source):
+            raise ValueError("source must be a lowercase feature id (the producing recognizer)")
         if self.phase not in PHASES:
             raise ValueError(f"phase must be one of {PHASES}")
         _check_point("point", self.point)
