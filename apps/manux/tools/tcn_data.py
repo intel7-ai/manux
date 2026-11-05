@@ -31,12 +31,20 @@ class Segment:
         return [(f.get("label") or {}).get("target") for f in self.frames]
 
 
-def load(paths: list[Path]) -> list[Segment]:
+def load(paths: list[Path], *, split: str | None = None) -> list[Segment]:
     segments = []
+    presets = set()
     for path in paths:
         recording = read(path)
         if not recording.complete or recording.bad_lines:
             raise ValueError(f"{path.name}: incomplete or corrupt recording")
+        recorded_split = recording.meta.get("split")
+        if split is not None and recorded_split is not None and recorded_split != split:
+            raise ValueError(f"{path.name}: expected a {split} recording, got {recorded_split}")
+        if preset := recording.meta.get("preset"):
+            presets.add(preset)
+            if len(presets) > 1:
+                raise ValueError("use recordings from one mouse preset per model")
         person = recording.meta.get("person") or recording.meta.get("pc")
         group = hashlib.sha256(str(person).encode()).hexdigest()[:12] if person else ""
         width, height, _ = recording.frame_size()

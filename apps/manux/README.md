@@ -34,20 +34,52 @@ uv run --extra vision python -m manux.app --camera --source 0
 TCN 확인기를 연결하려면 `uv run --with onnxruntime`으로 실행하고
 `--tcn-model <모델>.onnx`를 지정합니다. Qt 화면과 Windows 조작은 S6에서 연결합니다.
 
+## 테스터 프로필 데이터 수집
+
+저장소 루트에서 `apps/manux`로 이동한 뒤 실행합니다. `tester01`은 실명 대신 쓸
+테스터 별명입니다. 같은 별명으로 다시 실행하면 파일이 계속 추가됩니다.
+
+```powershell
+cd apps/manux
+uv run --locked --extra vision python tools/collect_mouse.py --profile tester01 --source 0
+```
+
+- 기본 프리셋은 손바닥 이동·주먹 빠른 이동, 좌·우클릭과 더블클릭, 가로·세로 스크롤,
+  길게 누르기와 세 손가락 드래그, 창 전환, 바탕화면, 엄지 척, 뒤로·앞으로, 이전·다음 탭,
+  중립 자세를 안내합니다. `--preset pointer`는 검지 포인터와 핀치 클릭,
+  `--preset trigger`는 검지 옆을 엄지로 눌러 클릭·드래그하는 방식입니다.
+  v0.3의 Record & Fling도 궤적 과제로 수집하며, 같은 엄지·검지 핀치 클래스를 공유합니다.
+- 카메라 창에서 `SPACE`로 세트를 시작하고 `GO`가 보일 때 동작합니다. `REST`에서 손을
+  편하게 되돌리세요. `R`은 현재 세트 재시도, 대기 중 `N`은 건너뛰기, `Esc`는 종료입니다.
+  완료한 세트는 즉시 저장되고 손 추적이 부족하거나 취소한 세트는 학습 입력에서 제외됩니다.
+- `--list`로 프리셋의 과제 키를 확인합니다. 예를 들어 `--focus none thumb_middle drag`는
+  세 과제만 수집합니다. `--control-hand Left`로 왼손을 고르고 `--reps 8`로 반복 횟수를
+  바꿀 수 있습니다. `--condition reclined`와 `--condition camera_shift`로 자세나 카메라 위치를
+  바꾼 세트를 구분하세요. 평가 시도는 `--split eval`로 따로 수집합니다.
+- 원본 영상은 화면에만 표시합니다. 손 관절 좌표·과제 라벨·규칙 판정은
+  `%APPDATA%/MANUX-dev/v04/recordings/profile-tester01/pinch/train/` 아래에 세트별
+  `.jsonl.gz`로 저장합니다. 실제 Windows 마우스·키보드 입력은 꺼져 있습니다.
+  카메라 모델은 로컬 v0.4 모델 또는 체크아웃의 `hand-mouse/models/hand_landmarker.task`를 사용합니다.
+
 ## TCN 학습과 평가 (S5)
 
 녹화에는 `label.target`과 `label.gesture`를 사용합니다. 이전 3클래스 녹화는 기존
-이름을 읽습니다. 새 녹화는 `GuidedSession`에 원하는 `GestureSpec` 목록을 넘깁니다.
+이름을 읽습니다. 더블클릭처럼 같은 입력을 반복하는 과제는 기존 입력 클래스에 포함됩니다.
 중립 `none`과 학습할 동작이 하나 이상 필요합니다. 손의 세계 좌표가 있는 프레임이
 학습에 사용됩니다.
 
 ```powershell
-uv run --with torch --with onnx python tools/train_tcn.py <녹화1> <녹화2> --output <모델>.onnx
-uv run --with onnxruntime python tools/evaluate_tcn.py <모델>.onnx <별도-평가-녹화> --group-by person
+$data = "$env:APPDATA/MANUX-dev/v04/recordings/profile-tester01/pinch"
+$train = (Get-ChildItem "$data/train/*.jsonl.gz").FullName
+$eval = (Get-ChildItem "$data/eval/*.jsonl.gz").FullName
+uv run --with torch --with onnx python tools/train_tcn.py $train --output "$data/personal.onnx"
+uv run --with onnxruntime python tools/evaluate_tcn.py "$data/personal.onnx" $eval --group-by person
 ```
 
 학습 도구는 클래스 목록을 녹화에서 읽습니다. `--classes`로 클래스와 순서를
-지정할 수 있습니다. 기본 평가는 사람과 자세를 각각 하나씩 제외해 학습을 반복합니다.
+지정할 수 있습니다. 모델마다 한 프리셋을 사용하세요. 기존 파일은 이전에 이동으로
+수집한 중립 `none`을 포함할 수 있으므로, 새 커서 이동 클래스를 학습할 때는 새 수집분을
+사용하세요. 기본 평가는 사람과 자세를 각각 하나씩 제외해 학습을 반복합니다.
 사람 그룹은 `meta.person` 별명을 우선하고, 없으면 `meta.pc` 별명을 씁니다.
 PC를 공유하면 사람마다 다른 별명이 필요합니다. 자세 그룹은 `condition_index`를
 우선하고, 없으면 `condition`을 씁니다. 같은 인덱스는 여러 녹화에서 같은 자세를
@@ -55,5 +87,6 @@ PC를 공유하면 사람마다 다른 별명이 필요합니다. 자세 그룹�
 
 평가는 동작 시도별 TCN·규칙 적중 횟수와 중립 구간의 분당 오실행을 기록합니다.
 규칙 적중은 녹화에 저장된 `rule`을 사용합니다. 비교하려는 동작의 규칙 출력을
-녹화에 포함해야 합니다. 학습에서 제외한 녹화로 평가하고 원본과 모델은 작업 폴더
-밖에 보관합니다.
+녹화에 포함해야 합니다. 더블클릭·스크롤 방향별 사용성은 실제 출력 평가가 필요합니다.
+커서 이동과 엄지 척도 학습 데이터에 포함할 수 있으며 실행기의 TCN 확인은 클릭처럼
+`tap` 또는 `begin`으로 시작하는 바인딩에 적용됩니다. 원본과 모델은 작업 폴더 밖에 보관합니다.

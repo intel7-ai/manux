@@ -78,7 +78,7 @@ def main() -> None:
         parser.error("use an .onnx output and at least one epoch")
     try:
         recordings = list(dict.fromkeys(path.resolve() for path in args.recordings))
-        segments = load(recordings)
+        segments = load(recordings, split="train")
         classes = args.classes or class_names(segments)
         if ("none" not in classes or len(classes) < 2 or len(set(classes)) != len(classes)
                 or not all(CLASS_RE.fullmatch(name) for name in classes)):

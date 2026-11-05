@@ -23,7 +23,7 @@ def main() -> None:
     try:
         model = load_model(args.model, FEATURE_VERSION, FEATURES)
         card = model.card
-        segments = load(list(dict.fromkeys(path.resolve() for path in args.recordings)))
+        segments = load(list(dict.fromkeys(path.resolve() for path in args.recordings)), split="eval")
         grouped = groups(segments, args.group_by) if args.group_by else {"all": segments}
         if not grouped:
             raise ValueError("no recordings have the requested grouping metadata")

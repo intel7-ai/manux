@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import asdict
 from pathlib import Path
 from time import perf_counter, sleep
@@ -15,7 +15,7 @@ from manux.actions.router import Router
 from manux.capture.camera import CameraConfig, LatestFrameCamera
 from manux.core.contracts import IntentFilter, OutputTarget, Stage
 from manux.data.recording import read, replay
-from manux.engine.commands import SetStage
+from manux.engine.commands import SetBusy, SetStage
 from manux.engine.pipeline import Engine, EngineConfig
 from manux.engine.snapshot import Snapshot
 from manux.features import motion, pinch, pointer, tcn_gate
@@ -44,7 +44,8 @@ def schema() -> Schema:
     return settings
 
 
-def build_engine(settings: Settings, mode: str = "pointer", filters: tuple[IntentFilter, ...] = ()) -> Engine:
+def build_engine(settings: Settings, mode: str = "pointer", filters: tuple[IntentFilter, ...] = (),
+                 *, recording: bool = False) -> Engine:
     defaults = {}
     phases = {}
     for module, _ in _FEATURES:
@@ -57,7 +58,9 @@ def build_engine(settings: Settings, mode: str = "pointer", filters: tuple[Inten
                     {OutputTarget.NONE: NullSink(), OutputTarget.PRACTICE: PracticeSink()},
                     settings.section, EngineConfig(hand_lost_reset=settings.get("app.hand_lost_reset"),
                                                    base_mode=mode, motion_quiet=settings.get("motion.enter_quiet")))
-    engine.commands.put(SetStage(Stage.TUTORIAL))
+    if recording:
+        engine.commands.put(SetBusy("recording", True))
+    engine.commands.put(SetStage(Stage.MAIN if recording else Stage.TUTORIAL))
     return engine
 
 
@@ -88,6 +91,20 @@ def _camera_config(settings: Settings, source: str | None) -> CameraConfig:
                         rotation=int(options["rotation"]))
 
 
+@contextmanager
+def camera_session(settings: Settings, source: str | None, model_path: Path):
+    with ExitStack() as resources:
+        camera = LatestFrameCamera(_camera_config(settings, source))
+        resources.callback(camera.release)
+        if not camera.open():
+            raise OSError("could not open the camera")
+        track = settings.section("tracking")
+        landmarker = MediaPipeLandmarker(model_path, **options_from(track))
+        resources.callback(landmarker.close)
+        tracker = HandTracker(landmarker, use_crop=track["hand_crop"], min_score=track["min_hand_score"])
+        yield camera, tracker
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     inputs = parser.add_mutually_exclusive_group(required=True)
@@ -109,7 +126,9 @@ def main() -> int:
         print(warning, file=sys.stderr)
     filters = ()
     if args.tcn_model is not None:
-        loaded = tcn_gate.create_gate(args.tcn_model, settings.section("tcn_gate"))
+        eligible = {gid for module, _ in _FEATURES for gid in module.DEFAULT_BINDINGS
+                    if module.GESTURE_PHASES[gid] & {"tap", "begin"}}
+        loaded = tcn_gate.create_gate(args.tcn_model, settings.section("tcn_gate"), eligible=eligible)
         if loaded.gate is None:
             print(f"TCN: {loaded.text}", file=sys.stderr)
         else:
@@ -122,16 +141,9 @@ def main() -> int:
             if args.replay is not None:
                 snapshots = replay_snapshots(engine, args.replay)
             else:
-                camera = LatestFrameCamera(_camera_config(settings, args.source))
-                resources.callback(camera.release)
-                if not camera.open():
-                    raise OSError("could not open the camera")
-                track = settings.section("tracking")
                 model_path = args.hand_model or (paths.data_dir / "models" / "hand_landmarker.task")
-                landmarker = MediaPipeLandmarker(model_path, **options_from(track))
-                resources.callback(landmarker.close)
-                tracker = HandTracker(landmarker, use_crop=track["hand_crop"], min_score=track["min_hand_score"])
-                hand = args.control_hand or track["control_hand"] or "Right"
+                camera, tracker = resources.enter_context(camera_session(settings, args.source, model_path))
+                hand = args.control_hand or settings.get("tracking.control_hand") or "Right"
                 snapshots = camera_snapshots(engine, camera, tracker, hand)
             for index, snapshot in enumerate(snapshots, start=1):
                 print(json.dumps(asdict(snapshot), ensure_ascii=True))
