@@ -11,7 +11,7 @@
 | [harness.md](harness.md) | 작업 접수·결과 보고 형식 (`harness/`) |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | PR·검사 절차. 검사 명령 부분은 이전 웹앱 기준이다 |
 
-## 현재: v0.4 (`apps/manux/`, 개발 중)
+## 현재: MANUX (`apps/manux/`, v0.4)
 
 | 문서 | 내용 |
 | --- | --- |
@@ -22,12 +22,14 @@
 | [../apps/manux/docs/decisions.md](../apps/manux/docs/decisions.md) | 확정·제안 결정 (D-001~) |
 | [unified-rebuild/selection.md](unified-rebuild/selection.md) | v0.4 착수 때 팀 자료에서 고른 것과 뺀 것 (11/05) |
 
-## 현재: v0.3 (`hand-mouse/`, 설치본)
+## 이전 버전 v0.3 (`hand-mouse/`)
+
+`apps/manux`에 설치본이 생길 때까지 Releases `v0.3.x` 설치파일은 이 폴더에서 빌드한다. 기능 설명은 `apps/manux`로 옮긴 기능의 출처로 참고한다.
 
 | 문서 | 내용 |
 | --- | --- |
 | [../hand-mouse/README.md](../hand-mouse/README.md) | 실행 옵션·설정 키·트래킹 측정·실패 기록 |
-| [../hand-mouse/docs/packaging.md](../hand-mouse/docs/packaging.md) | 설치본·자동 업데이트·릴리스 |
+| [../hand-mouse/docs/packaging.md](../hand-mouse/docs/packaging.md) | 현재 설치본·자동 업데이트·릴리스 (`apps/manux` 설치본이 생기면 교체) |
 | [../hand-mouse/docs/engine-contract.md](../hand-mouse/docs/engine-contract.md) | 검지 포인터 엔진의 입력·출력 |
 | [../hand-mouse/docs/motion-mode.md](../hand-mouse/docs/motion-mode.md) | 모션 모드 |
 | [../hand-mouse/docs/hand-shape-speed.md](../hand-mouse/docs/hand-shape-speed.md) | 손 모양으로 커서 속도 정하기 |

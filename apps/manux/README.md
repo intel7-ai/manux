@@ -1,8 +1,8 @@
-# MANUX v0.4 (apps/manux)
+# MANUX (apps/manux, v0.4)
 
-웹캠으로 Windows를 손짓으로 다루는 MANUX의 다음 버전. Qt/QML + Python 한 프로세스이고, MediaPipe 손 인식 위에 규칙 판정과 가벼운 TCN 모델을 같은 계약으로 얹는다.
+웹캠으로 Windows를 손짓으로 다루는 앱 MANUX. Qt/QML + Python 한 프로세스이고, MediaPipe 손 인식 위에 규칙 판정과 가벼운 TCN 모델을 같은 계약으로 얹는다.
 
-**현재 상태 (2026-11-05):** 포인터·핀치·모션, TCN 확인기와 헤드리스 실행기를 연결했습니다. 현재 설치본은 `hand-mouse/`(v0.3)입니다.
+**현재 상태 (2026-11-05):** 포인터·핀치·모션, TCN 확인기와 헤드리스 실행기를 연결했습니다. Releases의 설치파일은 이 폴더에 설치본이 생길 때까지 이전 버전 `hand-mouse/`(v0.3)에서 빌드합니다.
 
 ## 먼저 읽을 것
 

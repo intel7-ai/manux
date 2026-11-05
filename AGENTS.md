@@ -1,13 +1,13 @@
 # MANUX 팀 에이전트 작업 지침
 
-## 가장 먼저: v0.4 구조 (`apps/manux/`)
+## 가장 먼저: MANUX는 `apps/manux/`
 
-2026-11-05부터 새 개발은 `apps/manux/`(v0.4, Qt/QML + Python)에서 한다. **`apps/manux/` 안의 작업, `hand-mouse/` 기능을 옮기는 작업, 손짓·TCN·출력·화면 구조에 관한 작업은 시작 전에 [apps/manux/AGENTS.md](apps/manux/AGENTS.md)와 거기서 지정한 [구조](apps/manux/docs/architecture.md)·[계약](apps/manux/docs/contracts.md)·[결정 기록](apps/manux/docs/decisions.md)을 먼저 읽는다.** 계약과 다른 구현을 하지 않는다. 계약을 바꿔야 하면 계약 문서부터 고친다.
+앱 이름은 **MANUX**이고 코드는 `apps/manux/`(v0.4, Qt/QML + Python)다. 2026-11-05부터 모든 새 개발·수정은 여기서 한다. `hand-mouse/`는 이전 버전 v0.3이며 앱 이름으로 쓰지 않는다. **`apps/manux/` 안의 작업, `hand-mouse/` 기능을 옮기는 작업, 손짓·TCN·출력·화면 구조에 관한 작업은 시작 전에 [apps/manux/AGENTS.md](apps/manux/AGENTS.md)와 거기서 지정한 [구조](apps/manux/docs/architecture.md)·[계약](apps/manux/docs/contracts.md)·[결정 기록](apps/manux/docs/decisions.md)을 먼저 읽는다.** 계약과 다른 구현을 하지 않는다. 계약을 바꿔야 하면 계약 문서부터 고친다.
 
 | 폴더 | 지위 (2026-11-05) |
 | --- | --- |
-| `apps/manux/` | v0.4 개발 위치. 이식 S0~S5 병합, S6(데스크톱 화면) 진행 중. 아직 설치본이 아니다. 상태는 [apps/manux/AGENTS.md](apps/manux/AGENTS.md) "현재 상태"가 기준이다 |
-| `hand-mouse/` | v0.3 설치본(Releases `v0.3.x`, `hand-mouse-release.yml`이 production 병합 때 게시). 버그 수정과 데이터 수집만. PR 본문에 v0.4 반영 여부를 적는다 |
+| `apps/manux/` | **MANUX.** 이식 S0~S5 병합, S6(데스크톱 화면) 진행 중. 아직 설치본이 아니다. 상태는 [apps/manux/AGENTS.md](apps/manux/AGENTS.md) "현재 상태"가 기준이다 |
+| `hand-mouse/` | 이전 버전 v0.3. `apps/manux`에 설치본이 생길 때까지만 Releases `v0.3.x`를 여기서 빌드한다(`hand-mouse-release.yml`). 설치본에 필요한 버그 수정만 받고, 새 기능·데이터 수집은 `apps/manux`에 한다. PR 본문에 `apps/manux` 반영 여부를 적는다 |
 | `src/`, `public/`, `server.js`, `desktop/` | 이전 웹앱·Electron(v0.2). 새 기능을 넣지 않는다. 정식 게시 workflow는 2026-11-05 삭제했다. 아래의 웹앱 문서(`docs/contracts.md`, `docs/design/`)는 이 코드의 기록이다 |
 
 문서별 현재/기록 구분은 [docs/README.md](docs/README.md)를 본다.

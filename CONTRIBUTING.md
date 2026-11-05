@@ -2,7 +2,7 @@
 
 팀원과 에이전트는 같은 작업 규칙과 검사 명령을 사용합니다. 먼저 [README](README.md), [공통 작업·결과 규칙](docs/harness.md), [AGENTS.md](AGENTS.md)를 읽으세요. 파일 경계는 [설계 문서](docs/design/README.md), 영역별 작업은 [작업 문서](docs/workstreams/), 모듈 연결은 [계약](docs/contracts.md)을 따릅니다.
 
-> **2026-11-05:** 아래 npm 명령·`.cmd` 파일·Electron 설명은 **이전 웹앱(`src/`·`desktop/`)** 기준입니다. 설치되는 앱은 `hand-mouse/`(v0.3), 새 개발은 `apps/manux/`(v0.4)이며 둘 다 Python(`uv`)입니다. 폴더별 실행·검사 명령은 [README](README.md#검사와-ci)와 각 폴더 README를 따르세요. 브랜치·PR·보고 규칙(1·3·5절)은 모든 폴더에 같습니다.
+> **2026-11-05:** 아래 npm 명령·`.cmd` 파일·Electron 설명은 **이전 웹앱(`src/`·`desktop/`)** 기준입니다. MANUX는 `apps/manux/`(Python, `uv`)이고 새 개발은 모두 여기서 합니다. 이전 버전 `hand-mouse/`(v0.3)는 `apps/manux` 설치본이 생길 때까지 설치파일 빌드에만 씁니다. 폴더별 실행·검사 명령은 [README](README.md#검사와-ci)와 각 폴더 README를 따르세요. 브랜치·PR·보고 규칙(1·3·5절)은 모든 폴더에 같습니다.
 
 코드를 직접 수정하지 않는 팀원은 [Discord 참여 안내](README.md#discord로-참여하기)만으로 시작할 수 있습니다. 설치가 익숙하지 않으면 [첫날 온보딩](docs/onboarding.md)을 사용하세요.
 
@@ -129,7 +129,7 @@ git push -u origin HEAD
 gh pr create --base preview
 ```
 
-PR과 preview push의 Actions artifact에서 시험용 Preview 앱을 내려받아 확인합니다. preview에서 시험한 뒤 `preview → production` PR로 병합하면 `hand-mouse-release.yml`이 `hand-mouse/` 설치본을 빌드해 GitHub Release로 게시하고, 설치된 앱의 업데이터가 새 버전을 확인합니다(2026-11-05부터 Electron 앱은 게시하지 않음). 로컬 개발 실행과 PR 시험본이 정식 업데이트를 받는 것처럼 설명하지 않습니다. 자세한 설치·업데이트 동작은 [데스크톱 배포](docs/desktop-release.md)를 확인하세요.
+PR과 preview push의 Actions artifact에서 시험용 Preview 앱을 내려받아 확인합니다. preview에서 시험한 뒤 `preview → production` PR로 병합하면 `hand-mouse-release.yml`이 설치본을 빌드해 GitHub Release로 게시하고(`apps/manux` 설치본이 생길 때까지 v0.3 코드), 설치된 앱의 업데이터가 새 버전을 확인합니다(2026-11-05부터 Electron 앱은 게시하지 않음). 로컬 개발 실행과 PR 시험본이 정식 업데이트를 받는 것처럼 설명하지 않습니다. 자세한 설치·업데이트 동작은 [데스크톱 배포](docs/desktop-release.md)를 확인하세요.
 
 사용자 프로필·원시 영상·토큰·계정 정보·로컬 산출물을 커밋하지 않습니다. 다른 사람의 Node·Chrome·Claude 프로세스를 일괄 종료하지 않습니다. GitHub/Jira 게시와 이슈 완료는 요청 범위와 실제 완료 기준에 따라 수행합니다.
 
