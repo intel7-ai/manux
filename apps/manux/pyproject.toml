@@ -12,6 +12,7 @@ dependencies = ["numpy>=2"]
 [project.optional-dependencies]
 vision = ["opencv-python>=5.0.0.93", "mediapipe>=1.2.0"]   # S1: real camera and hand tracking
 test = ["pytest>=8"]                                        # CI: pip install -e ".[test]"
+ui = ["pyside6-essentials>=6.8,<7"]                         # S6: the desktop window (python -m manux)
 ml = ["onnxruntime>=1.31.1"]                                # S5: run a TCN model (ml/, imported lazily)
 # S5: tools/train_tcn.py only. torch is never imported by src/ (architecture.md section 4).
 train = ["torch>=2.15.0", "onnx>=1.23.2", "onnxscript>=0.7.2", "onnxruntime>=1.31.1"]
