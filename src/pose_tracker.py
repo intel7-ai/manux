@@ -53,7 +53,8 @@ class PoseTracker:
         if not path.exists():
             raise FileNotFoundError(f"Pose model not found: {path}")
         options = mp.tasks.vision.PoseLandmarkerOptions(
-            base_options=mp.tasks.BaseOptions(model_asset_path=str(path)),
+            # Read with Python so Windows paths containing Korean also work.
+            base_options=mp.tasks.BaseOptions(model_asset_buffer=path.read_bytes()),
             running_mode=mp.tasks.vision.RunningMode.VIDEO,
             num_poses=1,
             min_pose_detection_confidence=0.5,

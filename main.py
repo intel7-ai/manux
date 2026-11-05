@@ -286,6 +286,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--ui", choices=("tk", "qt"), default=None,
                         help="Desktop dashboard (tk or qt). Default: camera window + tray icon")
+    parser.add_argument("--tcn-app", action="store_true",
+                        help="Use the standalone TCN app identity and palm-mode defaults")
     return parser.parse_args()
 
 
@@ -323,6 +325,7 @@ def run_qt(args, perf, engine, camera, tracker, mouse, settings, keys, perf_log)
         dry_run=args.dry_run, hide_to_tray=tray_ok, start_hidden=args.headless and tray_ok,
         overlay=(args.headless or args.overlay) and not args.no_overlay,
         overlay_corner=args.overlay_corner,
+        tcn_app=args.tcn_app,
     )
     tray = None
     if tray_ok:

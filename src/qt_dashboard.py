@@ -55,8 +55,9 @@ class QtDashboard(QObject):
     trainingChanged = Signal()        # training center: data, scores, training job, export
 
     def __init__(self, dry_run=False, *, hide_to_tray=False, start_hidden=False,
-                 overlay=False, overlay_corner="top-right"):
+                 overlay=False, overlay_corner="top-right", tcn_app=False):
         super().__init__()
+        self.tcn_app = bool(tcn_app)
         self.commands = deque()
         self.closed = False
         # Tray mode (--headless / tray available): closing the window hides it instead of quitting
@@ -82,10 +83,12 @@ class QtDashboard(QObject):
         # QApplication (not QGuiApplication): the tray menu is a Qt Widgets QMenu
         self.application = QApplication.instance() or QApplication([])
         self.application.setQuitOnLastWindowClosed(False)
-        self.preferences = QSettings("MANUX", "Hand-Mouse")
+        self.preferences = (QSettings(str(DEFAULT_CONFIG_PATH.parent / "tcn-ui.ini"), QSettings.IniFormat)
+                            if self.tcn_app else QSettings("MANUX", "Hand-Mouse"))
         saved = self.preferences.value("controlHand", "", type=str)
         self.control_hand = saved if saved in ("Left", "Right") else ""
-        self.use_index_pointer = self.preferences.value("indexPointer", True, type=bool)
+        self.use_index_pointer = (False if self.tcn_app
+                                  else self.preferences.value("indexPointer", True, type=bool))
         saved_click = self.preferences.value("pointerClick", "pinch", type=str)
         # "pinch": thumb + middle/ring (existing). "trigger": option A, thumb on the index side.
         # "off": cursor tracking only, no click detection at all.
@@ -156,6 +159,14 @@ class QtDashboard(QObject):
     @Property(str, notify=stateChanged)
     def stage(self):
         return self.stage_name
+
+    @Property(str, constant=True)
+    def appTitle(self):
+        return "Hand-Mouse · MANUX TCN" if self.tcn_app else "Hand-Mouse · MANUX Qt"
+
+    @Property(str, constant=True)
+    def appName(self):
+        return "MANUX TCN" if self.tcn_app else "MANUX"
 
     @Property(bool, notify=stateChanged)
     def pointerOnly(self):

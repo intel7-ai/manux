@@ -27,3 +27,5 @@ config/gestures.json.bak-*
 recordings/*.summary.json
 exports/
 recordings/*.part
+.local/
+config/tcn-ui.ini

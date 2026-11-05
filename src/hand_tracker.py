@@ -150,6 +150,8 @@ class HandTracker:
         }
         self.last_detect_ms: float = 0.0
         resolved_model = ensure_model_exists(model_path or DEFAULT_MODEL_PATH)
+        # MediaPipe's native Windows file loader cannot reliably open Korean paths.
+        model_bytes = resolved_model.read_bytes()
 
         BaseOptions = mp.tasks.BaseOptions
         HandLandmarker = mp.tasks.vision.HandLandmarker
@@ -157,7 +159,7 @@ class HandTracker:
         VisionRunningMode = mp.tasks.vision.RunningMode
 
         options = HandLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path=str(resolved_model)),
+            base_options=BaseOptions(model_asset_buffer=model_bytes),
             running_mode=VisionRunningMode.VIDEO,
             num_hands=num_hands,
             min_hand_detection_confidence=min_detection_confidence,
@@ -169,7 +171,7 @@ class HandTracker:
         # Hand-area crop: a second landmarker (one hand) fed a full-resolution crop around
         # the hand, created on first use. Separate instance = separate VIDEO-mode state.
         self._crop_options = HandLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path=str(resolved_model)),
+            base_options=BaseOptions(model_asset_buffer=model_bytes),
             running_mode=VisionRunningMode.VIDEO,
             num_hands=1,
             min_hand_detection_confidence=min_detection_confidence,

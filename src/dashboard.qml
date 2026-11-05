@@ -9,7 +9,7 @@ ApplicationWindow {
     minimumWidth: 780
     minimumHeight: 560
     visible: true
-    title: "Hand-Mouse · MANUX Qt"
+    title: dashboard.appTitle
     color: "#F4F6F8"
     onClosing: function (close) {
         if (dashboard.hidesToTray) {
@@ -240,7 +240,7 @@ ApplicationWindow {
                 anchors.leftMargin: 24
                 anchors.rightMargin: 24
                 spacing: 12
-                TextLabel { text: "MANUX"; font.pixelSize: 26; font.bold: true }
+                TextLabel { text: dashboard.appName; font.pixelSize: 26; font.bold: true }
                 TextLabel { text: "INPUT STUDIO"; font.pixelSize: 11; font.letterSpacing: 1.4; color: window.muted }
                 Item { Layout.fillWidth: true }
                 ActionButton { text: "학습 센터"; onClicked: trainingCenter.open() }

@@ -230,18 +230,22 @@ def test_the_corner_badge_text_follows_the_mode():
     pytest = __import__("pytest")
     pytest.importorskip("PySide6")
     from src.qt_dashboard import QtDashboard
-    stub = SimpleNamespace(motion_state=(True, 4.2, "뒤로", 0.0, 0.0), motion_exit_until=0.0)
+    # The dashboard also tracks the independent close and enable/disable signs.
+    def state(**kwargs):
+        return SimpleNamespace(close_state=(0.0, 0.0), toggle_progress=0.0, **kwargs)
+
+    stub = state(motion_state=(True, 4.2, "뒤로", 0.0, 0.0), motion_exit_until=0.0)
     visible, text = QtDashboard._motion_badge_now(stub)
     assert visible and "켜짐" in text and "뒤로" in text and "4초" in text
-    stub = SimpleNamespace(motion_state=(False, 0.0, "", 0.5, 0.0), motion_exit_until=0.0)
+    stub = state(motion_state=(False, 0.0, "", 0.5, 0.0), motion_exit_until=0.0)
     assert "진입 중" in QtDashboard._motion_badge_now(stub)[1]
-    stub = SimpleNamespace(motion_state=(False, 0.0, "", 0.0, 0.0), motion_exit_until=_time.perf_counter() + 1)
+    stub = state(motion_state=(False, 0.0, "", 0.0, 0.0), motion_exit_until=_time.perf_counter() + 1)
     assert QtDashboard._motion_badge_now(stub) == (True, "모션 모드 꺼짐")
-    stub = SimpleNamespace(motion_state=(False, 0.0, "", 0.0, 0.0), motion_exit_until=0.0)
+    stub = state(motion_state=(False, 0.0, "", 0.0, 0.0), motion_exit_until=0.0)
     assert QtDashboard._motion_badge_now(stub) == (False, "")
-    stub = SimpleNamespace(motion_state=(True, 0.0, "", 0.0, 0.0), motion_exit_until=0.0)
+    stub = state(motion_state=(True, 0.0, "", 0.0, 0.0), motion_exit_until=0.0)
     assert QtDashboard._motion_badge_now(stub) == (True, "모션 모드 켜짐")           # no timeout: no countdown
-    stub = SimpleNamespace(motion_state=(True, 0.0, "", 0.0, 0.5), motion_exit_until=0.0)
+    stub = state(motion_state=(True, 0.0, "", 0.0, 0.5), motion_exit_until=0.0)
     assert "끄는 중" in QtDashboard._motion_badge_now(stub)[1]
 
 
