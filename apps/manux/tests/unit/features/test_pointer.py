@@ -514,3 +514,12 @@ def test_every_begin_gets_an_end_and_intents_follow_the_contract(style):
         assert [i.phase for i in out if i.gesture == "pointer.drag"] == ["end"]
     if style == "trigger":
         assert begins > 0
+
+
+def test_v03_pointer_keys_convert_to_pointer_settings():
+    from manux.settings.migrate_v03 import RENAMES
+
+    for short, v03_key in V03_KEYS.items():
+        assert RENAMES[v03_key] == "pointer." + short
+    for key in ThumbTrigger.DEFAULTS:
+        assert RENAMES[key] == "pointer." + key and "pointer." + key in SETTINGS
