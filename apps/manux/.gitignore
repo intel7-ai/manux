@@ -8,3 +8,6 @@ dist/
 # personal data never belongs here (D-006)
 *.jsonl.gz
 *.jsonl.gz.part
+.env
+.env.*
+!.env.example

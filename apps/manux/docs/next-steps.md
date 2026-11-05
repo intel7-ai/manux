@@ -68,7 +68,7 @@ uv run --python 3.12 --extra vision python tools/collect_mouse.py --list
 uv run --python 3.12 --extra vision python tools/collect_mouse.py --profile <익명별명> --preset pinch --plan basic --hand-model ..\..\hand-mouse\models\hand_landmarker.task
 ```
 - 평가용은 따로 `--split eval`로 한 번 더(학습과 같은 시도를 섞지 않는다).
-- 녹화는 사용자 폴더에 저장된다. 저장소에 넣지 않는다(D-006). 팀 공유는 v0.4 동안 허용.
+- 녹화는 사용자 폴더에 저장된다. 저장소에 넣지 않는다(D-006). 팀 공유는 `tools/hub.py`(`se4nchoi/manux-datasets`)로 올리고 받는다([dataset-hub.md](dataset-hub.md) 참고: `uv run --python 3.12 --with huggingface-hub python tools/hub.py push` / `pull`).
 - 모이면: `uv run --python 3.12 --extra train python tools/compare_tcn.py <녹화들> --axis person`.
 
 ### 4.3 [실제 PC] 하드웨어 확인 (웹캠 있는 Windows PC)

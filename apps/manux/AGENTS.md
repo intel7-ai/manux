@@ -9,6 +9,7 @@
 3. [docs/decisions.md](docs/decisions.md): **확정**과 **제안**을 구분한다. 제안을 확정된 규칙처럼 설명하지 않는다
 4. [`src/manux/core/contracts.py`](src/manux/core/contracts.py): 계약 타입의 실제 코드
 5. [docs/next-steps.md](docs/next-steps.md): 지금 상태, TCN 구조 결정(비교 실험), 다음 할 일 순서
+6. [docs/dataset-hub.md](docs/dataset-hub.md): 팀 녹화 데이터(`.jsonl.gz`)·모델(`.onnx`) 수집 및 Hugging Face 허브(`tools/hub.py`) 동기화 절차
 
 읽은 뒤 작업 계획에 "어느 계층·어느 기능 ID·어느 계약 절"을 고치는지 적는다. 그 범위 밖의 파일은 고치지 않는다.
 
@@ -31,7 +32,7 @@
 5. **화면은 판정하지 않는다.** QML·뷰모델에 손짓 판정, 임계값 계산, 액션 실행을 넣지 않는다.
 6. **동작 ID ≠ 액션 ID.** 기능은 `<기능>.<이름>` 동작만 내고 실행은 바인딩이 정한다.
 7. **이식은 비교로 끝낸다.** `hand-mouse/`에서 옮긴 기능은 같은 입력 열에서 v0.3과 출력이 같은지 재생 시험으로 확인한다. 의도적으로 바꾼 동작은 PR에 차이와 이유를 적는다.
-8. **개인 데이터 금지.** 사용자 이름, 개인 프로필, 웹캠 영상, 계정·키를 저장소와 시험 fixture에 넣지 않는다. 녹화 원본은 `apps/manux/`와 시험 fixture에 복사하지 않는다(팀 실험 공유는 [D-006](docs/decisions.md#d-006-학습-데이터-위치)을 따른다).
+8. **개인 데이터 금지.** 사용자 이름, 개인 프로필, 웹캠 영상, 계정·키를 저장소와 시험 fixture에 넣지 않는다. 녹화 원본은 `apps/manux/`와 시험 fixture에 복사하지 않는다(팀 실험 공유는 [D-006](docs/decisions.md#d-006-학습-데이터-위치)과 [docs/dataset-hub.md](docs/dataset-hub.md)의 `tools/hub.py`를 따른다).
 
 ## 기능 추가 절차
 
