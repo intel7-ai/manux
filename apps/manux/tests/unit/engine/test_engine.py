@@ -277,10 +277,17 @@ def test_camera_timeout_releases_output_and_resets_filter_once():
         def reset(self, reason):
             self.reasons.append(reason)
 
+        def observe(self, hand, ctx):
+            pass
+
+        def filter(self, intents, ctx):
+            return intents
+
     flt = Filter()
     eng.filters.append(flt)
     eng.commands.put(SetStage(Stage.MAIN))
     eng.commands.put(SetControl(True))
+    eng.commands.put(Mark("camera delayed"))
     eng.frame_missing(1.0)
     eng.frame_missing(1.2)
     eng.frame_missing(1.31)
@@ -288,3 +295,5 @@ def test_camera_timeout_releases_output_and_resets_filter_once():
     assert flt.reasons.count("hand_lost") == 1
     assert pointer.resets.count("hand_lost") == 1
     assert sinks[OutputTarget.WINDOWS].releases == ["hand_lost"]
+    resumed = frame(0, 1.7)
+    assert eng.step(resumed, hand(resumed)).events == ("mark:camera delayed", "hand_lost")

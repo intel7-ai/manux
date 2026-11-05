@@ -2,7 +2,7 @@
 
 웹캠으로 Windows를 손짓으로 다루는 MANUX의 다음 버전. Qt/QML + Python 한 프로세스이고, MediaPipe 손 인식 위에 규칙 판정과 가벼운 TCN 모델을 같은 계약으로 얹는다.
 
-**현재 상태 (2026-11-05):** 폴더 골격, 계약 코드(`src/manux/core/contracts.py`), 구조·계약 시험만 있다. 실행되는 앱은 아직 없다. 지금 쓰는 설치본은 `hand-mouse/`(v0.3)다.
+**현재 상태 (2026-11-05):** 포인터·핀치·모션, TCN 확인기와 헤드리스 실행기를 연결했습니다. 현재 설치본은 `hand-mouse/`(v0.3)입니다.
 
 ## 먼저 읽을 것
 
@@ -19,6 +19,20 @@ uv run --python 3.12 pytest -q
 ```
 
 카메라·모델 없이 실행된다. 이 시험이 통과해도 손 인식이나 실제 사용 성능을 뜻하지 않는다.
+
+## 헤드리스 실행
+
+완료된 녹화를 재생하거나 실제 카메라에서 프레임별 JSON Snapshot을 출력할 수 있습니다.
+두 경로 모두 연습 출력을 사용합니다. 조작 손은 설정에서 읽고, 설정이 비어 있으면
+오른손을 사용합니다. `--control-hand Left`로 선택할 수 있습니다.
+
+```powershell
+uv run python -m manux.app --replay <녹화> --mode pinch --max-frames 100
+uv run --extra vision python -m manux.app --camera --source 0
+```
+
+TCN 확인기를 연결하려면 `uv run --with onnxruntime`으로 실행하고
+`--tcn-model <모델>.onnx`를 지정합니다. Qt 화면과 Windows 조작은 S6에서 연결합니다.
 
 ## TCN 학습과 평가 (S5)
 

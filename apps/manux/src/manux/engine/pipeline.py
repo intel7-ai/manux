@@ -58,6 +58,7 @@ class Engine:
         self._lost_since: Optional[float] = None
         self._lost_reset_done = True
         self._sink_target = OutputTarget.NONE
+        self._pending_events: List[str] = []
 
     # ------------------------------------------------------------------ helpers
     def sink(self, target: Optional[OutputTarget] = None) -> OutputSink:
@@ -128,13 +129,12 @@ class Engine:
 
     def frame_missing(self, now: float) -> None:
         """Apply control changes and run the loss timer while capture supplies no frame."""
-        events: List[str] = []
-        self._drain(events)
-        self._check_hand_loss(now, events)
+        self._drain(self._pending_events)
+        self._check_hand_loss(now, self._pending_events)
 
     # ------------------------------------------------------------------ the frame
     def step(self, frame: FrameInfo, hand: Optional[HandObservation]) -> Snapshot:
-        events: List[str] = []
+        events, self._pending_events = self._pending_events, []
         errors: List[FeatureError] = []
         self._drain(events)
         now = frame.t
