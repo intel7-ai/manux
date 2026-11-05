@@ -264,3 +264,25 @@ def test_win32_backend_refuses_to_start_off_windows(monkeypatch):
     monkeypatch.setattr(win32.sys, "platform", "linux")
     with pytest.raises(OSError):
         win32.Win32Backend()
+
+
+def test_drag_moves_with_its_gain():
+    slow, fast = sink(), sink()
+    for s, gain in ((slow, 1.0), (fast, 15.0)):
+        s.apply(cmd("mouse.drag", "begin", (.5, .5), 0.0, gain=gain))
+        for i in range(1, 4):
+            s.apply(cmd("mouse.drag", "hold", (.5 + .002 * i, .5), i * FRAME, gain=gain))
+    assert fast.backend.pos[0] - 960 > 5 * (slow.backend.pos[0] - 960) > 0
+
+
+def test_holding_reports_a_drag_or_an_active_scroll():
+    s = sink()
+    assert not s.holding()
+    s.apply(cmd("mouse.drag", "begin", (.5, .5), 0.0))
+    assert s.holding()
+    s.apply(cmd("mouse.drag", "end", None, FRAME))
+    assert not s.holding()
+    s.apply(cmd("mouse.scroll", "begin", (.5, .5), 2 * FRAME))
+    assert s.holding()
+    s.release_all("test")
+    assert not s.holding()

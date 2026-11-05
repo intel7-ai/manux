@@ -33,6 +33,10 @@ class PracticeSink:
     def held(self) -> FrozenSet[str]:
         return frozenset(self._held)
 
+    def holding(self) -> bool:
+        """A begun span (drag / scroll) has not ended yet (the arbiter refuses mode entry then)."""
+        return bool(self._held)
+
     @property
     def last(self) -> Optional[ActionCommand]:
         return self.commands[-1] if self.commands else None
