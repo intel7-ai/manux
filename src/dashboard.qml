@@ -797,6 +797,12 @@ ApplicationWindow {
                                     }
                                     TextLabel { text: row.modelData.model_text; font.pixelSize: 11; color: window.muted }
                                     TextLabel {
+                                        visible: row.modelData.label === "thumb_middle"
+                                        text: "좌클릭과 중지 유지 드래그가 같은 모델을 공유합니다."
+                                        font.pixelSize: 11
+                                        color: window.muted
+                                    }
+                                    TextLabel {
                                         Layout.fillWidth: true
                                         text: "→ " + row.modelData.advice
                                         font.pixelSize: 12
@@ -804,14 +810,28 @@ ApplicationWindow {
                                         wrapMode: Text.Wrap
                                     }
                                 }
-                                ActionButton {
-                                    text: "집중 녹화 설정"
-                                    accent: row.modelData.level === "need"
-                                    enabled: !dashboard.trainingRunning && dashboard.recMode === "off"
-                                    onClicked: {
-                                        if (dashboard.focusRecord(row.modelData.key)) {
-                                            trainingCenter.close()
-                                            capturePlan.open()
+                                ColumnLayout {
+                                    ActionButton {
+                                        text: "이 동작만 학습"
+                                        visible: row.modelData.can_train
+                                        accent: true
+                                        enabled: !dashboard.trainingRunning && !dashboard.recActive && dashboard.trainingBusy === ""
+                                        onClicked: dashboard.trainSelectedGesture(row.modelData.key)
+                                    }
+                                    TextLabel {
+                                        visible: !row.modelData.can_train
+                                        text: "선택 학습의 공통 오답 자료"
+                                        font.pixelSize: 11
+                                        color: window.muted
+                                    }
+                                    ActionButton {
+                                        text: "집중 녹화 설정"
+                                        enabled: !dashboard.trainingRunning && dashboard.recMode === "off"
+                                        onClicked: {
+                                            if (dashboard.focusRecord(row.modelData.key)) {
+                                                trainingCenter.close()
+                                                capturePlan.open()
+                                            }
                                         }
                                     }
                                 }
@@ -875,7 +895,7 @@ ApplicationWindow {
                     }
                 }
                 ActionButton {
-                    text: dashboard.trainingRunning ? "학습 멈춤" : "학습 시작"
+                    text: dashboard.trainingRunning ? "학습 멈춤" : "전체 통합 학습"
                     accent: !dashboard.trainingRunning
                     enabled: dashboard.trainingBusy === "" && !dashboard.recActive
                     onClicked: dashboard.trainingRunning ? dashboard.stopTraining() : dashboard.startTraining()

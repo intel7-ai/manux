@@ -26,6 +26,7 @@ config/gestures.json.bak-*
 # Training center: per-recording summary cache and exported model packages
 recordings/*.summary.json
 exports/
+models/gestures/
 recordings/*.part
 .local/
 config/tcn-ui.ini

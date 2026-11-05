@@ -304,9 +304,13 @@ def main() -> int:
     ap.add_argument("--no-export", action="store_true")
     ap.add_argument("--progress", action="store_true", help="JSON progress lines for the app")
     ap.add_argument("--output-dir", type=Path, default=ROOT / "models", help="model output folder")
+    ap.add_argument("--gestures", nargs="+", help="train only these gesture tasks as independent binary models")
     a = ap.parse_args()
     global PROGRESS
     PROGRESS = a.progress
+    if a.gestures:
+        from scripts.train_selected import run
+        return run(a, sys.modules[__name__])
 
     # The list is fixed here: files that arrive (git pull) or finish recording while training wait for the next run.
     from src.recorder import finished_recordings

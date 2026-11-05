@@ -68,6 +68,16 @@ Dan님의 `intel7-ai/manux` / `hand-mouse-gesture-overhaul` 최신 커밋
 
 ## 개발 검사
 
+### 원하는 동작만 학습하기
+
+학습 센터에서 원하는 동작 행의 **이 동작만 학습**을 누릅니다.
+선택한 동작의 이진 TCN을 학습하며 중립·다른 동작의 녹화는 오답 자료로 사용합니다.
+성공하면 그 동작의 모델만 게시하고 실행 중 새 모델을 읽습니다.
+좌클릭과 중지 유지 드래그는 같은 손 모양 클래스를 공유합니다.
+이동·중립 자료는 선택한 동작의 오답 자료로 함께 사용됩니다.
+아래쪽 **전체 통합 학습**은 기존 전체 모델 학습입니다.
+저장 구조와 중단·실패 계약은 [선택 학습](docs/selective-training.md)에 있습니다.
+
 ```powershell
 .venv\Scripts\python.exe -m pytest -q
 .venv\Scripts\python.exe tcn_app.py --check

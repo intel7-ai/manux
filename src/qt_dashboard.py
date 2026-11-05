@@ -522,6 +522,21 @@ class QtDashboard(QObject):
             self.training_timer.start()
             self.trainingChanged.emit()
 
+    @Slot(str)
+    def trainSelectedGesture(self, key):
+        if self.rec_mode != "off" or self.training_job.running:
+            return
+        from src.gesture_catalog import BY_KEY
+        task = BY_KEY.get(key)
+        if task is None or task.label == "none":
+            return
+        self._pause_for_change()
+        if self.training_job.start(gestures=[key]):
+            self.training_note = task.name + " 선택 학습을 시작합니다."
+            self._training_was_running = True
+            self.training_timer.start()
+            self.trainingChanged.emit()
+
     @Slot()
     def stopTraining(self):
         self.training_job.stop()
@@ -649,6 +664,9 @@ class QtDashboard(QObject):
         if not s.get("stage"):
             return ""
         text = s["stage"]
+        if s.get("target"):
+            from src.gesture_catalog import NAMES
+            text = NAMES.get(s["target"], s["target"]) + " · " + text
         if s.get("running") and s.get("epoch"):
             text += f" · 반복 {s['epoch']}/{s['epochs']} · 손실 {s.get('loss', 0):.3f}"
         if s.get("running"):
