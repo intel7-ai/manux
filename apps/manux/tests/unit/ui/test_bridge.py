@@ -37,6 +37,15 @@ class FakeRuntime:
     def set_override(self, fid, key, value):
         self.overrides[(fid, key)] = value
 
+    def set_recording(self, mode, focus="", plan=None):
+        self.rec_call = (mode, focus, plan)
+
+    def advance_recording(self):
+        self.advanced = getattr(self, "advanced", 0) + 1
+
+    def set_recording_paused(self, paused):
+        self.rec_paused = paused
+
     def latest(self):
         return self.view
 
@@ -102,3 +111,27 @@ def test_motion_toggle_and_card_switches(bridge):
     b.setCardEnabled("drag", False)
     assert b.settings.get("pinch.long_press_drag") is False
     assert "drag" not in [c[0] for c in b.gestureCards]
+
+
+def test_training_center_and_recording_plan_in_bridge(tmp_path):
+    from manux.data.training_center import TrainingCenterService
+    from manux.ui.bridge import Bridge
+    settings = Settings(schema())
+    runtime = FakeRuntime(settings)
+    tc = TrainingCenterService(tmp_path / "config", tmp_path / "data", tmp_path / "recordings")
+    b = Bridge(runtime, settings, tmp_path / "config", services={"training_center": tc})
+    try:
+        b.control_hand = "Right"
+        b.finishSplash()
+        assert b.stage == "main"
+        assert b.focusRecord("thumb_ring") is True
+        assert b.recordingPlan.title.startswith("엄지+약지")
+        assert b.recordingPlan.start() is True
+        assert b.recMode == "guided" and b.recFocus == "thumb_ring"
+        assert runtime.rec_call[0] == "guided" and runtime.rec_call[1] == "thumb_ring"
+        b.toggleRecordingPause()
+        assert b.recPaused is True and runtime.rec_paused is True
+        b.setRecMode("off")
+        assert b.recMode == "off"
+    finally:
+        b.close()

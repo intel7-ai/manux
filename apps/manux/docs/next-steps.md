@@ -84,10 +84,8 @@ uv run --python 3.12 --extra vision python tools/collect_mouse.py --profile <익
 - 시험: 가짜 예측기로 의도·phase·임계값, 재생 시험, 구조 시험. 계약 변경은 contracts.md §5·§6·§10 먼저.
 
 ### 4.5 [개발] 앱 화면: 학습 센터 + 바인딩 편집
-- `ui/qml`에 페이지 추가(기존 `dashboard.qml` 스타일 유지): 녹화 계획 고르기(`data/capture_plan.py`), 과제별 안내 녹화(`data/guided.py`, 녹화 중 출력 `none`), 학습 진행·결과(held-out 수치), 저장 전 확인 결과, 동작 → 액션 연결.
-- rasp-jun 브랜치(`origin/codex/rasp-jun-training-center`)의 `RecordingPlanDialog.qml`·`training_center.py`를 참고하되 판정·저장은 브리지가 아니라 data/ml/도구 쪽에서.
-- 사용자 정의 카탈로그 파일(사용자 폴더 JSON)로 코드 수정 없이 새 동작 정의.
-- 4.4의 모델 로딩 방식이 정해진 뒤 시작하면 충돌이 적다.
+- **학습 센터·녹화 계획 화면 이식 완료:** `data/training_center.py`(녹화 요약, v0.4 `held_out_results`·v0.3 모델 성적 통합, 동작별 안내 행, `tools/train_tcn.py` 백그라운드 전체/선택 학습, 모델 내보내기), `ui/qml/RecordingPlanDialog.qml`, `ui/qml/dashboard.qml`("학습 센터" 팝업, 안내/평소 녹화 제어, 9구역 위치 안내 격자), `desktop.py`(녹화 중 `SetBusy("recording", True)`로 출력 `none` 보장).
+- 남은 것: 바인딩 편집 화면(동작 → 액션 연결), 사용자 정의 카탈로그 파일(사용자 폴더 JSON)로 코드 수정 없이 새 동작 정의.
 
 ### 4.6 [개발] 설치본·자동 업데이트, 배포 전환
 - **설치본·자동 업데이트 완료(#70):** `packaging/`(PyInstaller + Velopack) + `platform/updater.py`. PR마다 `MANUX Preview` 시험 설치파일(`.github/workflows/manux-app.yml`, v0.3과 나란히 설치, 업데이트 없음). 릴리스 설치본의 사용자 폴더는 `%APPDATA%\MANUX\v04`(v0.3과 분리).

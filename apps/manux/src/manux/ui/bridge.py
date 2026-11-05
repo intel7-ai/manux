@@ -10,7 +10,10 @@ Only `run()` creates Qt objects for the whole app; the runtime thread never touc
 """
 from __future__ import annotations
 
+import copy
 import math
+import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
@@ -52,6 +55,230 @@ class CameraImage(QQuickImageProvider):
         return self.image
 
 
+class _NullJob:
+    running = False
+
+    def start(self, epochs: int = 20, gestures=None) -> bool:
+        return False
+
+    def stop(self) -> None:
+        return None
+
+    def snapshot(self) -> Dict[str, Any]:
+        return {"running": False}
+
+
+class _NullTrainingService:
+    """Fallback when `Bridge` is constructed in unit tests without `services['training_center']`."""
+
+    categories = ("전체", "클릭·드래그", "창·모드", "방향 모션", "이동·중립")
+    total_tasks = 18
+    options = {
+        "orientation": ["손바닥 정면"],
+        "position": ["중앙", "자유 이동"],
+        "distance": ["보통 (약 60cm)"],
+        "posture": ["바로 앉기"],
+        "camera": ["눈높이"],
+        "lighting": ["보통"],
+    }
+    names: Dict[str, str] = {}
+    all_names: Dict[str, str] = {}
+
+    def __init__(self, config_dir: Path) -> None:
+        self.exports_dir = Path(config_dir) / "exports"
+        self.job = _NullJob()
+
+    def has_task(self, key: str) -> bool:
+        return True
+
+    def task_info(self, key: str) -> Optional[Dict[str, Any]]:
+        return {"key": key, "name": key, "do": "", "free": False, "direction": "", "label": key, "gesture": None} if key else None
+
+    def is_free(self, key: str) -> bool:
+        return key in ("none", "open_move", "fist_move", "pointer_move")
+
+    def condition(self, **values: Any) -> Dict[str, Any]:
+        base: Dict[str, Any] = {
+            "name": "새 자세", "enabled": True, "notes": "",
+            **{k: v[0] for k, v in self.options.items()},
+            "reps": 10, "prep": 1.5, "hold": 2.0, "rest": 1.5, "free_seconds": 60,
+        }
+        base.update(values)
+        return base
+
+    def preset(self, name: str = "basic") -> Dict[str, Any]:
+        return {"schema": "manux-capture-plan/1", "conditions": [self.condition(name="정면 · 중앙")]}
+
+    def condition_key(self, row: Any) -> str:
+        return "pose-default"
+
+    def normalise(self, plan: Any, *, require_enabled: bool = True) -> Dict[str, Any]:
+        return copy.deepcopy(plan)
+
+    def duration(self, plan: Any, focus: str = "") -> float:
+        return 60.0
+
+    def load_plan(self, focus: str) -> Dict[str, Any]:
+        return self.preset()
+
+    def save_plan(self, plan: Any, focus: str) -> Dict[str, Any]:
+        return copy.deepcopy(plan)
+
+    def summary_and_rows(self):
+        return {"files": [], "per_gesture": {}, "coverage": {}}, None, [], ("녹화 총 0 MB / 권장 한도 500 MB", False)
+
+    def export(self) -> Path:
+        raise FileNotFoundError("학습한 모델이 없어요. 먼저 학습하세요.")
+
+
+class RecordingPlanEditor(QObject):
+    """Qt state for `RecordingPlanDialog.qml`; edits are drafts until saved or started."""
+
+    changed = Signal()
+    startRequested = Signal(str, object)
+
+    def __init__(self, tc, parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self.tc = tc
+        self.plan = self.tc.preset()
+        self.focus = ""
+        self.index = 0
+        self.note = ""
+        self.coverage: Dict[str, Any] = {}
+
+    def open(self, focus: str, coverage: Optional[Dict[str, Any]] = None) -> None:
+        self.focus, self.index, self.note = focus, 0, ""
+        self.coverage = coverage or {}
+        try:
+            self.plan = self.tc.load_plan(focus)
+        except (OSError, ValueError, TypeError) as exc:
+            self.plan = self.tc.preset()
+            self.note = f"저장한 설정을 읽지 못해 기본안을 표시합니다: {exc}"
+        self.changed.emit()
+
+    @Property(str, notify=changed)
+    def title(self):
+        name = self.tc.all_names.get(self.focus) or self.tc.names.get(self.focus, "전체 동작")
+        return (name if self.focus else "전체 동작") + " · 집중 녹화 설정"
+
+    @Property("QVariantList", notify=changed)
+    def rows(self):
+        out = []
+        for row in self.plan["conditions"]:
+            data = self.coverage.get(self.tc.condition_key(row), {})
+            if self.tc.is_free(self.focus):
+                count = f"수집 {data.get('seconds', 0) / 60:.1f}분"
+            else:
+                count = f"수집 {data.get('reps', 0)}회"
+            out.append({**row, "coverage": count})
+        return out
+
+    @Property("QVariantMap", notify=changed)
+    def selected(self):
+        return dict(self.plan["conditions"][self.index])
+
+    @Property(int, notify=changed)
+    def selectedIndex(self):
+        return self.index
+
+    @Property("QVariantMap", constant=True)
+    def choices(self):
+        return self.tc.options
+
+    @Property(bool, notify=changed)
+    def neutral(self):
+        return bool(self.tc.is_free(self.focus))
+
+    @Property(str, notify=changed)
+    def instruction(self):
+        task = self.tc.task_info(self.focus) if self.focus else None
+        if task is None:
+            return "전체 동작을 차례로 녹화합니다."
+        extra = " 준비 때 시작 위치에 손을 놓고, 유지 시간에 한 번 쓸고, 쉬기 때 돌아오세요." if task.get("direction") else ""
+        return str(task.get("do", "")) + extra
+
+    @Property(bool, notify=changed)
+    def allGestures(self):
+        return not self.focus
+
+    @Property(str, notify=changed)
+    def summary(self):
+        count = sum(1 for r in self.plan["conditions"] if r["enabled"])
+        seconds = self.tc.duration(self.plan, self.focus)
+        return f"선택 {count}/{len(self.plan['conditions'])}자세 · 순수 녹화 약 {seconds / 60:.1f}분 + 자세 준비 시간"
+
+    @Property(str, notify=changed)
+    def message(self):
+        return self.note
+
+    @Slot(int)
+    def select(self, index):
+        if 0 <= index < len(self.plan["conditions"]):
+            self.index = index
+            self.changed.emit()
+
+    @Slot(str, "QVariant")
+    def setField(self, key, value):
+        if key not in self.selected:
+            return
+        candidate = copy.deepcopy(self.plan)
+        candidate["conditions"][self.index][key] = value
+        try:
+            self.plan = self.tc.normalise(candidate, require_enabled=False)
+            self.note = "아직 저장하지 않은 설정입니다."
+        except (ValueError, TypeError) as exc:
+            self.note = str(exc)
+        self.changed.emit()
+
+    @Slot(str)
+    def usePreset(self, name):
+        self.plan, self.index = self.tc.preset(name), 0
+        self.note = "추천안을 불러왔습니다. 필요한 자세만 선택해도 됩니다."
+        self.changed.emit()
+
+    @Slot(bool)
+    def add(self, duplicate=False):
+        if len(self.plan["conditions"]) >= 30:
+            self.note = "자세는 최대 30개입니다."
+        else:
+            row = self.selected if duplicate else self.tc.condition()
+            if duplicate:
+                row["name"] = row["name"][:75] + " 복사"
+            self.plan["conditions"].append(row)
+            self.index = len(self.plan["conditions"]) - 1
+            self.note = "추가한 자세의 조건을 설정하세요."
+        self.changed.emit()
+
+    @Slot()
+    def remove(self):
+        if len(self.plan["conditions"]) > 1:
+            self.plan["conditions"].pop(self.index)
+            self.index = min(self.index, len(self.plan["conditions"]) - 1)
+            self.note = "저장하면 선택한 자세가 설정 목록에서 빠집니다. 기존 녹화는 유지됩니다."
+        else:
+            self.note = "자세를 하나 이상 남겨주세요."
+        self.changed.emit()
+
+    @Slot(result=bool)
+    def save(self):
+        try:
+            self.plan = self.tc.save_plan(self.plan, self.focus)
+            self.note = "저장했습니다. 이 동작의 다음 집중 녹화에도 적용됩니다."
+        except (OSError, ValueError, TypeError) as exc:
+            self.note = f"저장하지 못했습니다: {exc}"
+            self.changed.emit()
+            return False
+        self.changed.emit()
+        return True
+
+    @Slot(result=bool)
+    def start(self):
+        if not self.save():
+            return False
+        self.startRequested.emit(self.focus, copy.deepcopy(self.plan))
+        return True
+
+
 class Bridge(QObject):
     stateChanged = Signal()
     previewChanged = Signal()
@@ -66,6 +293,7 @@ class Bridge(QObject):
     tutorialChanged = Signal()
     hiddenToTray = Signal()
     trackingActiveChanged = Signal()
+    trainingChanged = Signal()
 
     def __init__(self, runtime, settings: store.Settings, config_dir: Path, *,
                  services: Optional[Dict[str, Callable]] = None, hotkeys=None, hotkey_defaults=None,
@@ -120,6 +348,27 @@ class Bridge(QObject):
         self.export_text = ""
         self.tracking_view = None            # plain dict from ViewFrame.tracking while the test window is open
         self.recent = ()                     # tracking test result lines, newest first
+        # dataset recording & training center
+        self.tc = self.services.get("training_center") or _NullTrainingService(self.config_dir)
+        self.rec_mode = "off"
+        self.rec_view: Optional[Dict[str, Any]] = None
+        self.rec_focus = ""
+        self.rec_plan: Optional[Dict[str, Any]] = None
+        self.rec_paused = False
+        self._training_summary: Dict[str, Any] = {}
+        self.recording_editor = RecordingPlanEditor(self.tc, self)
+        self.recording_editor.startRequested.connect(self._start_focused_plan)
+        self.training_job = self.tc.job
+        self.training_rows = []
+        self.training_filter = "전체"
+        self.training_info = ("", "")
+        self.training_storage = ("", False)
+        self.training_busy = ""
+        self.training_note = ""
+        self._training_was_running = False
+        self.training_timer = QTimer(self)
+        self.training_timer.setInterval(400)
+        self.training_timer.timeout.connect(self._training_tick)
         # hand choice / tutorial / calibration
         self.choice = _HandChoice()
         self.candidate = ""
@@ -332,6 +581,8 @@ class Bridge(QObject):
     @Slot()
     def markFailure(self):
         self._send(Mark("ui"))
+        if hasattr(self.runtime, "mark_recording"):
+            self.runtime.mark_recording()
         self.failure_marks += 1
         self.failure_summary = f"이번 실행에서 표시 {self.failure_marks}회 (로그 묶음에 포함)"
         self.failureChanged.emit()
@@ -481,6 +732,298 @@ class Bridge(QObject):
     @Property("QVariantList", notify=stateChanged)
     def gestureCards(self):
         return guide.for_qml(self._cards())
+
+    # ------------------------------------------------------------------ dataset recording & training center
+    def _rec(self, key: str, default: Any) -> Any:
+        return (self.rec_view or {}).get(key, default)
+
+    @Property(str, notify=stateChanged)
+    def recMode(self):
+        return self.rec_mode
+
+    @Property(bool, notify=stateChanged)
+    def recActive(self):
+        return self.rec_view is not None
+
+    @Property(bool, notify=stateChanged)
+    def recWaiting(self):
+        return bool(self._rec("waiting", False))
+
+    @Property(str, notify=stateChanged)
+    def recPrompt(self):
+        return str(self._rec("prompt", ""))
+
+    @Property(str, notify=stateChanged)
+    def recSub(self):
+        return str(self._rec("sub", ""))
+
+    @Property(str, notify=stateChanged)
+    def recCondition(self):
+        return str(self._rec("condition_detail", ""))
+
+    @Property(str, notify=stateChanged)
+    def recPosition(self):
+        return str(self._rec("position", "자유 이동"))
+
+    @Property(bool, notify=stateChanged)
+    def recPaused(self):
+        return self.rec_paused
+
+    @Slot()
+    def toggleRecordingPause(self):
+        if self.rec_mode == "guided":
+            self.rec_paused = not self.rec_paused
+            if hasattr(self.runtime, "set_recording_paused"):
+                self.runtime.set_recording_paused(self.rec_paused)
+            self.stateChanged.emit()
+
+    @Property(QObject, constant=True)
+    def recordingPlan(self):
+        return self.recording_editor
+
+    @Property(float, notify=stateChanged)
+    def recProgress(self):
+        return float(self._rec("progress", 0.0))
+
+    @Property(float, notify=stateChanged)
+    def recOverall(self):
+        return float(self._rec("overall", 0.0))
+
+    @Slot(str)
+    def setRecMode(self, mode):
+        if mode not in ("off", "guided", "free") or (mode != "off" and (self.stage_name != "main" or self.use_index_pointer)):
+            return
+        if mode != "off":
+            self._pause()
+        self.rec_mode = mode
+        self.rec_focus = ""
+        self.rec_plan = None
+        self.rec_paused = False
+        if hasattr(self.runtime, "set_recording"):
+            self.runtime.set_recording(mode, "", None)
+        self.stateChanged.emit()
+
+    @Property(str, notify=stateChanged)
+    def recFocus(self):
+        return self.rec_focus
+
+    @Slot()
+    def recStart(self):
+        if hasattr(self.runtime, "advance_recording"):
+            self.runtime.advance_recording()
+        self.stateChanged.emit()
+
+    @Slot()
+    def openTraining(self):
+        self.refreshTraining()
+        self.training_timer.start()
+
+    @Slot()
+    def closeTraining(self):
+        if not self.training_job.running:
+            self.training_timer.stop()
+
+    @Slot()
+    def refreshTraining(self):
+        if self.training_busy:
+            return
+        self.training_busy = "녹화 읽는 중…"
+        self.trainingChanged.emit()
+
+        def work():
+            try:
+                summary, report, rows, storage = self.tc.summary_and_rows()
+                files = [f for f in summary["files"] if "error" not in f]
+                frames = sum(f.get("frames", 0) for f in files)
+                minutes = sum(f.get("seconds", 0) for f in files) / 60.0
+                valid = sum(f.get("valid_frames", 0) for f in files)
+                data = f"녹화 {len(files)}개 · {minutes:.0f}분 · 3D 관절 {100 * valid / max(1, frames):.0f}%"
+                waiting = len(summary["files"]) - len(files)
+                if waiting:
+                    data += f" · 다음 학습에 포함 {waiting}개 (끝나지 않았거나 받는 중)"
+                model = (f"모델: {report.get('trained')} 학습 · 녹화 {len(report.get('data', []))}개로" if report
+                         else "모델: 아직 없음 (학습하세요)")
+                self.training_rows, self.training_info = rows, (data, model)
+                self._training_summary = summary
+                self.training_storage = storage
+            except Exception as exc:
+                self.training_note = f"읽지 못했어요: {exc}"
+            self.training_busy = ""
+
+        threading.Thread(target=work, daemon=True).start()
+        self.training_timer.start()
+
+    @Slot()
+    def startTraining(self):
+        if self.training_job.start():
+            self.training_note = ""
+            self._training_was_running = True
+            self.training_timer.start()
+            self.trainingChanged.emit()
+        else:
+            err = self.training_job.snapshot().get("error")
+            if err:
+                self.training_note = str(err)
+                self.trainingChanged.emit()
+
+    @Slot(str)
+    def trainSelectedGesture(self, key):
+        if self.rec_mode != "off" or self.training_job.running:
+            return
+        task = self.tc.task_info(key)
+        if task is None or task.get("label") == "none":
+            return
+        self._pause()
+        if self.training_job.start(gestures=[key]):
+            self.training_note = str(task.get("name", key)) + " 선택 학습을 시작합니다."
+            self._training_was_running = True
+            self.training_timer.start()
+            self.trainingChanged.emit()
+        else:
+            err = self.training_job.snapshot().get("error")
+            if err:
+                self.training_note = str(err)
+                self.trainingChanged.emit()
+
+    @Slot()
+    def stopTraining(self):
+        self.training_job.stop()
+
+    @Slot()
+    def exportModel(self):
+        if self.training_busy:
+            return
+        self.training_busy = "내보내는 중…"
+        self.trainingChanged.emit()
+
+        def work():
+            try:
+                out = self.tc.export()
+                self.training_note = f"내보냈어요: exports/{out.name}.zip"
+            except Exception as exc:
+                self.training_note = f"내보내지 못했어요: {exc}"
+            self.training_busy = ""
+
+        threading.Thread(target=work, daemon=True).start()
+        self.training_timer.start()
+
+    @Slot()
+    def openExports(self):
+        self.tc.exports_dir.mkdir(parents=True, exist_ok=True)
+        if hasattr(os, "startfile"):
+            os.startfile(str(self.tc.exports_dir))  # noqa: S606 - Windows explorer on user exports folder
+
+    @Slot(str, result=bool)
+    def focusRecord(self, key):
+        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running:
+            return False
+        if key and not self.tc.has_task(key):
+            return False
+        coverage = self._training_summary.get("coverage", {}).get(key, {})
+        self.recording_editor.open(key, coverage)
+        self.command(KEY_ESC)
+        return True
+
+    def _start_focused_plan(self, key: str, plan: Dict[str, Any]) -> None:
+        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running:
+            return
+        self._pause()
+        if self.use_index_pointer:
+            self.setPointerPreset(False)
+        self.rec_mode, self.rec_focus, self.rec_plan = "guided", key, copy.deepcopy(plan)
+        self.rec_paused = False
+        if hasattr(self.runtime, "set_recording"):
+            self.runtime.set_recording("guided", key, self.rec_plan)
+        self.stateChanged.emit()
+
+    def _training_tick(self) -> None:
+        job = self.training_job
+        if self._training_was_running and not job.running:
+            self._training_was_running = False
+            s = job.snapshot()
+            if s.get("error"):
+                self.training_note = str(s["error"])
+            else:
+                self.training_note = "학습 끝! 새 모델의 성적을 보여 드려요."
+                self.stateChanged.emit()
+            self.refreshTraining()
+        self.trainingChanged.emit()
+
+    @Property("QVariantList", notify=trainingChanged)
+    def trainingRows(self):
+        category = getattr(self, "training_filter", "전체")
+        return [r for r in self.training_rows if category == "전체" or r["category"] == category]
+
+    @Property(str, notify=trainingChanged)
+    def trainingFilter(self):
+        return getattr(self, "training_filter", "전체")
+
+    @Property("QStringList", constant=True)
+    def trainingCategories(self):
+        return list(self.tc.categories)
+
+    @Property(str, notify=trainingChanged)
+    def trainingCatalog(self):
+        return f"전체 {self.tc.total_tasks}개 녹화 항목 · {len(self.trainingRows)}개 표시 · 미학습 동작도 녹화 가능"
+
+    @Slot(str)
+    def setTrainingFilter(self, category):
+        if category in self.trainingCategories:
+            self.training_filter = category
+            self.trainingChanged.emit()
+
+    @Property(str, notify=trainingChanged)
+    def trainingData(self):
+        return self.training_info[0]
+
+    @Property(str, notify=trainingChanged)
+    def trainingModel(self):
+        return self.training_info[1]
+
+    @Property(str, notify=trainingChanged)
+    def trainingStorage(self):
+        return self.training_storage[0]
+
+    @Property(bool, notify=trainingChanged)
+    def trainingStorageWarn(self):
+        return bool(self.training_storage[1])
+
+    @Property(str, notify=trainingChanged)
+    def trainingBusy(self):
+        return self.training_busy
+
+    @Property(str, notify=trainingChanged)
+    def trainingNote(self):
+        return self.training_note
+
+    @Property(bool, notify=trainingChanged)
+    def trainingRunning(self):
+        return bool(self.training_job.running)
+
+    @Property(str, notify=trainingChanged)
+    def trainingStage(self):
+        s = self.training_job.snapshot()
+        if not s.get("stage"):
+            return ""
+        text = str(s["stage"])
+        if s.get("target") and not text.startswith("선택"):
+            name = self.tc.names.get(s["target"], s["target"])
+            text = f"{name} · {text}"
+        if s.get("running") and s.get("epoch"):
+            text += f" · 반복 {s['epoch']}/{s['epochs']} · 손실 {s.get('loss', 0):.3f}"
+        if s.get("running") and s.get("started"):
+            text += f" · {int(time.time() - s['started'])}초"
+        if s.get("skipped"):
+            text += f" · 다음 학습으로 미룬 녹화 {len(s['skipped'])}개"
+        return text
+
+    @Property(float, notify=trainingChanged)
+    def trainingProgress(self):
+        return float(self.training_job.snapshot().get("progress", 0.0))
+
+    @Property("QVariantList", notify=trainingChanged)
+    def trainingLosses(self):
+        return list(self.training_job.snapshot().get("losses", []))[-60:]
 
     # ------------------------------------------------------------------ tracking test
     # The runtime thread owns the test (data/tracking_test.py); this only shows ViewFrame.tracking.
@@ -940,6 +1483,10 @@ class Bridge(QObject):
 
     def apply_view(self, view: ViewFrame) -> None:
         snap = view.snapshot
+        rec_view = dict(view.rec) if view.rec is not None else None
+        if rec_view != self.rec_view:
+            self.rec_view = rec_view
+            self.stateChanged.emit()
         if self.tracking_view is not None and view.tracking is not None and view.tracking != self.tracking_view:
             self._set_tracking_view(dict(view.tracking))
         if view.recent != self.recent:
@@ -1030,6 +1577,7 @@ class Bridge(QObject):
             return
         self._closed_qml = True
         self.timer.stop()
+        self.training_timer.stop()
         if self.hotkeys is not None:
             self.hotkeys.stop()
         for root in self.engine.rootObjects():
