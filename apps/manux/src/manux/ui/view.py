@@ -7,7 +7,7 @@ camera metrics and timing. Immutable; the UI keeps only the newest one.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional, Tuple
+from typing import Any, Mapping, Optional, Tuple
 
 from manux.core.contracts import Landmark
 from manux.engine.snapshot import Snapshot
@@ -36,3 +36,5 @@ class ViewFrame:
     message: str = ""                          # one-line status from the runtime (camera errors ...)
     actions: Tuple[str, ...] = field(default=())   # action ids routed this frame (cards, tutorial, HUD)
     model_status: str = ""                     # composed by the runtime, no UI model decisions
+    tracking: Optional[Mapping[str, Any]] = None   # tracking test window state (data.tracking_test.view), None = closed
+    recent: Tuple[str, ...] = ()               # tracking test result lines, newest first

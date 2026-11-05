@@ -1,14 +1,16 @@
 # MANUX 팀 에이전트 작업 지침
 
-## 가장 먼저: v0.4 구조 (`apps/manux/`)
+## 가장 먼저: MANUX는 `apps/manux/`
 
-2026-11-05부터 새 개발은 `apps/manux/`(v0.4, Qt/QML + Python)에서 한다. **`apps/manux/` 안의 작업, `hand-mouse/` 기능을 옮기는 작업, 손짓·TCN·출력·화면 구조에 관한 작업은 시작 전에 [apps/manux/AGENTS.md](apps/manux/AGENTS.md)와 거기서 지정한 [구조](apps/manux/docs/architecture.md)·[계약](apps/manux/docs/contracts.md)·[결정 기록](apps/manux/docs/decisions.md)을 먼저 읽는다.** 계약과 다른 구현을 하지 않는다. 계약을 바꿔야 하면 계약 문서부터 고친다.
+앱 이름은 **MANUX**이고 코드는 `apps/manux/`(v0.4, Qt/QML + Python)다. 2026-11-05부터 모든 새 개발·수정은 여기서 한다. `hand-mouse/`는 이전 버전 v0.3이며 앱 이름으로 쓰지 않는다. **`apps/manux/` 안의 작업, `hand-mouse/` 기능을 옮기는 작업, 손짓·TCN·출력·화면 구조에 관한 작업은 시작 전에 [apps/manux/AGENTS.md](apps/manux/AGENTS.md)와 거기서 지정한 [구조](apps/manux/docs/architecture.md)·[계약](apps/manux/docs/contracts.md)·[결정 기록](apps/manux/docs/decisions.md)을 먼저 읽는다.** 계약과 다른 구현을 하지 않는다. 계약을 바꿔야 하면 계약 문서부터 고친다.
 
 | 폴더 | 지위 (2026-11-05) |
 | --- | --- |
-| `apps/manux/` | v0.4 개발 위치. 지금은 골격·계약·구조 시험만 있다 |
-| `hand-mouse/` | v0.3 설치본. 버그 수정과 데이터 수집만. PR 본문에 v0.4 반영 여부를 적는다 |
-| `src/`, `public/`, `server.js`, `desktop/` | 이전 웹앱·Electron. 새 기능을 넣지 않는다. 아래의 웹앱 문서(`docs/contracts.md`, `docs/design/`)는 이 코드의 기록이다 |
+| `apps/manux/` | **MANUX.** 이식 S0~S5 병합, S6(데스크톱 화면) 진행 중. 아직 설치본이 아니다. 상태는 [apps/manux/AGENTS.md](apps/manux/AGENTS.md) "현재 상태"가 기준이다 |
+| `hand-mouse/` | 이전 버전 v0.3. `apps/manux`에 설치본이 생길 때까지만 Releases `v0.3.x`를 여기서 빌드한다(`hand-mouse-release.yml`). 설치본에 필요한 버그 수정만 받고, 새 기능·데이터 수집은 `apps/manux`에 한다. PR 본문에 `apps/manux` 반영 여부를 적는다 |
+| `src/`, `public/`, `server.js`, `desktop/` | 이전 웹앱·Electron(v0.2). 새 기능을 넣지 않는다. 정식 게시 workflow는 2026-11-05 삭제했다. 아래의 웹앱 문서(`docs/contracts.md`, `docs/design/`)는 이 코드의 기록이다 |
+
+문서별 현재/기록 구분은 [docs/README.md](docs/README.md)를 본다.
 
 ---
 
@@ -20,6 +22,8 @@
 - 개발 경로는 개인 PC의 원하는 AI 또는 Discord worker → 작업별 브랜치 → preview 대상 PR → 자동 검사 → preview 머지·시험 → `preview → production` PR → production 머지 → Windows 설치본 릴리스다. 리뷰어 승인은 요구하지 않는다([브랜치 흐름](docs/branch-flow.md)). Jira 번호가 없는 개선도 목표·범위를 기록하여 시작할 수 있다.
 - 팀원 개인 PC의 AI 에이전트 개발/브랜치 푸시와 Discord Claude의 독립 worktree 개발을 모두 지원한다. 공유된 기준 커밋을 확인하고 `scrum-23-gesture-enrollment`처럼 세부 태스크 번호를 브랜치·PR에 명시한다. 외부 푸시는 로컬 작업 폴더에 자동 반영되지 않으며 최신 원격 조회와 PR 리뷰·통합은 별개다.
 - Discord의 할 일 질문은 Jira를, 원격 개발 현황은 GitHub를 새로 조회한다. OAuth 인증 계정이나 Git 작성자를 Discord 질문자로 간주하지 않는다. Jira/원격 조회 실패를 작업 없음이나 완료로 바꾸지 않는다.
+
+아래 2026-11-02~11-03 항목은 **이전 웹앱(`src/`·`desktop/`)의 상태 기록**이다. v0.3·v0.4의 상태는 위 표와 각 폴더 README를 따른다.
 
 - 2026-11-02 손 전체 이동 기반 마우스 모드와 Electron/Windows 입력 경로를 추가했다. 현재 계약·실행법은 `docs/air-mouse.md`와 `desktop/README.md`를 확인한다. 실제 웹캠 사용성과 실제 OS 클릭 검증은 별도다.
 

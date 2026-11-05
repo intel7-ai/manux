@@ -1,7 +1,7 @@
 # MANUX v0.4 구조 (apps/manux)
 
 > 상태: **합의안 초안 (2026-11-05, Sean Choi)**. 결정 D-001~D-004·D-006과 D-005의 방향은 확정이다([결정 기록](decisions.md)). "제안"으로 표시된 부분은 팀 검토 전 초안이다.
-> 현재 `apps/manux/`에는 S0~S5 기능과 S6 데스크톱 연결이 있다. 이 브랜치는 직접 TCN 판정·개인 모델 검증/설치·교체를 추가한다([사용법](direct-tcn.md)). 지금 설치본은 계속 `hand-mouse/`(v0.3)이다.
+> 진행 상황은 [§8 이식 순서](#8-이식-순서)의 상태 열이 기준이다. 직접 TCN 판정·개인 모델 검증/설치·교체는 [사용법](direct-tcn.md)을 참고한다. Releases 설치파일은 S6의 배포 채널 전환 전까지 `hand-mouse/`(v0.3)에서 빌드한다.
 
 ## 1. 목표
 
@@ -55,7 +55,7 @@ apps/manux/
     replay/              녹화 재생 비교 시험
 ```
 
-`models/`(배포 모델)와 `packaging/`(PyInstaller + Velopack)은 해당 단계에서 추가한다. 개인 녹화 원본은 이 폴더에 두지 않는다([계약 §9](contracts.md#9-학습-녹화-형식)).
+`models/`(번들 손 모델, [models/README.md](../models/README.md))와 `packaging/`(PyInstaller + Velopack, `build.ps1`·`manux.spec`·`entry.py`)은 S6에서 추가했다. 자동 업데이트는 `platform/updater.py`다. 개인 녹화 원본은 이 폴더에 두지 않는다([계약 §9](contracts.md#9-학습-녹화-형식)).
 
 ## 4. 의존 규칙
 
@@ -149,7 +149,7 @@ capture ─► tracking ─► HandObservation | None
 | S3 | `output/windows` (커서 매핑·클릭·스크롤 관성·창 전환을 `mouse_controller.py`에서 분리) | 실제 Windows에서 이동·클릭·드래그·스크롤 수동 확인 기록 | 코드 병합 (#57). **실제 Windows 수동 확인 미실행** |
 | S4 | `pinch`(클릭·스크롤 잡기·드래그), `motion` 기능, 중재기(비공개 필드 읽기 제거) | v0.3 재생 비교, 모션 진입 차단 시험 | 완료 (#59 엔진, #60·#61 기능), 합성 비교 |
 | S5 | `tcn_gate`, `ml`, `data/recorder`, `tools/train_tcn.py` (Dan 브랜치에서) | 모델 정보 검증, 확인기 켬/끔 재생 비교 | 코드 병합 (#60·#62). 모델 정보 검증 완료. **실제 녹화로 확인기 켬/끔 비교 미실행** |
-| S6 | QML 셸: 페이지·튜토리얼·설정·트레이·단축키·업데이트, 설치본 | 설치본으로 v0.3 기능 목록 수동 확인 후 배포 채널 전환 | **진행 중.** 화면(`ui/`, v0.3 `dashboard.qml` 그대로 + 새 브리지)·`desktop.py`·트레이·전역 단축키·손가락 HUD·튜토리얼·방향 보정. 남음: 트래킹 측정, 미리보기 위 그리기, 학습 센터 화면(S6a 모듈 위), 자동 업데이트·설치본, 실제 웹캠·Windows 확인 |
+| S6 | QML 셸: 페이지·튜토리얼·설정·트레이·단축키·업데이트, 설치본 | 설치본으로 v0.3 기능 목록 수동 확인 후 배포 채널 전환 | **진행 중.** 화면(`ui/`, v0.3 `dashboard.qml` 그대로 + 새 브리지)·`desktop.py`·트레이·전역 단축키·손가락 HUD·튜토리얼·방향 보정. 설치본: `packaging/` + `platform/updater.py`, PR마다 `MANUX Preview` 설치파일(`manux-app.yml`, 게시 안 함·업데이트 안 함·v0.3과 나란히 설치). 트래킹 측정(`data/tracking_test.py`). 남음: 미리보기 위 그리기, 학습 센터 화면(S6a 모듈 위), 실제 웹캠·Windows 확인, **배포 채널 전환**(`build.ps1 -Release`를 릴리스 workflow에 연결) |
 
 S2와 S3, S4와 S5는 서로 다른 폴더를 고치므로 동시에 진행할 수 있다.
 

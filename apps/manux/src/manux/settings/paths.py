@@ -39,6 +39,12 @@ class AppPaths:
     def recordings_dir(self) -> Path:
         return self.data_dir / "recordings"
 
+    @property
+    def hand_model(self) -> Path:
+        """The bundled MediaPipe hand model (apps/manux/models), else a downloaded copy in the user folder."""
+        bundled = self.app_dir / "models" / "hand_landmarker.task"
+        return bundled if bundled.exists() else self.data_dir / "models" / "hand_landmarker.task"
+
 
 def _appdata(env: Mapping[str, str]) -> Path:
     return Path(env.get("APPDATA") or Path.home())

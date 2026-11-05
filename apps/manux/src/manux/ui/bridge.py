@@ -4,7 +4,7 @@
 same properties and slots under the same names (context property `dashboard`). Differences:
 - it renders `ViewFrame`s from the desktop runtime and sends `UiCommand`s; it never decides gestures,
 - settings go through `settings.store.Settings` (v0.4 keys) and are saved to the user data folder,
-- not ported yet, shown as such: the tracking test (accuracy targets) and v0.3's frame drawings.
+- not ported yet, shown as such: v0.3's frame drawings.
 
 Only `run()` creates Qt objects for the whole app; the runtime thread never touches them.
 """
@@ -118,6 +118,8 @@ class Bridge(QObject):
         self.failure_marks = 0
         self.failure_summary = "아직 저장된 기록이 없습니다."
         self.export_text = ""
+        self.tracking_view = None            # plain dict from ViewFrame.tracking while the test window is open
+        self.recent = ()                     # tracking test result lines, newest first
         # hand choice / tutorial / calibration
         self.choice = _HandChoice()
         self.candidate = ""
@@ -373,7 +375,7 @@ class Bridge(QObject):
 
     @Property("QVariantList", notify=recentChanged)
     def recentResults(self):
-        return []
+        return list(self.recent)
 
     # ------------------------------------------------------------------ motion mode
     @Property(str, notify=stateChanged)
@@ -480,56 +482,98 @@ class Bridge(QObject):
     def gestureCards(self):
         return guide.for_qml(self._cards())
 
-    # ------------------------------------------------------------------ tracking test (not ported yet)
+    # ------------------------------------------------------------------ tracking test
+    # The runtime thread owns the test (data/tracking_test.py); this only shows ViewFrame.tracking.
     @Slot()
     def beginTrackingTest(self):
-        self.export_text = "트래킹 측정은 v0.4에서 아직 옮기지 않았습니다."
-        self.failureChanged.emit()
+        if self.stage_name != "main" or self.tracking_view is not None:
+            return
+        self._pause()
+        if not self.use_index_pointer:          # the test measures the index pointer (v0.3 rule)
+            self.setPointerPreset(True)
+        reason = self.runtime.start_tracking_test()
+        if reason:
+            self.export_text = reason
+            self.failureChanged.emit()
+            return
+        self._set_tracking_view({"done": False, "paused": True, "index": 0, "total": 0, "target": None,
+                                 "holding": False, "hand_present": True, "cursor": (.5, .5), "summary": ""})
 
     @Slot()
     def closeTrackingTest(self):
-        return None
+        if self.tracking_view is None:
+            return
+        self.runtime.close_tracking_test()
+        self._pause()
+        self._set_tracking_view(None)
 
+    def _set_tracking_view(self, view) -> None:
+        was = self.tracking_view is not None
+        self.tracking_view = view
+        if was != (view is not None):
+            self.stateChanged.emit()
+            self.trackingActiveChanged.emit()
+        self.trackingChanged.emit()
+
+    # Bound to the window's visibility / screen: they must not re-evaluate every frame
+    # (v0.3 on Windows: re-applying FullScreen 30 times a second froze the app).
     @Property(bool, notify=trackingActiveChanged)
     def trackingActive(self):
-        return False
+        return self.tracking_view is not None
 
     @Property(str, notify=trackingActiveChanged)
     def trackingScreen(self):
         screen = QGuiApplication.primaryScreen()
         return screen.name() if screen is not None else ""
 
+    def _tview(self, key, default):
+        v = self.tracking_view
+        return default if v is None else v.get(key, default)
+
     @Property(float, notify=trackingChanged)
     def trackingTargetX(self):
-        return -1.0
+        t = self._tview("target", None)
+        return float(t[0]) if t else -1.0
 
     @Property(float, notify=trackingChanged)
     def trackingTargetY(self):
-        return -1.0
+        t = self._tview("target", None)
+        return float(t[1]) if t else -1.0
 
     @Property(float, notify=trackingChanged)
     def trackingTargetSize(self):
-        return 0.0
+        """Diameter as a fraction of the test monitor's width."""
+        t = self._tview("target", None)
+        return float(t[2]) if t else 0.0
 
     @Property(float, notify=trackingChanged)
     def trackingCursorX(self):
-        return .5
+        return float(self._tview("cursor", (.5, .5))[0])
 
     @Property(float, notify=trackingChanged)
     def trackingCursorY(self):
-        return .5
+        return float(self._tview("cursor", (.5, .5))[1])
 
     @Property(str, notify=trackingChanged)
     def trackingStatus(self):
-        return ""
+        v = self.tracking_view
+        if v is None:
+            return ""
+        if v["done"]:
+            return "완료 · " + v["summary"]
+        progress = f"표적 {v['index'] + 1}/{v['total']}" if v["total"] else "준비 중"
+        if v["paused"]:
+            return f"일시정지됨 · Space를 눌러 시작하세요 ({progress})"
+        return (progress + " · " + ("멈춰 있기…" if v["holding"] else "커서를 원 안으로 옮겨 0.5초 멈추세요")
+                + ("" if v["hand_present"] else " · 손을 찾는 중"))
 
     @Property(bool, notify=trackingChanged)
     def trackingPaused(self):
-        return False
+        return bool(self._tview("paused", False)) and not self._tview("done", False)
 
     @Property(bool, notify=trackingChanged)
     def trackingDone(self):
-        return False
+        return bool(self._tview("done", False))
 
     # ------------------------------------------------------------------ pointer direction calibration
     def _axes_key(self) -> str:
@@ -896,6 +940,11 @@ class Bridge(QObject):
 
     def apply_view(self, view: ViewFrame) -> None:
         snap = view.snapshot
+        if self.tracking_view is not None and view.tracking is not None and view.tracking != self.tracking_view:
+            self._set_tracking_view(dict(view.tracking))
+        if view.recent != self.recent:
+            self.recent = view.recent
+            self.recentChanged.emit()
         if self.stage_name == "capture":
             self._choose(view)
         if (view.camera_mode, view.brightness, view.low_light) != self.metrics:

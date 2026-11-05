@@ -175,8 +175,10 @@ def evaluate(segments, classes, mapping, infer, length, threshold, count):
         last = None
         for i, frame in enumerate(segment.frames):
             action = rule_action(frame)
-            recorded = frame.get("rule") or {}
-            gesture = recorded.get("gesture") or LEGACY_RULES.get(action, action)
+            recorded = (frame.get("rule") or {}).get("gesture")
+            # v0.4 recordings store a gesture id ("pinch.thumb_ring"); v0.3 ones store v0.3 names
+            # ("thumb_ring_pinch") that match no class, so those fall back to the recorded action.
+            gesture = recorded if isinstance(recorded, str) and "." in recorded else LEGACY_RULES.get(action, action)
             name = by_gesture.get(gesture)
             if name and name != last:
                 rule[i] = name
