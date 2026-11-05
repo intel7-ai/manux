@@ -15,11 +15,25 @@
 
 ## 현재 상태
 
-- 2026-11-05 preview `589cc9a`: 이식 단계 **S0~S5 코드 병합**. S3 실제 Windows 입력·S5 실제 녹화 비교 등 남은 수동 검증은 [구조 §8](docs/architecture.md#8-이식-순서)을 따른다. `settings`·`capture`·`tracking`·`data`(녹화 읽기·쓰기·안내 녹화)(S1·S5), `features/pointer`·`output/practice`·`null`(S2), `actions`·`output/windows`(S3), `features/pinch`·`features/motion`(S4), `perception/local3d`·`ml`·`features/tcn_gate`·`tools/train_tcn.py`·`evaluate_tcn.py`(S5), `engine`(파이프라인·중재기), 헤드리스 실행기 `python -m manux.app --replay <녹화> | --camera`(연습 출력만).
+### 기준 preview `589cc9a` (2026-11-05)
+
+이 표가 이 절의 현재 상태 기준이다. 아래 단계별 원기록의 “이 브랜치”·“아직 없음”은 작성 당시 표현이며 현재 미구현 목록으로 사용하지 않는다.
+
+| 범위 | 현재 구분 |
+| --- | --- |
+| S0~S5 | 코드 병합. S3 실제 Windows 입력·S5 실제 녹화 비교 등 남은 수동 검증은 [구조 §8](docs/architecture.md#8-이식-순서)을 따름 |
+| 직접 TCN·특징 캐시·개인 모델 검증/교체 | #69 병합. [직접 TCN 안내](docs/direct-tcn.md) 참고. 명시적 켬, 규칙으로 거절 우회하지 않음 |
+| 데스크톱·트래킹 측정·설치본 | #70의 MANUX Preview 제공. 정식 Releases 배포 채널 전환은 남음 |
+| 학습 센터·별명별 녹화·HF 앱 연결·별도 worker | [PR #72](https://github.com/intel7-ai/manux/pull/72)에서 별도 검증 중. preview 병합이나 정식 릴리스로 설명하지 않음 |
+| 사용자 정의 카탈로그·바인딩 편집 화면 | 후속 작업 |
+| 검증 | CI의 설치·자가 진단·Qt 창 열기와 실제 웹캠·Windows 입력·사용자 동선·인식률 수동 시험을 구분 |
+
+### 단계별 원기록 (현재 상태는 위 표 참고)
+
+- 2026-11-05 preview: 이식 단계 **S0~S5 완료**. `settings`·`capture`·`tracking`·`data`(녹화 읽기·쓰기·안내 녹화)(S1·S5), `features/pointer`·`output/practice`·`null`(S2), `actions`·`output/windows`(S3), `features/pinch`·`features/motion`(S4), `perception/local3d`·`ml`·`features/tcn_gate`·`tools/train_tcn.py`·`evaluate_tcn.py`(S5), `engine`(파이프라인·중재기), 헤드리스 실행기 `python -m manux.app --replay <녹화> | --camera`(연습 출력만).
 - **S6 진행 중:** 데스크톱 앱 `python -m manux`(`desktop.py` + `ui/bridge.py` + v0.3 `ui/qml/dashboard.qml`). 화면 QML은 v0.3의 최신 수정 그대로 두고, 브리지가 같은 속성·슬롯 이름으로 v0.4 엔진(Snapshot·UiCommand)에 연결한다. 화면을 바꿀 때는 QML을, 동작을 바꿀 때는 기능·엔진을 고치고 브리지에 판정을 넣지 않는다. 설치본·자동 업데이트: `packaging/`(PyInstaller + Velopack) + `platform/updater.py`. PR마다 `MANUX Preview` 설치파일을 만든다(`.github/workflows/manux-app.yml`, 게시·자동 업데이트 없음, v0.3과 나란히 설치, 설정은 `%APPDATA%\MANUXPreview\v04`). 트래킹 측정: `data/tracking_test.py`(v0.3과 같은 표적·수치·CSV), 런타임 스레드가 Windows 출력의 커서 위치로 갱신하고 화면은 `ViewFrame.tracking`만 그린다. 남은 것: 학습 센터 화면, 배포 채널 전환(`build.ps1 -Release`를 릴리스 workflow에 연결). 전환 전까지 Releases 설치파일은 `hand-mouse/`(v0.3)에서 빌드한다.
-- **검증 구분:** CI는 Preview 설치·자가 진단·Qt 창 열기를 확인한다. 실제 웹캠 사용, 실제 Windows 입력, 사용자 화면 동선, 인식률은 별도 수동 검증이 필요하다. 실제 데이터 확인은 Dan의 녹화 1개(한 사람)를 엔진에 재생한 것뿐이다.
-- **#69 병합:** `features/tcn` 직접 판정(명시적 켬), 별도 바인딩 JSON, 사용자 폴더 특징 캐시, `tools/promote_tcn.py`의 별도 eval 검증·불변 버전 설치, 데스크톱 `--tcn-store` 교체가 있다. [직접 TCN 안내](docs/direct-tcn.md)를 먼저 읽는다. Preview 설치본은 #70에 있으며 정식 배포 채널 전환은 남아 있다. 합성 시험과 실제 사용자 확인을 구분한다.
-- **preview 밖의 작업:** 학습 센터·별명별 녹화·HF 앱 연결·별도 worker는 [PR #72](https://github.com/intel7-ai/manux/pull/72)에서 별도 검증 중이다. 사용자 정의 카탈로그·바인딩 편집 화면은 후속이다. 열린 PR의 구현·CI 결과를 preview 병합이나 정식 릴리스로 설명하지 않는다.
+- **확인하지 않은 것:** 실제 웹캠 사용, 실제 Windows 입력, Qt 화면, 인식률. 실제 데이터 확인은 Dan의 녹화 1개(한 사람)를 엔진에 재생한 것뿐이다.
+- 이 브랜치의 다음 단계 구현: `features/tcn` 직접 판정(명시적 켬), 별도 바인딩 JSON, 사용자 폴더 특징 캐시, `tools/promote_tcn.py`의 별도 eval 검증·불변 버전 설치, 데스크톱 `--tcn-store` 교체. [직접 TCN 안내](docs/direct-tcn.md)를 먼저 읽는다. 학습 센터·편집 화면·설치본은 아직 없다. 합성 시험과 실제 사용자 확인을 구분한다.
 - OpenCV·MediaPipe는 실제 카메라·모델을 열 때만 import한다(`vision` extra). 시험과 CI는 이 둘 없이 돈다. 새 코드도 이 방식을 따른다.
 - 확정: Qt/QML + Python 한 프로세스(D-001), 새 앱은 `apps/manux/`, `hand-mouse/`는 수정만(D-002), 겹치는 동작은 한 기능에 묶는 기능 모듈(D-003), 동작 ID ≠ 액션 ID(D-004), 릴리스용 기본 모델 + 사용자 개인 모델(D-005 방향), 학습 데이터는 v0.4 동안 팀 공유 허용·릴리스부터 사용자 PC에만(D-006).
 - 제안(아직 규칙 아님): D-005 세부 기준, 계약의 **제안** 표시 절.
