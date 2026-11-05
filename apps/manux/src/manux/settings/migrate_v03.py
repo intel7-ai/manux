@@ -20,6 +20,16 @@ RENAMES: Dict[str, str] = {
     "tracker_min_presence_confidence": "tracking.min_presence_confidence",
     "tracker_min_tracking_confidence": "tracking.min_tracking_confidence",
     "tracker_detect_max_width": "tracking.detect_max_width",
+    # S2 pointer-only keys.
+    "pointer_move_latch": "pointer.move_latch",
+    "pointer_move_speed": "pointer.move_speed",
+    "pointer_still_speed": "pointer.still_speed",
+    "trigger_press_ratio": "pointer.trigger_press_ratio",
+    "trigger_release_ratio": "pointer.trigger_release_ratio",
+    "trigger_approach_ratio": "pointer.trigger_approach_ratio",
+    "trigger_long_press": "pointer.trigger_long_press",
+    "trigger_drag_move": "pointer.trigger_drag_move",
+    "trigger_rewind": "pointer.trigger_rewind",
     # S4 pinch (features/pinch/settings.py V03_KEYS). The pinch thresholds the v0.3 pointer also read
     # (click_threshold ...) go to pinch.*: one v0.3 key -> one row, and gesture_engine owned them.
     # motion_fold_ratio / motion_thumb_out / motion_thumb_up go to motion.* (motion_mode read them too).

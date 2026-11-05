@@ -126,6 +126,8 @@ class Feature(Protocol):
 - 한 순간의 모드는 하나다. 모드에 속한 기능만 `step`이 불린다(나머지는 `hand=None`도 받지 않는다).
 - 모드 전환 순서: 출력 `release_all("mode_change")` → 이전 모드 기능 `reset("mode_change")` → 새 모드 시작.
 - 모드 진입 요청은 기능이 `Intent(gesture="<id>.enter")`로 내거나 UI 명령으로 온다. 진입을 막는 조건(예: 어떤 기능이 `holding`이거나 `last_release_t`가 `motion.enter_quiet`초 안)은 중재기가 `others`로 판단한다.
+- 구현(`engine/arbiter.py`): 기본 모드는 주 입력 방식(`pointer` 또는 `pinch`), 덧씌우는 모드는 그 모드를 가진 기능 ID와 같은 이름이다(예: `motion`). 기능은 `<id>.enter`로 들어가고 `<id>.exit`로 나온다. 이 두 의도는 `gestures`에 선언하지 않아도 되고, 중재기가 받아서 **라우터로 보내지 않는다**. 거절도 Snapshot `events`에 `refused:<이유>`로 남는다. UI 요청(`RequestMode`)은 조용함 조건 없이 바로 바꾼다.
+- 진입 감시가 필요한 기능은 기본 모드도 `modes`에 넣는다(예: `motion.modes = {"pointer", "pinch", "motion"}`).
 
 ## 6. 의도 필터 (`IntentFilter`, 예: TCN 확인기)
 
@@ -292,6 +294,8 @@ class OutputSink(Protocol):
 
 - 엔진은 프레임마다 **불변** `Snapshot`을 하나 만든다. UI는 가장 최근 것만 읽는다. 지난 Snapshot을 쌓지 않는다.
 - `Snapshot`에 들어가는 것(**제안**, S6에서 확정): 프레임 번호, 미리보기 영상(화면이 보일 때만), 손 관절(그리기용), 단계·모드·출력 대상, 최근 동작/액션과 결과, 기능별 상태 문구, 카메라 정보·밝기·어두움 경고, fps·단계별 처리 시간, 모델 상태.
+- 현재 구현(`engine/snapshot.py`, 엔진 부분만): 프레임 번호·시각, 단계, 출력 대상, 모드, 제어 켬, 바쁨(녹화 등), 손 있음, 필터 뒤 의도, 라우팅 안 된 의도와 이유, 출력 결과, 기능별 `holding`, 이벤트(`hand_lost`, `mode:…`, `mark:…`), 오류. 영상·관절·카메라 정보·모델 상태는 조립 지점의 실행기(S6)가 덧붙인다.
+- `UiCommand`(`engine/commands.py`): `SetStage`, `SetControl`, `SetBusy`(`calibrating`/`enrolling`/`recording`), `RequestMode`, `SetBaseMode`, `Mark`.
 - UI → 엔진은 `UiCommand` 큐로만 보낸다. 예: 단계 바꾸기, 제어 켜기/끄기, 조작 손 바꾸기, 설정 값 바꾸기, 바인딩 바꾸기, 녹화 시작/끝, "방금 이상했어요" 표시. UI는 엔진 객체의 필드를 직접 바꾸지 않는다.
 - UI는 판정 값을 계산하지 않는다. 화면에 보일 문구가 판정에서 나와야 하면 엔진이 Snapshot에 넣는다.
 

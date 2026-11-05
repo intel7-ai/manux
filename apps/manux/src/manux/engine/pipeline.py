@@ -1,0 +1,209 @@
+"""The frame pipeline (docs/architecture.md section 6). Replaces the decision part of v0.3 qt_runtime._step.
+
+    commands -> state -> hand-loss timer -> arbiter mode -> active features .step() -> mode intents
+    -> intent filters -> router -> output sink of the current target -> Snapshot
+
+Safety (contracts sections 5 and 8): before a stage/target change, mode change, hand loss past
+`hand_lost_reset`, or a feature/filter error, the sink's `release_all()` runs first, so no button,
+drag or scroll inertia is left behind. A feature that raises loses that frame's intents and is reset;
+the app keeps running.
+
+The engine never imports tracking, output implementations, features or Qt: the composition root
+(`app.py`) hands them in. It runs on the engine thread only.
+"""
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+
+from manux.actions.router import Router
+from manux.core.contracts import (
+    Activity, Feature, FrameContext, FrameInfo, HandObservation, Intent, IntentFilter, OutputResult,
+    OutputSink, OutputTarget,
+)
+from manux.engine.arbiter import Arbiter, ModeChange
+from manux.engine.commands import CommandQueue, Mark, RequestMode, SetBaseMode, SetBusy, SetControl, SetStage
+from manux.engine.snapshot import FeatureError, Snapshot
+from manux.engine.state import EngineState
+
+SettingsFor = Callable[[str], Mapping[str, object]]   # feature id -> its settings section
+
+
+@dataclass
+class EngineConfig:
+    hand_lost_reset: float = 0.3      # app.hand_lost_reset (v0.3 default)
+    base_mode: str = "pointer"
+    motion_quiet: float = 1.0         # v0.3 motion_enter_quiet
+
+
+class Engine:
+    def __init__(self, features: Sequence[Feature], filters: Sequence[IntentFilter], router: Router,
+                 sinks: Mapping[OutputTarget, OutputSink], settings_for: SettingsFor,
+                 config: Optional[EngineConfig] = None, commands: Optional[CommandQueue] = None) -> None:
+        if OutputTarget.NONE not in sinks:
+            raise ValueError("a sink for OutputTarget.NONE is required")
+        ids = [f.id for f in features]
+        if len(set(ids)) != len(ids):
+            raise ValueError(f"feature ids must be unique: {ids}")
+        self.features = list(features)
+        self.filters = list(filters)
+        self.router = router
+        self.sinks = dict(sinks)
+        self.settings_for = settings_for
+        self.config = config or EngineConfig()
+        self.commands = commands or CommandQueue()
+        self.state = EngineState()
+        self.arbiter = Arbiter(self.config.base_mode, self.config.motion_quiet)
+        self._lost_since: Optional[float] = None
+        self._lost_reset_done = True
+        self._sink_target = OutputTarget.NONE
+
+    # ------------------------------------------------------------------ helpers
+    def sink(self, target: Optional[OutputTarget] = None) -> OutputSink:
+        target = target or self.state.output
+        return self.sinks.get(target) or self.sinks[OutputTarget.NONE]
+
+    def _release(self, reason: str) -> None:
+        self.sink(self._sink_target).release_all(reason)
+
+    def _reset(self, features: Sequence[Feature], reason: str) -> None:
+        for f in features:
+            f.reset(reason)
+
+    def _active(self) -> List[Feature]:
+        return [f for f in self.features if self.arbiter.mode in f.modes]
+
+    def _activities(self) -> Dict[str, Activity]:
+        out: Dict[str, Activity] = {}
+        for f in self._active():
+            try:
+                out[f.id] = f.activity()
+            except Exception:       # a broken activity() must not stop the frame
+                out[f.id] = Activity()
+        return out
+
+    def _apply_mode_change(self, change: Optional[ModeChange], before: List[Feature]) -> None:
+        if change is None or change.old == change.new:
+            return
+        self._release("mode_change")
+        now_active = set(id(f) for f in self._active())
+        self._reset([f for f in before if id(f) not in now_active], "mode_change")
+
+    # ------------------------------------------------------------------ commands
+    def _drain(self, events: List[str]) -> None:
+        for cmd in self.commands.drain():
+            old_state = self.state
+            before = self._active()
+            if isinstance(cmd, SetStage):
+                self.state = EngineState(stage=cmd.stage, control_on=False if cmd.stage != old_state.stage
+                                         else old_state.control_on, busy=old_state.busy)
+            elif isinstance(cmd, SetControl):
+                self.state = EngineState(old_state.stage, bool(cmd.on), old_state.busy)
+            elif isinstance(cmd, SetBusy):
+                self.state = old_state.with_busy(cmd.kind, cmd.on)
+            elif isinstance(cmd, RequestMode):
+                self._apply_mode_change(self.arbiter.request(cmd.mode), before)
+            elif isinstance(cmd, SetBaseMode):
+                self._apply_mode_change(self.arbiter.set_base(cmd.mode), before)
+            elif isinstance(cmd, Mark):
+                events.append(f"mark:{cmd.note}")
+            if self.state.stage != old_state.stage or self.state.output != old_state.output:
+                stage_changed = self.state.stage != old_state.stage
+                reason = "pause" if not stage_changed and self.state.output is OutputTarget.NONE else "stage_change"
+                self._release(reason)
+                self._reset(self.features, reason)
+        self._sink_target = self.state.output
+
+    # ------------------------------------------------------------------ the frame
+    def step(self, frame: FrameInfo, hand: Optional[HandObservation]) -> Snapshot:
+        events: List[str] = []
+        errors: List[FeatureError] = []
+        self._drain(events)
+        now = frame.t
+
+        # hand loss: features see hand=None every frame; after hand_lost_reset everything is released once
+        if hand is None:
+            if self._lost_since is None:
+                self._lost_since, self._lost_reset_done = now, False
+            if not self._lost_reset_done and now - self._lost_since >= self.config.hand_lost_reset:
+                self._release("hand_lost")
+                self._reset(self.features, "hand_lost")
+                self._lost_reset_done = True
+                events.append("hand_lost")
+        else:
+            self._lost_since = None
+
+        intents: List[Intent] = []
+        activities = self._activities()
+        for f in self._active():
+            ctx = FrameContext(frame, self.state.stage, self.state.output, self.arbiter.mode,
+                               settings=self.settings_for(f.id),
+                               others={k: v for k, v in activities.items() if k != f.id})
+            try:
+                out = list(f.step(hand, ctx))
+                for intent in out:
+                    if intent.source != f.id or intent.gesture not in f.gestures and not _mode_gesture(intent, f.id):
+                        raise ValueError(f"undeclared gesture {intent.gesture!r} from {f.id}")
+                intents.extend(out)
+            except Exception as exc:
+                errors.append(FeatureError(f.id, repr(exc)))
+                self._release("error")
+                f.reset("error")
+
+        # mode intents go to the arbiter
+        before = self._active()
+        intents, changes = self.arbiter.handle(now, intents, self._activities())
+        for change in changes:
+            if not change.why.startswith("refused"):
+                self._apply_mode_change(change, before)
+            events.append(f"mode:{change.old}->{change.new}:{change.why}")
+
+        # filters (e.g. the TCN gate)
+        ctx = FrameContext(frame, self.state.stage, self.state.output, self.arbiter.mode)
+        for flt in self.filters:
+            try:
+                flt.observe(hand, ctx)
+                intents = list(flt.filter(intents, ctx))
+            except Exception as exc:
+                errors.append(FeatureError(flt.id, repr(exc)))
+                intents = []
+                self._release("error")
+                flt.reset("error")
+
+        commands, routed = self.router.route_all(intents)
+        sink = self.sink(self._sink_target)
+        results: List[Tuple[str, str, OutputResult]] = []
+        for cmd in commands:
+            try:
+                result = sink.apply(cmd)
+            except Exception as exc:          # sinks must not raise; contain it anyway
+                result = OutputResult(False, f"error:{exc!r}")
+            results.append((cmd.action, cmd.phase, result))
+        tick = getattr(sink, "tick", None)
+        if callable(tick):
+            try:
+                tick(now)
+            except Exception as exc:
+                errors.append(FeatureError("output", repr(exc)))
+
+        return Snapshot(
+            seq=frame.seq, t=now, stage=self.state.stage, output=self.state.output, mode=self.arbiter.mode,
+            control_on=self.state.control_on, busy=tuple(sorted(self.state.busy)), has_hand=hand is not None,
+            intents=tuple((i.gesture, i.phase) for i in intents),
+            unrouted=tuple((r.intent.gesture, r.reason) for r in routed if r.command is None),
+            results=tuple((a, p, r.reason) for a, p, r in results),
+            activities=tuple(sorted((k, v.holding) for k, v in self._activities().items())),
+            events=tuple(events), errors=tuple(errors),
+        )
+
+    def shutdown(self) -> None:
+        for target in {self._sink_target, OutputTarget.NONE}:
+            self.sink(target).release_all("shutdown")
+        self._reset(self.features, "shutdown")
+        for s in self.sinks.values():
+            s.close()
+
+
+def _mode_gesture(intent: Intent, fid: str) -> bool:
+    return intent.gesture in (f"{fid}.enter", f"{fid}.exit")
