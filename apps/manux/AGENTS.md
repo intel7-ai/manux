@@ -16,6 +16,7 @@
 - 2026-11-05 preview: 이식 단계 **S0~S5 완료**. `settings`·`capture`·`tracking`·`data`(녹화 읽기·쓰기·안내 녹화)(S1·S5), `features/pointer`·`output/practice`·`null`(S2), `actions`·`output/windows`(S3), `features/pinch`·`features/motion`(S4), `perception/local3d`·`ml`·`features/tcn_gate`·`tools/train_tcn.py`·`evaluate_tcn.py`(S5), `engine`(파이프라인·중재기), 헤드리스 실행기 `python -m manux.app --replay <녹화> | --camera`(연습 출력만).
 - **S6 진행 중:** 데스크톱 앱 `python -m manux`(`desktop.py` + `ui/bridge.py` + v0.3 `ui/qml/dashboard.qml`). 화면 QML은 v0.3의 최신 수정 그대로 두고, 브리지가 같은 속성·슬롯 이름으로 v0.4 엔진(Snapshot·UiCommand)에 연결한다. 화면을 바꿀 때는 QML을, 동작을 바꿀 때는 기능·엔진을 고치고 브리지에 판정을 넣지 않는다. 남은 것: 트래킹 측정, 학습 센터 화면, 자동 업데이트·설치본. 그전까지 설치본은 `hand-mouse/`(v0.3)다.
 - **확인하지 않은 것:** 실제 웹캠 사용, 실제 Windows 입력, Qt 화면, 인식률. 실제 데이터 확인은 Dan의 녹화 1개(한 사람)를 엔진에 재생한 것뿐이다.
+- 이 브랜치의 다음 단계 구현: `features/tcn` 직접 판정(명시적 켬), 별도 바인딩 JSON, 사용자 폴더 특징 캐시, `tools/promote_tcn.py`의 별도 eval 검증·불변 버전 설치, 데스크톱 `--tcn-store` 교체. [직접 TCN 안내](docs/direct-tcn.md)를 먼저 읽는다. 학습 센터·편집 화면·설치본은 아직 없다. 합성 시험과 실제 사용자 확인을 구분한다.
 - OpenCV·MediaPipe는 실제 카메라·모델을 열 때만 import한다(`vision` extra). 시험과 CI는 이 둘 없이 돈다. 새 코드도 이 방식을 따른다.
 - 확정: Qt/QML + Python 한 프로세스(D-001), 새 앱은 `apps/manux/`, `hand-mouse/`는 수정만(D-002), 겹치는 동작은 한 기능에 묶는 기능 모듈(D-003), 동작 ID ≠ 액션 ID(D-004), 릴리스용 기본 모델 + 사용자 개인 모델(D-005 방향), 학습 데이터는 v0.4 동안 팀 공유 허용·릴리스부터 사용자 PC에만(D-006).
 - 제안(아직 규칙 아님): D-005 세부 기준, 계약의 **제안** 표시 절.

@@ -35,3 +35,4 @@ class ViewFrame:
     camera_ok: bool = True
     message: str = ""                          # one-line status from the runtime (camera errors ...)
     actions: Tuple[str, ...] = field(default=())   # action ids routed this frame (cards, tutorial, HUD)
+    model_status: str = ""                     # composed by the runtime, no UI model decisions

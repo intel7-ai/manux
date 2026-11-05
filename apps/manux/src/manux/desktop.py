@@ -18,11 +18,16 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, Mapping, Optional, Tuple
 
 from manux.actions.bindings import Binding
-from manux.app import _FEATURES, _camera_config, build_engine, schema
+from manux.app import _FEATURES, _camera_config, build_engine, schema, pipeline_parts, read_bindings
 from manux.capture.camera import LatestFrameCamera, brightness
 from manux.core.contracts import FrameInfo, HandObservation, OutputTarget
 from manux.data.recording import read, replay
 from manux.engine.pipeline import Engine
+from manux.features import tcn_gate
+from manux.ml.card import ModelError
+from manux.ml.predictor import load_model
+from manux.ml.store import active_token, load_active
+from manux.perception.local3d import FEATURES, FEATURE_VERSION
 from manux.settings.paths import AppPaths, resolve
 from manux.settings.store import Settings, load
 from manux.ui.view import SeenHand, ViewFrame
@@ -139,7 +144,8 @@ class ReplayInput:
 class DesktopRuntime:
     """Runs the input -> engine loop on its own thread and keeps the newest ViewFrame."""
 
-    def __init__(self, engine: Engine, source, settings: Settings) -> None:
+    def __init__(self, engine: Engine, source, settings: Settings, *, model_store=None, model_token=None,
+                 model_status="") -> None:
         self.engine = engine
         self.source = source
         self.settings = settings
@@ -154,6 +160,11 @@ class DesktopRuntime:
         self._thread: Optional[threading.Thread] = None
         self._metrics = ("", -1, False)
         self._frames = 0
+        self.model_store = Path(model_store) if model_store is not None else None
+        self._model_token = model_token
+        self._attempted_model_token = model_token
+        self._next_model_check = 0.
+        self.model_status = model_status
         engine.settings_for = self.settings_for
 
     # ------------------------------------------------------------------ settings the UI changes
@@ -205,11 +216,15 @@ class DesktopRuntime:
                 time.sleep(0.2)
 
     def step(self) -> None:
+        self.reload_model()
+        if self._stop.is_set():
+            return
         item = self.source.read(self.control_hand, self.use_crop)
         if item is None:
             self.engine.frame_missing(time.perf_counter())
             if getattr(self.source, "error", ""):
-                self._publish(ViewFrame(self._latest.snapshot, camera_ok=False, message=self.source.error))
+                self._publish(ViewFrame(self._latest.snapshot, camera_ok=False, message=self.source.error,
+                                        model_status=self.model_status))
                 time.sleep(0.05)
             return
         frame, image, hand, hands, detect_ms = item
@@ -229,16 +244,62 @@ class DesktopRuntime:
             snapshot=snap, image=image if self.want_image else None, hands=hands,
             landmarks=hand.landmarks if hand is not None else None, mirrored=frame.mirrored, aspect=frame.aspect,
             camera_mode=self._metrics[0], brightness=self._metrics[1], low_light=self._metrics[2],
-            fps=float(self.source.fps), detect_ms=float(detect_ms), actions=actions))
+            fps=float(self.source.fps), detect_ms=float(detect_ms), actions=actions,
+            model_status=self.model_status))
+
+    def reload_model(self, *, force=False) -> bool:
+        """Runtime thread only, at a frame boundary. A bad update keeps the live recognizer."""
+        now = time.perf_counter()
+        if self._stop.is_set() or self.model_store is None or not force and now < self._next_model_check:
+            return False
+        self._next_model_check = now + 1.
+        try:
+            token = active_token(self.model_store)
+            if token == self._model_token or token == self._attempted_model_token:
+                return False
+            self._attempted_model_token = token
+            self.engine.prepare_model_reload()
+            model = load_active(self.model_store, FEATURE_VERSION, FEATURES)
+            parts = pipeline_parts(model, self.engine.router.bindings)
+            if self._stop.is_set() or active_token(self.model_store) != token:
+                return False                   # a newer installation superseded this load
+            self.engine.replace_pipeline(parts[0], (), parts[1], parts[2])
+            self._model_token = token
+            self.model_status = "TCN 직접 판정 · 모델 갱신됨"
+            return True
+        except (ModelError, OSError, ValueError) as error:
+            self.model_status = f"모델 갱신 실패 · 기존 모델 유지 ({getattr(error, 'text', '정보 확인 필요')})"
+            return False
 
 
-def build(settings: Settings, source, *, windows: bool = True) -> DesktopRuntime:
-    engine = build_engine(settings, "pinch")
+def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, tcn_store=None,
+          tcn_mode="gate", binding_overrides=None) -> DesktopRuntime:
+    if tcn_store is not None and (tcn_model is not None or tcn_mode != "direct"):
+        raise ValueError("a model store requires direct mode and cannot be combined with a model path")
+    if tcn_mode == "direct" and tcn_model is None and tcn_store is None:
+        raise ValueError("direct mode needs a model or model store")
+    filters, direct, token, status = (), None, None, ""
+    if tcn_mode == "direct":
+        token = active_token(tcn_store) if tcn_store is not None else None
+        direct = (load_active(tcn_store, FEATURE_VERSION, FEATURES) if tcn_store is not None
+                  else load_model(Path(tcn_model), FEATURE_VERSION, FEATURES))
+        if tcn_store is not None and active_token(tcn_store) != token:
+            raise ValueError("active model changed while starting; retry")
+        if direct.card.kind == "personal" and tcn_store is None and windows:
+            raise ValueError("personal direct Windows input requires a verified --tcn-store; use --no-windows-input for file tests")
+        status = "TCN 직접 판정"
+    elif tcn_model is not None:
+        eligible = {gid for module, _ in _FEATURES for gid in module.DEFAULT_BINDINGS
+                    if module.GESTURE_PHASES[gid] & {"tap", "begin"}}
+        gate = tcn_gate.create_gate(Path(tcn_model), settings.section("tcn_gate"), eligible=eligible)
+        filters = (gate.gate,) if gate.gate is not None else ()
+        status = "TCN 확인기" if filters else f"TCN 확인기 꺼짐 · {gate.text}"
+    engine = build_engine(settings, "pinch", filters, direct_model=direct, binding_overrides=binding_overrides)
     if windows:
         from manux.output.windows import Win32Backend, WindowsOutputSink
         from manux.platform.monitors import ScreenLayout
         engine.sinks[OutputTarget.WINDOWS] = WindowsOutputSink(Win32Backend(), ScreenLayout.detect())
-    return DesktopRuntime(engine, source, settings)
+    return DesktopRuntime(engine, source, settings, model_store=tcn_store, model_token=token, model_status=status)
 
 
 def default_hand_model(paths: AppPaths) -> Path:
@@ -251,6 +312,10 @@ def main(argv=None) -> int:
     parser.add_argument("--replay", type=Path, help="play a recording instead of the camera")
     parser.add_argument("--source", help="camera index or stream URL")
     parser.add_argument("--hand-model", type=Path)
+    parser.add_argument("--tcn-model", type=Path)
+    parser.add_argument("--tcn-store", type=Path, help="verified personal model store (hot reload)")
+    parser.add_argument("--tcn-mode", choices=("gate", "direct"), default="gate")
+    parser.add_argument("--bindings", type=Path, help="gesture -> action bindings JSON")
     parser.add_argument("--no-windows-input", action="store_true", help="never send real input (UI check)")
     parser.add_argument("--no-tray", action="store_true")
     parser.add_argument("--screenshot", type=Path, help="save the window to this PNG after a few seconds, then quit")
@@ -263,7 +328,14 @@ def main(argv=None) -> int:
     except (OSError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 1
-    runtime = build(settings, source, windows=not args.no_windows_input and sys.platform == "win32")
+    try:
+        runtime = build(settings, source, windows=not args.no_windows_input and sys.platform == "win32",
+                        tcn_model=args.tcn_model, tcn_store=args.tcn_store, tcn_mode=args.tcn_mode,
+                        binding_overrides=read_bindings(args.bindings))
+    except (ModelError, OSError, ValueError) as error:
+        source.close()
+        print(error, file=sys.stderr)
+        return 1
     from manux.features.pointer.workspace import pointer_axes
     from manux.platform import hotkeys
     from manux.platform.tray import QtTray

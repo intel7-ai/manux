@@ -31,6 +31,8 @@ REASON_TEXT = {
     "runtime_missing": "모델 실행 라이브러리(onnxruntime) 없음",
     "shape": "모델 입력·출력 모양이 정보와 다름",
     "no_gestures": "모델이 확인할 동작이 없음",
+    "checksum": "모델 파일 검증 실패",
+    "decisions": "직접 판정 선언이 없음 또는 잘못됨",
 }
 
 
@@ -48,6 +50,19 @@ class ModelError(Exception):
 
 
 @dataclass(frozen=True)
+class Decision:
+    kind: str
+    modes: Tuple[str, ...]
+    point: str
+    threshold: float
+    frames_in_a_row: int
+
+    @property
+    def phases(self) -> frozenset[str]:
+        return frozenset({"tap"}) if self.kind == "tap" else frozenset({"begin", "hold", "end"})
+
+
+@dataclass(frozen=True)
 class ModelCard:
     classes: Tuple[str, ...]
     window: int
@@ -59,10 +74,12 @@ class ModelCard:
     kind: str = "base"
     gestures: Mapping[str, str] = field(default_factory=dict)   # class -> gesture id
     raw: Mapping[str, Any] = field(default_factory=dict)        # the whole file (data, results ...)
+    decisions: Mapping[str, Decision] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "gestures", MappingProxyType(dict(self.gestures)))
         object.__setattr__(self, "raw", MappingProxyType(dict(self.raw)))
+        object.__setattr__(self, "decisions", MappingProxyType(dict(self.decisions)))
 
     def index(self, name: str) -> int:
         return self.classes.index(name)
@@ -113,9 +130,36 @@ def validate_card(card: Any, feature_version: str, features: Optional[int] = Non
             raise ModelError("invalid", f"gestures[{cls!r}] must be a gesture id '<feature>.<name>', got {gid!r}")
     if len(set(gestures.values())) != len(gestures):
         raise ModelError("invalid", "two classes map to the same gesture id")
+    decisions = {}
+    if "decisions" in card:
+        raw = card["decisions"]
+        if not isinstance(raw, Mapping) or not raw or set(raw) != set(gestures):
+            raise ModelError("decisions", "decisions must cover exactly the gesture classes")
+        if "none" not in classes:
+            raise ModelError("decisions", "direct decisions require a none class")
+        for name, row in raw.items():
+            if not isinstance(row, Mapping) or set(row) - {"kind", "modes", "point", "threshold", "frames_in_a_row"}:
+                raise ModelError("decisions", f"bad decision for {name}")
+            kind_, modes, point = row.get("kind"), row.get("modes"), row.get("point")
+            if (kind_ not in ("tap", "span") or not isinstance(modes, list) or not modes
+                    or not all(isinstance(m, str) and m in ("pointer", "pinch", "motion") for m in modes)
+                    or len(set(modes)) != len(modes) or point not in ("none", "palm", "index")
+                    or kind_ == "span" and point == "none"
+                    or gestures[name].split(".", 1)[1] in ("enter", "exit")):
+                raise ModelError("decisions", f"invalid kind, modes, point or reserved gesture for {name}")
+            threshold = row.get("threshold", thr)
+            k = row.get("frames_in_a_row", frames)
+            if (isinstance(threshold, bool) or not isinstance(threshold, (int, float))
+                    or not math.isfinite(threshold) or not 0 < threshold <= 1
+                    or isinstance(k, bool) or not isinstance(k, int) or k < 1):
+                raise ModelError("decisions", f"invalid confirmation settings for {name}")
+            decisions[name] = Decision(kind_, tuple(modes), point, float(threshold), k)
+    digest = card.get("model_sha256")
+    if digest is not None and (not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+        raise ModelError("invalid", "model_sha256 must be a lowercase SHA256")
     return ModelCard(classes=tuple(classes), window=window, features=n_features,
                      feature_version=str(card["feature_version"]), threshold=float(thr), frames_in_a_row=frames,
-                     trained=str(card["trained"]), kind=kind, gestures=dict(gestures), raw=dict(card))
+                     trained=str(card["trained"]), kind=kind, gestures=dict(gestures), raw=dict(card), decisions=decisions)
 
 
 def card_path(model_path: Path) -> Path:

@@ -131,6 +131,29 @@ def test_predictor_feeds_a_batch_of_one():
     assert session.calls[-1] == (1, 15, 133)
 
 
+@pytest.mark.parametrize("decision", [
+    {}, {"kind": "tap", "modes": [], "point": "none"},
+    {"kind": "span", "modes": ["pinch"], "point": "none"},
+    {"kind": "tap", "modes": ["pinch"], "point": "none", "threshold": float("nan")},
+    {"kind": "tap", "modes": ["pinch"], "point": "none", "frames_in_a_row": True},
+    {"kind": "tap", "modes": ["pinch"], "point": "none", "action": "mouse.right_click"},
+])
+def test_bad_direct_declarations_are_rejected(decision):
+    with pytest.raises(ModelError):
+        validate_card(dan_style_card(gestures={"thumb_ring": "pinch.thumb_ring"},
+                                    decisions={"thumb_ring": decision}), V)
+
+
+def test_model_hash_is_checked_before_opening_a_session(tmp_path):
+    path = tmp_path / "model.onnx"
+    path.write_bytes(b"changed model")
+    path.with_suffix(".json").write_text(json.dumps(dan_style_card(model_sha256="0" * 64)), encoding="utf-8")
+    def forbidden(path):
+        pytest.fail("must verify the hash before opening the runtime session")
+    with pytest.raises(ModelError, match="checksum"):
+        load_model(path, V, 133, session_factory=forbidden)
+
+
 def test_real_onnxruntime_if_installed(tmp_path):
     ort = pytest.importorskip("onnxruntime")
     onnx = pytest.importorskip("onnx")

@@ -9,7 +9,7 @@ repository (D-006); a model trained on one person is a personal model, not a bas
 from __future__ import annotations
 
 import argparse
-from hashlib import file_digest
+from hashlib import file_digest, sha256
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +20,7 @@ from manux.data.recorder import public_source
 from manux.data.recording import read
 from manux.ml.card import CLASS_RE, validate_card
 from manux.perception.local3d import FEATURES, FEATURE_VERSION
+from manux.settings.paths import resolve
 from tcn_data import AXES, class_mapping, class_names, evaluate, groups, load, samples
 
 WINDOW = 15
@@ -105,6 +106,8 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--threshold", type=float, default=0.7)
     parser.add_argument("--frames-in-a-row", type=int, default=3)
+    parser.add_argument("--decisions", type=Path, help="class -> direct intent specification JSON (no actions)")
+    parser.add_argument("--cache-dir", type=Path, default=resolve().data_dir / "features")
     parser.add_argument("--no-augment", action="store_true", help="train without Dan's rotation/size/jitter augmentation")
     args = parser.parse_args()
     global AUGMENT
@@ -112,11 +115,12 @@ def main() -> None:
     if args.output.suffix.lower() != ".onnx" or args.epochs < 1:
         parser.error("use an .onnx output and at least one epoch")
     repo = Path(__file__).resolve().parents[3]
-    if args.output.resolve().is_relative_to(repo):
-        parser.error(f"write models outside the repository ({repo}); D-006")
+    if args.output.resolve().is_relative_to(repo) or args.cache_dir.resolve().is_relative_to(repo):
+        parser.error("write models and feature caches outside the repository; D-006")
     try:
         recordings = list(dict.fromkeys(path.resolve() for path in args.recordings))
-        segments = load(recordings, split="train")
+        recording_hashes = {path: sha256(path.read_bytes()).hexdigest() for path in recordings}
+        segments = load(recordings, split="train", cache_dir=args.cache_dir)
         classes = args.classes or class_names(segments)
         if ("none" not in classes or len(classes) < 2 or len(set(classes)) != len(classes)
                 or not all(CLASS_RE.fullmatch(name) for name in classes)):
@@ -128,6 +132,8 @@ def main() -> None:
             with path.open("rb") as file:
                 digest = file_digest(file, "sha256").hexdigest()
             rec = read(path)
+            if digest != recording_hashes[path] or sha256(path.read_bytes()).hexdigest() != digest:
+                raise ValueError("training recording changed while preparing the model")
             pc, note = public_source(rec.meta)        # aliases only, never real names (contracts section 9)
             camera = {k: v for k, v in (rec.meta.get("camera") or {}).items() if k in ("source", "mode", "mirror")}
             sources.append({"file": path.name, "sha256": digest, "pc": pc, "person": rec.meta.get("person"),
@@ -137,6 +143,8 @@ def main() -> None:
                 "frames_in_a_row": args.frames_in_a_row, "trained": datetime.now(timezone.utc).isoformat(),
                 "data": sources, "condition_groups": sorted(groups(segments, "condition")),
                 "held_out_results": results}
+        if args.decisions is not None:
+            card["decisions"] = json.loads(args.decisions.read_text(encoding="utf-8"))
         validate_card(card, FEATURE_VERSION, FEATURES)
         axes = {"both": ("person", "posture"), "all": AXES}.get(args.hold_out, (args.hold_out,))
         for axis in axes:
@@ -157,9 +165,13 @@ def main() -> None:
         model = train(segments, classes, args.epochs)
         import torch
 
+        if any(sha256(path.read_bytes()).hexdigest() != digest for path, digest in recording_hashes.items()):
+            raise ValueError("training recordings changed during training")
         args.output.parent.mkdir(parents=True, exist_ok=True)
         torch.onnx.export(model, torch.zeros(1, WINDOW, FEATURES), str(args.output),
                           input_names=["features"], output_names=["logits"], opset_version=17, dynamo=False)
+        with args.output.open("rb") as file:
+            card["model_sha256"] = file_digest(file, "sha256").hexdigest()
         args.output.with_suffix(".json").write_text(json.dumps(card, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(results, indent=2))
     except (ValueError, OSError, ImportError) as error:

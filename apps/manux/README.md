@@ -48,6 +48,10 @@ uv run --extra vision python -m manux.app --camera --source 0
 TCN 확인기를 연결하려면 `uv run --extra ml`로 실행하고
 `--tcn-model <모델>.onnx`를 지정합니다. Qt 화면과 Windows 조작은 S6에서 연결합니다.
 
+직접 판정은 `--tcn-mode direct`로 명시적으로 켭니다. 클래스별 선언·별도 액션 바인딩,
+특징 캐시·별도 평가 후 개인 모델 설치·데스크톱 자동 교체는 [직접 TCN 안내](docs/direct-tcn.md)를 따릅니다.
+개인 모델 파일은 연습으로 확인하고 실제 Windows 입력에는 검증된 `--tcn-store`를 사용합니다.
+
 ## 테스터 프로필 데이터 수집
 
 저장소 루트에서 `apps/manux`로 이동한 뒤 실행합니다. `tester01`은 실명 대신 쓸
