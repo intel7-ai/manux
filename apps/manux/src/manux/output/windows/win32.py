@@ -42,7 +42,7 @@ ULONG_PTR = ctypes.c_size_t
 
 
 class MOUSEINPUT(ctypes.Structure):
-    _fields_ = [("dx", ctypes.c_long), ("dy", ctypes.c_long), ("mouseData", ctypes.c_long),
+    _fields_ = [("dx", ctypes.c_int32), ("dy", ctypes.c_int32), ("mouseData", ctypes.c_int32),
                 ("dwFlags", ctypes.c_uint32), ("time", ctypes.c_uint32), ("dwExtraInfo", ULONG_PTR)]
 
 
@@ -65,7 +65,7 @@ class INPUT(ctypes.Structure):
 
 
 class POINT(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+    _fields_ = [("x", ctypes.c_int32), ("y", ctypes.c_int32)]
 
 
 def mouse_input(flags: int, data: int = 0) -> INPUT:
