@@ -32,7 +32,7 @@ from pathlib import Path
 import numpy as np
 
 from manux.data.catalog import NONE
-from manux.perception.local3d import FEATURES, windows
+from manux.perception.local3d import FEATURES, FEATURE_VERSION, windows
 from tcn_data import AXES, class_mapping, class_names, evaluate, groups, load, predicted_events, samples
 
 WINDOW = 15
@@ -165,20 +165,19 @@ def combine_binary(scores: dict, classes):
 
 
 def double_fires(segs, scores: dict, threshold, count):
-    """Moments where two or more independent binary models each fire (no arbitration)."""
+    """Count overlap episodes where at least two binary models have confirmed runs."""
     total = 0
     for seg in segs:
         w = windows(seg.features, WINDOW)
-        fired = []
-        for g, f in scores.items():
+        active = np.zeros(len(w), dtype=np.int64)
+        for f in scores.values():
             p = f(w)
-            probs = np.stack([1 - p, p], 1)
-            fired.append({i for i, _ in predicted_events(probs, [NONE, g], threshold, count)})
-        if len(fired) > 1:
-            starts = sorted(set().union(*fired))
-            for i in starts:
-                near = sum(any(abs(i - j) <= count for j in s) for s in fired)
-                total += near > 1
+            run = 0
+            for i, value in enumerate(p):
+                run = run + 1 if value >= threshold and value > 0.5 else 0
+                active[i] += run >= count
+        overlap = active >= 2
+        total += int(np.count_nonzero(overlap & ~np.r_[False, overlap[:-1]]))
     return total
 
 
@@ -186,9 +185,12 @@ def summary(result, classes):
     per = result["per_gesture"]
     rec = {g: f"{v['tcn_hits']}/{v['attempts']}" for g, v in per.items()}
     rule = {g: f"{v['rule_hits']}/{v['attempts']}" for g, v in per.items()}
+    rate = result["tcn_misfires_per_minute"]
+    rule_rate = result["rule_misfires_per_minute"]
     return {"recall": rec, "rule_recall": rule,
-            "misfires_per_min": round(result["tcn_misfires_per_minute"] or 0.0, 2),
-            "rule_misfires_per_min": round(result["rule_misfires_per_minute"] or 0.0, 2)}
+            "neutral_seconds": result["neutral_seconds"],
+            "misfires_per_min": round(rate, 2) if rate is not None else None,
+            "rule_misfires_per_min": round(rule_rate, 2) if rule_rate is not None else None}
 
 
 def misfires_on(segs, infer, classes, target, threshold, count, wrong):
@@ -221,23 +223,45 @@ def main(argv=None) -> int:
     ap.add_argument("--json", type=Path, help="also write the full results here (outside the repository)")
     args = ap.parse_args(argv)
 
+    if args.epochs < 1 or args.count < 1 or not 0 < args.threshold <= 1:
+        ap.error("epochs and count must be positive; threshold must be within (0, 1]")
+
     t0 = time.perf_counter()
-    segments = load(args.recordings)
+    try:
+        segments = load(list(dict.fromkeys(path.resolve() for path in args.recordings)))
+        classes = [NONE] + [c for c in class_names(segments) if c != NONE]
+        if len(classes) < 3:
+            raise ValueError("comparison needs none and at least two gesture classes")
+        mapping = class_mapping(segments, classes)
+        if not segments or any(not getattr(s, args.axis) for s in segments):
+            raise ValueError(f"every segment needs {args.axis} metadata for held-out comparison")
+        folds = groups(segments, args.axis)
+        if len(folds) < 2:
+            raise ValueError(f"held-out comparison needs at least two {args.axis} groups")
+        for name, test in folds.items():
+            held = {id(s) for s in test}
+            train = [s for s in segments if id(s) not in held]
+            present = {target for s in train for target, feature in zip(s.targets(), s.features)
+                       if feature[-1] == 1}
+            missing = set(classes) - present
+            if missing:
+                raise ValueError(f"held-out {name}: no valid training frames for {', '.join(sorted(missing))}")
+    except (ValueError, OSError) as error:
+        ap.error(str(error))
     load_s = time.perf_counter() - t0
-    classes = [NONE] + [c for c in class_names(segments) if c != NONE]
-    mapping = class_mapping(segments, classes)
     gestures = classes[1:]
     new = gestures[-1]
     old_classes = [c for c in classes if c != new]
-    folds = groups(segments, args.axis)
     print(f"features computed once in {load_s:.1f}s: {len(segments)} segments, classes {classes}, "
           f"{len(folds)} {args.axis} folds; new-gesture scenario adds {new!r}")
     thr, k, ep = args.threshold, args.count, args.epochs
-    report = {"classes": classes, "axis": args.axis, "folds": {}}
+    report = {"classes": classes, "gestures": mapping, "axis": args.axis,
+              "window": WINDOW, "feature_version": FEATURE_VERSION, "features": FEATURES,
+              "epochs": ep, "threshold": thr, "frames_in_a_row": k, "seed": 0, "folds": {}}
     for name, test in sorted(folds.items()):
         held = {id(s) for s in test}
         train = [s for s in segments if id(s) not in held]
-        row = {}
+        row = {"train_segments": len(train), "test_segments": len(test)}
         # ---- part 1
         t = time.perf_counter()
         multi = train_multi(train, classes, ep)

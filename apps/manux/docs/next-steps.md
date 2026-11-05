@@ -55,6 +55,8 @@ Dan의 `per-gesture-tcn-briefing.md`(동작별 이진 TCN)를 분석하고 Dan �
 
 ### 4.1 [이 브랜치에 포함] 비교 도구 + 규칙 기준 점수 수정 → PR
 - `tools/compare_tcn.py`: 위 비교를 다시 실행하는 도구.
+- 비교 전 조건 검사: 동작 2개 이상과 `none`, 선택한 축의 그룹 2개 이상, 모든 구간의 그룹 정보, 각 fold의 학습 클래스별 유효 프레임이 필요하다. 조건을 못 채우면 결과 없이 성공하지 않고 오류로 끝난다. `epochs`·`count`는 양수, `threshold`는 (0, 1]이다.
+- 출력에는 특징 버전·학습 설정·fold별 구간 수·중립 노출 시간을 남긴다. 중립 노출이 없으면 오작동/분은 0이 아니라 `null`(측정 불가)이다. `B_double_fires`는 확인된 이진 예측이 실제로 겹친 연속 구간 수다(시작 시각이 가까운 횟수가 아님).
 - `tools/tcn_data.py`: v0.3 녹화는 `rule.gesture`에 v0.3 이름(`thumb_ring_pinch`)이 있어 규칙 기준이 항상 0이었다. v0.4 ID(점 포함)일 때만 쓰고 아니면 녹화된 action으로 바꾼다. 회귀 시험 `tests/unit/data/test_tcn_data.py::test_rule_baseline_counts_v03_recordings`.
 - 할 일: `cd apps/manux; uv run --python 3.12 pytest -q` 확인 후 preview 대상 PR.
 

@@ -5,6 +5,7 @@ Synthetic hands only (D-006). torch is not needed here; training itself is check
 import sys
 from pathlib import Path
 
+import pytest
 
 from manux.core.contracts import FrameInfo, HandObservation
 from manux.data import capture_plan as plans
@@ -101,17 +102,23 @@ def test_axes():
     assert AXES == ("person", "posture", "condition")
 
 
-def test_rule_baseline_counts_v03_recordings():
+@pytest.mark.parametrize("gesture,action,hits", [
+    ("thumb_ring_pinch", "right_click", 1),
+    (None, "right_click", 1),
+    ("pinch.thumb_ring", "none", 1),
+    ("pinch.scroll", "right_click", 0),  # v0.4 gesture ID is authoritative
+])
+def test_rule_baseline_counts_v03_recordings(gesture, action, hits):
     """v0.3 recordings keep a v0.3 gesture name in rule.gesture ("thumb_ring_pinch"); the rule baseline must
     fall back to the recorded action instead of scoring 0 (found comparing TCN architectures, 2026-11-05)."""
     import numpy as np
     from tcn_data import Segment, evaluate
     frames, labels = [], ["none"] * 10 + ["thumb_ring"] * 10 + ["none"] * 10
     for i, target in enumerate(labels):
-        rule = {"action": "right_click", "gesture": "thumb_ring_pinch"} if i == 12 else {"action": "none", "gesture": "NONE"}
+        rule = {"action": action, "gesture": gesture} if i == 12 else {"action": "none", "gesture": "NONE"}
         frames.append({"t": i / 30, "label": {"target": target}, "rule": rule})
     seg = Segment("p", "0", frames, np.zeros((len(frames), 133), dtype=np.float32))
     classes = ["none", "thumb_ring"]
     never = lambda w: np.tile(np.array([[1.0, 0.0]], dtype=np.float32), (len(w), 1))
     result = evaluate([seg], classes, {"thumb_ring": "pinch.thumb_ring"}, never, 15, 0.7, 3)
-    assert result["per_gesture"]["thumb_ring"] == {"attempts": 1, "tcn_hits": 0, "rule_hits": 1}
+    assert result["per_gesture"]["thumb_ring"] == {"attempts": 1, "tcn_hits": 0, "rule_hits": hits}
