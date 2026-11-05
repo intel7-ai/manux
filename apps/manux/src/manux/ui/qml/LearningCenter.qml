@@ -8,6 +8,7 @@ Popup {
     id: studio
     objectName: "trainingCenter"
     required property var controller
+    property string profileDraft: ""
     signal recordingRequested()
     readonly property bool idle: !controller.recActive && !controller.trainingRunning
                                  && !controller.hubRunning && controller.trainingBusy === ""
@@ -18,7 +19,10 @@ Popup {
     focus: true
     padding: 20
     closePolicy: Popup.CloseOnEscape
-    onOpened: controller.openTraining()
+    onOpened: {
+        profileDraft = controller.trainingProfile
+        controller.openTraining()
+    }
     onClosed: controller.closeTraining()
     background: Rectangle { radius: 16; color: Theme.Studio.surface; border.color: Theme.Studio.line }
 
@@ -72,13 +76,15 @@ Popup {
                                 objectName: "trainingAlias"
                                 Layout.fillWidth: true
                                 maximumLength: 32
-                                text: studio.controller.trainingProfile
+                                text: studio.profileDraft
+                                onTextEdited: studio.profileDraft = text
                                 placeholderText: "실명 대신 영문·숫자·_·-"
                                 enabled: studio.idle
                                 Accessible.name: "녹화 별명"
                                 onAccepted: studio.controller.saveTrainingProfile(text)
                             }
                             StudioButton {
+                                objectName: "saveTrainingAlias"
                                 text: "별명 저장"; enabled: studio.idle
                                 onClicked: studio.controller.saveTrainingProfile(alias.text)
                             }
@@ -101,6 +107,11 @@ Popup {
                             Item { Layout.fillWidth: true }
                         }
                         Copy { Layout.fillWidth: true; text: "평가용은 같은 동작을 새로 수행해 녹화하세요. 녹화 중에는 PC 마우스 제어가 꺼집니다."; color: Theme.Studio.muted }
+                        Copy {
+                            Layout.fillWidth: true
+                            text: studio.controller.trainingProfile === "" ? "별명을 입력하고 ‘별명 저장’을 누른 뒤 녹화하세요." : "저장된 별명 · " + studio.controller.trainingProfile
+                            color: Theme.Studio.mintDark
+                        }
                     }
                 }
                 Panel {
@@ -155,6 +166,13 @@ Popup {
                                 enabled: studio.idle && studio.controller.selectionCanTrain
                                 onClicked: studio.controller.trainTrainingSelection()
                             }
+                        }
+                        Copy {
+                            objectName: "recordSelectionMessage"
+                            Layout.fillWidth: true
+                            text: studio.controller.trainingNote
+                            visible: text !== ""
+                            color: Theme.Studio.mintDark
                         }
                         ListView {
                             id: taskList
@@ -218,7 +236,7 @@ Popup {
                             spacing: 8
                             StudioButton { text: "연결 확인"; enabled: studio.idle; onClicked: studio.controller.runHub("status") }
                             StudioButton { text: "팀 데이터 받기"; enabled: studio.idle; onClicked: studio.controller.runHub("download") }
-                            StudioButton { objectName: "uploadRecordings"; text: "내 녹화 업로드"; enabled: studio.idle && studio.controller.hubConnected && studio.controller.trainingProfile !== ""; onClicked: uploadConfirm.open() }
+                            StudioButton { objectName: "uploadRecordings"; text: "내 녹화 업로드"; enabled: studio.idle && studio.controller.hubCanUpload && studio.controller.trainingProfile !== ""; onClicked: uploadConfirm.open() }
                         }
                         Copy { Layout.fillWidth: true; text: studio.controller.hubStatus; color: Theme.Studio.mintDark }
                     }

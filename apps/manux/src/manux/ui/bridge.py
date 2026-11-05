@@ -1025,6 +1025,13 @@ class Bridge(QObject):
     def recordTrainingSelection(self):
         if (self.stage_name != "main" or not self.training_selected or self.training_busy
                 or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running):
+            if self.stage_name != "main":
+                self.training_note = "메인 화면에서 녹화를 시작하세요."
+            elif not self.training_selected:
+                self.training_note = "녹화할 동작을 하나 이상 선택하세요."
+            else:
+                self.training_note = "진행 중인 작업이 끝난 뒤 녹화를 시작하세요."
+            self.trainingChanged.emit()
             return False
         if not self.tc.profile:
             self.training_note = "녹화 별명을 먼저 정해 주세요."
@@ -1109,6 +1116,11 @@ class Bridge(QObject):
     def hubConnected(self):
         state = self.tc.hub_job.snapshot()
         return bool(state.get("result", {}).get("repo")) and not state.get("error")
+
+    @Property(bool, notify=trainingChanged)
+    def hubCanUpload(self):
+        state = self.tc.hub_job.snapshot()
+        return self.hubConnected and state.get("result", {}).get("upload_access") is True
 
     @Property(str, notify=trainingChanged)
     def recordingSplit(self):

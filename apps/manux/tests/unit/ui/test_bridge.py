@@ -287,3 +287,68 @@ def test_qml_checkbox_drives_selection_and_record_button(tmp_path):
             assert not b.window.grabWindow().isNull()
     finally:
         b.close()
+
+
+def test_alias_keyboard_survives_polling_and_starts_selected_recording(tmp_path):
+    """First-run path: type, wait through polling, save, and click record in the real QML."""
+    from PySide6.QtCore import QObject, QPointF, QMetaObject, Qt
+    from PySide6.QtQuick import QQuickItem
+    from PySide6.QtTest import QTest
+    from manux.data.training_center import TrainingCenterService
+    from manux.ui.bridge import Bridge
+    settings = Settings(schema())
+    tc = TrainingCenterService(tmp_path / "config", tmp_path / "data", tmp_path / "recordings")
+    b = Bridge(FakeRuntime(settings), settings, tmp_path / "config", services={"training_center": tc})
+    try:
+        b.control_hand = "Right"
+        b.finishSplash()
+        popup = b.window.findChild(QObject, "trainingCenter")
+        QMetaObject.invokeMethod(popup, "open")
+        for _ in range(40):
+            QTest.qWait(50)
+            if not b.trainingBusy and b.trainingRows:
+                break
+        b.setTrainingSelected("thumb_ring", True)
+        record = b.window.findChild(QQuickItem, "recordSelection")
+
+        def click(item):
+            position = item.mapToScene(QPointF(item.width() / 2, item.height() / 2)).toPoint()
+            QTest.mouseClick(b.window, Qt.MouseButton.LeftButton, pos=position)
+            QTest.qWait(50)
+
+        click(record)
+        message = b.window.findChild(QQuickItem, "recordSelectionMessage")
+        assert popup.property("visible")
+        assert message.property("visible") and "별명" in message.property("text")
+        alias = b.window.findChild(QQuickItem, "trainingAlias")
+        click(alias)
+        # Include every main-window letter shortcut; slow typing crosses the 400 ms timer.
+        for char in "qomnfcp01":
+            QTest.keyClick(b.window, Qt.Key(ord(char.upper())))
+            QTest.qWait(450)
+        assert alias.property("text") == "qomnfcp01"
+        assert not b.closed
+        assert tc.profile == ""  # edits are drafts until saved
+        click(b.window.findChild(QQuickItem, "saveTrainingAlias"))
+        assert tc.profile == "qomnfcp01"
+        for _ in range(40):
+            QTest.qWait(50)
+            if record.property("enabled"):
+                break
+        assert record.property("enabled")
+        click(record)
+        assert not popup.property("visible")
+        assert b.recordingPlan.focus == ("thumb_ring",)
+        assert b.recordingPlan.start(), b.recordingPlan.message
+        assert b.runtime.rec_identity == {"profile": "qomnfcp01", "split": "train"}
+    finally:
+        b.close()
+
+
+def test_read_connection_does_not_enable_upload_without_verified_write_access(bridge):
+    b, _ = bridge
+    b.tc.hub_job.state = {"result": {"repo": "synthetic/data", "upload_access": False}}
+    b.tc.hub_job.snapshot = lambda: b.tc.hub_job.state
+    assert b.hubConnected and not b.hubCanUpload
+    b.tc.hub_job.state["result"]["upload_access"] = True
+    assert b.hubCanUpload

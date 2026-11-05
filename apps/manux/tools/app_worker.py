@@ -12,6 +12,24 @@ import sys
 from manux.core.contracts import RecordingIdentity
 
 
+class HubActionError(ValueError):
+    """A fixed, credential-free message suitable for the desktop UI."""
+
+
+def upload_access(client):
+    """Return verified permission and a safe explanation, without remote exception text."""
+    if not hasattr(client, "check_upload_access"):
+        return None, "업로드 권한 확인 기능을 사용할 수 없습니다."
+    try:
+        client.check_upload_access()
+    except Exception as error:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+        if status in (401, 403):
+            return False, "업로드 권한 없음 · HF 로그인 또는 쓰기 권한이 있는 토큰을 확인하세요."
+        return None, "업로드 권한 확인 실패 · 네트워크와 인증 설정을 확인하세요."
+    return True, "업로드 권한 확인"
+
+
 def emit(event, **values):
     print(json.dumps({"event": event, **values}, ensure_ascii=True), file=sys.__stdout__, flush=True)
 
@@ -117,7 +135,12 @@ def run_hub(request, send=emit, client=None):
     action = request["action"]
     check_cancel(request)
     send("progress", stage="팀 저장소 연결 중", progress=.1)
+    can_upload = None
     if action == "upload":
+        if hasattr(client, "check_upload_access"):
+            can_upload, permission_note = upload_access(client)
+            if can_upload is not True:
+                raise HubActionError(permission_note)
         own = root / f"profile-{identity.profile.lower()}"
         if not own.resolve().is_relative_to(root.resolve()):
             raise ValueError("녹화 폴더 위치가 잘못되었습니다.")
@@ -133,12 +156,12 @@ def run_hub(request, send=emit, client=None):
         message = f"팀 데이터 받기 완료 · {result['downloaded']}개"
     elif action == "status":
         result = hub.summarize_entries(client.read_manifest())
-        if hasattr(client, "check_upload_access"):
-            client.check_upload_access()
-        message = f"읽기·업로드 권한 확인 · 팀 녹화 {result['files']}개"
+        can_upload, permission_note = upload_access(client)
+        message = f"읽기 연결 성공 · 팀 녹화 {result['files']}개 · {permission_note}"
     else:
         raise ValueError("알 수 없는 허브 작업입니다.")
-    send("done", stage=message, summary=result, repo=repo, job_id=request["job_id"])
+    send("done", stage=message, summary=result, repo=repo, read_access=True,
+         upload_access=can_upload, job_id=request["job_id"])
 
 
 def main(argv=None):
@@ -160,6 +183,8 @@ def main(argv=None):
         elif request["kind"] == "hub":
             try:
                 run_hub(request)
+            except HubActionError:
+                raise
             except Exception:
                 # Never echo HTTP headers, auth tokens or remote exception bodies.
                 raise ValueError("허브 작업 실패 · 저장소 주소, 읽기/쓰기 권한, 토큰과 네트워크를 확인하세요.") from None
