@@ -65,14 +65,14 @@ Dan의 `per-gesture-tcn-briefing.md`(동작별 이진 TCN)를 분석하고 Dan �
 ```powershell
 cd apps/manux
 uv run --python 3.12 --extra vision python tools/collect_mouse.py --list
-uv run --python 3.12 --extra vision python tools/collect_mouse.py --profile <익명별명> --preset pinch --plan basic --hand-model ..\..\hand-mouse\models\hand_landmarker.task
+uv run --python 3.12 --extra vision python tools/collect_mouse.py --profile <익명별명> --preset pinch --plan basic
 ```
 - 평가용은 따로 `--split eval`로 한 번 더(학습과 같은 시도를 섞지 않는다).
 - 녹화는 사용자 폴더에 저장된다. 저장소에 넣지 않는다(D-006). 팀 공유는 `tools/hub.py`(`se4nchoi/manux-datasets`)로 올리고 받는다([dataset-hub.md](dataset-hub.md) 참고: `uv run --python 3.12 --with huggingface-hub python tools/hub.py push` / `pull`).
 - 모이면: `uv run --python 3.12 --extra train python tools/compare_tcn.py <녹화들> --axis person`.
 
 ### 4.3 [실제 PC] 하드웨어 확인 (웹캠 있는 Windows PC)
-- `uv run --python 3.12 --extra ui --extra vision python -m manux --hand-model ..\..\hand-mouse\models\hand_landmarker.task`
+- `uv run --python 3.12 --extra ui --extra vision python -m manux`
 - 확인: 손 고르기 → 튜토리얼 → 메인. 제어 켬 후 이동·클릭·우클릭·드래그·스크롤·모션 스와이프가 실제 Windows에서 동작하는지, 일시정지·손 사라짐 때 버튼이 남지 않는지. S3 완료 기준(실제 Windows 수동 확인)을 이것으로 닫는다. 결과를 architecture.md §8 표에 기록.
 
 ### 4.4 [개발] TCN 직접 판정 기능 — 다음 핵심 작업
@@ -90,12 +90,12 @@ uv run --python 3.12 --extra vision python tools/collect_mouse.py --profile <익
 - 4.4의 모델 로딩 방식이 정해진 뒤 시작하면 충돌이 적다.
 
 ### 4.6 [개발] 설치본·자동 업데이트, 배포 전환
-- PyInstaller + Velopack(`hand-mouse/packaging` 참고)로 `apps/manux` 설치본. 사용자 폴더는 `%APPDATA%\MANUX\v04`(v0.3과 분리).
-- v0.3 기능 목록 수동 확인 후 배포 채널 전환. **`hand-mouse/` 아래를 바꾸면 production 반영 때 설치본이 배포되므로 건드리지 않는다.**
+- **설치본·자동 업데이트 완료(#70):** `packaging/`(PyInstaller + Velopack) + `platform/updater.py`. PR마다 `MANUX Preview` 시험 설치파일(`.github/workflows/manux-app.yml`, v0.3과 나란히 설치, 업데이트 없음). 릴리스 설치본의 사용자 폴더는 `%APPDATA%\MANUX\v04`(v0.3과 분리).
+- 남은 것: Preview 설치파일로 v0.3 기능 목록 수동 확인 후 배포 채널 전환(`build.ps1 -Release`를 릴리스 workflow에 연결). **`hand-mouse/` 아래를 바꾸면 production 반영 때 설치본이 배포되므로 건드리지 않는다.**
 
 ### 남은 작은 일
 - v0.3 중첩 설정(`gestures.<id>`, `motion_actions`)을 v0.4 바인딩으로 변환(`settings/migrate_v03.py`).
-- 트래킹 측정(v0.3 `tracking_test.py`) 이식, 미리보기 위 손가락 번호 그리기.
+- 미리보기 위 손가락 번호 그리기. (트래킹 측정은 #70에서 `data/tracking_test.py`로 이식)
 - 모션 진입 진행률(%)을 Snapshot에 넣어 배지에 표시.
 
 ## 5. 작업 규칙 요약
