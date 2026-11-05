@@ -2,7 +2,7 @@
 
 웹캠으로 Windows를 손짓으로 다루는 앱 MANUX. Qt/QML + Python 한 프로세스이고, MediaPipe 손 인식 위에 규칙 판정과 가벼운 TCN 모델을 같은 계약으로 얹는다.
 
-**현재 상태 (2026-11-05):** 포인터·핀치·모션, TCN 확인기와 헤드리스 실행기를 연결했습니다. Releases의 설치파일은 이 폴더에 설치본이 생길 때까지 이전 버전 `hand-mouse/`(v0.3)에서 빌드합니다.
+**현재 상태 (2026-11-05, preview `589cc9a`):** 포인터·핀치·모션, TCN 확인기·명시적 직접 판정, 개인 모델 검증/교체와 헤드리스 실행기가 병합됐습니다. 데스크톱·트래킹 측정·MANUX Preview 시험 설치본도 있습니다. 실제 PC 확인 뒤 정식 배포 채널을 전환하기 전까지 Releases는 `hand-mouse/`(v0.3)에서 빌드합니다. 자세한 상태와 미검증 항목은 [AGENTS.md](AGENTS.md#현재-상태)가 기준입니다.
 
 ## 먼저 읽을 것
 
@@ -28,6 +28,8 @@ uv run --python 3.12 --extra ui --extra vision python -m manux
 - 설치본 없이 빠르게 점검: `python -m manux --self-check out.json` (번들 모델·MediaPipe·OpenCV·Qt를 확인하고 결과를 씁니다)
 - 트래킹 측정: 왼쪽 패널의 **트래킹 측정 (클릭 없음)**. v0.3과 같은 표적·수치이며, 측정 중에는 검지 포인터로 바꾸고 클릭을 끕니다. 결과는 `%APPDATA%\MANUX-dev\v04\logs\tracking-*.csv`(설치본은 해당 앱의 `logs`)에 저장되고 최근 결과 목록에 나옵니다. 실제 Windows 출력이 있어야 합니다(`--no-windows-input`이면 측정하지 않음).
 - 아직 없는 것: 미리보기 위 손가락 번호 그리기, 학습 센터 화면.
+
+학습 센터·별명별 녹화·HF 공유·별도 worker는 [PR #72](https://github.com/intel7-ai/manux/pull/72)에서 별도 검증 중입니다. 해당 PR의 사용법과 설치본을 preview 기본 구현과 구분합니다. 직접 TCN·특징 캐시·검증 후 개인 모델 설치/교체는 이미 [직접 TCN 안내](docs/direct-tcn.md)에 있습니다.
 
 ## 시험용 설치파일 (MANUX Preview)
 

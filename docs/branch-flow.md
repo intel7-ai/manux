@@ -12,7 +12,7 @@ preview  ── 병합된 코드로 실제 앱 시험 (웹캠·Windows 입력·�
 production  ── 배포 기준: 설치본을 GitHub Release로 게시
 ```
 
-2026-11-05 현재 production 병합으로 게시되는 것은 MANUX 설치본 하나다(`hand-mouse-release.yml`). `apps/manux` 설치본이 준비될 때까지는 이전 버전 `hand-mouse/`(v0.3.x)에서 빌드한다. 이전 Electron 게시 workflow(`release.yml`)는 v0.3보다 낮은 0.2.x를 게시하려다 매번 실패해 삭제했다.
+2026-11-05 현재 production 병합으로 게시되는 것은 MANUX 설치본 하나다(`hand-mouse-release.yml`). v0.4 정식 배포 채널 전환 전까지는 이전 버전 `hand-mouse/`(v0.3.x)에서 빌드한다. 이전 Electron 게시 workflow(`release.yml`)는 v0.3보다 낮은 0.2.x를 게시하려다 매번 실패해 삭제했다.
 
 ## 규칙
 
@@ -33,11 +33,9 @@ production  ── 배포 기준: 설치본을 GitHub Release로 게시
 
 승인이 없어졌으므로 실수를 막는 장치는 자동 검사와 preview 시험뿐이다. preview 시험을 건너뛰지 않는다.
 
-## 검사 깊이 (2026-11-05)
+## 현재 검사
 
-| 대상 | MANUX CI에서 도는 것 |
-| --- | --- |
-| `preview` PR·push, 그 밖의 브랜치 | `verify (ubuntu-latest)`, `apps/manux` 구조·계약 시험 (빠른 확인) |
-| `production` PR·push, 수동 실행(`workflow_dispatch`) | 위 둘 + `verify (windows-latest)`, Synthetic browser integration, Windows preview installer |
-
-필수 검사 이름은 두 브랜치 모두 그대로 **MANUX required**다. preview에서 생략한 검사가 필요한 변경은 Actions에서 MANUX CI를 수동 실행한다. `hand-mouse/` 시험과 설치본 빌드(`hand-mouse.yml`, `hand-mouse-release.yml`)는 이 변경과 상관없이 그대로 돈다.
+- `MANUX CI`: 외부 npm 의존성 없는 공통 하네스 검사와 v0.4 Python 시험. 필수 집계 이름은 **MANUX required**다.
+- production 대상·수동 실행에서는 공통 검사를 Windows와 Ubuntu에서 실행한다. production의 head가 preview인지 확인하는 제한은 유지한다.
+- `manux-app.yml`: v0.4 변경의 Windows Preview 빌드·시험·설치 검사. 실제 웹캠·OS 입력 시험과 구분한다.
+- v0.3 유지보수·정식 릴리스 workflow는 그대로 유지한다. v0.2 전용 브라우저·Electron 패키징·소스 전달 workflow는 앱과 함께 퇴역했다.
