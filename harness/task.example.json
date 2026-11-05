@@ -6,8 +6,8 @@
     "손 추적이 끊기면 눌린 버튼이 해제된다."
   ],
   "scope": [
-    "src/air-mouse-controller.js",
-    "tests/air-mouse-controller.test.js"
+    "apps/manux/src/manux/output/windows/",
+    "apps/manux/tests/"
   ],
   "baselineCommit": "0000000000000000000000000000000000000000"
 }
