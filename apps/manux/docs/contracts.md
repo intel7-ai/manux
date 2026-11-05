@@ -34,7 +34,7 @@
 | `rotation` | 0 / 90 / 180 / 270 | 적용한 회전 |
 | `aspect` (계산) | float | `height / width` |
 
-실패하면: 잘못된 값으로 만들면 `ValueError`. 카메라가 프레임을 못 주면 `FrameInfo`를 만들지 않고 엔진이 "프레임 없음"으로 처리한다(§6 `reset("frame_missing")`은 하지 않고, 손 소실 시간만 센다).
+실패하면: 잘못된 값으로 만들면 ValueError. 카메라가 새 프레임을 못 주면 FrameInfo를 만들지 않는다. 실행기는 Engine.frame_missing(now)으로 대기 중 명령을 적용하고 손 소실 시간을 센다.
 
 ## 3. 손: `HandObservation`
 

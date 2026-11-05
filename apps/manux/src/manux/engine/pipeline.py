@@ -70,6 +70,8 @@ class Engine:
     def _reset(self, features: Sequence[Feature], reason: str) -> None:
         for f in features:
             f.reset(reason)
+        for flt in self.filters:
+            flt.reset(reason)
 
     def _active(self) -> List[Feature]:
         return [f for f in self.features if self.arbiter.mode in f.modes]
@@ -115,6 +117,21 @@ class Engine:
                 self._reset(self.features, reason)
         self._sink_target = self.state.output
 
+    def _check_hand_loss(self, now: float, events: List[str]) -> None:
+        if self._lost_since is None:
+            self._lost_since, self._lost_reset_done = now, False
+        if not self._lost_reset_done and now - self._lost_since >= self.config.hand_lost_reset:
+            self._release("hand_lost")
+            self._reset(self.features, "hand_lost")
+            self._lost_reset_done = True
+            events.append("hand_lost")
+
+    def frame_missing(self, now: float) -> None:
+        """Apply control changes and run the loss timer while capture supplies no frame."""
+        events: List[str] = []
+        self._drain(events)
+        self._check_hand_loss(now, events)
+
     # ------------------------------------------------------------------ the frame
     def step(self, frame: FrameInfo, hand: Optional[HandObservation]) -> Snapshot:
         events: List[str] = []
@@ -122,15 +139,8 @@ class Engine:
         self._drain(events)
         now = frame.t
 
-        # hand loss: features see hand=None every frame; after hand_lost_reset everything is released once
         if hand is None:
-            if self._lost_since is None:
-                self._lost_since, self._lost_reset_done = now, False
-            if not self._lost_reset_done and now - self._lost_since >= self.config.hand_lost_reset:
-                self._release("hand_lost")
-                self._reset(self.features, "hand_lost")
-                self._lost_reset_done = True
-                events.append("hand_lost")
+            self._check_hand_loss(now, events)
         else:
             self._lost_since = None
 
@@ -149,7 +159,7 @@ class Engine:
             except Exception as exc:
                 errors.append(FeatureError(f.id, repr(exc)))
                 self._release("error")
-                f.reset("error")
+                self._reset([f], "error")
 
         # mode intents go to the arbiter
         before = self._active()
