@@ -1,7 +1,7 @@
 # MANUX 작업 규칙
 
 - 현재 앱은 `apps/manux/`(Python + Qt/QML)다. 앱 작업 전 [앱 지침](apps/manux/AGENTS.md)을 읽고, 변경할 계층의 계약부터 확인한다.
-- `hand-mouse/`는 정식 v0.3 릴리스 유지보수 전용이다. v0.4 배포 전환 전까지 보존한다. 기본 검색에서는 제외하며 필요할 때 `rg --no-ignore hand-mouse`로 명시해 찾는다.
+- `hand-mouse/`는 정식 v0.3 릴리스 유지보수 전용이다. v0.4 배포 전환 전까지 보존한다. 기본 검색에서는 제외하며 필요할 때 `rg --files --no-ignore hand-mouse/`로 명시해 찾는다.
 - 이전 웹앱·Electron은 현재 트리에서 퇴역했다. 요청받은 과거 조사만 [보관 안내](archive/README.md)를 따른다. 과거 코드를 기본 맥락으로 읽지 않는다.
 
 ## 작업과 전달
