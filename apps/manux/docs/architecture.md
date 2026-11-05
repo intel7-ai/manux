@@ -70,7 +70,7 @@ apps/manux/
 | `output` | `core`, `actions`, `platform` | |
 | `engine` | `core`, `perception`, `actions`, `settings` | 기능·출력·데이터는 `app.py`가 주입 |
 | `ui` | `core`, `engine`, `settings` | |
-| `app.py`, `__main__.py` | 전부 | |
+| `app.py`(헤드리스), `desktop.py`(데스크톱 앱), `__main__.py` | 전부 | |
 
 외부 라이브러리 경계:
 
@@ -148,7 +148,7 @@ capture ─► tracking ─► HandObservation | None
 | S3 | `output/windows` (커서 매핑·클릭·스크롤 관성·창 전환을 `mouse_controller.py`에서 분리) | 실제 Windows에서 이동·클릭·드래그·스크롤 수동 확인 기록 | 코드 병합 (#57). **실제 Windows 수동 확인 미실행** |
 | S4 | `pinch`(클릭·스크롤 잡기·드래그), `motion` 기능, 중재기(비공개 필드 읽기 제거) | v0.3 재생 비교, 모션 진입 차단 시험 | 완료 (#59 엔진, #60·#61 기능), 합성 비교 |
 | S5 | `tcn_gate`, `ml`, `data/recorder`, `tools/train_tcn.py` (Dan 브랜치에서) | 모델 정보 검증, 확인기 켬/끔 재생 비교 | 코드 병합 (#60·#62). 모델 정보 검증 완료. **실제 녹화로 확인기 켬/끔 비교 미실행** |
-| S6 | QML 셸: 페이지·튜토리얼·설정·트레이·단축키·업데이트, 설치본 | 설치본으로 v0.3 기능 목록 수동 확인 후 배포 채널 전환 | 시작 안 함 |
+| S6 | QML 셸: 페이지·튜토리얼·설정·트레이·단축키·업데이트, 설치본 | 설치본으로 v0.3 기능 목록 수동 확인 후 배포 채널 전환 | **진행 중.** 화면(`ui/`, v0.3 `dashboard.qml` 그대로 + 새 브리지)·`desktop.py`·트레이·전역 단축키·손가락 HUD·튜토리얼·방향 보정. 남음: 트래킹 측정, 미리보기 위 그리기, 학습 센터 화면(S6a 모듈 위), 자동 업데이트·설치본, 실제 웹캠·Windows 확인 |
 
 S2와 S3, S4와 S5는 서로 다른 폴더를 고치므로 동시에 진행할 수 있다.
 
