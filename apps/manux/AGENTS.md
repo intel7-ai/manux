@@ -13,7 +13,8 @@
 
 ## 현재 상태
 
-- 2026-11-05: 이식 단계 **S0**(골격·계약·구조 시험). 기능 코드는 없다. `hand-mouse/`(v0.3)가 설치본이다.
+- 2026-11-05: 이식 단계 **S0**(골격·계약·구조 시험) 완료. S1(`settings`, `capture`, `tracking`, `data/recording`, `tools/replay.py`), S2(`features/pointer`, `output/practice`·`none`), S3(`actions`, `output/windows`)가 각자 PR로 진행 중이다. 아직 실행되는 앱(`app.py`)은 없다. `hand-mouse/`(v0.3)가 설치본이다.
+- OpenCV·MediaPipe는 실제 카메라·모델을 열 때만 import한다(`vision` extra). 시험과 CI는 이 둘 없이 돈다. 새 코드도 이 방식을 따른다.
 - 확정: Qt/QML + Python 한 프로세스(D-001), 새 앱은 `apps/manux/`, `hand-mouse/`는 수정만(D-002), 겹치는 동작은 한 기능에 묶는 기능 모듈(D-003), 동작 ID ≠ 액션 ID(D-004), 릴리스용 기본 모델 + 사용자 개인 모델(D-005 방향), 학습 데이터는 v0.4 동안 팀 공유 허용·릴리스부터 사용자 PC에만(D-006).
 - 제안(아직 규칙 아님): D-005 세부 기준, 계약의 **제안** 표시 절.
 - TCN은 Dan 브랜치(`hand-mouse-gesture-overhaul@7448e4a`)에 있고 `none / thumb_index / thumb_ring` 세 클래스만 학습했다. 한 사람·한 세션·한 카메라 기록의 성적이다. 다른 동작이나 실사용 정확도 향상을 보장하는 것으로 설명하지 않는다. `solution.md`의 원거리·적외선 100% 주장은 검증 자료가 아니다.

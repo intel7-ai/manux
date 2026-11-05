@@ -163,18 +163,23 @@ v0.4에서는 이 표의 왼쪽 열을 동작 ID로 바꾼다(예: `pinch.thumb_
 
 ### 액션 목록
 
-| 액션 ID | phase | v0.3 이름 |
-| --- | --- | --- |
-| `mouse.move` | hold | `move_cursor` |
-| `mouse.left_click` | tap | `left_click` |
-| `mouse.right_click` | tap | `right_click` |
-| `mouse.drag` | begin / hold / end | `drag_hold`, `drag_toggle` |
-| `mouse.scroll` | begin / hold / end | `scroll_grab` |
-| `window.task_switcher` | tap | `task_switcher`, `alt_tab` |
-| `window.show_desktop` | tap | `show_desktop` |
-| `nav.back`, `nav.forward` | tap | 모션 `back`, `forward` |
-| `tab.prev`, `tab.next` | tap | 모션 `tab_prev`, `tab_next` |
-| `media.play_pause`, `media.volume_up`, `media.volume_down` | tap | **제안** (없음. 침대 사용 R6) |
+| 액션 ID | phase | params | v0.3 이름 |
+| --- | --- | --- | --- |
+| `mouse.move` | hold | `gain` | `move_cursor` |
+| `mouse.left_click` | tap | — | `left_click` |
+| `mouse.right_click` | tap | — | `right_click` |
+| `mouse.drag` | begin / hold / end | — | `drag_hold`, `drag_toggle` |
+| `mouse.scroll` | begin / hold / end | `gain` | `scroll_grab` |
+| `window.task_switcher` | tap | — | `task_switcher`, `alt_tab` |
+| `window.show_desktop` | tap | — | `show_desktop` |
+| `nav.back`, `nav.forward` | tap | — | 모션 `back`, `forward` |
+| `tab.prev`, `tab.next` | tap | — | 모션 `tab_prev`, `tab_next` |
+| `media.play_pause`, `media.volume_up`, `media.volume_down` | tap | — | **제안** (없음. 침대 사용 R6) |
+
+이 표는 코드 [`actions/catalog.py`](../src/manux/actions/catalog.py)와 같아야 한다(`tests/unit/actions/test_actions.py`가 비교한다). **제안** 줄은 목록에 넣지 않는다.
+
+- `params`(S3 추가, 계약 변경): 바인딩이 줄 수 있는 키. `gain`은 양수 배율(`mouse.move`: 커서 이동 배율, 예: 주먹 빠른 이동을 별도 동작 + `gain`으로 연결 / `mouse.scroll`: 스크롤 배율). 프레임마다 바뀌는 값은 `params`가 아니다.
+- `window.task_switcher`는 S3에서 Alt+Tab 한 번(v0.3 `alt_tab`)이다. v0.3의 Alt를 누른 채 손으로 고르는 전환기(`task_switcher`)는 확인·취소 동작이 필요한 모드라 S4(중재기)에서 정한다.
 
 v0.3 `grab`의 실제 용도는 이식 때 확인하고 이 표에 추가한다.
 
@@ -184,7 +189,7 @@ v0.3 `grab`의 실제 용도는 이식 때 확인하고 이 표에 추가한다.
 - 라우터는 `Intent`를 `ActionCommand`로 바꾼다. `phase`와 `point`는 그대로 옮긴다.
 - **바인딩 없는 동작:** 아무것도 실행하지 않는다. Snapshot에 "연결 없음"으로 보이고 실패 기록에 남는다.
 - **모르는 액션 ID:** 설정을 읽을 때 거부하고 그 바인딩만 기본값으로 되돌린다(앱은 계속).
-- 한 액션의 `phase` 짝이 맞지 않는 바인딩(예: `tap` 동작 → `mouse.drag`)은 읽을 때 거부한다.
+- 한 액션의 `phase` 짝이 맞지 않는 바인딩(예: `tap` 동작 → `mouse.drag`)은 읽을 때 거부한다. 동작이 내는 phase를 읽을 때 알 수 없으면 라우터가 실행 때 거부한다(`phase_mismatch`, 명령 없음).
 
 ### `ActionCommand`
 
@@ -221,6 +226,8 @@ class OutputSink(Protocol):
 - `apply`는 예외를 던지지 않는다. 결과는 `OutputResult(accepted, reason)`. `reason`: `ok` · `unsupported`(이 싱크가 모르는 액션) · `blocked`(안전 규칙) · `error:<설명>`.
 - `release_all`은 여러 번 불러도 안전하다. 눌린 버튼·드래그·스크롤 관성을 모두 끝낸다.
 - 단계·모드 전환, 일시정지, 손 소실(`hand_lost_reset`초, v0.3 기본 0.3초), 설정 변경, 종료, 기능 오류 때 엔진이 `release_all`을 **먼저** 부른다.
+- `begin`이 열려 있지 않은 `end`(예: `release_all` 뒤)는 `ok`이고 아무것도 하지 않는다. `begin` 없는 `hold`는 `blocked`이다. 버튼을 저절로 누르지 않는다(S3 추가).
+- `close()` 뒤의 `apply`는 `blocked`이다(S3 추가).
 - `windows` 싱크만 실제 입력을 보낸다. 실제 마우스가 움직이면 제어를 멈추는 감시(v0.3 Electron의 watchdog)는 **제안**.
 
 ## 9. 학습 녹화 형식
@@ -271,11 +278,13 @@ class OutputSink(Protocol):
 
 **계약:**
 - 설정 키는 `<기능 ID>.<이름>` 또는 공용 `app.<이름>`, `camera.<이름>`, `tracking.<이름>`. 기능의 기본값은 그 기능의 `SETTINGS`에 있다.
-- 설정 파일에는 `"version"`이 있다. 읽을 때 이전 버전을 변환한다. v0.3 `gestures.json`과 프로필 파일 변환표는 S1에서 만든다.
+- 설정 파일은 `<설정 폴더>/settings.json` = `{"version": 1, "values": {키: 값}}`이다. 읽을 때 이전 버전을 변환한다.
+- v0.3 변환(`settings/migrate_v03.py`): 주인이 있는 키는 표(`RENAMES`)대로 새 키로 바꾸고, 나머지는 `v03.<키>`로 그대로 보존한다. 기능을 옮길 때 그 기능의 v0.3 키를 표에 추가한다. v0.3 파일은 읽기만 하고 고치지 않는다.
 - 잘못된 값(타입·범위)은 그 키만 기본값으로 되돌리고 경고를 남긴다. 앱은 멈추지 않는다. 모르는 키는 지우지 않고 보존한다.
 - 저장은 임시 파일에 쓰고 이름을 바꾸는 방식으로 한다. 저장이 실패해도 이전 파일은 그대로다.
 - 프로필은 사용자 값만 덮어쓴다. 프로필 이름 규칙은 v0.3 `profiles.NAME_RE`를 따른다.
-- 사용자 설정 위치는 v0.3 `app_paths`(설치본: 사용자 폴더)를 따른다. 저장소 안에 사용자 설정을 쓰지 않는다.
+- 사용자 폴더(`settings/paths.py`): 설치본 `%APPDATA%/MANUX/v04`, 소스 실행 `%APPDATA%/MANUX-dev/v04`, `MANUX_DATA_DIR`가 있으면 그 폴더. v0.3 설치본(`%APPDATA%/MANUX`)과 섞이지 않는다. 저장소 안에 사용자 설정을 쓰지 않는다.
+- 공용 계층의 설정(`app.`, `camera.`, `tracking.`)은 `settings/builtin.py`에 선언한다. 계층 규칙상 `capture`·`tracking`은 `settings`를 import할 수 없으므로 조립 지점이 값을 넘긴다.
 
 ## 12. 화면과 엔진 사이 (`Snapshot`, `UiCommand`)
 
