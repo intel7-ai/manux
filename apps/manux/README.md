@@ -11,6 +11,20 @@
 3. [docs/contracts.md](docs/contracts.md): 모듈 사이의 계약
 4. [docs/decisions.md](docs/decisions.md): 확정·제안된 결정
 
+## 데스크톱 앱 실행 (S6, 진행 중)
+
+v0.3과 같은 화면(`ui/qml/dashboard.qml`)이 v0.4 엔진 위에서 돕니다.
+
+```powershell
+cd apps/manux
+uv run --python 3.12 --extra ui --extra vision python -m manux --hand-model ..\..\hand-mouse\models\hand_landmarker.task
+```
+
+- 웹캠 없이 화면 확인: `uv run --python 3.12 --extra ui python -m manux --replay <녹화.jsonl.gz> --no-windows-input`
+  (녹화를 재생합니다. `--no-windows-input`이면 실제 마우스 입력을 보내지 않습니다.)
+- 사용자 설정·화면 설정(`settings.json`, `ui.ini`)은 `%APPDATA%\MANUX-dev\v04\config`에 저장됩니다. v0.3 설정은 건드리지 않습니다.
+- 아직 없는 것: 트래킹 측정, 미리보기 위 손가락 번호 그리기, 학습 센터 화면, 자동 업데이트·설치본.
+
 ## 시험
 
 ```powershell

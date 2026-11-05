@@ -28,7 +28,7 @@ ALLOWED = {
     "engine": {"core", "perception", "actions", "settings"},
     "ui": {"core", "engine", "settings"},
 }
-ROOT_MODULES = {"__init__.py", "app.py", "__main__.py"}  # may import every layer
+ROOT_MODULES = {"__init__.py", "app.py", "desktop.py", "__main__.py"}  # composition roots: may import every layer
 
 # third-party module -> layers that may import it (app.py may import anything)
 THIRD_PARTY = {
