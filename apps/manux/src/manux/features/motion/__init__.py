@@ -12,10 +12,11 @@ Mode handling (contracts section 5, arbiter):
 - In `motion` it watches swipes and the exit pose and emits `motion.exit` (tap) for the pose (or the optional
   timeout / hand-lost exit); the arbiter switches back. A mode change the feature did not ask for (button,
   stage change) is taken as it comes: entering that way needs one frame to settle, as v0.3's button did.
-- v0.3 read other engines' private fields to block entry (`_motion_blocked`). Now the feature reads
-  `ctx.others` (`Activity`) only: entry is held back while another feature is `holding` or released within
-  `motion.enter_quiet` s. The arbiter applies the same rule to `motion.enter` and adds the output's own state
-  (a drag button down, scroll inertia), which v0.3 also checked and a feature cannot see.
+- v0.3 read other engines' private fields to block entry (`_motion_blocked`). Now only the arbiter decides,
+  from `Activity`: it refuses `motion.enter` while another stepped feature is `holding` or released less than
+  1.0 s ago (v0.3 `motion_enter_quiet`). The feature does not repeat that check. Intended difference: v0.3
+  restarted the 0.8 s hold on every blocked frame; now the hold runs, the request is refused, and the hold
+  starts over from the refusal, so entry can come up to 0.8 s sooner after the other feature lets go.
 
 Gestures (`tap` only, point None). The id says what the hand did; what runs is the binding (D-004):
 
@@ -25,7 +26,9 @@ Gestures (`tap` only, point None). The id says what the hand did; what runs is t
 | `motion.swipe_right`         | open hand, thumb out, to the right | `nav.forward` |
 | `motion.swipe_left_tucked`   | open hand, thumb tucked, left      | `tab.prev` |
 | `motion.swipe_right_tucked`  | open hand, thumb tucked, right     | `tab.next` |
-| `motion.enter`, `motion.exit` | thumbs-up held                    | none: read by the arbiter |
+
+`motion.enter` / `motion.exit` (tap, thumbs-up held) are mode requests: the engine consumes them and never routes
+them, so they are not in `GESTURES` (engine rule).
 
 `activity()`: never `holding` (nothing is pressed); `last_release_t` is the last swipe.
 """
@@ -39,7 +42,7 @@ from manux.features.motion.detector import MotionCore, MotionEvent
 from manux.features.motion.settings import DEFAULTS, SETTINGS, V03_KEYS, resolve
 
 __all__ = ["ID", "MODE", "GESTURES", "GESTURE_PHASES", "DEFAULT_BINDINGS", "SETTINGS", "V03_KEYS",
-           "MotionFeature", "entry_blocked"]
+           "MotionFeature", "ENTER", "EXIT"]
 
 ID = "motion"
 MODE = "motion"
@@ -52,7 +55,7 @@ SWIPE_RIGHT_TUCKED = "motion.swipe_right_tucked"
 ENTER = "motion.enter"
 EXIT = "motion.exit"
 
-GESTURES: Tuple[str, ...] = (SWIPE_LEFT, SWIPE_RIGHT, SWIPE_LEFT_TUCKED, SWIPE_RIGHT_TUCKED, ENTER, EXIT)
+GESTURES: Tuple[str, ...] = (SWIPE_LEFT, SWIPE_RIGHT, SWIPE_LEFT_TUCKED, SWIPE_RIGHT_TUCKED)
 GESTURE_PHASES: Mapping[str, frozenset] = {g: frozenset({"tap"}) for g in GESTURES}
 DEFAULT_BINDINGS: Mapping[str, Any] = {
     SWIPE_LEFT: "nav.back",
@@ -62,11 +65,6 @@ DEFAULT_BINDINGS: Mapping[str, Any] = {
 }
 _SWIPES = {("nav", "left"): SWIPE_LEFT, ("nav", "right"): SWIPE_RIGHT,
            ("tab", "left"): SWIPE_LEFT_TUCKED, ("tab", "right"): SWIPE_RIGHT_TUCKED}
-
-
-def entry_blocked(others: Mapping[str, Activity], t: float, quiet: float, me: str = ID) -> bool:
-    """v0.3 `_motion_blocked` on `Activity`: another feature holds a press, or released one < `quiet` s ago."""
-    return any(a.holding or (t - a.last_release_t) < quiet for k, a in others.items() if k != me)
 
 
 class MotionFeature:
@@ -105,8 +103,7 @@ class MotionFeature:
                 return self._emit(t, core._exit(t, "disabled"))
             return []
         lm = hand.landmarks if hand is not None else None
-        blocked = (not core.active) and entry_blocked(ctx.others, t, float(c["enter_quiet"]))
-        return self._emit(t, core.update(t, lm, blocked=blocked))
+        return self._emit(t, core.update(t, lm))
 
     def activity(self) -> Activity:
         last = self.core._last_swipe_t

@@ -31,7 +31,7 @@ uv run python -m manux.app --replay <녹화> --mode pinch --max-frames 100
 uv run --extra vision python -m manux.app --camera --source 0
 ```
 
-TCN 확인기를 연결하려면 `uv run --with onnxruntime`으로 실행하고
+TCN 확인기를 연결하려면 `uv run --extra ml`로 실행하고
 `--tcn-model <모델>.onnx`를 지정합니다. Qt 화면과 Windows 조작은 S6에서 연결합니다.
 
 ## 테스터 프로필 데이터 수집
@@ -72,9 +72,13 @@ uv run --locked --extra vision python tools/collect_mouse.py --profile tester01 
 $data = "$env:APPDATA/MANUX-dev/v04/recordings/profile-tester01/pinch"
 $train = (Get-ChildItem "$data/train/*.jsonl.gz").FullName
 $eval = (Get-ChildItem "$data/eval/*.jsonl.gz").FullName
-uv run --with torch --with onnx python tools/train_tcn.py $train --output "$data/personal.onnx"
-uv run --with onnxruntime python tools/evaluate_tcn.py "$data/personal.onnx" $eval --group-by person
+uv run --locked --python 3.12 --extra train python tools/train_tcn.py $train --output "$data/personal.onnx"
+uv run --locked --python 3.12 --extra ml python tools/evaluate_tcn.py "$data/personal.onnx" $eval --group-by person
 ```
+
+의존성: 앱에서 모델을 실행하려면 `ml` extra(onnxruntime), 학습하려면 `train` extra(torch·onnx·onnxruntime)가
+필요합니다. torch는 `tools/`에서만 쓰고 `src/`는 import하지 않습니다. CI(`.[test]`)는 둘 다 없이 돕니다.
+학습 도구는 저장소 안에 모델을 쓰지 않습니다(D-006).
 
 학습 도구는 클래스 목록을 녹화에서 읽습니다. `--classes`로 클래스와 순서를
 지정할 수 있습니다. 모델마다 한 프리셋을 사용하세요. 기존 파일은 이전에 이동으로
