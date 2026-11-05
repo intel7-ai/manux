@@ -242,8 +242,7 @@ def build(settings: Settings, source, *, windows: bool = True) -> DesktopRuntime
 
 
 def default_hand_model(paths: AppPaths) -> Path:
-    bundled = paths.app_dir / "models" / "hand_landmarker.task"
-    return bundled if bundled.exists() else paths.data_dir / "models" / "hand_landmarker.task"
+    return paths.hand_model
 
 
 def main(argv=None) -> int:
@@ -254,8 +253,16 @@ def main(argv=None) -> int:
     parser.add_argument("--no-windows-input", action="store_true", help="never send real input (UI check)")
     parser.add_argument("--no-tray", action="store_true")
     parser.add_argument("--screenshot", type=Path, help="save the window to this PNG after a few seconds, then quit")
+    parser.add_argument("--self-check", type=Path, metavar="OUT.json",
+                        help="check the bundled model, MediaPipe, OpenCV and Qt, write the result, then quit")
     args = parser.parse_args(argv)
     paths = resolve()
+    from manux.platform.updater import Updater, read_build_info
+    info = read_build_info(paths.app_dir)
+    if args.self_check is not None:
+        return self_check(paths, args.hand_model or default_hand_model(paths), info, args.self_check)
+    updater = Updater(info, paths.frozen)
+    updater.start()
     settings = load(schema(), paths.config_dir)
     try:
         source = ReplayInput(args.replay) if args.replay else CameraInput(
@@ -269,12 +276,48 @@ def main(argv=None) -> int:
     from manux.platform.tray import QtTray
     from manux.ui.bridge import run
     return run(runtime, settings, paths, tray=not args.no_tray, screenshot=args.screenshot,
-               services={"pointer_axes": pointer_axes, "export_logs": lambda metrics: export_logs(paths, metrics)},
+               services={"pointer_axes": pointer_axes, "export_logs": lambda metrics: export_logs(paths, metrics, info.label)},
                hotkeys=hotkeys.GlobalHotkeys({}), hotkey_defaults=hotkeys.DEFAULTS,
                normalize_combo=hotkeys.normalize, combo_label=hotkeys.label, make_tray=QtTray)
 
 
-def export_logs(paths: AppPaths, metrics) -> Path:
+def self_check(paths: AppPaths, model: Path, info, out: Path) -> int:
+    """What a packaged build needs to run, checked without a webcam or a window (installer CI)."""
+    import json
+    checks: Dict[str, str] = {}
+
+    def attempt(name: str, fn) -> None:
+        try:
+            checks[name] = str(fn() or "ok")
+        except Exception as exc:                       # report every failure, not only the first
+            checks[name] = f"FAIL: {type(exc).__name__}: {exc}"
+
+    def landmarker():
+        if not model.is_file():                        # never fall back to downloading: check the bundle
+            raise FileNotFoundError(model)
+        from manux.tracking.landmarker import MediaPipeLandmarker
+        MediaPipeLandmarker(model).close()
+
+    def qml():
+        from PySide6 import QtQml  # noqa: F401
+        from manux.ui.bridge import QML
+        if not QML.exists():
+            raise FileNotFoundError(QML)
+        return QML.name
+
+    attempt("hand_model", lambda: f"{model.name} {model.stat().st_size} bytes")
+    attempt("opencv", lambda: __import__("cv2").__version__)
+    attempt("mediapipe", landmarker)
+    attempt("qt", qml)
+    ok = not any(v.startswith("FAIL") for v in checks.values())
+    result = {"ok": ok, "version": info.version, "pack_id": info.pack_id, "updates": info.updates,
+              "frozen": paths.frozen, "app_dir": str(paths.app_dir), "checks": checks}
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    return 0 if ok else 1
+
+
+def export_logs(paths: AppPaths, metrics, version: str = "0.4.0.dev0") -> Path:
     """Zip the user's logs and settings (no recordings, no images) into Downloads; returns the file."""
     import json
     import zipfile
@@ -287,7 +330,7 @@ def export_logs(paths: AppPaths, metrics) -> Path:
                 for f in sorted(folder.rglob("*")):
                     if f.is_file() and f.suffix in (".json", ".jsonl", ".txt", ".log", ".csv") and "profiles" not in f.parts:
                         z.write(f, f"{prefix}/{f.relative_to(folder)}")
-        z.writestr("info.json", json.dumps({"version": "0.4.0.dev0", "camera": metrics[0],
+        z.writestr("info.json", json.dumps({"version": version, "camera": metrics[0],
                                             "brightness": metrics[1]}, ensure_ascii=False, indent=2))
     if sys.platform == "win32":
         import subprocess

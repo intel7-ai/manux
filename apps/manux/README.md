@@ -17,13 +17,24 @@ v0.3과 같은 화면(`ui/qml/dashboard.qml`)이 v0.4 엔진 위에서 돕니다
 
 ```powershell
 cd apps/manux
-uv run --python 3.12 --extra ui --extra vision python -m manux --hand-model ..\..\hand-mouse\models\hand_landmarker.task
+uv run --python 3.12 --extra ui --extra vision python -m manux
 ```
 
 - 웹캠 없이 화면 확인: `uv run --python 3.12 --extra ui python -m manux --replay <녹화.jsonl.gz> --no-windows-input`
   (녹화를 재생합니다. `--no-windows-input`이면 실제 마우스 입력을 보내지 않습니다.)
 - 사용자 설정·화면 설정(`settings.json`, `ui.ini`)은 `%APPDATA%\MANUX-dev\v04\config`에 저장됩니다. v0.3 설정은 건드리지 않습니다.
-- 아직 없는 것: 트래킹 측정, 미리보기 위 손가락 번호 그리기, 학습 센터 화면, 자동 업데이트·설치본.
+- 손 모델은 `models/hand_landmarker.task`(번들)를 씁니다. 다른 파일은 `--hand-model`로 지정합니다.
+- 설치본 없이 빠르게 점검: `python -m manux --self-check out.json` (번들 모델·MediaPipe·OpenCV·Qt를 확인하고 결과를 씁니다)
+- 아직 없는 것: 트래킹 측정, 미리보기 위 손가락 번호 그리기, 학습 센터 화면.
+
+## 시험용 설치파일 (MANUX Preview)
+
+`apps/manux/`를 바꾼 PR과 preview push마다 GitHub Actions의 **MANUX app (apps/manux, Windows)** 이 `MANUX-Preview-<버전>` artifact를 만듭니다. 안의 `MANUXPreview-preview-Setup.exe`를 실행하면 설치됩니다.
+
+- 이름은 **MANUX Preview**이고 Releases의 MANUX(v0.3)와 **나란히** 설치됩니다. 서로 덮어쓰지 않습니다.
+- 설정은 `%APPDATA%\MANUXPreview\v04`에 둡니다. 자동 업데이트는 하지 않습니다. 새 PR 설치파일을 다시 설치하면 교체됩니다.
+- CI가 설치 → 자가 진단(`--self-check`) → 창 스크린샷까지 확인합니다. 실제 웹캠·실제 Windows 입력은 확인하지 않습니다.
+- 직접 빌드: `packaging/build.ps1 -Version 0.4.0-local` (vpk 필요, 스크립트 머리말 참고). `-Release`(package id MANUX, 자동 업데이트 켬)는 배포 채널 전환 때만 씁니다.
 
 ## 시험
 
@@ -81,7 +92,7 @@ uv run --locked --extra vision python tools/collect_mouse.py --profile tester01 
 - 원본 영상은 화면에만 표시합니다. 손 관절 좌표·과제 라벨·규칙 판정은
   `%APPDATA%/MANUX-dev/v04/recordings/profile-tester01/pinch/train/` 아래에 세트별
   `.jsonl.gz`로 저장합니다. 실제 Windows 마우스·키보드 입력은 꺼져 있습니다.
-  카메라 모델은 로컬 v0.4 모델 또는 체크아웃의 `hand-mouse/models/hand_landmarker.task`를 사용합니다.
+  카메라 모델은 사용자 폴더의 모델이 있으면 그것을, 없으면 `apps/manux/models/hand_landmarker.task`를 사용합니다.
 
 ## TCN 학습과 평가 (S5)
 

@@ -1,0 +1,104 @@
+name: MANUX app (apps/manux, Windows)
+
+# The apps/manux desktop app as an installed Windows program (S6). Builds "MANUX Preview" (package id
+# MANUXPreview): it installs next to the released app, keeps its own settings and never updates, so a PR
+# build can be tried on a real PC without replacing anything. This workflow never publishes; the
+# Releases installer is still hand-mouse-release.yml until the release channel is switched
+# (apps/manux/docs/architecture.md section 8, S6).
+on:
+  pull_request:
+    paths: ["apps/manux/**", ".github/workflows/manux-app.yml"]
+  push:
+    branches: [preview]
+    paths: ["apps/manux/**", ".github/workflows/manux-app.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manux-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer:
+    name: MANUX Preview installer (apps/manux, windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/manux
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - run: uv sync --locked --python 3.12 --extra ui --extra vision --extra package
+      - name: pytest (Windows)
+        run: uv run --locked --python 3.12 --extra ui --extra vision --extra package pytest -q -p no:cacheprovider
+      - name: Self-check from source (bundled model, MediaPipe, OpenCV, Qt)
+        run: |
+          uv run --locked --python 3.12 --extra ui --extra vision python -m manux --self-check "$env:RUNNER_TEMP/source-check.json"
+          $code = $LASTEXITCODE
+          Get-Content "$env:RUNNER_TEMP/source-check.json"
+          if ($code -ne 0) { throw "source self-check failed" }
+      - name: Version
+        id: version
+        run: |
+          $base = (Select-String -Path pyproject.toml -Pattern '^version = "(\d+)\.(\d+)\.').Matches[0].Groups
+          $suffix = if ("${{ github.event_name }}" -eq "pull_request") { "pr${{ github.event.pull_request.number }}" } else { "preview" }
+          $version = "$($base[1].Value).$($base[2].Value).${{ github.run_number }}-$suffix"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Output "MANUX Preview $version"
+      - run: dotnet tool install -g vpk --version 1.2.161
+      - run: ./packaging/build.ps1 -Version ${{ steps.version.outputs.version }} -SourceSha ${{ github.sha }}
+      - name: Built app passes its self-check
+        run: |
+          $out = "$env:RUNNER_TEMP/built-check.json"
+          $p = Start-Process build/dist/MANUX/MANUX.exe -ArgumentList '--self-check', "`"$out`"" -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "MANUX.exe --self-check did not finish in 120 s" }
+          if (Test-Path $out) { Get-Content $out } else { throw "no self-check result" }
+          if ($p.ExitCode -ne 0) { throw "MANUX.exe --self-check exited $($p.ExitCode)" }
+      - name: Built app opens its window (no webcam on the runner, no Windows input)
+        run: |
+          $shot = "$env:RUNNER_TEMP/window.png"
+          $p = Start-Process build/dist/MANUX/MANUX.exe -ArgumentList '--no-windows-input', '--no-tray', '--screenshot', "`"$shot`"" -PassThru
+          if (-not $p.WaitForExit(90000)) { $p.Kill(); throw "the window did not close after its screenshot in 90 s" }
+          if (-not (Test-Path $shot)) { throw "no screenshot: the window did not open" }
+          Write-Output "window screenshot $((Get-Item $shot).Length) bytes, exit $($p.ExitCode)"
+      - name: Installer installs, and the installed app passes its self-check
+        run: |
+          $setup = Get-ChildItem build/releases -Filter '*-Setup.exe' | Select-Object -First 1
+          if ($null -eq $setup) { throw "no Setup.exe in build/releases" }
+          $p = Start-Process $setup.FullName -ArgumentList '--silent' -PassThru
+          if (-not $p.WaitForExit(300000)) { $p.Kill(); throw "Setup did not finish in 300 s" }
+          if ($p.ExitCode -ne 0) { throw "Setup exited $($p.ExitCode)" }
+          Start-Sleep -Seconds 5
+          Get-Process MANUX -ErrorAction SilentlyContinue | Stop-Process -Force   # Setup starts the app once
+          $exe = Join-Path $env:LOCALAPPDATA 'MANUXPreview/current/MANUX.exe'
+          if (-not (Test-Path $exe)) { throw "installed app not found at $exe" }
+          $out = "$env:RUNNER_TEMP/installed-check.json"
+          $q = Start-Process $exe -ArgumentList '--self-check', "`"$out`"" -PassThru
+          if (-not $q.WaitForExit(120000)) { $q.Kill(); throw "installed MANUX.exe --self-check did not finish" }
+          Get-Content $out
+          if ($q.ExitCode -ne 0) { throw "installed self-check exited $($q.ExitCode)" }
+          $info = Get-Content $out | ConvertFrom-Json
+          if ($info.pack_id -ne 'MANUXPreview' -or $info.updates) { throw "a PR build must be MANUXPreview without updates" }
+      - name: Self-check results and window screenshot
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: manux-app-checks-${{ steps.version.outputs.version }}
+          path: |
+            ${{ runner.temp }}/*-check.json
+            ${{ runner.temp }}/window.png
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: MANUX Preview installer
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: MANUX-Preview-${{ steps.version.outputs.version }}
+          path: apps/manux/build/releases/
+          if-no-files-found: error
+          retention-days: 14
