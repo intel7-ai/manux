@@ -1,4 +1,11 @@
-"""Train Dan's causal TCN on the gesture classes declared in MANUX recordings."""
+"""Train Dan's causal TCN on the gesture classes declared in MANUX recordings.
+
+    cd apps/manux
+    uv run --python 3.12 --extra train python tools/train_tcn.py <recordings...> --output <outside the repo>/m.onnx
+
+torch lives only here (`train` extra), never in src/. Do not write models or recordings into the
+repository (D-006); a model trained on one person is a personal model, not a base model (D-005).
+"""
 from __future__ import annotations
 
 import argparse
@@ -9,11 +16,14 @@ from pathlib import Path
 
 import numpy as np
 
+from manux.data.recorder import public_source
+from manux.data.recording import read
 from manux.ml.card import CLASS_RE, validate_card
 from manux.perception.local3d import FEATURES, FEATURE_VERSION
 from tcn_data import class_mapping, class_names, evaluate, groups, load, samples
 
 WINDOW = 15
+AUGMENT = True
 
 
 def train(segments, classes, epochs):
@@ -41,6 +51,27 @@ def train(segments, classes, epochs):
         def forward(self, inputs):
             return self.head(self.body(inputs.transpose(1, 2))[:, :, -1])
 
+    def augment(batch):
+        """Dan's augmentation: small 3D rotation of the hand-frame joints, size and jitter (other seats/angles)."""
+        import math
+        b = batch.shape[0]
+        ang = (torch.rand(b, 3) - 0.5) * math.radians(30)
+        cx, cy, cz = torch.cos(ang).unbind(1)
+        sx, sy, sz = torch.sin(ang).unbind(1)
+        one, zero = torch.ones(b), torch.zeros(b)
+        rx = torch.stack([one, zero, zero, zero, cx, -sx, zero, sx, cx], 1).view(b, 3, 3)
+        ry = torch.stack([cy, zero, sy, zero, one, zero, -sy, zero, cy], 1).view(b, 3, 3)
+        rz = torch.stack([cz, -sz, zero, sz, cz, zero, zero, zero, one], 1).view(b, 3, 3)
+        r = rz @ ry @ rx
+        batch = batch.clone()
+        for lo in (0, 63):
+            pts = batch[:, :, lo:lo + 63].reshape(b, batch.shape[1], 21, 3)
+            batch[:, :, lo:lo + 63] = torch.einsum("btjk,blk->btjl", pts, r).reshape(b, batch.shape[1], 63)
+        scale = 1.0 + (torch.rand(b, 1, 1) - 0.5) * 0.2
+        batch[:, :, :130] = batch[:, :, :130] * scale
+        batch[:, :, :130] += torch.randn_like(batch[:, :, :130]) * 0.01
+        return batch
+
     torch.manual_seed(0)
     model = TCN()
     weights = torch.tensor(counts ** -0.5, dtype=torch.float32)
@@ -50,7 +81,7 @@ def train(segments, classes, epochs):
     for _ in range(epochs):
         for batch in torch.randperm(len(inputs)).split(256):
             optimizer.zero_grad()
-            loss_fn(model(inputs[batch]), labels[batch]).backward()
+            loss_fn(model(augment(inputs[batch]) if AUGMENT else inputs[batch]), labels[batch]).backward()
             optimizer.step()
     return model.eval()
 
@@ -73,9 +104,15 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--threshold", type=float, default=0.7)
     parser.add_argument("--frames-in-a-row", type=int, default=3)
+    parser.add_argument("--no-augment", action="store_true", help="train without Dan's rotation/size/jitter augmentation")
     args = parser.parse_args()
+    global AUGMENT
+    AUGMENT = not args.no_augment
     if args.output.suffix.lower() != ".onnx" or args.epochs < 1:
         parser.error("use an .onnx output and at least one epoch")
+    repo = Path(__file__).resolve().parents[3]
+    if args.output.resolve().is_relative_to(repo):
+        parser.error(f"write models outside the repository ({repo}); D-006")
     try:
         recordings = list(dict.fromkeys(path.resolve() for path in args.recordings))
         segments = load(recordings)
@@ -88,7 +125,12 @@ def main() -> None:
         sources = []
         for path in recordings:
             with path.open("rb") as file:
-                sources.append({"sha256": file_digest(file, "sha256").hexdigest()})
+                digest = file_digest(file, "sha256").hexdigest()
+            rec = read(path)
+            pc, note = public_source(rec.meta)        # aliases only, never real names (contracts section 9)
+            camera = {k: v for k, v in (rec.meta.get("camera") or {}).items() if k in ("source", "mode", "mirror")}
+            sources.append({"file": path.name, "sha256": digest, "pc": pc, "person": rec.meta.get("person"),
+                            "camera": dict(camera, note=note), "frames": len(rec.frames)})
         card = {"classes": classes, "gestures": mapping, "kind": args.kind, "window": WINDOW,
                 "features": FEATURES, "feature_version": FEATURE_VERSION, "threshold": args.threshold,
                 "frames_in_a_row": args.frames_in_a_row, "trained": datetime.now(timezone.utc).isoformat(),

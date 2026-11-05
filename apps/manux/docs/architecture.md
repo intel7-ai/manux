@@ -140,15 +140,15 @@ capture ─► tracking ─► HandObservation | None
 
 `hand-mouse/`는 v0.4가 대체할 때까지 설치본으로 유지하고 버그 수정만 받는다. 각 단계는 **재생 비교**로 v0.3과 같은 출력을 확인한 뒤 끝낸다. 측정하지 않은 단계는 완료로 표시하지 않는다.
 
-| 단계 | 내용 | 완료 기준 |
-| --- | --- | --- |
-| S0 | 폴더 골격, 계약 문서·코드, 의존 규칙 시험, 에이전트 안내 | 구조 시험 통과, 팀 검토 (**이 PR**) |
-| S1 | `core` 보강, `settings`(v0.3 `gestures.json` 변환), `capture`, `tracking`, 재생 도구 | v0.3 녹화를 읽어 `HandObservation` 열로 재생 |
-| S2 | `pointer` 기능 + `output/practice`·`output/null` | 같은 입력 열에서 v0.3 `PointerEngine`과 출력 불일치 0 |
-| S3 | `output/windows` (커서 매핑·클릭·스크롤 관성·창 전환을 `mouse_controller.py`에서 분리) | 실제 Windows에서 이동·클릭·드래그·스크롤 수동 확인 기록 |
-| S4 | `pinch`(클릭·스크롤 잡기·드래그), `motion` 기능, 중재기(비공개 필드 읽기 제거) | v0.3 재생 비교, 모션 진입 차단 시험 |
-| S5 | `tcn_gate`, `ml`, `data/recorder`, `tools/train_tcn.py` (Dan 브랜치에서) | 모델 정보 검증, 확인기 켬/끔 재생 비교 |
-| S6 | QML 셸: 페이지·튜토리얼·설정·트레이·단축키·업데이트, 설치본 | 설치본으로 v0.3 기능 목록 수동 확인 후 배포 채널 전환 |
+| 단계 | 내용 | 완료 기준 | 상태 (2026-11-05 preview) |
+| --- | --- | --- | --- |
+| S0 | 폴더 골격, 계약 문서·코드, 의존 규칙 시험, 에이전트 안내 | 구조 시험 통과, 팀 검토 | 완료 (#53, CI 강제 #55) |
+| S1 | `core` 보강, `settings`(v0.3 `gestures.json` 변환), `capture`, `tracking`, 재생 도구 | v0.3 녹화를 읽어 `HandObservation` 열로 재생 | 완료 (#56). Dan 녹화 28,557/28,557 손 재생 |
+| S2 | `pointer` 기능 + `output/practice`·`output/null` | 같은 입력 열에서 v0.3 `PointerEngine`과 출력 불일치 0 | 완료 (#58), 합성 비교 |
+| S3 | `output/windows` (커서 매핑·클릭·스크롤 관성·창 전환을 `mouse_controller.py`에서 분리) | 실제 Windows에서 이동·클릭·드래그·스크롤 수동 확인 기록 | 코드 병합 (#57). **실제 Windows 수동 확인 미실행** |
+| S4 | `pinch`(클릭·스크롤 잡기·드래그), `motion` 기능, 중재기(비공개 필드 읽기 제거) | v0.3 재생 비교, 모션 진입 차단 시험 | 완료 (#59 엔진, #60·#61 기능), 합성 비교 |
+| S5 | `tcn_gate`, `ml`, `data/recorder`, `tools/train_tcn.py` (Dan 브랜치에서) | 모델 정보 검증, 확인기 켬/끔 재생 비교 | 코드 병합 (#60·#62). 모델 정보 검증 완료. **실제 녹화로 확인기 켬/끔 비교 미실행** |
+| S6 | QML 셸: 페이지·튜토리얼·설정·트레이·단축키·업데이트, 설치본 | 설치본으로 v0.3 기능 목록 수동 확인 후 배포 채널 전환 | 시작 안 함 |
 
 S2와 S3, S4와 S5는 서로 다른 폴더를 고치므로 동시에 진행할 수 있다.
 

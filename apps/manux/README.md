@@ -42,9 +42,13 @@ TCN 확인기를 연결하려면 `uv run --with onnxruntime`으로 실행하고
 학습에 사용됩니다.
 
 ```powershell
-uv run --with torch --with onnx python tools/train_tcn.py <녹화1> <녹화2> --output <모델>.onnx
-uv run --with onnxruntime python tools/evaluate_tcn.py <모델>.onnx <별도-평가-녹화> --group-by person
+uv run --python 3.12 --extra train python tools/train_tcn.py <녹화1> <녹화2> --output <저장소 밖>/<모델>.onnx
+uv run --python 3.12 --extra ml python tools/evaluate_tcn.py <모델>.onnx <별도-평가-녹화> --group-by person
 ```
+
+의존성: 앱에서 모델을 실행하려면 `ml` extra(onnxruntime), 학습하려면 `train` extra(torch·onnx·onnxruntime)가
+필요합니다. torch는 `tools/`에서만 쓰고 `src/`는 import하지 않습니다. CI(`.[test]`)는 둘 다 없이 돕니다.
+학습 도구는 저장소 안에 모델을 쓰지 않습니다(D-006).
 
 학습 도구는 클래스 목록을 녹화에서 읽습니다. `--classes`로 클래스와 순서를
 지정할 수 있습니다. 기본 평가는 사람과 자세를 각각 하나씩 제외해 학습을 반복합니다.
