@@ -49,14 +49,61 @@ def test_recursive_discovery_separates_team_train_and_own_eval(tmp_path):
 
 def test_config_never_puts_token_in_preferences_or_job_request(tmp_path, monkeypatch):
     service = TrainingCenterService(tmp_path / "config", tmp_path / "data", tmp_path / "recordings")
-    with pytest.raises(ValueError): service.configure("../escape", "team/data")
-    service.configure("SYNTHETIC", "team/data", "hf_synthetic_test_only")
+    with pytest.raises(ValueError): service.configure("../escape")
+    service.configure("SYNTHETIC")
     assert "hf_synthetic" not in service.preferences_path.read_text()
     assert TrainingCenterService(service.config_dir, service.data_dir, service.recordings_dir).profile == "synthetic"
     requests = []
     monkeypatch.setattr(service.hub_job, "start_request", lambda request: requests.append(request))
     service.hub_action("upload")
     assert requests[0]["profile"] == "synthetic" and "hf_synthetic" not in json.dumps(requests)
+    assert set(json.loads(service.preferences_path.read_text())) == {"profile"}
+    assert requests[0]["env_files"] == [str(service.config_dir / ".env")]
+
+
+def test_hub_read_actions_need_no_alias_but_upload_does(tmp_path, monkeypatch):
+    service = TrainingCenterService(tmp_path / "config", tmp_path / "data", tmp_path / "recordings")
+    requests = []
+    monkeypatch.setattr(service.hub_job, "start_request", lambda request: requests.append(request) or True)
+    assert service.hub_action("status")
+    assert service.hub_action("download")
+    assert [r["action"] for r in requests] == ["status", "download"]
+    assert all(r["profile"] == "" for r in requests)
+    assert not service.hub_action("upload")
+    assert service.hub_job.snapshot()["error"]
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize("action", ["status", "download"])
+def test_worker_reads_without_alias_and_returns_resolved_env_repo(tmp_path, monkeypatch, action):
+    monkeypatch.setenv(hub.ENV_REPO, "synthetic/env-repo")
+    monkeypatch.setattr(hub, "load_dotenv", lambda *args, **kwargs: {})
+    request = {"profile": "", "preset": "pinch", "repo": "synthetic/old-repo", "action": action,
+               "recordings_dir": str(tmp_path / "recordings"), "job_id": "test", "cancel_path": str(tmp_path / "cancel")}
+    events = []
+    app_worker.run_hub(request, lambda event, **values: events.append((event, values)), client=Remote())
+    assert events[-1][0] == "done"
+    assert events[-1][1]["repo"] == "synthetic/env-repo"
+
+
+def test_worker_loads_config_env_last_without_returning_credentials(tmp_path, monkeypatch):
+    source, config = tmp_path / "source.env", tmp_path / "config.env"
+    source.write_text("MANUX_HF_REPO=synthetic/source\nHF_TOKEN=hf_synthetic_source\n")
+    config.write_text("MANUX_HF_REPO=synthetic/config\nHF_TOKEN=hf_synthetic_config\n")
+    monkeypatch.setattr(hub, "_APP_DIR", tmp_path / "unused")
+    monkeypatch.setattr(hub, "_REPO_ROOT", tmp_path / "unused")
+    # Register environment restoration before the worker modifies it.
+    monkeypatch.delenv(hub.ENV_TOKEN, raising=False)
+    monkeypatch.delenv(hub.ENV_REPO, raising=False)
+    request = {"profile": "", "action": "status", "env_files": [str(source), str(config)],
+               "recordings_dir": str(tmp_path / "recordings"), "job_id": "test", "cancel_path": str(tmp_path / "cancel")}
+    events = []
+    app_worker.run_hub(request, lambda event, **values: events.append((event, values)), client=Remote())
+    assert events[-1][1]["repo"] == "synthetic/config"
+    import os
+    assert os.environ[hub.ENV_TOKEN] == "hf_synthetic_config"
+    assert "hf_synthetic" not in json.dumps(events)
+    assert "hf_synthetic" not in json.dumps(request)
 
 
 def test_worker_uploads_only_current_profile_and_downloads_validated_data(tmp_path, monkeypatch):

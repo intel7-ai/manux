@@ -511,11 +511,13 @@ class TrainingCenterService:
 
     def hub_action(self, action: str):
         try:
-            identity = self.identity()
+            if action not in ("status", "download", "upload"):
+                raise ValueError("알 수 없는 허브 작업입니다.")
+            profile = self.identity().profile if action == "upload" else ""
             if self.job.running:
                 raise ValueError("학습이 끝난 뒤 허브 작업을 시작하세요.")
-            return self.hub_job.start_request({"kind": "hub", "action": action, "profile": identity.profile,
-                "preset": identity.preset, "repo": self.repo, "config_dir": str(self.config_dir),
+            return self.hub_job.start_request({"kind": "hub", "action": action, "profile": profile,
+                "preset": self.preset_name, "repo": self.repo, "config_dir": str(self.config_dir),
                 "env_files": [str(path) for path in self.env_files], "recordings_dir": str(self.recordings_dir)})
         except (ValueError, OSError) as error:
             return self.hub_job.fail(str(error))

@@ -11,11 +11,14 @@ CheckBox {
         color: control.checked ? Theme.Studio.mint : Theme.Studio.paper
         border.width: control.activeFocus ? 2 : 1
         border.color: control.checked || control.activeFocus ? Theme.Studio.mintDark : "#B8C8CF"
-        Text {
+        Rectangle {
             anchors.centerIn: parent
-            text: control.checked ? "✓" : ""
-            color: Theme.Studio.ink
-            font.family: Theme.Studio.font; font.pixelSize: 16; font.bold: true
+            visible: control.checked
+            width: 10; height: 6
+            rotation: -45
+            color: "transparent"
+            Rectangle { width: 2; height: parent.height; color: Theme.Studio.ink }
+            Rectangle { y: parent.height - 2; width: parent.width; height: 2; color: Theme.Studio.ink }
         }
     }
     contentItem: Text {

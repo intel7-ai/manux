@@ -1023,7 +1023,8 @@ class Bridge(QObject):
 
     @Slot(result=bool)
     def recordTrainingSelection(self):
-        if not self.training_selected or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+        if (self.stage_name != "main" or not self.training_selected or self.training_busy
+                or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running):
             return False
         if not self.tc.profile:
             self.training_note = "녹화 별명을 먼저 정해 주세요."
@@ -1037,7 +1038,8 @@ class Bridge(QObject):
 
     @Slot()
     def trainTrainingSelection(self):
-        if not self.selectionCanTrain or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+        if (not self.selectionCanTrain or self.training_busy or self.rec_mode != "off"
+                or self.training_job.running or self.tc.hub_job.running):
             return
         keys = [r["key"] for r in self.selectedTrainingRows if r["can_train"]]
         self._pause()
@@ -1103,6 +1105,11 @@ class Bridge(QObject):
     def hubRepo(self):
         return str(self.tc.hub_job.snapshot().get("result", {}).get("repo") or self.tc.repo)
 
+    @Property(bool, notify=trainingChanged)
+    def hubConnected(self):
+        state = self.tc.hub_job.snapshot()
+        return bool(state.get("result", {}).get("repo")) and not state.get("error")
+
     @Property(str, notify=trainingChanged)
     def recordingSplit(self):
         return self.tc.split
@@ -1121,6 +1128,7 @@ class Bridge(QObject):
         try:
             self.tc.configure(profile)
             self.training_note = "녹화 별명을 저장했습니다. 동작을 체크해 시작하세요."
+            self.refreshTraining()
         except (ValueError, OSError):
             self.training_note = "별명은 영문·숫자·_·- 1~32자로 입력하세요."
         self.trainingChanged.emit()

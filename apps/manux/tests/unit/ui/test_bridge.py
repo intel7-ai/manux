@@ -120,7 +120,7 @@ def test_training_center_and_recording_plan_in_bridge(tmp_path):
     settings = Settings(schema())
     runtime = FakeRuntime(settings)
     tc = TrainingCenterService(tmp_path / "config", tmp_path / "data", tmp_path / "recordings")
-    tc.configure("tester01", "team/dataset")
+    tc.configure("tester01")
     b = Bridge(runtime, settings, tmp_path / "config", services={"training_center": tc})
     try:
         b.control_hand = "Right"
@@ -128,7 +128,7 @@ def test_training_center_and_recording_plan_in_bridge(tmp_path):
         assert b.stage == "main"
         assert b.focusRecord("thumb_ring") is True
         assert b.recordingPlan.title.startswith("엄지+약지")
-        assert b.recordingPlan.start() is True
+        assert b.recordingPlan.start() is True, b.recordingPlan.message
         assert b.recMode == "guided" and b.recFocus == "thumb_ring"
         assert runtime.rec_call[0] == "guided" and runtime.rec_call[1] == "thumb_ring"
         assert runtime.rec_identity == {"profile": "tester01", "split": "train"}
@@ -155,7 +155,7 @@ def test_training_center_profile_eval_and_confirmed_upload(tmp_path, monkeypatch
         b.control_hand = "Right"
         b.finishSplash()
         assert not b.focusRecord("thumb_ring")
-        b.saveHubSettings("synthetic", "team/data", "hf_synthetic_test_only")
+        b.saveTrainingProfile("synthetic")
         b.setRecordingSplit("eval")
         b.setRecMode("guided")
         assert runtime.rec_identity["split"] == "eval"
@@ -174,5 +174,116 @@ def test_training_center_profile_eval_and_confirmed_upload(tmp_path, monkeypatch
         assert QMetaObject.invokeMethod(confirmation, "accept")
         QTest.qWait(100)
         assert calls == ["upload"]
+    finally:
+        b.close()
+
+
+def test_checked_subset_persists_across_filters_and_records_exact_tasks(tmp_path, monkeypatch):
+    from manux.data.training_center import TrainingCenterService
+    from manux.ui.bridge import Bridge
+    settings = Settings(schema())
+    runtime = FakeRuntime(settings)
+    tc = TrainingCenterService(tmp_path / "config", tmp_path / "data", tmp_path / "recordings",
+        specs={"pinch.thumb_ring": {"kind": "tap", "modes": ["pinch"], "point": "none"}})
+    tc.configure("synthetic")
+    b = Bridge(runtime, settings, tmp_path / "config", services={"training_center": tc})
+    try:
+        b.control_hand = "Right"
+        b.finishSplash()
+        b.training_rows = tc.summary_and_rows()[2]
+        assert not b.recordTrainingSelection()
+        b.setTrainingSelected("thumb_ring", True)
+        b.setTrainingSelected("none", True)
+        b.setTrainingSelected("invalid", True)
+        b.setTrainingFilter("창·모드")
+        assert b.selectedTrainingKeys == ["thumb_ring", "none"]
+        assert b.selectionCanTrain
+        calls = []
+        monkeypatch.setattr(tc.job, "start", lambda **kwargs: calls.append(kwargs) or True)
+        b.trainTrainingSelection()
+        assert calls == [{"gestures": ["thumb_ring"]}]
+        assert b.recordTrainingSelection()
+        # Changing selection after opening the planner must not change the queued subset.
+        b.setTrainingSelected("thumb_index", True)
+        assert b.recordingPlan.start(), b.recordingPlan.message
+        assert runtime.rec_call[1] == ("thumb_ring", "none")
+        assert runtime.rec_identity == {"profile": "synthetic", "split": "train"}
+        assert not b.recordTrainingSelection()
+    finally:
+        b.close()
+
+
+def test_capture_only_or_empty_selection_does_not_start_training(tmp_path, monkeypatch):
+    from manux.data.training_center import TrainingCenterService
+    from manux.ui.bridge import Bridge
+    settings = Settings(schema())
+    tc = TrainingCenterService(tmp_path / "config", tmp_path / "data", tmp_path / "recordings")
+    b = Bridge(FakeRuntime(settings), settings, tmp_path / "config", services={"training_center": tc})
+    try:
+        b.training_rows = tc.summary_and_rows()[2]
+        calls = []
+        monkeypatch.setattr(tc.job, "start", lambda **kwargs: calls.append(kwargs))
+        b.trainTrainingSelection()
+        b.setTrainingSelected("swipe_left", True)
+        assert not b.selectionCanTrain
+        b.trainTrainingSelection()
+        assert not calls
+    finally:
+        b.close()
+
+
+def test_qml_checkbox_drives_selection_and_record_button(tmp_path):
+    from PySide6.QtCore import QObject, QPointF, QMetaObject, Qt
+    from PySide6.QtQuick import QQuickItem
+    from PySide6.QtTest import QTest
+    from manux.data.training_center import TrainingCenterService
+    from manux.ui.bridge import Bridge
+    settings = Settings(schema())
+    tc = TrainingCenterService(tmp_path / "config", tmp_path / "data", tmp_path / "recordings")
+    tc.configure("synthetic")
+    b = Bridge(FakeRuntime(settings), settings, tmp_path / "config", services={"training_center": tc})
+    try:
+        b.control_hand = "Right"
+        b.finishSplash()
+        popup = b.window.findChild(QObject, "trainingCenter")
+        QMetaObject.invokeMethod(popup, "open")
+        # The bridge publishes background summaries on its 400 ms UI timer.
+        for _ in range(40):
+            QTest.qWait(50)
+            if not b.trainingBusy and b.trainingRows:
+                b.trainingChanged.emit()
+                QTest.qWait(50)
+                break
+        record = b.window.findChild(QQuickItem, "recordSelection")
+        assert not record.property("enabled")
+        def visual_child(item, name):
+            if item.objectName() == name:
+                return item
+            for child in item.childItems():
+                found = visual_child(child, name)
+                if found is not None:
+                    return found
+            return None
+
+        task_list = b.window.findChild(QQuickItem, "trainingTasks")
+        checkbox = visual_child(task_list, "taskCheck_thumb_middle")
+        assert checkbox is not None
+        position = checkbox.mapToScene(QPointF(checkbox.width() / 2, checkbox.height() / 2)).toPoint()
+        QTest.mouseClick(b.window, Qt.MouseButton.LeftButton, pos=position)
+        assert b.selectedTrainingKeys == ["thumb_middle"]
+        assert record.property("enabled")
+        assert b.window.findChild(QObject, "hubCredential") is None
+        assert not b.window.findChild(QQuickItem, "uploadRecordings").property("enabled")
+        assert QMetaObject.invokeMethod(record, "click")
+        QTest.qWait(100)
+        assert b.recordingPlan.focus == ("thumb_middle",)
+        assert not popup.property("visible")
+        for width, height in ((780, 560), (1140, 720)):
+            b.window.setWidth(width)
+            b.window.setHeight(height)
+            QTest.qWait(100)
+            form = b.window.findChild(QQuickItem, "recordingForm")
+            assert form.width() > 0
+            assert not b.window.grabWindow().isNull()
     finally:
         b.close()

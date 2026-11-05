@@ -100,7 +100,12 @@ def run_training(request, send=emit):
 
 def run_hub(request, send=emit, client=None):
     import hub
-    identity = RecordingIdentity(request["profile"], request.get("preset", "pinch"))
+    action = request["action"]
+    # Only uploads belong to a person. Reading team data needs no recording alias.
+    identity = RecordingIdentity(request["profile"], request.get("preset", "pinch")) if action == "upload" else None
+    preset = request.get("preset", "pinch")
+    if preset not in ("pinch", "pointer", "trigger"):
+        raise ValueError("녹화 방식을 확인하세요.")
     if not getattr(sys, "frozen", False):
         hub.load_dotenv()
     hub.load_dotenv([Path(path) for path in request.get("env_files", ())], override=True)
@@ -124,7 +129,7 @@ def run_hub(request, send=emit, client=None):
         result = hub.push_to_hub(client, own)
         message = f"업로드 완료 · 새 녹화 {result['new_recordings']}개"
     elif action == "download":
-        result = hub.pull_from_hub(client, root, presets=[identity.preset])
+        result = hub.pull_from_hub(client, root, presets=[preset])
         message = f"팀 데이터 받기 완료 · {result['downloaded']}개"
     elif action == "status":
         result = hub.summarize_entries(client.read_manifest())

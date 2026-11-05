@@ -14,11 +14,12 @@ ComboBox {
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
     }
-    indicator: Text {
+    indicator: Item {
+        width: 10; height: 10
         x: control.width - width - 12
         y: (control.height - height) / 2
-        text: "⌄"; color: Theme.Studio.muted
-        font.pixelSize: 18
+        Rectangle { x: 1; y: 3; width: 6; height: 2; rotation: 45; color: Theme.Studio.muted }
+        Rectangle { x: 5; y: 3; width: 6; height: 2; rotation: -45; color: Theme.Studio.muted }
     }
     background: Rectangle {
         radius: 10; color: Theme.Studio.paper

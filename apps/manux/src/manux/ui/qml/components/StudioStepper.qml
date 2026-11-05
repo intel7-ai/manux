@@ -16,7 +16,7 @@ Control {
     contentItem: RowLayout {
         spacing: 4
         StudioButton {
-            text: "−"; implicitWidth: 36; implicitHeight: 38
+            text: "-"; implicitWidth: 36; implicitHeight: 38
             enabled: control.value > control.from
             Accessible.name: "값 줄이기"
             onClicked: control.edited(Math.max(control.from, control.value - control.stepSize))
