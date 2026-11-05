@@ -13,11 +13,13 @@
 
 ## 현재 상태
 
-- 2026-11-05: 이식 단계 **S0**(골격·계약·구조 시험) 완료. S1(`settings`, `capture`, `tracking`, `data/recording`, `tools/replay.py`), S2(`features/pointer`, `output/practice`·`none`), S3(`actions`, `output/windows`)가 각자 PR로 진행 중이다. 아직 실행되는 앱(`app.py`)은 없다. `hand-mouse/`(v0.3)가 설치본이다.
+- 2026-11-05 preview: 이식 단계 **S0~S5 완료**. `settings`·`capture`·`tracking`·`data`(녹화 읽기·쓰기·안내 녹화)(S1·S5), `features/pointer`·`output/practice`·`null`(S2), `actions`·`output/windows`(S3), `features/pinch`·`features/motion`(S4), `perception/local3d`·`ml`·`features/tcn_gate`·`tools/train_tcn.py`·`evaluate_tcn.py`(S5), `engine`(파이프라인·중재기), 헤드리스 실행기 `python -m manux.app --replay <녹화> | --camera`(연습 출력만).
+- **남은 것: S6**(Qt/QML 화면·트레이·단축키·자동 업데이트·설치본). 그전까지 설치본은 `hand-mouse/`(v0.3)다.
+- **확인하지 않은 것:** 실제 웹캠 사용, 실제 Windows 입력, Qt 화면, 인식률. 실제 데이터 확인은 Dan의 녹화 1개(한 사람)를 엔진에 재생한 것뿐이다.
 - OpenCV·MediaPipe는 실제 카메라·모델을 열 때만 import한다(`vision` extra). 시험과 CI는 이 둘 없이 돈다. 새 코드도 이 방식을 따른다.
 - 확정: Qt/QML + Python 한 프로세스(D-001), 새 앱은 `apps/manux/`, `hand-mouse/`는 수정만(D-002), 겹치는 동작은 한 기능에 묶는 기능 모듈(D-003), 동작 ID ≠ 액션 ID(D-004), 릴리스용 기본 모델 + 사용자 개인 모델(D-005 방향), 학습 데이터는 v0.4 동안 팀 공유 허용·릴리스부터 사용자 PC에만(D-006).
 - 제안(아직 규칙 아님): D-005 세부 기준, 계약의 **제안** 표시 절.
-- TCN은 Dan 브랜치(`hand-mouse-gesture-overhaul@7448e4a`)에 있고 `none / thumb_index / thumb_ring` 세 클래스만 학습했다. 한 사람·한 세션·한 카메라 기록의 성적이다. 다른 동작이나 실사용 정확도 향상을 보장하는 것으로 설명하지 않는다. `solution.md`의 원거리·적외선 100% 주장은 검증 자료가 아니다.
+- TCN: v0.4 도구는 녹화 라벨에서 클래스를 읽어 3개로 고정되지 않는다(합성 5클래스로 실행 경로만 확인). 실제 모델은 아직 Dan의 3클래스(`none / thumb_index / thumb_ring`), 한 사람·한 세션·한 카메라 기록의 성적뿐이다. 다른 동작이나 실사용 정확도 향상을 보장하는 것으로 설명하지 않는다. `solution.md`의 원거리·적외선 100% 주장은 검증 자료가 아니다.
 
 ## 규칙
 
