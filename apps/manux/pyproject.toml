@@ -1,0 +1,19 @@
+[project]
+name = "manux"
+version = "0.4.0.dev0"
+description = "MANUX v0.4: webcam hand control for Windows (Qt/QML + Python)"
+readme = "README.md"
+requires-python = ">=3.12"
+# Runtime dependencies are added stage by stage (docs/architecture.md section 8):
+# S1 numpy, opencv-python, mediapipe / S5 onnxruntime / S6 pyside6-essentials
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["uv_build>=0.12.8,<0.13.0"]
+build-backend = "uv_build"
