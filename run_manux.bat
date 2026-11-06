@@ -11,7 +11,7 @@ echo.
 cd /d "%~dp0apps\manux"
 
 echo [1/2] Checking dependencies...
-call uv sync --extra vision --extra ui
+call uv sync --extra vision --extra ui --extra ml
 if errorlevel 1 (
     echo [ERROR] Failed to sync packages with uv.
     pause

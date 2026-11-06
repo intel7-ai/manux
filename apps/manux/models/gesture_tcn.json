@@ -13,6 +13,14 @@
   "feature_version": "local3d-v1",
   "threshold": 0.7,
   "frames_in_a_row": 3,
+  "gestures": {
+    "thumb_index": "pinch.scroll",
+    "thumb_ring": "pinch.thumb_ring",
+    "thumb_middle": "pinch.thumb_middle",
+    "thumb_pinky": "pinch.thumb_pinky",
+    "palm_side": "pinch.thumb_tucked_open",
+    "thumbs_up": "motion.enter"
+  },
   "epochs": 25,
   "trained": "2026-11-06 02:37:09",
   "data": [

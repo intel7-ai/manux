@@ -663,8 +663,13 @@ def main(argv=None) -> int:
     updater.start()
     settings = load(schema(), paths.config_dir)
     default_store = paths.data_dir / "models" / "personal"
-    if args.tcn_model is None and args.tcn_store is None and (default_store / "active.json").is_file():
-        args.tcn_store, args.tcn_mode = default_store, "direct"
+    if args.tcn_model is None and args.tcn_store is None:
+        if (default_store / "active.json").is_file():
+            args.tcn_store, args.tcn_mode = default_store, "direct"
+        elif (paths.app_dir / "models" / "gesture_tcn.onnx").is_file():
+            args.tcn_model = paths.app_dir / "models" / "gesture_tcn.onnx"
+        elif (paths.data_dir / "models" / "gesture_tcn.onnx").is_file():
+            args.tcn_model = paths.data_dir / "models" / "gesture_tcn.onnx"
     try:
         source = ReplayInput(args.replay) if args.replay else CameraInput(
             settings, args.hand_model or default_hand_model(paths), args.source)
