@@ -42,3 +42,10 @@ preview의 새 변경이 필요하면 preview → testing PR로 받아 시험 �
 - train/eval은 별도 시도로 수집한다. 영상·개인 녹화·모델·인증 정보는 Git에 올리지 않는다. 공유는 [검증된 허브 경로](../apps/manux/docs/dataset-hub.md)를 사용한다.
 
 testing 브랜치는 앱 기능이나 모델 구성을 자동으로 바꾸지 않는다. 동작별 독립 이진 TCN 이식은 별도 변경이며, testing 생성만으로 적용된 것으로 보고하지 않는다.
+
+## Rasp-Jun 학습센터 실험 앱
+
+`codex/rasp-jun-training-center`의 선택 학습·진행률/ETA·TCN 개선은
+`apps/manux/experiments/rasp-jun-training-center/`에 별도 실행 소스로 포함한다.
+v0.4 기본 실행 경로와 기존 Dan 실험 소스는 유지한다. 모델 준비, 실행 명령과 검증 한계는
+[통합 안내](../apps/manux/experiments/rasp-jun-training-center/INTEGRATION.md)를 따른다.

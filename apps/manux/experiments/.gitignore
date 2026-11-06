@@ -1,0 +1,5 @@
+# Local prerequisites and captured data for the standalone training experiment.
+rasp-jun-training-center/models/
+rasp-jun-training-center/recordings/
+rasp-jun-training-center/field-logs/
+rasp-jun-training-center/tests/fixtures/
