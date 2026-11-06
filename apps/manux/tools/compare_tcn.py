@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
@@ -35,6 +36,9 @@ from manux.data.catalog import NONE
 from manux.perception.local3d import FEATURES, FEATURE_VERSION, windows
 from tcn_data import AXES, class_mapping, class_names, evaluate, groups, load, predicted_events, samples
 
+from training_device import select, record, synchronize, augment
+
+TRAINING_DEVICE = "cpu"
 WINDOW = 15
 
 
@@ -53,28 +57,6 @@ def body_module():
                    nn.ReLU(), nn.Dropout(0.2)]
         channels = 64
     return nn.Sequential(*layers)
-
-
-def augment(batch):
-    """Dan's augmentation (same as tools/train_tcn.py)."""
-    import math
-    torch, _ = _torch()
-    b = batch.shape[0]
-    ang = (torch.rand(b, 3) - 0.5) * math.radians(30)
-    cx, cy, cz = torch.cos(ang).unbind(1)
-    sx, sy, sz = torch.sin(ang).unbind(1)
-    one, zero = torch.ones(b), torch.zeros(b)
-    rx = torch.stack([one, zero, zero, zero, cx, -sx, zero, sx, cx], 1).view(b, 3, 3)
-    ry = torch.stack([cy, zero, sy, zero, one, zero, -sy, zero, cy], 1).view(b, 3, 3)
-    rz = torch.stack([cz, -sz, zero, sz, cz, zero, zero, zero, one], 1).view(b, 3, 3)
-    r = rz @ ry @ rx
-    batch = batch.clone()
-    for lo in (0, 63):
-        pts = batch[:, :, lo:lo + 63].reshape(b, batch.shape[1], 21, 3)
-        batch[:, :, lo:lo + 63] = torch.einsum("btjk,blk->btjl", pts, r).reshape(b, batch.shape[1], 63)
-    batch[:, :, :130] = batch[:, :, :130] * (1.0 + (torch.rand(b, 1, 1) - 0.5) * 0.2)
-    batch[:, :, :130] += torch.randn_like(batch[:, :, :130]) * 0.01
-    return batch
 
 
 class Net:
@@ -102,11 +84,14 @@ class Net:
 def fit(x, y, n_out, epochs, *, body=None, head_only=False, seed=0):
     torch, nn = _torch()
     torch.manual_seed(seed)
+    execution = select(TRAINING_DEVICE)
     net = Net(n_out, body)
+    net.body.to(execution.actual)
+    net.head.to(execution.actual)
     counts = np.bincount(y, minlength=n_out).astype(np.float64)
     if not counts.all():
         raise ValueError("a class has no training windows")
-    weights = torch.tensor(counts ** -0.5, dtype=torch.float32)
+    weights = torch.tensor(counts ** -0.5, dtype=torch.float32, device=execution.actual)
     loss_fn = nn.CrossEntropyLoss(weight=weights / weights.mean())
     optimizer = torch.optim.Adam(net.parameters(head_only), lr=1e-3, weight_decay=1e-4)
     inputs, labels = torch.from_numpy(x), torch.from_numpy(y)
@@ -114,15 +99,16 @@ def fit(x, y, n_out, epochs, *, body=None, head_only=False, seed=0):
     for _ in range(epochs):
         for batch in torch.randperm(len(inputs)).split(256):
             optimizer.zero_grad()
-            xb = augment(inputs[batch])
+            xb = augment(inputs[batch].to(execution.actual))
             if head_only:
                 with torch.no_grad():
                     emb = net.embed(xb)
                 out = net.head(emb)
             else:
                 out = net(xb)
-            loss_fn(out, labels[batch]).backward()
+            loss_fn(out, labels[batch].to(execution.actual)).backward()
             optimizer.step()
+    synchronize(execution.actual)
     net.train_mode(False)
     return net
 
@@ -130,7 +116,7 @@ def fit(x, y, n_out, epochs, *, body=None, head_only=False, seed=0):
 def softmax_of(net, inputs):
     torch, _ = _torch()
     with torch.inference_mode():
-        return torch.cat([net(b).softmax(1) for b in torch.from_numpy(inputs).split(2048)]).numpy()
+        return torch.cat([net(b.to(next(net.head.parameters()).device)).softmax(1).cpu() for b in torch.from_numpy(inputs).split(2048)]).numpy()
 
 
 # ----------------------------------------------------------------------------- architectures
@@ -221,6 +207,7 @@ def main(argv=None) -> int:
     ap.add_argument("--threshold", type=float, default=0.7)
     ap.add_argument("--count", type=int, default=3)
     ap.add_argument("--json", type=Path, help="also write the full results here (outside the repository)")
+    ap.add_argument("--device", choices=("auto","cpu","cuda","xpu"), default=os.environ.get("MANUX_TRAIN_DEVICE","auto"))
     args = ap.parse_args(argv)
 
     if args.epochs < 1 or args.count < 1 or not 0 < args.threshold <= 1:
@@ -249,13 +236,17 @@ def main(argv=None) -> int:
     except (ValueError, OSError) as error:
         ap.error(str(error))
     load_s = time.perf_counter() - t0
+    global TRAINING_DEVICE
+    try: execution = select(args.device)
+    except (ImportError, ValueError) as error: ap.error(str(error))
+    TRAINING_DEVICE = execution.actual
     gestures = classes[1:]
     new = gestures[-1]
     old_classes = [c for c in classes if c != new]
     print(f"features computed once in {load_s:.1f}s: {len(segments)} segments, classes {classes}, "
           f"{len(folds)} {args.axis} folds; new-gesture scenario adds {new!r}")
     thr, k, ep = args.threshold, args.count, args.epochs
-    report = {"classes": classes, "gestures": mapping, "axis": args.axis,
+    report = {"execution": record(execution), "classes": classes, "gestures": mapping, "axis": args.axis,
               "window": WINDOW, "feature_version": FEATURE_VERSION, "features": FEATURES,
               "epochs": ep, "threshold": thr, "frames_in_a_row": k, "seed": 0, "folds": {}}
     for name, test in sorted(folds.items()):

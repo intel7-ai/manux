@@ -102,6 +102,27 @@ def windows_runtime(tmp_path, settings):
     return runtime, backend
 
 
+def test_idle_preview_has_motion_ring_without_control_recording_or_os_input(tmp_path):
+    from manux.core.contracts import OutputTarget
+    settings = Settings(schema(), {"tracking.control_hand": "Right"})
+    runtime, backend = windows_runtime(tmp_path, settings)
+    runtime.engine.commands.put(SetStage(Stage.MAIN))
+    try:
+        views = run_frames(runtime, 12)
+        assert all(v.preview_anchor is not None for v in views)
+        assert all(not v.snapshot.control_on and v.snapshot.output is OutputTarget.NONE for v in views)
+        assert not backend.events
+        assert runtime._rec is None
+        pinch = next(f for f in runtime.engine.features if f.id == "pinch")
+        assert runtime.pinch_preview.core is not pinch.core
+        from copy import deepcopy
+        before, last = deepcopy(pinch.core.__dict__), pinch.last_frame
+        runtime.pinch_preview.step(None, {})
+        assert pinch.core.__dict__ == before and pinch.last_frame is last
+    finally:
+        runtime.stop()
+
+
 def test_tracking_test_needs_windows_output(tmp_path):
     runtime = build(Settings(schema()), ReplayInput(recording(tmp_path / "r.jsonl.gz")), windows=False)
     assert runtime.start_tracking_test()            # a reason, not started
@@ -184,4 +205,24 @@ def test_recording_start_failure_is_visible_and_can_retry(tmp_path, monkeypatch)
     monkeypatch.setattr(desktop, 'SessionRecorder', original)
     runtime.set_recording('guided', focus='thumb_ring', profile='synthetic', split='eval')
     assert run_frames(runtime, 2)[-1].rec['mode'] == 'guided'
+    runtime.stop()
+
+
+def test_studio_monitor_shortcut_is_blocked_during_recording_or_calibration(tmp_path, monkeypatch):
+    from manux.core.contracts import RuntimeRequest, OutputTarget
+    from manux.engine.commands import SetBusy
+    runtime, backend = windows_runtime(tmp_path, Settings(schema()))
+    calls = []
+    monkeypatch.setattr(runtime.engine.sinks[OutputTarget.WINDOWS], "next_monitor", lambda: calls.append("next"))
+    runtime.request(RuntimeRequest("next_monitor")); runtime._drain_runtime_requests()
+    assert calls == ["next"]
+    runtime.engine.commands.put(SetBusy("calibrating", True))
+    runtime.engine.frame_missing(1.)
+    runtime.request(RuntimeRequest("next_monitor")); runtime._drain_runtime_requests()
+    assert calls == ["next"]
+    runtime.engine.commands.put(SetBusy("calibrating", False))
+    runtime.engine.frame_missing(2.)
+    runtime.set_recording("guided", focus="thumb_ring")
+    runtime.request(RuntimeRequest("next_monitor")); runtime._drain_runtime_requests()
+    assert calls == ["next"]
     runtime.stop()

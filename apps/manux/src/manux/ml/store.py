@@ -116,6 +116,11 @@ def validate_report(report, card, model_digest, card_digest):
                               and re.fullmatch(r"[0-9a-f]{64}", row["sha256"]) for row in sources):
         raise ValueError("training recording hashes are required")
     training = {row["sha256"] for row in sources}
+    for row in sources:
+        values = row.get("capture_sha256", [row["sha256"]])
+        if not isinstance(values, list) or not values or row["sha256"] not in values or any(not re.fullmatch(r"[0-9a-f]{64}", str(v)) for v in values):
+            raise ValueError("invalid training capture lineage")
+        training.update(values)
     if training.intersection(hashes):
         raise ValueError("evaluation recordings overlap training")
 
@@ -147,6 +152,8 @@ def install(folder: Path, candidate, report: dict, expected_active: bytes | None
                         or any(candidate.card.decisions[c].kind != d.kind for c, d in previous_card.decisions.items())):
                     raise ValueError("validation omitted or remapped an existing gesture")
                 old_training = {row.get("sha256") for row in previous_card.raw["data"] if isinstance(row, dict)}
+                for row in previous_card.raw["data"]:
+                    old_training.update(row.get("capture_sha256", [row["sha256"]]))
                 if old_training.intersection(report["evaluation_sha256"]):
                     raise ValueError("evaluation overlaps the active model's training")
             elif set(report["baseline"]["per_gesture"]) != set(candidate.card.gestures):

@@ -77,6 +77,17 @@ def test_cancellation_at_commit_boundary_keeps_active_pointer(tmp_path):
     assert store.active_token(folder) == before and not (folder / ".install.lock").exists()
 
 
+def test_evaluation_of_original_is_rejected_when_derived_capture_was_trained(tmp_path):
+    model = candidate(tmp_path / "input")
+    raw = json.loads(model.path.with_suffix(".json").read_text())
+    raw["data"][0]["capture_sha256"] = ["a" * 64, "b" * 64]
+    model.path.with_suffix(".json").write_text(json.dumps(raw), encoding="utf-8")
+    model = load_model(model.path, "local3d-v1", 133, session_factory=lambda _: Session())
+    with pytest.raises(ValueError, match="overlap"):
+        store.install(tmp_path / "store", model, evidence(model), None)
+    assert store.active_token(tmp_path / "store") is None
+
+
 @pytest.mark.parametrize("failure", ["recall", "misfires", "wrong", "unmeasured", "overlap", "changed", "omitted"])
 def test_failed_validation_preserves_the_active_model(tmp_path, failure):
     model = candidate(tmp_path / "input")

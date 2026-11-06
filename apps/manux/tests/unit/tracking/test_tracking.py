@@ -134,9 +134,15 @@ def test_landmarker_defaults_to_one_hand_and_preserves_explicit_two(monkeypatch,
     settings = Settings(schema(), {"tracking.num_hands": requested} if requested else {})
     options = module.options_from(settings.section("tracking"))
     assert options["num_hands"] == (requested or 1)
-    detector = module.MediaPipeLandmarker(tmp_path / "unused.task", **options)
+    model_path = tmp_path / "한글 경로" / "손 모형.task"
+    model_path.parent.mkdir()
+    model_bytes = b"synthetic model bytes"
+    model_path.write_bytes(model_bytes)
+    detector = module.MediaPipeLandmarker(model_path, **options)
     try:
         assert calls[0]["num_hands"] == (requested or 1)
         assert detector._crop_options["num_hands"] == 1
+        assert calls[0]["base_options"] == {"model_asset_buffer": model_bytes}
+        assert detector._crop_options["base_options"]["model_asset_buffer"] is calls[0]["base_options"]["model_asset_buffer"]
     finally:
         detector.close()

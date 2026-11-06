@@ -24,6 +24,7 @@ KINDS = ("base", "personal")
 CLASS_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 REASON_TEXT = {
+    "backend": "요청한 추론 장치를 사용할 수 없음 · 실행 환경·드라이버·모델 연산을 확인하세요",
     "missing": "모델 없음",
     "unreadable": "모델 정보를 읽지 못함",
     "invalid": "모델 정보가 잘못됨",
