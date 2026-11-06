@@ -168,6 +168,10 @@ def test_training_center_profile_eval_and_confirmed_upload(tmp_path, monkeypatch
         assert QMetaObject.invokeMethod(popup, "open")
         QTest.qWait(100)
         assert popup.property("visible")
+        for _ in range(50):
+            QTest.qWait(50)
+            if not b.studio.busy:
+                break
         assert QMetaObject.invokeMethod(confirmation, "open")
         QTest.qWait(100)
         assert confirmation.property("visible") and calls == []

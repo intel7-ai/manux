@@ -1,7 +1,7 @@
 # MANUX
 
-> `testing` 통합 브랜치: 현재 preview 앱과 Dan 변경의 소스를 함께 보존합니다.
-> Dan의 새 기능은 별도 실험 폴더에 있으며 v0.4 화면 연결은 후속입니다. [통합 범위](apps/manux/docs/testing-integration.md).
+> `testing`에서는 Rasp-Jun 메인·선택 학습과 Dan의 녹화 검수·보정·재생·시뮬레이터를 v0.4에서 사용합니다.
+> 상단 **녹화·시뮬레이터** 또는 공용 **학습 센터**에서 엽니다. [현재 연결 범위](apps/manux/docs/dan-studio.md) · [소스 보존 기록](apps/manux/docs/testing-integration.md).
 
 웹캠의 손동작으로 Windows를 제어하는 **Python + Qt/QML 앱**입니다. 개발 코드는 [apps/manux](apps/manux/README.md)에 있습니다.
 

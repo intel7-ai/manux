@@ -258,6 +258,7 @@ ApplicationWindow {
                 TextLabel { text: "INPUT STUDIO"; font.pixelSize: 11; font.letterSpacing: 1.4; color: window.muted }
                 Item { Layout.fillWidth: true }
                 ActionButton { text: "학습 센터"; onClicked: trainingCenter.open() }
+                ActionButton { objectName: "openDataStudio"; text: "녹화·시뮬레이터"; onClicked: {dataCenter.pageIndex=1;dataCenter.open()} }
                 ActionButton {
                     text: dashboard.chosenHand ? dashboard.chosenHand + " · 다시 설정" : "사용할 손 설정"
                     onClicked: dashboard.beginHandSetup()

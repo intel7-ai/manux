@@ -69,6 +69,8 @@ def load(paths: list[Path], *, split: str | None = None, cache_dir: Path | None 
         if not recording.complete or recording.bad_lines:
             raise ValueError(f"{path.name}: incomplete or corrupt recording")
         recorded_split = recording.meta.get("split")
+        if (split == "eval" or recorded_split == "eval") and recording.meta.get("lineage"):
+            raise ValueError("evaluation requires original independent captures, not derived data")
         if split is not None and recorded_split is not None and recorded_split != split:
             raise ValueError(f"{path.name}: expected a {split} recording, got {recorded_split}")
         if preset := recording.meta.get("preset"):

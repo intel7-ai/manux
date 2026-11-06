@@ -202,6 +202,10 @@ class DesktopRuntime:
         self._rec_identity = RecordingIdentity("local")
         self._rec_identity_active = None
         self._runtime_requests = queue.SimpleQueue()
+        self.pose_model = None
+        self._pose_tracker = None
+        self._pose_failed = False
+        self.pose_status = "팔·어깨 기록 꺼짐"
 
     # ------------------------------------------------------------------ settings the UI changes
     def settings_for(self, fid: str) -> Mapping[str, object]:
@@ -358,7 +362,7 @@ class DesktopRuntime:
             if self._guided.update(now, available=available) and self._rec is not None:
                 self._rec.event(now, "set_done", {"set": self._guided.index - 1})
 
-    def _record_frame(self, now: float, hand: Optional[HandObservation], snap) -> None:
+    def _record_frame(self, now: float, hand: Optional[HandObservation], snap, pose=None) -> None:
         if self._rec is None:
             return
         with self._lock:
@@ -373,7 +377,7 @@ class DesktopRuntime:
         rule = {"action": rule_act, "gesture": rule_gid}
         sink = self.engine.sinks.get(OutputTarget.WINDOWS)
         cursor = getattr(sink, "cursor_pos", None)
-        self._rec.frame(now, hand, label=label, rule=rule, cursor=cursor)
+        self._rec.frame(now, hand, label=label, rule=rule, cursor=cursor, pose=pose)
         if self._guided is not None and self._guided.done:
             self._stop_recording(now)
             with self._lock:
@@ -421,6 +425,13 @@ class DesktopRuntime:
             pass
         self.engine.shutdown()
         self.source.close()
+        if self._thread is None or not self._thread.is_alive():
+            self._close_pose()
+
+    def _close_pose(self):
+        if self._pose_tracker is not None:
+            self._pose_tracker.close()
+            self._pose_tracker = None
 
     def latest(self) -> Tuple[int, ViewFrame]:
         with self._lock:
@@ -438,6 +449,7 @@ class DesktopRuntime:
             except Exception as exc:                    # never let the runtime thread die silently
                 self._publish(ViewFrame(self._latest.snapshot, message=f"실행 오류: {exc!r}", camera_ok=False))
                 time.sleep(0.2)
+        self._close_pose()
 
     def step(self) -> None:
         self._drain_runtime_requests()
@@ -461,7 +473,7 @@ class DesktopRuntime:
         if sink is not None and hasattr(sink, "set_frame_aspect"):
             sink.set_frame_aspect(frame.aspect)
         snap = self.engine.step(frame, hand)
-        self._record_frame(frame.t, hand, snap)
+        self._record_frame(frame.t, hand, snap, self._pose_step(image, frame.t))
         tracking = self._tracking_step(snap, hand, float(detect_ms))
         self._frames += 1
         if image is not None and self._frames % 10 == 1:
@@ -477,7 +489,31 @@ class DesktopRuntime:
             camera_mode=self._metrics[0], brightness=self._metrics[1], low_light=self._metrics[2],
             fps=float(self.source.fps), detect_ms=float(detect_ms), actions=actions,
             model_status=self._model_view_status(), tracking=tracking, recent=self.recent,
-            rec=self._rec_view(frame.t), frame_age_ms=max(0.0, (time.perf_counter() - frame.t) * 1000.0)))
+            rec=self._rec_view(frame.t), pose_status=self.pose_status,
+            frame_age_ms=max(0.0, (time.perf_counter() - frame.t) * 1000.0)))
+
+    def _pose_step(self, image, now):
+        if not self.settings.get("tracking.pose_enabled"):
+            self._close_pose()
+            self._pose_failed = False
+            self.pose_status = "팔·어깨 기록 꺼짐"
+            return None
+        if self._rec is None:
+            self.pose_status = "팔·어깨 기록 켜짐 · 다음 녹화부터 추가 처리"
+            return None
+        if self._pose_failed or image is None or self._frames % self.settings.get("tracking.pose_every_n_frames"):
+            return None
+        try:
+            if self._pose_tracker is None:
+                from manux.tracking.pose import PoseTracker
+                self._pose_tracker = PoseTracker(self.pose_model)
+            pose = self._pose_tracker.detect(image, now)
+            self.pose_status = "팔·어깨 기록 중" if pose else "팔·어깨가 화면에 보이지 않습니다"
+            return pose
+        except Exception:
+            self._pose_failed = True
+            self.pose_status = "팔·어깨 모델 사용 불가 · 손 관절 녹화는 계속합니다"
+            return None
 
     def _model_view_status(self):
         for feature in self.engine.features:
@@ -659,6 +695,7 @@ def main(argv=None) -> int:
         runtime = build(settings, source, windows=not args.no_windows_input and sys.platform == "win32",
                         binding_overrides=read_bindings(args.bindings), policy_store=policy_store)
         runtime.model_status = "가져온 모델 읽기 실패 · 학습센터에서 복구 상태를 확인하세요"
+    runtime.pose_model = paths.app_dir / "models" / "pose_landmarker_lite.task"
     runtime.log_dir = paths.log_dir
     runtime.recordings_dir = paths.recordings_dir
     runtime.recent = tuple(load_recent_results(paths.log_dir))
@@ -670,11 +707,14 @@ def main(argv=None) -> int:
     from manux.platform.tray import QtTray
     from manux.ui.bridge import run
     tc = TrainingCenterService(paths.config_dir, paths.data_dir, paths.recordings_dir, model_path=args.tcn_model,
-                               policy_store=policy_store, on_policy=lambda: runtime.request(RuntimeRequest("tcn_policy")),
+                               store_dir=args.tcn_store, policy_store=policy_store, on_policy=lambda: runtime.request(RuntimeRequest("tcn_policy")),
                                env_files=(Path(sys.executable).parent / ".env",) if paths.frozen else (),
                                specs=training_specs(), on_ready=lambda event: runtime.request(
                                    RuntimeRequest("activate_model", event["store"])) if event.get("store") else
                                    runtime.request(RuntimeRequest("preview_model", event["candidate"])) if event.get("candidate") else None)
+    tc.simulation_bindings = read_bindings(args.bindings)
+    tc.simulation_config = {"simulation_mode": args.tcn_mode,
+                            "simulation_model": str(args.tcn_model) if args.tcn_model else None}
     from manux.perception.palm_axes import PalmAxesCalibration, valid_axes, palm_point
     return run(runtime, settings, paths, tray=not args.no_tray, screenshot=args.screenshot, layout=args.ui,
                services={

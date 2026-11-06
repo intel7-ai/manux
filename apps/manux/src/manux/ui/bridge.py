@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, Property, QSettings, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QCursor, QGuiApplication, QImage
+from PySide6.QtGui import QCursor, QGuiApplication, QImage, QFontDatabase
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -32,6 +32,7 @@ from manux.ui import cards as guide
 from manux.ui.finger import overlay_frame
 from manux.ui.tutorial import Tutorial
 from manux.ui.view import ViewFrame
+from manux.ui.studio import StudioBridge
 
 QML = Path(__file__).with_name("qml") / "dashboard.qml"
 CLICK_STYLES = ("pinch", "trigger", "off")
@@ -330,6 +331,9 @@ class Bridge(QObject):
         self._tcn_enabled = True
         self._studio_center_open = False
         self.application = QApplication.instance() or QApplication([])
+        if not getattr(self.application, "_manux_fonts_loaded", False):
+            QFontDatabase.addApplicationFont(str(QML.parent / "assets" / "fonts" / "NotoSansKR.ttf"))
+            self.application._manux_fonts_loaded = True
         self.application.setQuitOnLastWindowClosed(False)
         # UI preferences (hand, shortcuts, calibration axes ...) live next to settings.json, not in the
         # registry: all v0.4 user data stays in one folder (settings/paths.py) and v0.3's are untouched.
@@ -375,6 +379,8 @@ class Bridge(QObject):
         self.recent = ()                     # tracking test result lines, newest first
         # dataset recording & training center
         self.tc = self.services.get("training_center") or _NullTrainingService(self.config_dir)
+        self.studio = StudioBridge(self)
+        self.studio.changed.connect(self.trainingChanged.emit)
         self.rec_mode = "off"
         self.rec_view: Optional[Dict[str, Any]] = None
         self.rec_focus = ""
@@ -991,7 +997,7 @@ class Bridge(QObject):
         if mode not in ("off", "guided", "free") or (mode != "off" and (self.stage_name != "main" or self.use_index_pointer)):
             return
         if mode != "off":
-            if self.training_job.running or self.tc.hub_job.running:
+            if self.training_job.running or self.tc.hub_job.running or self.studio.busy:
                 return
             if not getattr(self.tc, "profile", ""):
                 self.training_note = "학습 센터에서 내 별명을 먼저 저장하세요."
@@ -1025,6 +1031,7 @@ class Bridge(QObject):
 
     @Slot()
     def closeTraining(self):
+        self.studio.active = False
         self._studio_center_open = False
         if not self.training_job.running and not self.tc.hub_job.running and not self._progress_visible:
             self.training_timer.stop()
@@ -1042,6 +1049,10 @@ class Bridge(QObject):
     @Property("QVariantMap", notify=trainingChanged)
     def trainingProgressState(self):
         return self.tc.progress() if hasattr(self.tc, "progress") else {}
+
+    @Property(QObject, constant=True)
+    def learningStudio(self):
+        return self.studio
 
     @Slot()
     def refreshTraining(self):
@@ -1081,7 +1092,7 @@ class Bridge(QObject):
         if self.layout == "studio":
             self.trainTrainingSelection()
             return
-        if self.rec_mode != "off" or self.tc.hub_job.running:
+        if self.rec_mode != "off" or self.tc.hub_job.running or self.studio.busy:
             return
         self._pause()
         if self.training_job.start():
@@ -1098,7 +1109,7 @@ class Bridge(QObject):
 
     @Slot(str)
     def trainSelectedGesture(self, key):
-        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running or self.studio.busy:
             return
         task = self.tc.task_info(key)
         if task is None or task.get("label") == "none":
@@ -1159,7 +1170,7 @@ class Bridge(QObject):
 
     @Slot(str, result=bool)
     def focusRecord(self, key):
-        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running or self.studio.busy:
             return False
         if not self.tc.profile:
             self.training_note = "내 별명을 먼저 저장한 뒤 녹화를 시작하세요."
@@ -1173,7 +1184,7 @@ class Bridge(QObject):
         return True
 
     def _start_focused_plan(self, key: str, plan: Dict[str, Any]) -> None:
-        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running or self.studio.busy:
             return
         if not self.tc.profile:
             self.training_note = "학습 센터에서 내 별명을 먼저 저장하세요."
@@ -1193,6 +1204,7 @@ class Bridge(QObject):
         if hub_state.get("finished") and hub_state.get("finished") != getattr(self, "_hub_finished", None):
             self._hub_finished = hub_state["finished"]
             self.refreshTraining()
+            if self.studio.active: self.studio.refresh()
         job = self.training_job
         if self._training_was_running and not job.running:
             self._training_was_running = False
@@ -1207,6 +1219,7 @@ class Bridge(QObject):
                     self.training_note = "별도 평가 통과 · 새 동작은 TCN 시험 모드입니다. 확인 후 동작별로 TCN 적용을 선택하세요."
                 self.stateChanged.emit()
             self.refreshTraining()
+            if self.studio.active: self.studio.refresh()
         self.trainingChanged.emit()
 
     @Property("QVariantList", notify=trainingChanged)
@@ -1292,7 +1305,7 @@ class Bridge(QObject):
     @Slot(result=bool)
     def recordTrainingSelection(self):
         if (self.stage_name != "main" or not self.training_selected or self.training_busy
-                or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running):
+                or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running or self.studio.busy):
             if self.stage_name != "main":
                 self.training_note = "메인 화면에서 녹화를 시작하세요."
             elif not self.training_selected:
@@ -1314,7 +1327,7 @@ class Bridge(QObject):
     @Slot()
     def trainTrainingSelection(self):
         if (not self.selectionCanTrain or self.training_busy or self.rec_mode != "off"
-                or self.training_job.running or self.tc.hub_job.running):
+                or self.training_job.running or self.tc.hub_job.running or self.studio.busy):
             return
         keys = [r["key"] for r in self.selectedTrainingRows if r["can_train"]]
         self._pause()
@@ -1363,7 +1376,7 @@ class Bridge(QObject):
 
     @Property(str, notify=trainingChanged)
     def trainingBusy(self):
-        return self.training_busy
+        return self.training_busy or ("스튜디오 작업 중" if self.studio.busy else "")
 
     @Property(str, notify=trainingChanged)
     def trainingNote(self):
@@ -1397,14 +1410,14 @@ class Bridge(QObject):
 
     @Slot(str)
     def setRecordingSplit(self, split):
-        if split in ("train", "eval") and self.rec_mode == "off":
+        if split in ("train", "eval") and self.rec_mode == "off" and not self.studio.busy:
             self.tc.split = split
             self.refreshTraining()
             self.trainingChanged.emit()
 
     @Slot(str)
     def saveTrainingProfile(self, profile):
-        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running or self.studio.busy:
             return
         try:
             self.tc.configure(profile)
@@ -1416,7 +1429,7 @@ class Bridge(QObject):
 
     @Slot(str)
     def runHub(self, action):
-        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running or self.studio.busy:
             return
         if action not in ("status", "upload", "download"):
             return
@@ -1935,6 +1948,9 @@ class Bridge(QObject):
             self.apply_view(view)
 
     def apply_view(self, view: ViewFrame) -> None:
+        if view.pose_status and view.pose_status != self.studio.pose_note:
+            self.studio.pose_note = view.pose_status
+            self.studio.changed.emit()
         self._update_palm_view(view)
         snap = view.snapshot
         rec_view = dict(view.rec) if view.rec is not None else None
@@ -1942,6 +1958,7 @@ class Bridge(QObject):
             self.rec_view = rec_view
             if rec_view is not None and rec_view.get("mode") == "off":
                 self.rec_mode = "off"
+                self.studio.refresh()
             self.stateChanged.emit()
         if self.tracking_view is not None and view.tracking is not None and view.tracking != self.tracking_view:
             self._set_tracking_view(dict(view.tracking))
@@ -2036,6 +2053,7 @@ class Bridge(QObject):
         self._closed_qml = True
         self.timer.stop()
         self.training_timer.stop()
+        self.studio.close()
         self.tc.close()
         if self.hotkeys is not None:
             self.hotkeys.stop()

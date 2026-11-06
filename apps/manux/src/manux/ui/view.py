@@ -40,3 +40,4 @@ class ViewFrame:
     recent: Tuple[str, ...] = ()               # tracking test result lines, newest first
     rec: Optional[Mapping[str, Any]] = None    # dataset recording view (guided / free), None = off
     frame_age_ms: Optional[float] = None      # app capture timestamp -> runtime publish, not sensor/display latency
+    pose_status: str = ""                    # optional recording-only Pose tracking status

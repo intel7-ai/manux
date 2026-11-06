@@ -145,6 +145,8 @@ def validate_recording(path: Path, root: Optional[Path] = None) -> ValidatedReco
         raise HubError(f"{path.name}: recording has 0 frames")
 
     bad_keys = FORBIDDEN_META & {str(k).lower() for k in rec.meta}
+    if rec.meta.get("lineage"):
+        raise HubError(f"{path.name}: derived recordings stay local; share the original capture")
     if bad_keys:
         raise HubError(f"{path.name}: forbidden personal/host metadata key(s): {sorted(bad_keys)}")
     if rec.meta.get("pc") and not rec.meta.get("pc_named"):
@@ -241,6 +243,7 @@ def scan_local_recordings(folder: Path) -> Tuple[List[ValidatedRecording], List[
     candidates = sorted(
         p for p in folder.rglob("*")
         if p.is_file() and (p.name.endswith(".jsonl.gz") or p.name.endswith(".jsonl"))
+        and not any(part.startswith(".") or part == "derived" for part in p.relative_to(folder).parts)
     )
     for path in candidates:
         try:

@@ -134,7 +134,8 @@ def main(argv=None) -> None:
                 raise ValueError("training recording changed while preparing the model")
             pc, note = public_source(rec.meta)        # aliases only, never real names (contracts section 9)
             camera = {k: v for k, v in (rec.meta.get("camera") or {}).items() if k in ("source", "mode", "mirror")}
-            sources.append({"file": path.name, "sha256": digest, "pc": pc, "person": rec.meta.get("person"),
+            from manux.data.studio import capture_hashes
+            sources.append({"file": path.name, "sha256": digest, "capture_sha256": sorted(capture_hashes(path, rec)), "pc": pc, "person": rec.meta.get("person"),
                             "camera": dict(camera, note=note), "frames": len(rec.frames)})
         card = {"classes": classes, "gestures": mapping, "kind": args.kind, "window": WINDOW,
                 "features": FEATURES, "feature_version": FEATURE_VERSION, "threshold": args.threshold,

@@ -7,6 +7,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, co
 ROOT = Path(SPECPATH).parent
 
 datas = [(str(ROOT / "models" / "hand_landmarker.task"), "models")]
+datas.append((str(ROOT / "models" / "pose_landmarker_lite.task"), "models"))
 build_info = ROOT / "build" / "build_info.json"          # written by build.ps1
 if build_info.exists():
     datas.append((str(build_info), "."))

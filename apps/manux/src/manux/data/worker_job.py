@@ -151,7 +151,7 @@ class WorkerJob:
             self.state["cancelled"] = True
             proc = self.proc
             kind = self.state.get("kind")
-        if kind in ("train", "import", "validate_import"):
+        if kind in ("train", "studio", "import", "validate_import"):
             return  # checked at epoch/validation/install boundaries; never kill inside atomic installation
         if os.name == "nt":
             subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],

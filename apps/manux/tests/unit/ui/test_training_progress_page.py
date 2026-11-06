@@ -117,13 +117,13 @@ def test_studio_restores_per_gesture_actions_saved_plans_and_visible_progress(tm
         QMetaObject.invokeMethod(center, "open")
         for _ in range(40):
             QTest.qWait(50)
-            if not bridge.training_busy:
+            if not bridge.trainingBusy:
                 bridge.trainingChanged.emit(); QTest.qWait(50); break
         assert len(bridge.trainingRows) == 18
         progress = bridge.window.findChild(QQuickItem, "openTrainingProgress")
         assert progress.isVisible() and progress.mapToScene(QPointF(0, 0)).y() < 140
         listing = bridge.window.findChild(QQuickItem, "trainingTasks")
-        focus = visual_child(listing, "focusRecord_thumb_middle")
+        focus = visual_child(bridge.window.contentItem(), "focusRecord_thumb_middle")
         assert focus is not None and focus.property("text") == "집중 녹화 설정"
         assert QMetaObject.invokeMethod(focus, "clicked")
         QTest.qWait(80)
@@ -138,9 +138,9 @@ def test_studio_restores_per_gesture_actions_saved_plans_and_visible_progress(tm
         QMetaObject.invokeMethod(center, "open")
         for _ in range(40):
             QTest.qWait(50)
-            if not bridge.training_busy:
+            if not bridge.trainingBusy:
                 bridge.trainingChanged.emit(); QTest.qWait(50); break
-        train = visual_child(listing, "trainGesture_thumb_middle")
+        train = visual_child(bridge.window.contentItem(), "trainGesture_thumb_middle")
         assert train is not None and train.property("enabled"), (bridge.training_busy, bridge.recActive, service.job.running, service.hub_job.running, bridge.trainingRows[0])
         assert QMetaObject.invokeMethod(train, "clicked")
         QTest.qWait(60)
