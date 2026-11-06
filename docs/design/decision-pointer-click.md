@@ -1,6 +1,6 @@
 # 설계 결정 노트: 커서 기준점과 클릭 방식
 
-> 상태: **결정 전 (2026-11-03)**. 비교 시험 뒤 결정한다. 결정되면 이 문서의 "결정" 절을 채우고 [01 유스케이스](01-use-cases.md) UC-02·UC-03과 [03 인터페이스](03-interfaces.md)를 같은 PR에서 고친다.
+> 상태: **결정 전 (2026-11-03)**. 비교 시험 뒤 결정한다. 결정되면 이 문서의 "결정" 절을 채우고 [01 유스케이스](https://github.com/intel7-ai/manux/blob/589cc9a8d338e40df8edc005825caf0c9a6329fc/docs/design/01-use-cases.md) UC-02·UC-03과 [03 인터페이스](https://github.com/intel7-ai/manux/blob/589cc9a8d338e40df8edc005825caf0c9a6329fc/docs/design/03-interfaces.md)를 같은 PR에서 고친다.
 >
 > 관련: Jira [SCRUM-20](https://se4nchoi.atlassian.net/browse/SCRUM-20)(C1 기본 마우스), [SCRUM-26](https://se4nchoi.atlassian.net/browse/SCRUM-26)(U1 기본 동작·첫 실행), [SCRUM-32·33](https://se4nchoi.atlassian.net/browse/SCRUM-33)(Python 가상 마우스). 이 문서는 Electron 앱과 Python(Qt) 앱 모두에 해당한다.
 
@@ -16,7 +16,7 @@
 
 ## 현재 두 앱의 상태 (사실)
 
-| | Electron 앱 (`preview`, [air-mouse](../air-mouse.md)) | Python 앱 (`hand-mouse-gesture-overhaul` 26f0815, Dan) | Qt 포인터 모드 (`manux-python-ui` e224f40, WIP) |
+| | Electron 앱 (`preview`, [air-mouse](https://github.com/intel7-ai/manux/blob/589cc9a8d338e40df8edc005825caf0c9a6329fc/docs/air-mouse.md)) | Python 앱 (`hand-mouse-gesture-overhaul` 26f0815, Dan) | Qt 포인터 모드 (`manux-python-ui` e224f40, WIP) |
 | --- | --- | --- | --- |
 | 커서 기준점 | 손목+손가락 기저부 평균(손바닥) | 손목→중지 기저부 선 위 점(`cursor_anchor_ratio` 0.5, 손바닥 중심), 상대 이동 | 검지 끝 |
 | 이동 자세 | 손바닥 편 상태(손가락 3개 이상 펴짐) | 손 모양 무관(핀치 없음) | ☝️만 |
