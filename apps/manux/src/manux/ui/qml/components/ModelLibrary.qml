@@ -14,7 +14,7 @@ ScrollView {
     readonly property var selectedModel: library.localModels.find(function(row){return row.id===page.selectedId}) || ({})
     readonly property bool idle: !library.busy && !controller.trainingRunning && !controller.hubRunning && !controller.recActive
     contentWidth: availableWidth; clip: true
-    component Copy: Label { color: Theme.Studio.ink; font.family: Theme.Studio.font; font.pixelSize: Theme.Studio.body; wrapMode: Text.Wrap }
+    component Copy: Label { textFormat: Text.PlainText; color: Theme.Studio.ink; font.family: Theme.Studio.font; font.pixelSize: Theme.Studio.body; wrapMode: Text.Wrap }
     ColumnLayout {
         width: page.availableWidth; spacing: Theme.Studio.gap
         Copy { text: "내 모델 보관함"; font.pixelSize: Theme.Studio.title; font.bold: true }
