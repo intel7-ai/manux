@@ -12,6 +12,7 @@ import argparse
 from hashlib import file_digest, sha256
 import json
 import os
+from time import perf_counter
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,14 +27,18 @@ from manux.settings.paths import resolve
 from tcn_data import AXES, class_mapping, class_names, evaluate, groups, load
 from training_inputs import sample_data
 
+from training_device import select, record, synchronize, cpu_export
+
 WINDOW = 15
 AUGMENT = True
 
 
-def train(segments, classes, epochs, *, progress=None, other_as_none=False):
+def train(segments, classes, epochs, *, progress=None, other_as_none=False, device="cpu", execution=None):
     import torch
     from torch import nn
 
+    execution = execution or select(device)
+    prepared = perf_counter()
     torch.set_num_threads(min(4, os.cpu_count() or 1))
     x, y, sampling = sample_data(segments, classes, WINDOW, other_as_none=other_as_none)
     counts = np.bincount(y, minlength=len(classes))
@@ -59,22 +64,32 @@ def train(segments, classes, epochs, *, progress=None, other_as_none=False):
     from tcn_augmentation import augment
 
     torch.manual_seed(0)
-    model = TCN()
+    model = TCN().to(execution.actual)
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     inputs, labels = torch.from_numpy(x), torch.from_numpy(y)
     weights = torch.from_numpy(sampling)
+    data_ms = (perf_counter()-prepared)*1000
+    synchronize(execution.actual)
+    started, transfer_ms = perf_counter(), 0.
     for _ in range(epochs):
         total_loss, total_seen = 0., 0
         for batch in torch.multinomial(weights, min(len(inputs), 16384), replacement=True).split(256):
             optimizer.zero_grad()
-            loss = loss_fn(model(augment(inputs[batch]) if AUGMENT else inputs[batch]), labels[batch])
+            transfer = perf_counter()
+            xb, yb = inputs[batch].to(execution.actual), labels[batch].to(execution.actual)
+            transfer_ms += (perf_counter()-transfer)*1000
+            loss = loss_fn(model(augment(xb) if AUGMENT else xb), yb)
             loss.backward()
             optimizer.step()
-            total_loss += float(loss.detach()) * len(batch)
+            total_loss += float(loss.detach().cpu()) * len(batch)
             total_seen += len(batch)
         if progress is not None:
             progress(_ + 1, epochs, total_loss / total_seen)
+    synchronize(execution.actual)
+    model.execution = record(execution)
+    model.timings = {"data_prepare_ms":data_ms,"batch_transfer_ms":transfer_ms,"training_ms":(perf_counter()-started)*1000}
+    model.export_probe = x[:8].copy()
     predicted = predict(model.eval(), x).argmax(1)
     model.fit_rates = {name: float((predicted[y == i] == i).mean()) for i, name in enumerate(classes)}
     if min(model.fit_rates.values()) < .5:
@@ -87,7 +102,7 @@ def predict(model, inputs):
 
     with torch.inference_mode():
         batches = torch.from_numpy(inputs).split(1024)
-        return torch.cat([model(batch).softmax(dim=1) for batch in batches]).numpy()
+        return torch.cat([model(batch.to(next(model.parameters()).device)).softmax(dim=1).cpu() for batch in batches]).numpy()
 
 
 def main(argv=None) -> None:
@@ -98,6 +113,7 @@ def main(argv=None) -> None:
     parser.add_argument("--kind", choices=("base", "personal"), default="personal")
     parser.add_argument("--hold-out", choices=("person", "posture", "condition", "both", "all"), default="all",
                         help="held-out folds: by person, by posture index, by physical condition (capture-plan condition_key); both = person + posture; all = the three")
+    parser.add_argument("--device", choices=("auto","cpu","cuda","xpu"), default=os.environ.get("MANUX_TRAIN_DEVICE","auto"))
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--threshold", type=float, default=0.7)
     parser.add_argument("--frames-in-a-row", type=int, default=3)
@@ -116,6 +132,8 @@ def main(argv=None) -> None:
     if repo is not None and (args.output.resolve().is_relative_to(repo) or args.cache_dir.resolve().is_relative_to(repo)):
         parser.error("write models and feature caches outside the repository; D-006")
     try:
+        execution = select(args.device)
+        if args.events: print(json.dumps({"event":"device", **record(execution)}), flush=True)
         recordings = list(dict.fromkeys(path.resolve() for path in args.recordings))
         recording_hashes = {path: sha256(path.read_bytes()).hexdigest() for path in recordings}
         segments = load(recordings, split="train", cache_dir=args.cache_dir)
@@ -156,7 +174,7 @@ def main(argv=None) -> None:
             for key, test in held_out.items():
                 fit = [s for other, rows in held_out.items() if other != key for s in rows]
                 try:
-                    fold = train(fit, classes, args.epochs, other_as_none=args.negative_other_classes)
+                    fold = train(fit, classes, args.epochs, other_as_none=args.negative_other_classes, execution=execution)
                 except ValueError as error:
                     results.append({"axis": axis, "group": key, "status": "insufficient_data", "reason": str(error)})
                     continue
@@ -165,13 +183,15 @@ def main(argv=None) -> None:
                 results.append({"axis": axis, "group": key, "status": "evaluated", **metrics})
         progress = (lambda epoch, epochs, loss: print(json.dumps({"event": "epoch", "epoch": epoch,
                      "epochs": epochs, "loss": loss}), flush=True)) if args.events else None
-        model = train(segments, classes, args.epochs, progress=progress, other_as_none=args.negative_other_classes)
+        model = train(segments, classes, args.epochs, progress=progress, other_as_none=args.negative_other_classes, execution=execution)
         import torch
 
         if any(sha256(path.read_bytes()).hexdigest() != digest for path, digest in recording_hashes.items()):
             raise ValueError("training recordings changed during training")
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        torch.onnx.export(model, torch.zeros(1, WINDOW, FEATURES), str(args.output),
+        exported = cpu_export(model)
+        export_started = perf_counter()
+        torch.onnx.export(exported, torch.zeros(1, WINDOW, FEATURES), str(args.output),
                           input_names=["features"], output_names=["logits"], opset_version=17, dynamo=False)
         with args.output.open("rb") as file:
             card["model_sha256"] = file_digest(file, "sha256").hexdigest()
@@ -180,6 +200,15 @@ def main(argv=None) -> None:
                     class_model_ids={name: component_id(card["model_sha256"], classes) for name in classes if name != "none"},
                     class_default_modes={name: "shadow" for name in classes if name != "none"})
         args.output.with_suffix(".json").write_text(json.dumps(card, indent=2) + "\n", encoding="utf-8")
+        from manux.ml.predictor import load_model
+        checked = load_model(args.output, FEATURE_VERSION, FEATURES, device="cpu")
+        expected = predict(model, model.export_probe)
+        actual = np.stack([checked.predictor(window) for window in model.export_probe])
+        error = float(np.max(np.abs(expected-actual)))
+        if not np.allclose(expected, actual, rtol=1e-4, atol=1e-5):
+            raise ValueError("ONNX export differs from training-device predictions")
+        card.update(execution=record(execution), seed=0, timings={**model.timings, "export_check_ms": (perf_counter()-export_started)*1000}, export_max_abs_error=error)
+        args.output.with_suffix(".json").write_text(json.dumps(card, indent=2)+"\n",encoding="utf-8")
         print(json.dumps(results, indent=2))
     except (ValueError, OSError, ImportError) as error:
         if args.events:

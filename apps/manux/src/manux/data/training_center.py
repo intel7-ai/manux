@@ -436,6 +436,7 @@ class TrainingJob(WorkerJob):
             return self.start_request({"kind": "train", "recordings_dir": str(self.rec_dir),
                 "profile": identity.profile, "preset": identity.preset, "mode": identity.preset if identity.preset != "trigger" else "pointer",
                 "store": str(self.store_dir), "cache_dir": str(self.cache_dir), "specs": self.specs,
+                "device": os.environ.get("MANUX_TRAIN_DEVICE", "auto"),
                 "previous_candidate": str(pending_model(self.store_dir.parents[1]) or ""),
                 "epochs": max(1, int(epochs)), "focus_labels": sorted({BY_KEY[k].label for k in gestures}) if gestures else [],
                 "task_names": [BY_KEY[k].name for k in gestures] if gestures else []})

@@ -101,7 +101,7 @@ class WorkerJob:
                         self.state["epoch_seconds"] = []
                         self.state["losses"] = []
                     for key in ("stage", "phase", "epoch", "epochs", "loss", "fold", "folds", "step", "steps",
-                                "train_files", "eval_files", "conditions", "frames"):
+                                "execution", "train_files", "eval_files", "conditions", "frames"):
                         if key in event:
                             self.state[key] = event[key]
                     progress = event.get("progress")

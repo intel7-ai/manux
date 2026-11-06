@@ -42,6 +42,9 @@ def check_cancel(request):
 def run_training(request, send=emit):
     import train_tcn
     from compose_tcn import compose
+    from training_device import select, record
+    execution = select(request.get("device", os.environ.get("MANUX_TRAIN_DEVICE", "auto")))
+    send("progress", stage="학습 장치 · " + execution.actual, execution=record(execution))
     from promote_tcn import validate_and_install
     from tcn_data import load, class_mapping, class_names
     from manux.ml.store import active_token, load_active
@@ -109,6 +112,8 @@ def run_training(request, send=emit):
                     send("progress", stage=f"선택 동작 학습 중 · {label}", phase="training",
                          progress=.1 + .6 * (step - 1 + row["epoch"] / row["epochs"]) / len(selected),
                          step=step, steps=len(selected), epoch=row["epoch"], epochs=row["epochs"], loss=row["loss"])
+                elif isinstance(row, dict) and row.get("event") == "device":
+                    send("progress", stage="학습 장치 · "+row["actual"], execution={k:row[k] for k in ("requested","actual","runtime","name","reason")})
             return len(text)
         def flush(self): pass
     replacements = []
@@ -120,7 +125,7 @@ def run_training(request, send=emit):
         with redirect_stdout(EventOutput()):
             train_tcn.main([*[str(p) for p in train_paths], "--output", str(trained), "--classes", "none", label,
                             "--decisions", str(declarations), "--cache-dir", str(cache), "--negative-other-classes",
-                            "--epochs", str(request.get("epochs", 20)), "--events", "--skip-folds"])
+                            "--epochs", str(request.get("epochs", 20)), "--device", request.get("device", os.environ.get("MANUX_TRAIN_DEVICE","auto")), "--events", "--skip-folds"])
         replacements.append(trained)
     check_cancel(request)
     if active_token(store) != token:
