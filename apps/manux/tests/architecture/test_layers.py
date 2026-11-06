@@ -17,6 +17,7 @@ ALLOWED = {
     "core": set(),
     "settings": {"core"},
     "capture": {"core"},
+    "link": {"core", "capture"},
     "tracking": {"core"},
     "perception": {"core"},
     "ml": {"core"},
@@ -42,6 +43,8 @@ THIRD_PARTY = {
     "win32con": {"output", "platform"},
     "win32gui": {"output", "platform"},
     "onnxruntime": {"ml"},
+    "aiohttp": {"link"},
+    "cryptography": {"link"},
     "torch": set(),  # tools/ only, never inside the app
 }
 
