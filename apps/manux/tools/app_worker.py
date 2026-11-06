@@ -210,8 +210,12 @@ def run_pose_training(request, send=emit):
         weights.append(1.8 if sample.get("isFailureSample") else 1.)
     if len(xs) < 2: raise ValueError("유효한 포즈 표본을 2개 이상 모으세요.")
     send("progress", stage="포즈 MLP 학습 중 · 제어 모델은 유지", progress=.4, phase="training")
-    model, metrics = train_spatial_mlp(np.stack(xs), np.asarray(ys), np.asarray(weights), classes=ACTION_IDS)
+    from manux.data.pose_studio import pose_training_partition
+    tx, ty, tw, validation = pose_training_partition(np.stack(xs), np.asarray(ys), np.asarray(weights))
+    model, metrics = train_spatial_mlp(tx, ty, tw, validation_data=validation, classes=ACTION_IDS)
     check_cancel(request)
+    from manux.data.pose_studio import summarize_pose_fit
+    metrics = summarize_pose_fit(model, metrics, np.stack(xs), np.asarray(ys))
     # Serialize atomically. This is a studio candidate, never the TCN active pointer.
     path = studio.models_dir / "spatial_pose_mlp.json"
     atomic_json(path, model.to_dict())

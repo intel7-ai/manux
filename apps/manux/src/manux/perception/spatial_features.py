@@ -158,3 +158,4 @@ def extract_spatial_features(landmarks: Any) -> Optional[np.ndarray]:
     feats[idx + 7] = proj_u(pts[20], pts[17])            # 95: Pinky lateral ulnar projection
 
     return feats
+

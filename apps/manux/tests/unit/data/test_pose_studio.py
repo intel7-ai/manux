@@ -71,7 +71,9 @@ def test_spatial_mlp_trains_and_separates_pinch_classes(tmp_path: Path):
             xs.append(f)
             ys.append(c_idx)
 
-    model, metrics = train_spatial_mlp(np.stack(xs), np.array(ys), classes=STUDIO_CLASSES, epochs=50)
+    from manux.data.pose_studio import pose_training_partition
+    tx, ty, tw, validation = pose_training_partition(np.stack(xs), np.array(ys))
+    model, metrics = train_spatial_mlp(tx, ty, tw, validation_data=validation, classes=STUDIO_CLASSES, epochs=50)
     assert metrics.train_accuracy >= 95.0
     assert metrics.test_accuracy >= 90.0
     assert metrics.elapsed_ms < 5000.0
@@ -237,3 +239,17 @@ def test_pose_studio_multi_model_management(tmp_path: Path):
     assert not (tmp_path / "models" / "spatial_mlp" / "model_two.json").exists()
 
 
+
+
+def test_eval_buffer_and_saved_eval_do_not_enter_pose_training(tmp_path):
+    studio = make_pose_studio(tmp_path)
+    studio.profile = "synthetic"
+    hand = _synthetic_hand(16)
+    studio.capture_snapshot(ground_truth="thumb_ring", landmarks=hand)
+    train_id = studio.samples[0]["sampleId"]
+    studio.save_dataset()
+    studio.split = "eval"
+    studio.capture_snapshot(ground_truth="thumb_middle", landmarks=hand)
+    assert [s["sampleId"] for s in studio.load_all_samples()] == [train_id]
+    studio.save_dataset()
+    assert [s["sampleId"] for s in studio.load_all_samples()] == [train_id]

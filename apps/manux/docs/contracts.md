@@ -257,6 +257,7 @@ v0.4 확인기는 모델 정보 파일의 클래스 → 동작 ID 대응표를 �
 | `mouse.scroll` | begin / hold / end | `gain` | `scroll_grab` |
 | `window.task_switcher` | tap | — | `task_switcher`, `alt_tab` |
 | `window.show_desktop` | tap | — | `show_desktop` |
+| `window.close` | tap | — | 창 닫기(Alt+F4), `spatial_pose.rock_sign` 바인딩 |
 | `nav.back`, `nav.forward` | tap | — | 모션 `back`, `forward` |
 | `tab.prev`, `tab.next` | tap | — | 모션 `tab_prev`, `tab_next` |
 | `media.play_pause`, `media.volume_up`, `media.volume_down` | tap | — | **제안** (없음. 침대 사용 R6) |
@@ -533,3 +534,12 @@ class OutputSink(Protocol):
 2. PR 본문에 "계약 변경"과 영향받는 계층·기능 ID를 적는다.
 3. `tests/contract/`와 `tests/architecture/`를 실행해 결과를 PR에 적는다.
 4. **제안**을 **계약**으로 바꿀 때는 [결정 기록](decisions.md)에 한 줄 남긴다.
+
+
+### v0.5 스튜디오 통합 (2026-11-06)
+
+- MLP는 `ml/spatial_mlp.py` 하나다. 33차원 pose-angles-v1 / 96차원 spatial-mlp-v1과 동적 클래스를 허용하며 내부에서 학습/평가를 나누지 않는다. 선택적 validation_data는 호출자가 분리해 전달한다. 파일 저장·로드 형식은 manux-spatial-mlp/1이다.
+- Pose Studio의 기존 무작위 80/20 프레임 내부 확인은 data의 명시적 분할 함수로 옮긴다. 10개 미만은 원래처럼 학습 표본 재확인이다. 화면 문구는 **학습 데이터 내부 확인(실제 정확도 아님)**이며 독립 세션/사람 평가가 아니다. eval_judges는 이 분할을 쓰지 않는다.
+- `perception/spatial_features.py`는 #82의 96차원 원본 하나, pose_angles.py는 33차원 평가 비교용으로 유지한다.
+- Pose/TCN/수집·공유 스튜디오는 분리된 서비스로 조립한다. Pose의 현재 모델 선택·저장·로드·재적용은 최신 #82를 따른다. Dan/Rasp-Jun의 과제·진행/공유·민감도 기능은 testing/#91을 보존하며 기존 계층 import 규칙을 완화하지 않는다.
+- 분류 클래스 rock_sign은 `spatial_pose.rock_sign` 동작을 내고, `window.close` 액션은 바인딩으로만 연결한다. close는 tap 한 번에 Alt+F4를 누른 뒤 해제한다. 기본 assist 모드는 직접 명령을 내지 않는다.

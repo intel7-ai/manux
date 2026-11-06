@@ -109,3 +109,20 @@ def test_spatial_pose_feature_hot_reload():
     feat.step(hand, ctx)
     assert feat.evidence is not None
     assert feat.evidence.action in ("thumb_middle", "none")
+
+
+def test_rock_class_is_a_gesture_and_close_runs_once_via_binding():
+    from manux.actions.catalog import CATALOG
+    from manux.features.spatial_pose import DEFAULT_BINDINGS
+    assert CLASS_TO_GESTURE["rock_sign"] == "spatial_pose.rock_sign"
+    assert not set(CLASS_TO_GESTURE.values()) & set(CATALOG)
+    assert DEFAULT_BINDINGS["spatial_pose.rock_sign"] == "window.close"
+    model = SpatialMlpModel(np.zeros((4,96)), np.zeros(4), np.zeros((2,4)), np.array([-10.,10.]),
+                            classes=("none","rock_sign"))
+    feature = SpatialPoseFeature(model, mode="direct")
+    frame = FrameInfo(1, 1., 640, 480, False)
+    hand = HandObservation(frame, tuple(_dummy_hand()), "Right", .99)
+    ctx = FrameContext(frame, "default", "none", "pointer")
+    first = feature.step(hand, ctx)
+    assert [(i.gesture,i.phase) for i in first] == [("spatial_pose.rock_sign","tap")]
+    assert feature.step(hand, ctx) == ()  # holding a pose must not close more windows

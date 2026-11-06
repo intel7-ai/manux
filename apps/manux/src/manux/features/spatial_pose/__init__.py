@@ -34,8 +34,11 @@ CLASS_TO_GESTURE: Mapping[str, str] = {
     "thumbs_up": "motion.thumbs_up",
     "v_sign": "pointer.v_sign",
     "thumb_middle_ring": "pinch.thumb_middle_ring",
-    "rock_sign": "window.close",
+    "rock_sign": "spatial_pose.rock_sign",
 }
+
+DEFAULT_BINDINGS = {"spatial_pose.rock_sign": "window.close"}
+GESTURE_PHASES = {"spatial_pose.rock_sign": frozenset({"tap"})}
 
 GESTURE_TO_CLASS: Mapping[str, str] = {v: k for k, v in CLASS_TO_GESTURE.items()}
 BOTH_CLICK_GESTURES = frozenset({"pinch.thumb_middle", "pinch.thumb_ring"})
@@ -88,7 +91,7 @@ class SpatialPoseFeature(Feature):
     def step(self, hand: Optional[HandObservation], ctx: FrameContext) -> Sequence[Intent]:
         self._latest_evidence = None
         if hand is None or hand.landmarks is None or self._model is None:
-            if self._active_gesture is not None:
+            if self._active_gesture is not None and self._active_gesture != "spatial_pose.rock_sign":
                 g = self._active_gesture
                 self._active_gesture = None
                 return [Intent(ctx.frame.t, FEATURE_ID, g, "end")]
@@ -96,7 +99,7 @@ class SpatialPoseFeature(Feature):
 
         feats = extract_spatial_features(hand.landmarks)
         if feats is None:
-            if self._active_gesture is not None:
+            if self._active_gesture is not None and self._active_gesture != "spatial_pose.rock_sign":
                 g = self._active_gesture
                 self._active_gesture = None
                 return [Intent(ctx.frame.t, FEATURE_ID, g, "end")]
@@ -119,16 +122,21 @@ class SpatialPoseFeature(Feature):
 
         target_gesture = CLASS_TO_GESTURE.get(act)
         intents: List[Intent] = []
+        if target_gesture == "spatial_pose.rock_sign" and conf >= self._trigger_confidence:
+            if self._active_gesture != target_gesture:
+                intents.append(Intent(now, FEATURE_ID, target_gesture, "tap"))
+            self._active_gesture = target_gesture
+            return tuple(intents)
         if target_gesture and target_gesture != "pointer.move" and conf >= self._trigger_confidence:
             if self._active_gesture == target_gesture:
                 intents.append(Intent(now, FEATURE_ID, target_gesture, "hold"))
             else:
-                if self._active_gesture is not None:
+                if self._active_gesture is not None and self._active_gesture != "spatial_pose.rock_sign":
                     intents.append(Intent(now, FEATURE_ID, self._active_gesture, "end"))
                 intents.append(Intent(now, FEATURE_ID, target_gesture, "begin"))
                 self._active_gesture = target_gesture
         else:
-            if self._active_gesture is not None:
+            if self._active_gesture is not None and self._active_gesture != "spatial_pose.rock_sign":
                 intents.append(Intent(now, FEATURE_ID, self._active_gesture, "end"))
                 self._active_gesture = None
 

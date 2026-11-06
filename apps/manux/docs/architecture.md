@@ -164,3 +164,8 @@ S2와 S3, S4와 S5는 서로 다른 폴더를 고치므로 동시에 진행할 �
 - 기존 웹앱(`src/`, `public/`, `server.js`)과 Electron(`desktop/`)의 새 기능. 기존 문서는 그 앱의 기록으로 둔다.
 - 5~10m 원거리 다중 TCN, 시선 추적 연동. 실험 결과가 나오면 v0.5 범위에서 다시 정한다.
 - 책상 위 포인터 정밀도만을 위한 조정([제품 방향](https://github.com/intel7-ai/manux/blob/product-direction-in-bed/docs/product-direction.md)).
+
+
+## v0.5 통합 보충
+
+스튜디오 통합은 [통합 기록](v05-integration.md)을 따른다. §4 의존 방향은 변경하지 않는다. MLP 저장/추론은 ml, 순수 특징은 perception, 표본/내부 확인 분할은 data, 학습 worker는 tools, 조립·런타임 교체는 desktop.py에 둔다. 수집 화면의 비동기 읽기 완료는 queued Qt signal로 알린다.

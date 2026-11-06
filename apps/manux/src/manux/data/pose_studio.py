@@ -257,6 +257,8 @@ class PoseSnapshotStudio:
         self.max_samples = max(10, int(max_samples))
         self.stream_throttle_ms = max(0.0, float(stream_throttle_ms))
         self.samples: List[Dict[str, Any]] = []
+        self.profile, self.split = "", "train"
+        self.session_id = uuid4().hex
         self.selected_ground_truth: str = "none"
         self.capture_mode: str = "stream"  # Default to 'stream' as user loved continuous video frame collection!
         self.is_streaming: bool = False
@@ -724,6 +726,7 @@ class PoseSnapshotStudio:
         return True
 
     def clear_samples(self) -> None:
+        self.session_id = uuid4().hex
         self.is_streaming = False
         self.samples.clear()
         self.status_note = "🗑️ 현재 세션의 수집 버퍼를 비웠습니다."
@@ -809,6 +812,7 @@ class PoseSnapshotStudio:
         payload = {
             "schema": "manux-pose-snapshots/2",
             "branch": "preview",
+            "person": self.profile, "split": self.split, "session_id": self.session_id,
             "modelId": model_id,
             "exportedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "totalSamples": saved_count,
@@ -817,7 +821,8 @@ class PoseSnapshotStudio:
             "byAction": stat["byAction"],
             "samples": list(self.samples),
         }
-        out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        from manux.data.studio import atomic_json
+        atomic_json(out_path, payload)
         self.samples.clear()
         self.invalidate_saved_cache()
         self.saved_dataset_counts(force=True)
@@ -832,6 +837,8 @@ class PoseSnapshotStudio:
             for fpath in sorted(self.snapshots_dir.glob("*.json")):
                 try:
                     doc = json.loads(fpath.read_text(encoding="utf-8"))
+                    if isinstance(doc, dict) and doc.get("split", "train") != "train":
+                        continue
                     if not self._doc_matches_active_model(doc):
                         continue
                     items = doc.get("samples") if isinstance(doc, dict) else (doc if isinstance(doc, list) else [])
@@ -844,7 +851,7 @@ class PoseSnapshotStudio:
                         combined.append(s)
                 except Exception:
                     continue
-        for s in self.samples:
+        for s in self.samples if self.split == "train" else ():
             sid = s.get("sampleId")
             if sid and sid in seen_ids:
                 continue
@@ -890,7 +897,7 @@ class PoseSnapshotStudio:
             display_name = target_path.stem
             self.status_note = (
                 f"⚡ [{display_name}] Spatial MLP 학습 완료! ({res.get('elapsed_ms', 0):.0f}ms 소요) · "
-                f"표본 {res.get('total_samples', 0)}개 · 검증 정확도 {res.get('test_accuracy', 0):.1f}% "
+                f"표본 {res.get('total_samples', 0)}개 · 학습 데이터 내부 확인(실제 정확도 아님) {res.get('test_accuracy', 0):.1f}% "
                 f"(학습 {res.get('train_accuracy', 0):.1f}%)"
             )
             return {"success": True, **res}
@@ -898,3 +905,32 @@ class PoseSnapshotStudio:
             self.status_note = f"❌ 학습 실패: {exc}"
             return {"success": False, "reason": str(exc)}
 
+
+
+def pose_training_partition(x, y, weights=None, *, seed=42):
+    """기존 Pose 화면 내부 확인: 무작위 80/20, 10개 미만은 학습 데이터 재확인.
+
+    독립 세션 평가가 아니다. MLP 학습기와 eval_judges에서는 분할하지 않는다.
+    """
+    import numpy as np
+    order = np.random.default_rng(seed).permutation(len(y))
+    split = max(1, min(len(y) - 1, int(len(y) * .8))) if len(y) >= 10 else len(y)
+    train, check = order[:split], order[split:] if len(y) >= 10 else order
+    return x[train], y[train], None if weights is None else weights[train], (x[check], y[check])
+
+
+def summarize_pose_fit(model, metrics, x, y):
+    """원래 Studio의 전체 표본 수·클래스별 내부 확인 집계를 보존한다."""
+    from dataclasses import replace
+    import numpy as np
+    predicted = np.argmax(model.predict_proba(x), axis=1)
+    per_class = {}
+    for index, name in enumerate(model.classes):
+        mask = y == index
+        total = int(mask.sum())
+        correct = int((predicted[mask] == index).sum())
+        per_class[name] = {"total": total, "correct": correct,
+                           "accuracy": round(correct / total * 100, 1) if total else None}
+    metrics = replace(metrics, total_samples=len(y), per_class=per_class)
+    model.metadata.update(total_samples=metrics.total_samples, per_class=per_class)
+    return metrics

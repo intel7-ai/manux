@@ -86,6 +86,9 @@ def pipeline_parts(direct_model=None, binding_overrides=None, policies=None):
     for module, _ in _FEATURES:
         defaults.update(module.DEFAULT_BINDINGS)
         phases.update(module.GESTURE_PHASES)
+    from manux.features.spatial_pose import DEFAULT_BINDINGS as POSE_BINDINGS, GESTURE_PHASES as POSE_PHASES
+    defaults.update(POSE_BINDINGS)
+    phases.update(POSE_PHASES)
     features = [factory() for _, factory in _FEATURES]
     sources = {}
     if direct_model is not None:

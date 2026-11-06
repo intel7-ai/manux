@@ -1,16 +1,17 @@
-"""Lightweight Spatial MLP (Multi-Layer Perceptron) classifier & 4-second trainer.
+"""NumPy 학습·추론만 origin/testing@431f9b0의 spatial_mlp에서 가져왔다.
 
-Designed for instantaneous single-frame posture classification (`window = 1`, 0-frame lag)
-in pure NumPy without requiring PyTorch or ONNX runtime overhead.
-Also compatible with MANUX `Predictor` protocol so it can plug directly into features/filters.
+평가용 변경: 33/96차원과 동적 클래스 허용, 내부 무작위 프레임 분할 제거.
+Adam/LeakyReLU/가중치 초기화·역전파는 원본 유지. 학습 시간은 실행해 측정한다.
+저장·로드는 #82와 통합한다. 명시적 validation_data만 계산하며 무작위 분할은 하지 않는다.
+실제 독립 평가 지표는 tools/eval_judges.py가 계산한다.
 """
 from __future__ import annotations
 
-import json
 import math
+import json
+from pathlib import Path
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -32,7 +33,7 @@ STUDIO_CLASSES: Tuple[str, ...] = (
 @dataclass(frozen=True)
 class SpatialMlpMetrics:
     train_accuracy: float
-    test_accuracy: float
+    test_accuracy: Optional[float]
     total_samples: int
     train_samples: int
     test_samples: int
@@ -61,11 +62,12 @@ class SpatialMlpModel:
         self.classes: Tuple[str, ...] = tuple(classes)
         self.feature_version = feature_version
         self.metadata: Dict[str, Any] = dict(metadata or {})
-        if (self.w1.ndim != 2 or self.w1.shape[1] != 96 or not 1 <= self.w1.shape[0] <= 512
+        dimension = {"spatial-mlp-v1": 96, "pose-angles-v1": 33}.get(feature_version)
+        if (self.w1.ndim != 2 or self.w1.shape[1] != dimension or not 1 <= self.w1.shape[0] <= 512
                 or self.b1.shape != (self.w1.shape[0],) or self.w2.shape != (len(self.classes), self.w1.shape[0])
                 or self.b2.shape != (len(self.classes),) or not self.classes or len(self.classes) > 32
-                or len(set(self.classes)) != len(self.classes) or any(c not in STUDIO_CLASSES for c in self.classes)
-                or feature_version != "spatial-mlp-v1"
+                or len(set(self.classes)) != len(self.classes) or any(not isinstance(c, str) or not c for c in self.classes)
+                or feature_version not in ("spatial-mlp-v1", "pose-angles-v1")
                 or not all(np.isfinite(x).all() for x in (self.w1, self.b1, self.w2, self.b2))):
             raise ValueError("Spatial MLP 특징·클래스·가중치 형식이 맞지 않습니다.")
 
@@ -166,8 +168,9 @@ def train_spatial_mlp(
     l2: float = 1e-4,
     seed: int = 42,
     feature_version: str = "spatial-mlp-v1",
+    validation_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
 ) -> Tuple[SpatialMlpModel, SpatialMlpMetrics]:
-    """Train a 2-layer Spatial MLP using vectorized NumPy Adam optimizer in ~0.5 - 3 seconds."""
+    """NumPy Adam으로 외부에서 분리한 학습 표본 전체를 학습한다."""
     t0 = time.perf_counter()
     x_arr = np.asarray(x_all, dtype=np.float64)
     y_arr = np.asarray(y_all, dtype=np.int64)
@@ -175,12 +178,18 @@ def train_spatial_mlp(
     num_classes = len(classes)
     if n_samples < 2:
         raise ValueError("학습하려면 최소 2개 이상의 표본이 필요합니다.")
+    if (y_arr.shape != (n_samples,) or not np.isfinite(x_arr).all()
+            or not num_classes or (y_arr < 0).any() or (y_arr >= num_classes).any()):
+        raise ValueError("유한한 특징과 범위 내 클래스 번호가 필요합니다.")
 
     sample_weights = (
         np.asarray(weights_all, dtype=np.float64)
         if weights_all is not None
         else np.ones(n_samples, dtype=np.float64)
     )
+    if (sample_weights.shape != (n_samples,) or not np.isfinite(sample_weights).all()
+            or (sample_weights <= 0).any()):
+        raise ValueError("학습 가중치는 유한한 양수여야 합니다.")
 
     rng = np.random.default_rng(seed)
     perm = rng.permutation(n_samples)
@@ -188,16 +197,11 @@ def train_spatial_mlp(
     y_arr = y_arr[perm]
     sample_weights = sample_weights[perm]
 
-    # Stratified or 80/20 train/test split (if small dataset < 10, evaluate on all as well)
-    if n_samples >= 10:
-        split = max(1, min(n_samples - 1, int(n_samples * 0.8)))
-        x_train, x_test = x_arr[:split], x_arr[split:]
-        y_train, y_test = y_arr[:split], y_arr[split:]
-        w_train = sample_weights[:split]
-    else:
-        x_train = x_test = x_arr
-        y_train = y_test = y_arr
-        w_train = sample_weights
+    # The caller splits recordings/sessions, never neighboring frames. Shuffling
+    # changes optimization order only. No internal validation set is manufactured.
+    x_train = x_arr
+    y_train = y_arr
+    w_train = sample_weights
 
     # He Initialization
     w1 = rng.standard_normal((hidden_units, feat_dim)) * math.sqrt(2.0 / feat_dim)
@@ -275,11 +279,9 @@ def train_spatial_mlp(
 
     temp_model = SpatialMlpModel(w1, b1, w2, b2, classes=classes, feature_version=feature_version)
     train_preds = np.argmax(temp_model.predict_proba(x_train), axis=1)
-    test_preds = np.argmax(temp_model.predict_proba(x_test), axis=1)
     all_preds = np.argmax(temp_model.predict_proba(x_arr), axis=1)
 
     train_acc = float(np.mean(train_preds == y_train) * 100.0)
-    test_acc = float(np.mean(test_preds == y_test) * 100.0)
 
     per_class: Dict[str, Dict[str, Any]] = {}
     for c_idx, cls_name in enumerate(classes):
@@ -292,12 +294,19 @@ def train_spatial_mlp(
             "accuracy": round((correct_c / total_c) * 100.0, 1) if total_c > 0 else None,
         }
 
+    test_acc = None
+    test_samples = 0
+    if validation_data is not None:
+        vx, vy = validation_data
+        test_samples = len(vy)
+        test_acc = round(float(np.mean(np.argmax(temp_model.predict_proba(vx), axis=1) == vy) * 100), 2)
+
     metrics = SpatialMlpMetrics(
         train_accuracy=round(train_acc, 2),
-        test_accuracy=round(test_acc, 2),
+        test_accuracy=test_acc,
         total_samples=int(n_samples),
         train_samples=int(len(x_train)),
-        test_samples=int(len(x_test)),
+        test_samples=test_samples,
         elapsed_ms=round(elapsed_ms, 1),
         per_class=per_class,
         trained_at=trained_at,

@@ -1502,7 +1502,7 @@ ApplicationWindow {
                                                 }
                                                 TextLabel {
                                                     text: modelData.exists
-                                                        ? ("검증 정확도 " + modelData.test_accuracy.toFixed(1) + "% · 표본 " + modelData.total_samples + "개 · " + modelData.trained_at + " · " + modelData.file_size_kb + "KB")
+                                                        ? ("학습 데이터 내부 확인(실제 정확도 아님) " + modelData.test_accuracy.toFixed(1) + "% · 표본 " + modelData.total_samples + "개 · " + modelData.trained_at + " · " + modelData.file_size_kb + "KB")
                                                         : "미학습 슬롯 — 상단에서 표본 수집 후 [⚡ 즉시 학습]을 누르면 이 모델로 저장됩니다"
                                                     font.pixelSize: 11
                                                     color: window.muted

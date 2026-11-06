@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, Property, QSettings, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import Qt, QCoreApplication, QEvent, QObject, Property, QSettings, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QCursor, QGuiApplication, QImage, QFontDatabase
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
@@ -478,6 +478,7 @@ class Bridge(QObject):
     hiddenToTray = Signal()
     trackingActiveChanged = Signal()
     trainingChanged = Signal()
+    trainingReadComplete = Signal()
     trainingStarted = Signal()
     settingsRequested = Signal()
     studioChanged = Signal()
@@ -568,6 +569,7 @@ class Bridge(QObject):
         self.training_note = ""
         self._training_was_running = False
         self._progress_visible = False
+        self.trainingReadComplete.connect(self.trainingChanged.emit, Qt.ConnectionType.QueuedConnection)
         self.training_timer = QTimer(self)
         self.training_timer.setInterval(400)
         self.training_timer.timeout.connect(self._training_tick)
@@ -1294,6 +1296,7 @@ class Bridge(QObject):
             except Exception as exc:
                 self.training_note = f"읽지 못했어요: {exc}"
             self.training_busy = ""
+            self.trainingReadComplete.emit()
 
         threading.Thread(target=work, daemon=True).start()
         self.training_timer.start()
@@ -1444,8 +1447,7 @@ class Bridge(QObject):
         return [
             {**r, "selected": r["key"] in self.training_selected}
             for r in self.training_rows
-            if r["category"] not in ("클릭·드래그", "창·모드")
-            and (category == "전체" or r["category"] == category)
+            if category == "전체" or r["category"] == category
         ]
 
     @Property("QStringList", notify=trainingChanged)
@@ -1570,7 +1572,7 @@ class Bridge(QObject):
 
     @Property(str, notify=trainingChanged)
     def trainingCatalog(self):
-        return f"TCN 시계열 모션 {len(self.trainingRows)}개 표시 (클릭·창 제어는 포즈 스튜디오 전담)"
+        return f"전체 {self.tc.total_tasks}개 녹화 항목 · {len(self.trainingRows)}개 표시 · 미학습 동작도 녹화 가능"
 
     @Slot(str)
     def setTrainingFilter(self, category):
@@ -1715,7 +1717,7 @@ class Bridge(QObject):
 
     @Slot()
     def toggleSpatialGuard(self):
-        if self.training_job.running or self.studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
+        if self.training_job.running or self.pose_studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
         self._pause()
         self.runtime.request(RuntimeRequest("spatial_guard", "off" if self._spatial_guard_enabled else "on"))
 
@@ -1843,27 +1845,27 @@ class Bridge(QObject):
 
     @Property(bool, notify=studioChanged)
     def studioRequireFullJoints(self):
-        return bool(getattr(self.studio, "require_full_joints", True))
+        return bool(getattr(self.pose_studio, "require_full_joints", True))
 
     @Property(bool, notify=studioChanged)
     def studioFullJointsTracked(self):
-        return bool(getattr(self.studio, "full_joints_tracked", False))
+        return bool(getattr(self.pose_studio, "full_joints_tracked", False))
 
     @Property(str, notify=studioChanged)
     def studioActiveModelId(self):
-        return str(getattr(self.studio, "active_model_id", "spatial_pose_mlp.json"))
+        return str(getattr(self.pose_studio, "active_model_id", "spatial_pose_mlp.json"))
 
     @Property("QVariantList", notify=studioChanged)
     def studioModelList(self):
-        if hasattr(self.studio, "list_models"):
-            return self.studio.list_models()
+        if hasattr(self.pose_studio, "list_models"):
+            return self.pose_studio.list_models()
         return []
 
     @Property(str, notify=studioChanged)
     def studioCompareBadge(self):
         if not self.pose_studio.hand_tracked:
             return "카메라에 손을 보여주세요"
-        if getattr(self.studio, "require_full_joints", False) and not getattr(self.studio, "full_joints_tracked", True):
+        if getattr(self.pose_studio, "require_full_joints", False) and not getattr(self.pose_studio, "full_joints_tracked", True):
             return "⚠️ 손가락 일부가 화면 밖으로 잘렸습니다 (전체 손을 보여주세요)"
         if self.pose_studio.is_live_match():
             return "✅ 판정 일치 (정상 인식 영역)"
@@ -1887,10 +1889,10 @@ class Bridge(QObject):
     @Property(str, notify=studioChanged)
     def studioModelText(self):
         ms = self.pose_studio.model_summary
-        name = ms.get("name") or getattr(self.studio, "active_model_id", "spatial_pose_mlp.json")
+        name = ms.get("name") or getattr(self.pose_studio, "active_model_id", "spatial_pose_mlp.json")
         if not ms.get("loaded"):
             return f"Spatial MLP [{name}]: 아직 학습 전 (표본을 모으고 [⚡ 4초 즉시 학습]을 누르세요)"
-        return (f"Spatial MLP [{name}] 활성 · 검증 정확도 {ms.get('test_accuracy', 0):.1f}% "
+        return (f"Spatial MLP [{name}] 활성 · 학습 데이터 내부 확인(실제 정확도 아님) {ms.get('test_accuracy', 0):.1f}% "
                 f"(학습 {ms.get('train_accuracy', 0):.1f}%) · 표본 {ms.get('total_samples', 0)}개 · "
                 f"{ms.get('elapsed_ms', 0):.0f}ms 소요")
 
@@ -1929,34 +1931,34 @@ class Bridge(QObject):
 
     @Slot(bool)
     def setStudioRequireFullJoints(self, enabled):
-        if hasattr(self.studio, "set_require_full_joints"):
-            self.studio.set_require_full_joints(bool(enabled))
+        if hasattr(self.pose_studio, "set_require_full_joints"):
+            self.pose_studio.set_require_full_joints(bool(enabled))
             self.studioChanged.emit()
 
     @Slot(str)
     def createStudioModel(self, name):
-        if hasattr(self.studio, "create_model"):
-            self.studio.create_model(str(name))
-            self._studio_summary_cache = self.studio.summary()
+        if hasattr(self.pose_studio, "create_model"):
+            self.pose_studio.create_model(str(name))
+            self._studio_summary_cache = self.pose_studio.summary()
             self.studioChanged.emit()
 
     @Slot(str)
     def activateStudioModel(self, model_id):
-        if hasattr(self.studio, "activate_model"):
-            self.studio.activate_model(str(model_id))
-            self._studio_summary_cache = self.studio.summary()
+        if hasattr(self.pose_studio, "activate_model"):
+            self.pose_studio.activate_model(str(model_id))
+            self._studio_summary_cache = self.pose_studio.summary()
             self.studioChanged.emit()
 
     @Slot(str)
     def deleteStudioModel(self, model_id):
-        if hasattr(self.studio, "delete_model"):
-            self.studio.delete_model(str(model_id))
-            self._studio_summary_cache = self.studio.summary()
+        if hasattr(self.pose_studio, "delete_model"):
+            self.pose_studio.delete_model(str(model_id))
+            self._studio_summary_cache = self.pose_studio.summary()
             self.studioChanged.emit()
 
     @Slot()
     def triggerStudioCapture(self):
-        if self.training_job.running or self.studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
+        if self.training_job.running or self.pose_studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
         if not self.pose_studio.samples:
             self.pose_studio.profile, self.pose_studio.split = self.tc.profile, self.tc.split
         self._pause()
@@ -1984,7 +1986,7 @@ class Bridge(QObject):
 
     @Slot()
     def trainStudioModel(self):
-        if self.training_job.running or self.studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
+        if self.training_job.running or self.pose_studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
         self._pause()
         self.pose_studio.stop_stream()
         self.pose_studio.save_dataset()

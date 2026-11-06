@@ -567,7 +567,7 @@ class DesktopRuntime:
             if command.kind == "spatial_guard":
                 try:
                     self.engine.prepare_model_reload()
-                    model = SpatialMlpModel.load(self.spatial_model_path) if command.path == "on" and self.spatial_model_path else None
+                    model = (SpatialMlpModel.load(self.spatial_model_path) if self.spatial_model_path else self.spatial_feature.model) if command.path == "on" else None
                     if command.path == "on" and model is None: raise ValueError("no pose model")
                     self.spatial_feature.set_model(model)
                     self.spatial_guard.enabled = command.path == "on"
@@ -737,10 +737,11 @@ def make_pose_studio(data_dir: Path,
         if on_model_updated is not None:
             on_model_updated(model)
 
-    model_stamp = [model_file.stat().st_mtime_ns if model_file.is_file() else None]
+    model_stamp = [None]
 
     def predict_fn(landmarks: Any, _world: Any) -> Optional[Dict[str, Any]]:
-        stamp = model_file.stat().st_mtime_ns if model_file.is_file() else None
+        model_file = studio.models_dir / (studio.active_model_id or "spatial_pose_mlp.json")
+        stamp = (str(model_file), model_file.stat().st_mtime_ns) if model_file.is_file() else None
         if stamp != model_stamp[0]:
             try: active_mlp[0] = SpatialMlpModel.load(model_file) if stamp else None
             except (ValueError, OSError, KeyError): active_mlp[0] = None
@@ -772,19 +773,21 @@ def make_pose_studio(data_dir: Path,
             ws.append(1.8 if s.get("isFailureSample") else 1.0)
         if len(xs) < 2:
             raise ValueError("유효한 3D 관절 표본이 2개 미만입니다.")
+        from manux.data.pose_studio import pose_training_partition
+        tx, ty, tw, validation = pose_training_partition(np.stack(xs), np.array(ys, dtype=np.int64), np.array(ws, dtype=np.float64))
         model, metrics = train_spatial_mlp(
-            np.stack(xs),
-            np.array(ys, dtype=np.int64),
-            np.array(ws, dtype=np.float64),
+            tx, ty, tw, validation_data=validation,
             classes=ACTION_IDS,
             feature_version=SPATIAL_FEATURE_VERSION,
         )
+        from manux.data.pose_studio import summarize_pose_fit
+        metrics = summarize_pose_fit(model, metrics, np.stack(xs), np.array(ys))
         model.save(out_path)
         update_model(model)
         return {
             "train_accuracy": metrics.train_accuracy,
             "test_accuracy": metrics.test_accuracy,
-            "total_samples": metrics.total_samples,
+            "total_samples": len(xs),
             "train_samples": metrics.train_samples,
             "test_samples": metrics.test_samples,
             "elapsed_ms": metrics.elapsed_ms,
@@ -800,7 +803,7 @@ def make_pose_studio(data_dir: Path,
         on_model_updated=update_model,
     )
     if studio.active_model is not None:
-        active_mlp[0] = studio.active_model
+        update_model(studio.active_model)
     return studio
 
 
@@ -900,7 +903,7 @@ def main(argv=None) -> int:
     tc.simulation_bindings = read_bindings(args.bindings)
     tc.simulation_config = {"simulation_mode": args.tcn_mode,
                             "simulation_model": str(args.tcn_model) if args.tcn_model else None}
-    studio = make_pose_studio(paths.data_dir)
+    studio = make_pose_studio(paths.data_dir, runtime.set_spatial_model)
     from manux.perception.palm_axes import PalmAxesCalibration, valid_axes, palm_point
     return run(runtime, settings, paths, tray=not args.no_tray, screenshot=args.screenshot, layout=args.ui,
                services={
