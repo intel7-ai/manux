@@ -591,6 +591,8 @@ class Bridge(QObject):
         self.tutorial: Optional[Tutorial] = None
         self._tutorial_progress = -1.0
         self._preview_view = ViewFrame(None)
+        self._last_practice_seq = 0
+        self._practice_min_epoch = 0
         self.axes = self._load_axes()
         self.samples = []
         self.calibrating = False
@@ -818,9 +820,9 @@ class Bridge(QObject):
 
     def _pause(self) -> None:
         """v0.3 behaviour: a settings change pauses control; the user turns it on again."""
-        if not self.paused:
-            self.paused = True
-            self._send(SetControl(False))
+        # V may have enabled the engine before the next UI poll updates the display.
+        self.paused = True
+        self._send(SetControl(False))
 
     def _set_stage(self, name: str) -> None:
         self.stage_name = name
@@ -2273,6 +2275,7 @@ class Bridge(QObject):
         self.cancelPointerCalibration()
         self.tutorial = Tutorial(onboarding_steps(self._cards()))
         self._set_stage("tutorial")
+        self._reset_practice()
         self.tutorialChanged.emit()
 
     @Slot()
@@ -2302,9 +2305,24 @@ class Bridge(QObject):
             return
         now = time.perf_counter()
         old_index = t.index
-        changed = t.observe(view.actions if view.landmarks is not None else (), self.motion_on, now,
+        changed = False
+        for event in view.practice_events:
+            if event.seq <= self._last_practice_seq:
+                continue
+            self._last_practice_seq = event.seq
+            if view.practice_epoch < self._practice_min_epoch:
+                continue
+            # Each retained tap/begin is a distinct engine event, even when the UI missed
+            # every intervening frame. Keep its own cursor position for target hit testing.
+            t.observe((), event.motion_on, event.t, hand_tracked=event.has_hand,
+                      point=event.cursor, precision=event.precision)
+            changed = t.observe(event.actions, event.motion_on, event.t,
+                                hand_tracked=event.has_hand, point=event.cursor,
+                                precision=event.precision) or changed
+        current_actions = view.actions if view.snapshot is None else tuple(a for a in view.actions if a == "mouse.move")
+        changed = t.observe(current_actions if view.landmarks is not None else (), self.motion_on, now,
                             hand_tracked=view.landmarks is not None, point=view.practice_cursor,
-                            precision=view.practice_precision)
+                            precision=view.practice_precision) or changed
         changed = t.tick(now) or changed
         if t.index != old_index:
             self._reset_practice()
@@ -2349,6 +2367,9 @@ class Bridge(QObject):
 
     def _reset_practice(self):
         from manux.engine.commands import ResetPractice
+        self._practice_min_epoch = self._preview_view.practice_epoch + 1
+        if self._preview_view.practice_events:
+            self._last_practice_seq = max(self._last_practice_seq, self._preview_view.practice_events[-1].seq)
         self._send(ResetPractice())
 
     @Slot()

@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional, Tuple
 
-from manux.core.contracts import Landmark
+from manux.core.contracts import Landmark, PracticeEvent
 from manux.engine.snapshot import Snapshot
 
 
@@ -50,3 +50,5 @@ class ViewFrame:
     preview_gesture: str = ""                 # engine gesture id; the UI never classifies landmarks
     practice_cursor: Optional[Tuple[float, float]] = None  # virtual sink cursor, normalized screen
     practice_precision: bool = False          # accepted movement gain below one
+    practice_events: Tuple[PracticeEvent, ...] = ()  # bounded events; UI consumes each sequence once
+    practice_epoch: int = 0                    # persistent reset boundary; latest-only reads are safe

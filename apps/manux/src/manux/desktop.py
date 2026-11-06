@@ -11,6 +11,7 @@ Like `app.py`, this module is a composition root and may import every layer.
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import copy
 import queue
 import sys
@@ -23,7 +24,7 @@ from uuid import uuid4
 from manux.actions.bindings import Binding
 from manux.app import _FEATURES, _camera_config, build_engine, schema, pipeline_parts, read_bindings, training_specs
 from manux.capture.camera import LatestFrameCamera, brightness
-from manux.core.contracts import FrameInfo, HandObservation, OutputTarget, RecordingIdentity, RuntimeRequest
+from manux.core.contracts import FrameInfo, HandObservation, OutputTarget, PracticeEvent, RecordingIdentity, RuntimeRequest
 from manux.data.catalog import BY_KEY, tasks_for
 from manux.data.guided import GuidedSession
 from manux.data.recorder import SessionRecorder
@@ -222,6 +223,10 @@ class DesktopRuntime:
         self.sensitivity_result = (0, True, "")
         self.advanced_result = (0, True, "")
         self._control_model = None
+        self._practice_events = deque(maxlen=128)
+        self._practice_event_seq = 0
+        self._practice_epoch = 0
+        self._practice_active = False
         from manux.output.windows.cursor import CursorMapper
         from manux.output.windows.config import WindowsOutputConfig
         from manux.platform.monitors import ScreenLayout
@@ -537,6 +542,20 @@ class DesktopRuntime:
             self._metrics = (self.source.mode_text(), -1, False)
         actions = tuple(a for a, _phase, reason in snap.results if reason == "ok")
         practice = self.engine.sinks.get(OutputTarget.PRACTICE)
+        if snap.output is OutputTarget.PRACTICE:
+            if not self._practice_active or "practice:reset" in snap.events:
+                self._practice_events.clear()
+                self._practice_epoch += 1
+            self._practice_active = True
+            discrete = tuple(a for a, phase, reason in snap.results if reason == "ok" and phase in ("tap", "begin"))
+            mode_event = any(e.startswith("mode:") and "refused:" not in e for e in snap.events)
+            if discrete or mode_event:
+                self._practice_event_seq += 1
+                self._practice_events.append(PracticeEvent(self._practice_event_seq, frame.t, discrete,
+                    practice.cursor_position, practice.precision, snap.mode == "motion", snap.has_hand))
+        else:
+            self._practice_events.clear()
+            self._practice_active = False
         guides, anchor, moving = self.pinch_preview.step(
             hand if self.want_image and snap.mode == "pinch" else None, self.settings_for("pinch"))
         self._publish(ViewFrame(
@@ -554,6 +573,7 @@ class DesktopRuntime:
             preview_gesture=snap.intents[0][0] if snap.intents else "",
             practice_cursor=practice.cursor_position if snap.output is OutputTarget.PRACTICE else None,
             practice_precision=bool(practice.precision) if snap.output is OutputTarget.PRACTICE else False,
+            practice_events=tuple(self._practice_events), practice_epoch=self._practice_epoch,
             frame_age_ms=max(0.0, (time.perf_counter() - frame.t) * 1000.0)))
 
     def _pose_step(self, image, now):

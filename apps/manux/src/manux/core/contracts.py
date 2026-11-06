@@ -194,6 +194,18 @@ class RecordingIdentity:
 
 
 @dataclass(frozen=True)
+class PracticeEvent:
+    """Accepted practice event retained independently of the latest camera image (§12)."""
+    seq: int
+    t: float
+    actions: Tuple[str, ...]
+    cursor: Optional[Point]
+    precision: bool
+    motion_on: bool
+    has_hand: bool
+
+
+@dataclass(frozen=True)
 class RuntimeRequest:
     kind: Literal["activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard", "sensitivity", "advanced"]
     path: str = ""
