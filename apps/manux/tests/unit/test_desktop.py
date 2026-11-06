@@ -114,3 +114,53 @@ def test_tracking_test_runs_on_the_runtime_thread_and_never_clicks(tmp_path):
     assert runtime.tracking is None and views[-1].tracking is None
     assert runtime.settings_for("pointer")["tracking_only"] is False
     runtime.engine.shutdown()
+
+
+def test_guided_recording_runs_with_output_none_and_writes_recording(tmp_path):
+    from manux.core.contracts import OutputTarget
+    from manux.data.recording import read
+    settings = Settings(schema(), {"tracking.control_hand": "Right"})
+    runtime, backend = windows_runtime(tmp_path, settings)
+    runtime.recordings_dir = tmp_path / "recordings"
+    runtime.engine.commands.put(SetStage(Stage.MAIN))
+    runtime.engine.commands.put(SetControl(True))
+    runtime.set_recording("guided", focus="thumb_ring")
+    views = run_frames(runtime, 4)
+    assert views[-1].rec is not None and views[-1].rec["waiting"] is True
+    assert views[-1].snapshot.output is OutputTarget.NONE
+    assert "recording" in views[-1].snapshot.busy
+    assert not backend.events                                   # recording disables real Windows output
+    runtime.advance_recording()
+    views = run_frames(runtime, 6)
+    assert views[-1].rec is not None and views[-1].rec["waiting"] is False
+    assert views[-1].rec["frames"] > 0
+    runtime.set_recording_paused(True)
+    views = run_frames(runtime, 2)
+    assert views[-1].rec["paused"] is True
+    runtime.set_recording("off")
+    views = run_frames(runtime, 2)
+    saved = list((tmp_path / "recordings" / "profile-local" / "pinch" / "train").glob("*.jsonl.gz"))
+    assert len(saved) == 1
+    meta = read(saved[0]).meta
+    assert (meta["person"], meta["split"], meta["preset"]) == ("local", "train", "pinch")
+    rec = read(saved[0])
+    assert rec.complete and rec.meta["focus"] == "thumb_ring"
+    runtime.stop()
+
+def test_recording_start_failure_is_visible_and_can_retry(tmp_path, monkeypatch):
+    import manux.desktop as desktop
+    runtime = build(Settings(schema()), ReplayInput(recording(tmp_path / 'input.jsonl.gz')), windows=False)
+    runtime.recordings_dir = tmp_path / 'recordings'
+    runtime.engine.commands.put(SetStage(Stage.MAIN))
+    original = desktop.SessionRecorder
+    def fail(*args, **kwargs): raise OSError('synthetic disk error')
+    monkeypatch.setattr(desktop, 'SessionRecorder', fail)
+    runtime.set_recording('guided', focus='thumb_ring', profile='synthetic', split='eval')
+    views = run_frames(runtime, 2)
+    assert views[-1].rec['mode'] == 'off'
+    assert '권한' in views[-1].rec['sub']
+    assert not views[-1].snapshot.control_on and 'recording' not in views[-1].snapshot.busy
+    monkeypatch.setattr(desktop, 'SessionRecorder', original)
+    runtime.set_recording('guided', focus='thumb_ring', profile='synthetic', split='eval')
+    assert run_frames(runtime, 2)[-1].rec['mode'] == 'guided'
+    runtime.stop()

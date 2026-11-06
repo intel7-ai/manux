@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 from hashlib import file_digest, sha256
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,7 +28,7 @@ WINDOW = 15
 AUGMENT = True
 
 
-def train(segments, classes, epochs):
+def train(segments, classes, epochs, *, progress=None):
     import torch
     from torch import nn
 
@@ -82,8 +83,11 @@ def train(segments, classes, epochs):
     for _ in range(epochs):
         for batch in torch.randperm(len(inputs)).split(256):
             optimizer.zero_grad()
-            loss_fn(model(augment(inputs[batch]) if AUGMENT else inputs[batch]), labels[batch]).backward()
+            loss = loss_fn(model(augment(inputs[batch]) if AUGMENT else inputs[batch]), labels[batch])
+            loss.backward()
             optimizer.step()
+        if progress is not None:
+            progress(_ + 1, epochs, float(loss.detach()))
     return model.eval()
 
 
@@ -95,7 +99,7 @@ def predict(model, inputs):
         return torch.cat([model(batch).softmax(dim=1) for batch in batches]).numpy()
 
 
-def main() -> None:
+def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("recordings", nargs="+", type=Path)
     parser.add_argument("--output", type=Path, required=True)
@@ -109,13 +113,15 @@ def main() -> None:
     parser.add_argument("--decisions", type=Path, help="class -> direct intent specification JSON (no actions)")
     parser.add_argument("--cache-dir", type=Path, default=resolve().data_dir / "features")
     parser.add_argument("--no-augment", action="store_true", help="train without Dan's rotation/size/jitter augmentation")
-    args = parser.parse_args()
+    parser.add_argument("--events", action="store_true", help="emit progress events for the app worker")
+    parser.add_argument("--skip-folds", action="store_true", help="app worker uses a separate eval set instead")
+    args = parser.parse_args(argv)
     global AUGMENT
     AUGMENT = not args.no_augment
     if args.output.suffix.lower() != ".onnx" or args.epochs < 1:
         parser.error("use an .onnx output and at least one epoch")
-    repo = Path(__file__).resolve().parents[3]
-    if args.output.resolve().is_relative_to(repo) or args.cache_dir.resolve().is_relative_to(repo):
+    repo = Path(__file__).resolve().parents[3] if not getattr(sys, "frozen", False) else None
+    if repo is not None and (args.output.resolve().is_relative_to(repo) or args.cache_dir.resolve().is_relative_to(repo)):
         parser.error("write models and feature caches outside the repository; D-006")
     try:
         recordings = list(dict.fromkeys(path.resolve() for path in args.recordings))
@@ -147,6 +153,8 @@ def main() -> None:
             card["decisions"] = json.loads(args.decisions.read_text(encoding="utf-8"))
         validate_card(card, FEATURE_VERSION, FEATURES)
         axes = {"both": ("person", "posture"), "all": AXES}.get(args.hold_out, (args.hold_out,))
+        if args.skip_folds:
+            axes = ()
         for axis in axes:
             held_out = groups(segments, axis)
             if len(held_out) < 2:
@@ -162,7 +170,9 @@ def main() -> None:
                 metrics = evaluate(test, classes, mapping, lambda x: predict(fold, x),
                                    WINDOW, args.threshold, args.frames_in_a_row)
                 results.append({"axis": axis, "group": key, "status": "evaluated", **metrics})
-        model = train(segments, classes, args.epochs)
+        progress = (lambda epoch, epochs, loss: print(json.dumps({"event": "epoch", "epoch": epoch,
+                     "epochs": epochs, "loss": loss}), flush=True)) if args.events else None
+        model = train(segments, classes, args.epochs, progress=progress)
         import torch
 
         if any(sha256(path.read_bytes()).hexdigest() != digest for path, digest in recording_hashes.items()):

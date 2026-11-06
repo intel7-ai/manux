@@ -38,3 +38,4 @@ class ViewFrame:
     model_status: str = ""                     # composed by the runtime, no UI model decisions
     tracking: Optional[Mapping[str, Any]] = None   # tracking test window state (data.tracking_test.view), None = closed
     recent: Tuple[str, ...] = ()               # tracking test result lines, newest first
+    rec: Optional[Mapping[str, Any]] = None    # dataset recording view (guided / free), None = off

@@ -565,6 +565,7 @@ ApplicationWindow {
                     smooth: true
                 }
                 Item { Layout.fillWidth: true }
+                ActionButton { text: "학습 센터"; onClicked: trainingCenter.open() }
                 TextLabel { text: dashboard.chosenHand; color: window.muted; font.pixelSize: 13 }
                 ActionButton {
                     text: dashboard.controlLabel === "일시정지" ? "끄기" : "켜기"
@@ -612,6 +613,20 @@ ApplicationWindow {
                     }
                     Item { Layout.fillHeight: true }
                     Button {
+                        id: trainingNav
+                        Layout.fillWidth: true
+                        implicitHeight: 42
+                        enabled: !dashboard.calibratingPointer
+                        onClicked: trainingCenter.open()
+                        contentItem: TextLabel { text: "학습 센터"; leftPadding: 8; verticalAlignment: Text.AlignVCenter }
+                        background: Rectangle {
+                            radius: 10
+                            color: trainingNav.down ? "#DDE7EC" : "transparent"
+                            border.color: trainingNav.activeFocus ? "#16846E" : "transparent"
+                            border.width: 2
+                        }
+                    }
+                    Button {
                         id: settingsNav
                         Layout.fillWidth: true
                         implicitHeight: 42
@@ -656,29 +671,51 @@ ApplicationWindow {
                             Rectangle {
                                 id: previewBox
                                 property bool large: false
-                                Layout.preferredWidth: large ? statusColumn.width : 240
-                                Layout.preferredHeight: large ? statusColumn.width * 9 / 16 : 135
+                                readonly property bool expanded: large || dashboard.recActive
+                                Layout.preferredWidth: expanded ? statusColumn.width : 240
+                                Layout.preferredHeight: expanded ? statusColumn.width * 9 / 16 : 135
                                 radius: 10
                                 color: window.navy
                                 clip: true
                                 Image {
+                                    id: capturePreview
                                     anchors.fill: parent
                                     source: dashboard.previewUrl
                                     cache: false
                                     fillMode: Image.PreserveAspectFit
                                 }
+                                Item {
+                                    visible: dashboard.recMode === "guided" && dashboard.recCondition !== ""
+                                    x: (parent.width - capturePreview.paintedWidth) / 2
+                                    y: (parent.height - capturePreview.paintedHeight) / 2
+                                    width: capturePreview.paintedWidth
+                                    height: capturePreview.paintedHeight
+                                    Repeater {
+                                        model: ["왼쪽 위", "위", "오른쪽 위", "왼쪽", "중앙", "오른쪽", "왼쪽 아래", "아래", "오른쪽 아래"]
+                                        delegate: Rectangle {
+                                            required property int index
+                                            required property string modelData
+                                            x: (index % 3) * width; y: Math.floor(index / 3) * height
+                                            width: parent.width / 3; height: parent.height / 3
+                                            color: modelData === dashboard.recPosition ? "#2046E5BD" : "transparent"
+                                            border.width: modelData === dashboard.recPosition ? 3 : 1
+                                            border.color: modelData === dashboard.recPosition ? "#46E5BD" : "#60FFFFFF"
+                                            Label { visible: modelData === dashboard.recPosition; text: "위치 안내 · " + modelData; color: "white"; padding: 8; font.bold: true }
+                                        }
+                                    }
+                                }
                                 TextLabel {
                                     anchors.right: parent.right
                                     anchors.bottom: parent.bottom
                                     anchors.margins: 6
-                                    text: previewBox.large ? "작게" : "크게"
+                                    text: previewBox.expanded ? "작게" : "크게"
                                     color: "#DDE7EC"
                                     font.pixelSize: 11
                                 }
                                 MouseArea { anchors.fill: parent; onClicked: previewBox.large = !previewBox.large }
                             }
                             ColumnLayout {
-                                visible: !previewBox.large
+                                visible: !previewBox.expanded
                                 Layout.fillWidth: true
                                 spacing: 6
                                 TextLabel {
@@ -732,6 +769,76 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             TextLabel { Layout.fillWidth: true; text: dashboard.calibrationHint; wrapMode: Text.Wrap }
                             ActionButton { text: "취소"; onClicked: dashboard.cancelPointerCalibration() }
+                        }
+                        RowLayout {
+                            visible: !dashboard.pointerOnly && !dashboard.calibratingPointer
+                            Layout.fillWidth: true
+                            spacing: 12
+                            TextLabel { text: "학습 데이터 녹화"; font.bold: true; color: window.muted; font.pixelSize: 12 }
+                            Segmented {
+                                Layout.fillWidth: false
+                                Layout.preferredWidth: 260
+                                enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
+                                options: [["off", "끔"], ["guided", "안내 녹화"], ["free", "평소 녹화"]]
+                                current: dashboard.recMode
+                                onPicked: function (value) {
+                                    if (value === "guided") {
+                                        if (dashboard.focusRecord("")) capturePlan.open()
+                                    } else {
+                                        dashboard.setRecMode(value)
+                                    }
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                            ActionButton { text: "학습 센터 열기"; onClicked: trainingCenter.open() }
+                        }
+                        RowLayout {
+                            visible: dashboard.recActive
+                            Layout.fillWidth: true
+                            spacing: 10
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 4
+                                TextLabel {
+                                    Layout.fillWidth: true
+                                    visible: dashboard.recCondition !== ""
+                                    text: dashboard.recCondition
+                                    font.pixelSize: 12
+                                    color: "#16846E"
+                                    wrapMode: Text.Wrap
+                                }
+                                TextLabel {
+                                    Layout.fillWidth: true
+                                    visible: dashboard.recPrompt !== ""
+                                    text: dashboard.recPrompt
+                                    font.pixelSize: 22
+                                    font.bold: true
+                                    wrapMode: Text.Wrap
+                                }
+                                Rectangle {
+                                    visible: dashboard.recMode === "guided" && dashboard.recPrompt !== ""
+                                    Layout.fillWidth: true
+                                    height: 6
+                                    radius: 3
+                                    color: "#E3E9EE"
+                                    Rectangle {
+                                        width: parent.width * Math.max(0, Math.min(1, dashboard.recProgress))
+                                        height: parent.height
+                                        radius: 3
+                                        color: "#45E0B4"
+                                    }
+                                }
+                                TextLabel {
+                                    Layout.fillWidth: true
+                                    text: dashboard.recSub
+                                    font.pixelSize: 12
+                                    color: window.muted
+                                    wrapMode: Text.Wrap
+                                }
+                            }
+                            ActionButton { visible: dashboard.recWaiting; text: "시작"; accent: true; onClicked: dashboard.recStart() }
+                            ActionButton { visible: dashboard.recMode === "guided" && !dashboard.recWaiting; text: dashboard.recPaused ? "계속" : "일시정지"; onClicked: dashboard.toggleRecordingPause() }
+                            ActionButton { visible: dashboard.recMode !== "off"; text: "녹화 끝"; onClicked: dashboard.setRecMode("off") }
                         }
                     }
                 }
@@ -924,6 +1031,14 @@ ApplicationWindow {
             }
         }
     }
+
+    LearningCenter {
+        id: trainingCenter
+        controller: dashboard
+        onRecordingRequested: capturePlan.open()
+    }
+
+    RecordingPlanDialog { id: capturePlan; editor: dashboard.recordingPlan }
 
     // Reception overlay: small click-through pill in a screen corner (tray mode / --overlay)
     Window {

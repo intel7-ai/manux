@@ -14,6 +14,7 @@ vision = ["opencv-python>=5.0.0.93", "mediapipe>=1.2.0"]   # S1: real camera and
 test = ["pytest>=8"]                                        # CI: pip install -e ".[test]"
 ui = ["pyside6-essentials>=6.8,<7"]                         # S6: the desktop window (python -m manux)
 ml = ["onnxruntime>=1.31.1"]                                # S5: run a TCN model (ml/, imported lazily)
+hub = ["huggingface-hub>=1.0,<2"]                         # installed learning-center worker
 # S6: the installed app (packaging/build.ps1). PyInstaller makes MANUX.exe; velopack is bundled for updates.
 package = ["pyinstaller>=6.22", "velopack>=1.2,<2"]
 # S5: tools/train_tcn.py only. torch is never imported by src/ (architecture.md section 4).

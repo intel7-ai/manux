@@ -63,6 +63,20 @@ def test_install_is_an_immutable_version_with_a_checked_atomic_pointer(tmp_path)
     assert not (folder / ".install.lock").exists()
 
 
+def test_cancellation_at_commit_boundary_keeps_active_pointer(tmp_path):
+    model = candidate(tmp_path / "input")
+    folder = tmp_path / "store"
+    store.install(folder, model, evidence(model), None)
+    before = store.active_token(folder)
+    checks = []
+    def cancelled():
+        checks.append(True)
+        return len(checks) > 1
+    with pytest.raises(ValueError, match="취소"):
+        store.install(folder, model, evidence(model), before, cancelled=cancelled)
+    assert store.active_token(folder) == before and not (folder / ".install.lock").exists()
+
+
 @pytest.mark.parametrize("failure", ["recall", "misfires", "wrong", "unmeasured", "overlap", "changed", "omitted"])
 def test_failed_validation_preserves_the_active_model(tmp_path, failure):
     model = candidate(tmp_path / "input")

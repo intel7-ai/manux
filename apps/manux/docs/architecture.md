@@ -47,7 +47,7 @@ apps/manux/
     platform/            Windows 전용: 전역 단축키, 모니터, 자동 업데이트
     ui/                  Qt 브리지(뷰모델)와 qml/(디자인 토큰, 컴포넌트, 페이지)
     app.py               조립 지점: 모든 계층을 import하는 유일한 파일
-  tools/                 학습·재생·모델 내보내기 스크립트 (설치본에 포함 안 함)
+  tools/                 학습·재생·모델 내보내기. 앱 worker에 필요한 도구는 별도 MANUXWorker에 묶음
   tests/
     architecture/        의존 규칙 시험 (§4)
     contract/            계약 타입·프로토콜 시험
@@ -80,7 +80,7 @@ apps/manux/
 | `cv2`, `mediapipe` | `capture`, `tracking` |
 | `pyautogui`, `ctypes`, `uiautomation`, `win32*` | `output`, `platform` |
 | `onnxruntime` | `ml` |
-| `torch` | `tools/`만 (설치본에 없음) |
+| `torch` | `tools/`만 (앱 프로세스에는 없음. 설치본의 별도 MANUXWorker에 포함) |
 
 ## 5. 기능 모듈
 

@@ -10,10 +10,10 @@
 
 ## 현재 상태
 
-기준: 2026-11-05 preview `589cc9a`.
+기준: preview `5f2c12b`와 이 브랜치의 PR #72 구현 (2026-11-06).
 
 - S0~S5 코드, 직접 TCN·특징 캐시·검증 후 개인 모델 설치/교체(#69), Preview 설치본·트래킹 측정(#70), 허브 CLI(#68)가 병합됐다.
-- 학습 센터·별명별 녹화·HF 앱 연결·별도 worker는 [PR #72](https://github.com/intel7-ai/manux/pull/72), 후속 입력 수정은 [PR #75](https://github.com/intel7-ai/manux/pull/75)에서 별도 검증 중이다. 열린 PR과 preview·정식 릴리스를 구분한다.
+- [PR #72](https://github.com/intel7-ai/manux/pull/72)는 체크한 과제의 녹화·통합 재학습, 별명별 train/eval, HF 공유와 별도 worker를 연결한다([사용법](docs/learning-center.md)). 인증은 worker가 `.env`에서 읽고 앱에는 별명만 저장한다. 후속 입력 수정은 [PR #75](https://github.com/intel7-ai/manux/pull/75)에서 별도 검증 중이다. PR 구현·preview 통합·정식 릴리스를 구분한다.
 - Releases는 정식 배포 전환 전까지 v0.3에서 빌드한다. 실제 웹캠·Windows 입력·다인 인식률은 별도 시험이 필요하다. CI 창 열기·설치 성공이 실사용 검증은 아니다.
 - 사용자 정의 카탈로그·바인딩 편집·정식 배포 전환은 후속이다. 과거 작업 계획은 현재 미구현 목록으로 읽지 않는다.
 

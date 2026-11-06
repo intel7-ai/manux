@@ -24,6 +24,7 @@ PHASES: Tuple[str, ...] = ("tap", "begin", "hold", "end")
 GESTURE_ID_RE = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
 ACTION_ID_RE = GESTURE_ID_RE
 FEATURE_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+PROFILE_ALIAS_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 
 RESET_REASONS: Tuple[str, ...] = (
     "hand_lost", "stage_change", "mode_change", "pause", "settings", "shutdown", "error",
@@ -134,6 +135,29 @@ class Intent:
 class Activity:
     holding: bool = False
     last_release_t: float = -math.inf
+
+
+@dataclass(frozen=True)
+class RecordingIdentity:
+    profile: str
+    preset: str = "pinch"
+    split: str = "train"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.profile, str) or not PROFILE_ALIAS_RE.fullmatch(self.profile):
+            raise ValueError("별명은 영문·숫자·_·- 1~32자로 입력하세요")
+        if self.preset not in ("pinch", "pointer", "trigger") or self.split not in ("train", "eval"):
+            raise ValueError("녹화 방식 또는 train/eval 구분이 잘못되었습니다")
+
+
+@dataclass(frozen=True)
+class RuntimeRequest:
+    kind: Literal["activate_model"]
+    path: str
+
+    def __post_init__(self) -> None:
+        if self.kind != "activate_model" or not isinstance(self.path, str) or not self.path:
+            raise ValueError("invalid runtime request")
 
 
 class Stage(str, Enum):
