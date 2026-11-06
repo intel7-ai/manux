@@ -36,6 +36,7 @@ apps/manux/
     core/                계약 타입과 프로토콜(contracts.py). 표준 라이브러리만
     settings/            설정 스키마·기본값·이전 버전 변환, 프로필, 저장 경로
     capture/             카메라. 최신 프레임 하나만 유지
+    link/                선택적 휴대폰 HTTPS·짝짓기·브라우저 페이지 (엔진·입력 없음)
     tracking/            MediaPipe 손 인식, 손 주변 확대, 조작 손 선택
     perception/          관절 → 특징(손 기준 좌표 local3d, 손 품질)
     features/            기능 모듈. 기능마다 하위 패키지 하나 (§5)
@@ -65,6 +66,7 @@ apps/manux/
 | --- | --- | --- |
 | `core` | 없음 | 표준 라이브러리만 |
 | `settings`, `capture`, `tracking`, `perception`, `ml`, `data`, `platform` | `core` | 각자 필요한 것 (아래 금지 목록 제외) |
+| `link` | `core`, `capture` | 지연 import하는 `aiohttp`, `cryptography` |
 | `actions` | `core`, `settings` | |
 | `features` | `core`, `perception`, `ml` | **다른 기능 모듈 import 금지** |
 | `output` | `core`, `actions`, `platform` | |
@@ -81,7 +83,11 @@ apps/manux/
 | `pyautogui`, `ctypes`, `uiautomation`, `win32*` | `output`, `platform` |
 | `onnxruntime` | `ml` |
 | `openvino` (선택 의존성) | `ml` (실제 GPU/NPU 실행 장치 확인) |
+
+| `aiohttp`, `cryptography` | `link` (명시적 서버/인증서 시작 때 지연 import) |
 | `torch` | `tools/`만 (앱 프로세스에는 없음. 설치본의 별도 MANUXWorker에 포함) |
+
+link는 기본 꺼짐이며 엔진·판정·Windows 입력·설정을 import하지 않는다. 서버/인증서는 명시적으로 켤 때만 aiohttp/cryptography를 import한다. 끊김 때 remote.read는 None을 반환하고 조립자는 기존 frame_missing 경로로 손 소실을 처리한다. 앱 조립은 #96 이후 별도 PR이다.
 
 ## 5. 기능 모듈
 
@@ -117,7 +123,9 @@ v0.3에서 옮길 첫 기능 후보 (이름은 제안):
 ## 6. 프레임 흐름
 
 ```text
-capture ─► tracking ─► HandObservation | None
+phone JPEG ─► link (인증·HTTPS) ─► capture.remote (최신 하나·해독)
+                                      │
+capture (USB/URL 또는 remote) ─► tracking ─► HandObservation | None
                               │
                        perception (특징)
                               │
