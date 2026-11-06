@@ -81,8 +81,8 @@ def test_spatial_mlp_trains_and_separates_pinch_classes(tmp_path: Path):
 
 
 def test_pose_snapshot_studio_stream_discrepancy_and_training(tmp_path: Path):
-    assert len(STUDIO_ACTIONS) == 9
-    assert len(ACTION_IDS) == 9
+    assert len(STUDIO_ACTIONS) == 10
+    assert len(ACTION_IDS) == 10
 
     studio = make_pose_studio(tmp_path)
     studio.stream_throttle_ms = 0.0  # disable throttle for fast unit test

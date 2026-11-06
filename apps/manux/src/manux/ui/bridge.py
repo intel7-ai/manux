@@ -138,23 +138,36 @@ class _NullTrainingService:
         raise FileNotFoundError("학습한 모델이 없어요. 먼저 학습하세요.")
 
 
+_DEFAULT_STUDIO_CATEGORIES = (
+    {"id": "click", "name": "마우스·클릭", "icon": "🖱️", "desc": "좌·우클릭, 스크롤, 동시클릭"},
+    {"id": "window", "name": "창·시스템 제어", "icon": "🪟", "desc": "창 전환, 바탕화면, 토글, 닫기"},
+    {"id": "guard", "name": "이동·방어 가드", "icon": "🛡️", "desc": "커서 이동, 휴식 자세, 헛클릭 방어"},
+)
+
 _DEFAULT_STUDIO_ACTIONS = (
-    {"id": "none", "key": "1", "icon": "✊", "label": "1. 이동·중립 (none)", "short": "이동·중립",
-     "desc": "아무 동작 아님 · 반주먹이나 편 손으로 커서를 이동하거나 쉬는 자세"},
-    {"id": "thumb_middle", "key": "2", "icon": "👆", "label": "2. 좌클릭·드래그 (엄지+중지)", "short": "좌클릭 (엄지+중지)",
-     "desc": "엄지 끝과 중지 끝을 맞대어 좌클릭 또는 드래그하는 자세"},
-    {"id": "thumb_ring", "key": "3", "icon": "💍", "label": "3. 우클릭 (엄지+약지)", "short": "우클릭 (엄지+약지)",
+    # click
+    {"id": "thumb_middle", "category": "click", "key": "1", "icon": "👆", "label": "1. 좌클릭 (엄지+중지)", "short": "좌클릭 (엄지+중지)",
+     "desc": "엄지 끝과 중지 끝을 맞대어 좌클릭하는 자세"},
+    {"id": "thumb_ring", "category": "click", "key": "2", "icon": "💍", "label": "2. 우클릭 (엄지+약지)", "short": "우클릭 (엄지+약지)",
      "desc": "엄지 끝과 약지 끝을 맞대어 우클릭하는 자세"},
-    {"id": "thumb_index", "key": "4", "icon": "👌", "label": "4. 스크롤 (엄지+검지)", "short": "스크롤 (엄지+검지)",
-     "desc": "엄지 끝과 검지 끝을 맞대어 위아래/좌우 스크롤하는 자세"},
-    {"id": "thumb_pinky", "key": "5", "icon": "🤙", "label": "5. 창 고르기 (엄지+새끼)", "short": "창 전환 (엄지+새끼)",
-     "desc": "엄지 끝과 새끼손가락 끝을 맞대어 창 전환(Alt+Tab)하는 자세"},
-    {"id": "palm_side", "key": "6", "icon": "🖐️", "label": "6. 바탕화면 (엄지 접고 펴기)", "short": "바탕화면 (손가로)",
-     "desc": "엄지만 손바닥 안으로 접고 네 손가락을 펴서 유지하는 자세"},
-    {"id": "thumbs_up", "key": "7", "icon": "👍", "label": "7. 모션 모드 (엄지 위로)", "short": "모션 모드 (엄지척)",
-     "desc": "네 손가락을 접고 엄지만 위로 세워 모션 모드를 켜고 끄는 자세"},
-    {"id": "v_sign", "key": "8", "icon": "✌️", "label": "8. 제어 켜기·끄기 (V 손 모양)", "short": "제어 토글 (V자)",
+    {"id": "thumb_index", "category": "click", "key": "3", "icon": "📜", "label": "3. 스크롤 진입 (엄지+검지)", "short": "스크롤 (엄지+검지)",
+     "desc": "엄지 끝과 검지 끝을 맞대어 상하 스크롤 모드로 진입하는 자세"},
+    {"id": "thumb_middle_ring", "category": "click", "key": "4", "icon": "🤞", "label": "4. 동시·휠클릭 (엄지+중지+약지)", "short": "동시클릭 (엄지+중지+약지)",
+     "desc": "엄지 끝에 중지와 약지를 동시에 맞대어 좌우 동시 클릭 및 휠 클릭하는 자세"},
+    # window
+    {"id": "thumb_pinky", "category": "window", "key": "1", "icon": "🤙", "label": "1. 창 전환 (엄지+새끼)", "short": "창 전환 (엄지+새끼)",
+     "desc": "엄지 끝과 새끼손가락 끝을 맞대어 창 전환(Alt+Tab) 창을 띄우는 자세"},
+    {"id": "palm_side", "category": "window", "key": "2", "icon": "🖐️", "label": "2. 바탕화면 (엄지 접고 손 가로)", "short": "바탕화면 (손가로)",
+     "desc": "엄지만 손바닥 안으로 접고 네 손가락을 펴 손을 가로로 세워 모든 창을 최소화하는 자세"},
+    {"id": "v_sign", "category": "window", "key": "3", "icon": "✌️", "label": "3. 제어 켜기·끄기 (V 손 모양)", "short": "제어 토글 (V자)",
      "desc": "검지와 중지만 V자로 펴고 나머지는 접어 마우스 제어를 토글하는 자세"},
+    {"id": "rock_sign", "category": "window", "key": "4", "icon": "🤘", "label": "4. 창 닫기 (검지·새끼 펴기)", "short": "창 닫기 (Rock)",
+     "desc": "검지와 새끼만 펴고 중지·약지를 접어 현재 창을 닫는(Alt+F4) 자세"},
+    {"id": "thumbs_up", "category": "window", "key": "5", "icon": "👍", "label": "5. 모션 모드 (엄지 위로)", "short": "모션 모드 (엄지척)",
+     "desc": "네 손가락을 접고 엄지만 위로 세워 모션 제어 모드를 전환하는 자세"},
+    # guard
+    {"id": "none", "category": "guard", "key": "1", "icon": "✊", "label": "1. 이동·휴식 가드 (none)", "short": "이동·휴식",
+     "desc": "아무 동작 아님 · 반주먹이나 편 손으로 커서를 이동하거나 쉬는 자세 (헛클릭 방어)"},
 )
 
 
@@ -504,8 +517,11 @@ class Bridge(QObject):
         self.training_timer.timeout.connect(self._training_tick)
         # pose snapshot studio & spatial MLP
         self.studio = self.services.get("pose_studio") or _NullPoseStudio(self.config_dir)
+        self._studio_categories = (self.services["studio_categories"]() if "studio_categories" in self.services
+                                  else list(_DEFAULT_STUDIO_CATEGORIES))
         self._studio_actions = (self.services["studio_actions"]() if "studio_actions" in self.services
                                 else list(_DEFAULT_STUDIO_ACTIONS))
+        self._studio_category = "click"
         self._studio_sys_fn = self.services.get("studio_system_action")
         self._studio_summary_cache = self.studio.summary()
         # hand choice / tutorial / calibration
@@ -1330,6 +1346,51 @@ class Bridge(QObject):
         return action_id
 
     @Property("QVariantList", notify=studioChanged)
+    def studioCategories(self):
+        counts = self._studio_summary_cache.get("byAction", {})
+        saved = self._studio_summary_cache.get("savedByAction", {})
+        out = []
+        for cat in self._studio_categories:
+            cid = cat["id"]
+            cat_actions = [a for a in self._studio_actions if a.get("category") == cid]
+            total_samples = sum(counts.get(a["id"], 0) + saved.get(a["id"], 0) for a in cat_actions)
+            out.append({
+                **cat,
+                "selected": cid == self._studio_category,
+                "actionCount": len(cat_actions),
+                "totalCount": total_samples,
+            })
+        return out
+
+    @Property(str, notify=studioChanged)
+    def studioCategory(self):
+        return self._studio_category
+
+    @Property("QVariantList", notify=studioChanged)
+    def studioCategoryActions(self):
+        cat = self._studio_category
+        return [a for a in self.studioActions if a.get("category") == cat]
+
+    @Slot(str)
+    def setStudioCategory(self, cat_id):
+        if cat_id != self._studio_category and any(c["id"] == cat_id for c in self._studio_categories):
+            self._studio_category = cat_id
+            curr = self.studio.selected_ground_truth
+            cat_action_ids = [a["id"] for a in self._studio_actions if a.get("category") == cat_id]
+            if curr not in cat_action_ids and cat_action_ids:
+                self.setStudioGroundTruth(cat_action_ids[0])
+            self.studioChanged.emit()
+
+    @Slot()
+    def nextStudioCategory(self):
+        cat_ids = [c["id"] for c in self._studio_categories]
+        if not cat_ids:
+            return
+        idx = cat_ids.index(self._studio_category) if self._studio_category in cat_ids else 0
+        next_cat = cat_ids[(idx + 1) % len(cat_ids)]
+        self.setStudioCategory(next_cat)
+
+    @Property("QVariantList", notify=studioChanged)
     def studioActions(self):
         counts = self._studio_summary_cache.get("byAction", {})
         saved = self._studio_summary_cache.get("savedByAction", {})
@@ -1454,7 +1515,10 @@ class Bridge(QObject):
 
     @Slot(int)
     def selectStudioActionByNumber(self, num):
-        if 1 <= num <= len(self._studio_actions):
+        cat_actions = self.studioCategoryActions
+        if 1 <= num <= len(cat_actions):
+            self.setStudioGroundTruth(cat_actions[num - 1]["id"])
+        elif 1 <= num <= len(self._studio_actions):
             self.setStudioGroundTruth(self._studio_actions[num - 1]["id"])
 
     @Slot(bool)
@@ -1848,6 +1912,8 @@ class Bridge(QObject):
             elif key == KEY_ESC and self.studio.is_streaming:
                 self.studio.stop_stream()
                 self.studioChanged.emit()
+            elif key in (9, 16777217):
+                self.nextStudioCategory()
             elif 49 <= key <= 57:  # keys '1'..'9' (supports 9th class: both click)
                 self.selectStudioActionByNumber(key - 48)
         elif self.stage_name == "main" and key == KEY_SPACE:

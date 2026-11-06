@@ -29,7 +29,7 @@ from manux.data.recorder import SessionRecorder
 from manux.data.recording import read, replay
 from manux.data.tracking_test import TrackingTest, load_recent_results, result_line, view as tracking_view
 from manux.data.training_center import TrainingCenterService
-from manux.data.pose_studio import ACTION_IDS, PoseSnapshotStudio, STUDIO_ACTIONS, normalize_system_action
+from manux.data.pose_studio import ACTION_IDS, PoseSnapshotStudio, STUDIO_ACTIONS, STUDIO_CATEGORIES, normalize_system_action
 from manux.engine.commands import RequestMode, SetBusy, SetControl
 from manux.engine.pipeline import Engine
 from manux.features import tcn_gate
@@ -714,6 +714,7 @@ def main(argv=None) -> int:
                    "export_logs": lambda metrics: export_logs(paths, metrics, info.label),
                    "training_center": tc,
                    "pose_studio": studio,
+                   "studio_categories": lambda: list(STUDIO_CATEGORIES),
                    "studio_actions": lambda: list(STUDIO_ACTIONS),
                    "studio_system_action": normalize_system_action,
                },

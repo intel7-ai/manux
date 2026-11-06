@@ -1192,11 +1192,78 @@ ApplicationWindow {
                         }
                     }
 
-                    // 8 Official Preview Gesture Classes Grid (1~8 Shortcuts)
+                    // 3 Category Tabs (As in user's diagram: Green highlight for active tab, cards side-by-side)
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        Repeater {
+                            model: dashboard.studioCategories
+                            delegate: Rectangle {
+                                required property var modelData
+                                readonly property bool isSelected: modelData.selected
+                                Layout.fillWidth: true
+                                Layout.preferredWidth: 1
+                                implicitHeight: 56
+                                radius: 10
+                                color: isSelected ? "#059669" : "white"
+                                border.color: isSelected ? "#047857" : window.line
+                                border.width: isSelected ? 2 : 1
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 14
+                                    anchors.rightMargin: 14
+                                    spacing: 10
+                                    TextLabel {
+                                        text: modelData.icon
+                                        font.pixelSize: 20
+                                    }
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        TextLabel {
+                                            text: modelData.name
+                                            font.bold: true
+                                            font.pixelSize: 14
+                                            color: isSelected ? "white" : window.navy
+                                        }
+                                        TextLabel {
+                                            text: modelData.desc
+                                            font.pixelSize: 11
+                                            color: isSelected ? "#D1FAE5" : window.muted
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: 10
+                                        color: isSelected ? "#047857" : (modelData.totalCount > 0 ? "#E0F2FE" : "#F3F4F6")
+                                        implicitHeight: 22
+                                        implicitWidth: catBadgeText.implicitWidth + 12
+                                        TextLabel {
+                                            id: catBadgeText
+                                            anchors.centerIn: parent
+                                            text: modelData.totalCount + "개"
+                                            font.bold: true
+                                            font.pixelSize: 11
+                                            color: isSelected ? "white" : window.navy
+                                        }
+                                    }
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: dashboard.setStudioCategory(modelData.id)
+                                }
+                            }
+                        }
+                    }
+
+                    // Selected Category Header & Keyboard Shortcut Info
                     RowLayout {
                         Layout.fillWidth: true
                         TextLabel {
-                            text: "수집할 정답 동작 선택 (단축키 1 ~ 9)"
+                            text: "수집할 정답 동작 선택 (단축키 1 ~ " + dashboard.studioCategoryActions.length + " / Tab: 탭 전환)"
                             font.pixelSize: 16
                             font.bold: true
                         }
@@ -1208,13 +1275,14 @@ ApplicationWindow {
                         }
                     }
 
+                    // 2-Column Action Cards Grid (Selected Category Actions)
                     GridLayout {
                         Layout.fillWidth: true
                         columns: width > 640 ? 2 : 1
                         columnSpacing: 10
                         rowSpacing: 10
                         Repeater {
-                            model: dashboard.studioActions
+                            model: dashboard.studioCategoryActions
                             delegate: Rectangle {
                                 required property var modelData
                                 readonly property bool chosen: modelData.selected
@@ -1228,7 +1296,7 @@ ApplicationWindow {
                                 ColumnLayout {
                                     id: actionCardCol
                                     anchors.fill: parent
-                                    anchors.margins: 10
+                                    anchors.margins: 12
                                     spacing: 4
                                     RowLayout {
                                         Layout.fillWidth: true
@@ -1258,7 +1326,41 @@ ApplicationWindow {
                                 }
                                 MouseArea {
                                     anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
                                     onClicked: dashboard.setStudioGroundTruth(modelData.id)
+                                }
+                            }
+                        }
+                        // Informational Companion Card for single-item category (e.g. guard) to balance 2-column grid
+                        Rectangle {
+                            visible: dashboard.studioCategoryActions.length === 1
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                            implicitHeight: guardCol.implicitHeight + 20
+                            radius: 12
+                            color: "#F8FAFC"
+                            border.color: window.line
+                            border.width: 1
+                            ColumnLayout {
+                                id: guardCol
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                spacing: 4
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    TextLabel {
+                                        text: "🛡️  0ms 하이브리드 오동작 방어 가드"
+                                        font.bold: true
+                                        font.pixelSize: 14
+                                        color: window.navy
+                                    }
+                                }
+                                TextLabel {
+                                    Layout.fillWidth: true
+                                    text: "Spatial MLP가 마우스 클릭이나 제어 스위치가 아닌 모든 손 동작 및 휴식 상태를 0.0001초 만에 즉시 감지하여 헛클릭을 원천 차단합니다."
+                                    color: window.muted
+                                    font.pixelSize: 12
+                                    wrapMode: Text.Wrap
                                 }
                             }
                         }
