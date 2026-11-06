@@ -91,6 +91,35 @@ class FrameInfo:
         return self.height / self.width
 
 
+# ----------------------------------------------------------------------------- 14. phone link
+
+@dataclass(frozen=True)
+class RemoteFrameMetadata:
+    """Phone JPEG metadata before transforms; contracts.md section 14 (Dan 9da1f63 port)."""
+
+    seq: int
+    captured_at: float  # estimated PC epoch seconds; never used as FrameInfo.t
+    width: int
+    height: int
+    mirrored: bool
+    rotation: int
+    facing: Literal["user", "environment"]
+
+    def __post_init__(self) -> None:
+        if type(self.seq) is not int or not 0 <= self.seq <= 2**53 - 1:
+            raise ValueError("invalid remote seq")
+        if isinstance(self.captured_at, bool) or not _finite(self.captured_at) or self.captured_at <= 0:
+            raise ValueError("invalid capture time")
+        if any(type(n) is not int or not 1 <= n <= 1280 for n in (self.width, self.height)):
+            raise ValueError("invalid remote dimensions")
+        if self.width * self.height > 1280 * 960:
+            raise ValueError("remote frame too large")
+        if type(self.mirrored) is not bool or type(self.rotation) is not int or self.rotation not in (0, 90, 180, 270):
+            raise ValueError("invalid remote transform")
+        if self.facing not in ("user", "environment"):
+            raise ValueError("invalid remote camera facing")
+
+
 # ----------------------------------------------------------------------------- 3. hand
 
 @dataclass(frozen=True)

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<!-- Ported from Dan (한순중), phone_web_bridge.py @9da1f634e8c0afd9d3d6b32a56c83cddfb23d5f8. -->
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>MANUX 스마트폰 카메라</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f172a;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 12px;
+    }
+    h1 { font-size: 1.2rem; margin-bottom: 6px; color: #38bdf8; }
+    .status {
+      font-size: 0.9rem;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: #1e293b;
+      margin-bottom: 10px;
+      color: #94a3b8;
+    }
+    .status.connected { background: #064e3b; color: #34d399; font-weight: 600; }
+    .video-wrap {
+      position: relative;
+      width: 100%;
+      max-width: 540px;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #000;
+      border: 2px solid #334155;
+      aspect-ratio: 4 / 3;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+    video.rear { transform: none; }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+      max-width: 540px;
+    }
+    button {
+      flex: 1;
+      min-width: 130px;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 10px;
+      background: #0284c7;
+      color: white;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:active { opacity: 0.85; }
+    button.secondary { background: #334155; }
+    .hint {
+      margin-top: 12px;
+      font-size: 0.82rem;
+      color: #94a3b8;
+      text-align: center;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <h1>🖐️ MANUX 스마트폰 카메라</h1>
+  <div id="status" class="status">PC 화면의 6자리 코드를 입력하세요.</div>
+
+  <div class="video-wrap">
+    <video id="video" autoplay playsinline muted></video>
+  </div>
+
+  <form id="pairForm" class="controls">
+    <label>PC의 짝짓기 코드 <input id="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="off"></label>
+    <label>카메라 <select id="camera"><option value="environment">후면</option><option value="user">전면</option></select></label>
+    <button id="connectBtn" type="submit">연결</button>
+  </form>
+  <div class="controls">
+    <button id="switchBtn" type="button" disabled>🔄 전면/후면 전환</button>
+    <button id="disconnectBtn" type="button" class="secondary" disabled>연결 끊기</button>
+  </div>
+  <p class="hint">같은 Wi-Fi에서 손과 약 1m 거리로 거치하세요. 전송 FPS는 PC 수신 확인 기준입니다.<br>
+  화면 꺼짐 방지는 지원되는 브라우저에서만 동작합니다. 이 페이지는 마이크를 사용하지 않습니다.</p>
+
+  <canvas id="canvas" style="display:none;"></canvas>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+    const statusEl = document.getElementById('status');
+    const switchBtn = document.getElementById('switchBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const connectBtn = document.getElementById('connectBtn');
+    const cameraSelect = document.getElementById('camera');
+    // Dan's existing JPEG settings and aspect-preserving canvas pipeline.
+    const TARGET_W = 480, TARGET_H = 360, JPEG_QUALITY = 0.55;
+    let facingMode = 'environment', stream = null, ws = null, wake = null;
+    let sending = false, awaitingAck = false, seq = 0, generation = 0;
+    let lastVideoTime = -1, lastAttempt = 0, offsetMs = 0, synced = false;
+    let ackCount = 0, fpsStart = 0, fps = 0, ackDeadline = 0, syncTimer = null;
+    let callbackId = null, videoCallback = false, cameraBusy = false;
+
+    function cancelFrame() {
+      if (callbackId !== null) {
+        if (videoCallback) video.cancelVideoFrameCallback(callbackId);
+        else cancelAnimationFrame(callbackId);
+        callbackId = null;
+      }
+    }
+    async function wakeScreen() {
+      if (!wake && 'wakeLock' in navigator && document.visibilityState === 'visible') {
+        const current = generation;
+        try {
+          const held = await navigator.wakeLock.request('screen');
+          if (current !== generation || !stream) { await held.release(); return; }
+          wake = held;
+          held.addEventListener('release', () => { if (wake === held) wake = null; });
+        } catch (_) { /* unsupported / battery policy: camera still works */ }
+      }
+    }
+    function stop(message = '연결 종료 · 새 PC 코드로 다시 연결하세요.') {
+      ++generation;
+      cancelFrame(); clearInterval(syncTimer); syncTimer = null;
+      if (ws) { ws.onclose = null; ws.close(); ws = null; }
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+      if (wake) { wake.release().catch(() => {}); wake = null; }
+      video.srcObject = null;
+      sending = awaitingAck = synced = false;
+      switchBtn.disabled = disconnectBtn.disabled = true;
+      connectBtn.disabled = false;
+      statusEl.textContent = message;
+      statusEl.classList.remove('connected');
+    }
+    async function startCamera() {
+      if (cameraBusy) return;
+      cameraBusy = true; switchBtn.disabled = true;
+      cancelFrame();
+      const current = ++generation;
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      try {
+        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia)
+          throw new Error('HTTPS 신뢰/인증서와 카메라 권한을 확인하세요.');
+        const next = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: facingMode }, width: { ideal: TARGET_W },
+                   height: { ideal: TARGET_H }, frameRate: { ideal: 30, max: 30 } }, audio: false
+        });
+        if (current !== generation) { next.getTracks().forEach(t => t.stop()); return; }
+        stream = next;
+        const reportedFacing = next.getVideoTracks()[0].getSettings().facingMode;
+        if (reportedFacing === 'user' || reportedFacing === 'environment') facingMode = reportedFacing;
+        cameraSelect.value = facingMode;
+        video.srcObject = stream;
+        video.className = facingMode === 'environment' ? 'rear' : '';
+        await video.play();
+        if (current !== generation) return;
+        lastVideoTime = -1; sending = false;
+        await wakeScreen();
+        scheduleNextFrame();
+      } catch (error) { if (current === generation) stop('카메라 접근 실패: ' + error.message); }
+      finally { cameraBusy = false; switchBtn.disabled = !ws || ws.readyState !== WebSocket.OPEN; }
+    }
+    function synchronize() {
+      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({kind: 'sync', sent: Date.now()}));
+    }
+    function scheduleNextFrame() {
+      if (!stream || !ws || ws.readyState !== WebSocket.OPEN) return;
+      videoCallback = 'requestVideoFrameCallback' in video;
+      callbackId = videoCallback ? video.requestVideoFrameCallback(sendCurrentVideoFrame)
+                                 : requestAnimationFrame(sendCurrentVideoFrame);
+    }
+    function sendCurrentVideoFrame() {
+      callbackId = null;
+      if (awaitingAck && performance.now() > ackDeadline) { stop('PC 수신 확인 시간 초과'); return; }
+      if (synced && !document.hidden && !awaitingAck && !sending && ws?.readyState === WebSocket.OPEN &&
+          ws.bufferedAmount === 0 && video.readyState >= 2 && video.currentTime !== lastVideoTime &&
+          performance.now() - lastAttempt >= 1000 / 30) {
+        lastVideoTime = video.currentTime; lastAttempt = performance.now();
+        const capturedAt = (Date.now() + offsetMs) / 1000;
+        const vw = video.videoWidth || TARGET_W, vh = video.videoHeight || TARGET_H;
+        const scale = Math.min(1.0, TARGET_W / vw, TARGET_H / vh);
+        const cw = Math.max(1, Math.round(vw * scale)), ch = Math.max(1, Math.round(vh * scale));
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        ctx.drawImage(video, 0, 0, cw, ch);
+        sending = true;
+        const current = generation, socket = ws, frameSeq = seq++;
+        const facing = facingMode;
+        canvas.toBlob(async blob => {
+          try {
+            if (!blob) return;
+            const jpeg = new Uint8Array(await blob.arrayBuffer());
+            if (current !== generation || ws !== socket || socket.readyState !== WebSocket.OPEN ||
+                socket.bufferedAmount !== 0 || awaitingAck) return;
+            // Canvas pixels already reflect browser orientation; only front-view mirroring is applied on PC.
+            const meta = new TextEncoder().encode(JSON.stringify({ kind: 'frame', seq: frameSeq,
+              captured_at: capturedAt, width: cw, height: ch, mirrored: facing === 'user', rotation: 0, facing }));
+            const packet = new Uint8Array(4 + meta.length + jpeg.length);
+            new DataView(packet.buffer).setUint32(0, meta.length);
+            packet.set(meta, 4); packet.set(jpeg, 4 + meta.length);
+            awaitingAck = true; ackDeadline = performance.now() + 3000;
+            socket.send(packet);
+          } catch (error) { if (current === generation) stop('전송 실패: ' + error.message); }
+          finally { if (current === generation) sending = false; }
+        }, 'image/jpeg', JPEG_QUALITY);
+      }
+      scheduleNextFrame();
+    }
+    document.getElementById('pairForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      connectBtn.disabled = true;
+      try {
+        const response = await fetch('/pair', {method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({code: document.getElementById('code').value,
+                                device: /iPad|iPhone/.test(navigator.userAgent) ? 'iOS Safari phone' : 'Browser phone'})});
+        if (!response.ok) throw new Error('코드 만료/사용됨 또는 PC 차단. PC에서 새 코드를 확인하세요.');
+        let {token} = await response.json();
+        document.getElementById('code').value = '';
+        facingMode = cameraSelect.value;
+        ws = new WebSocket('wss://' + location.host + '/ws');
+        ws.binaryType = 'arraybuffer';
+        ws.onopen = () => { ws.send(JSON.stringify({kind: 'auth', token})); token = null; };
+        ws.onmessage = async event => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.kind === 'ready') {
+              seq = 0; fpsStart = performance.now(); ackCount = 0;
+              disconnectBtn.disabled = false; statusEl.classList.add('connected');
+              synchronize(); syncTimer = setInterval(synchronize, 10000);
+              await startCamera();
+            } else if (data.kind === 'sync') {
+              offsetMs = data.server - (data.sent + Date.now()) / 2; synced = true;
+            } else if (data.kind === 'ack') {
+              awaitingAck = false;
+              if (data.accepted) ++ackCount;
+              const elapsed = performance.now() - fpsStart;
+              if (elapsed >= 1000) { fps = ackCount * 1000 / elapsed; ackCount = 0; fpsStart = performance.now(); }
+              statusEl.textContent = `✅ PC 연결 · ${fps.toFixed(1)} fps` + (data.accepted ? '' : ' · 지연 프레임 건너뜀');
+            }
+          } catch (error) { stop('연결 오류: ' + error.message); }
+        };
+        ws.onclose = () => stop('PC 연결 끊김 · 새 코드로 다시 연결하세요.');
+        ws.onerror = () => stop('HTTPS/WSS 연결 실패 · 인증서 신뢰와 PC 상태를 확인하세요.');
+      } catch (error) { stop(error.message); }
+    });
+    switchBtn.addEventListener('click', () => {
+      facingMode = facingMode === 'user' ? 'environment' : 'user'; startCamera();
+    });
+    disconnectBtn.addEventListener('click', () => stop());
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && stream) wakeScreen(); });
+    window.addEventListener('pagehide', () => stop());
+</script>
+</body>
+</html>
