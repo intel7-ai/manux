@@ -1,34 +1,51 @@
-# MANUX 앱 작업 지침
+# MANUX 작업 지침
 
-현재 앱은 Python + Qt/QML 한 프로세스다. 저장소 공통 규칙은 [루트 지침](../../AGENTS.md)을 따른다.
+MANUX는 Qt/QML + Python 데스크톱 앱이다. **2026-11-07 10:00 KST부터 개발 기준은 `manux-preview`, 릴리스 브랜치는 `manux-production`이다.** 이 문서와 모든 경로는 분리된 저장소 루트를 기준으로 한다. 전환 준비 PR에서만 이 파일들이 원본 preview의 앱 하위 폴더에 있다.
 
-## 필요한 문서만 읽기
+## 시작 전에
 
-- 처음 앱 구조를 다루면 [구조](docs/architecture.md)의 계층·프레임 흐름을 읽는다.
-- 변경 전 [계약](docs/contracts.md)의 공통 규칙과 **해당 계층 절**, [타입](src/manux/core/contracts.py), 관련 [결정](docs/decisions.md)을 확인한다. 제안을 확정된 정책으로 설명하지 않는다.
-- 직접 TCN/모델 교체는 [직접 TCN](docs/direct-tcn.md), 데이터 수집·공유는 [허브](docs/dataset-hub.md)를 추가로 읽는다. 요청과 무관한 과거 계획·모든 문서를 일괄 읽지 않는다.
-- 학습 장치·추론 공급자 변경은 [하드웨어 가속](docs/hardware-acceleration.md)을 읽고 요청한 장치와 실제 실행 장치를 구분해 검증한다.
+1. `git status --short`, `git branch --show-current`, `git remote -v`로 실제 상태를 확인한다. 다른 사람의 미커밋 변경·worktree·진행 중 브랜치는 보존한다.
+2. 원격을 새로 조회하고 열린 PR·작업 브랜치와 겹치는 파일을 확인한다. 작업의 목표·완료 기준·허용 파일·기준 커밋을 기록한다. 작업 브랜치 push 또는 draft PR로 진행 중임을 표시한다.
+3. 최신 `origin/manux-preview`에서 `<이슈>-<설명>` 브랜치를 만든다. 이슈가 없으면 `<설명>`만 쓴다. `codex/`, `claude/` 같은 도구 접두사는 금지한다. 기존 PR 브랜치 이름은 바꾸지 않는다.
+4. [구조](docs/architecture.md)의 계층·프레임 흐름과 [계약](docs/contracts.md)의 공통 규칙·해당 절, [타입](src/manux/core/contracts.py), 관련 [결정](docs/decisions.md)을 먼저 읽는다. 제안을 확정된 정책으로 설명하지 않는다.
 
-## 현재 상태
+Windows 명령은 PowerShell 7(`pwsh`)을 명시해 실행한다. WSL은 사용하지 않는다.
 
-testing의 최신 통합 범위·소스 SHA·실제 카메라 시험·남은 검증은 [통합 사용 흐름](docs/testing-all-v04.md)을 따른다.
+## 필요한 문서
 
-기준: 2026-11-06 preview 통합 대상 #72·#75·#76의 구현. 실제 원격 병합 상태는 PR에서 확인한다.
+- 설치·실행·기여: [README](README.md), [CONTRIBUTING](CONTRIBUTING.md).
+- 브랜치·검사·전환: [브랜치 흐름](docs/branch-flow.md).
+- 직접 TCN·모델 교체: [직접 TCN](docs/direct-tcn.md).
+- 녹화·데이터 공유: [데이터 허브](docs/dataset-hub.md), [학습 센터](docs/learning-center.md).
+- 학습 장치·추론 공급자 변경: [하드웨어 가속](docs/hardware-acceleration.md). 요청한 장치와 실제 실행 장치를 구분해 검증한다.
+- 통합 범위·실제 카메라 시험·남은 검증: [통합 사용 흐름](docs/testing-all-v04.md).
 
-- S0~S5 코드, 직접 TCN·특징 캐시·검증 후 개인 모델 설치/교체(#69), Preview 설치본·트래킹 측정(#70), 허브 CLI(#68)가 병합됐다.
-- [PR #72](https://github.com/intel7-ai/manux/pull/72)는 체크한 과제의 녹화·통합 재학습, 별명별 train/eval, HF 공유와 별도 worker를 연결한다([사용법](docs/learning-center.md)). 인증은 worker가 `.env`에서 읽고 앱에는 별명만 저장한다. [#75](https://github.com/intel7-ai/manux/pull/75)는 별명 입력 초안·선택 녹화 안내·HF 읽기/쓰기 권한 표시를 보강한다. [#76](https://github.com/intel7-ai/manux/pull/76)은 기본 한 손 추적과 앱 내 프레임 지연 표시를 추가한다([측정 범위](docs/cursor-performance.md)). 합성/설치 시험과 실제 사용 검증·정식 릴리스를 구분한다.
-- D-009(2026-11-06, Sean 승인)에 따라 정식 채널을 apps/manux로 전환한다. production workflow의 실제 발행은 별도다. 실제 웹캠·Windows 입력·다인 인식률은 별도 시험이 필요하다. CI 창 열기·설치 성공이 실사용 검증은 아니다.
-- 사용자 정의 카탈로그·바인딩 편집은 후속이다. 과거 작업 계획은 현재 미구현 목록으로 읽지 않는다.
+현재 구현은 코드와 실제 원격 병합 상태로 확인한다. 열린 PR의 기능을 이미 배포된 기능으로 설명하지 않는다. v0.5부터 개발 단계의 설정·데이터·업데이트 호환을 깨는 변경을 허용한다(D-009). 사용자 데이터를 임의로 삭제하지 않는다. Bluetooth는 v1.0 범위에서 제외한다.
 
 ## 구현 경계
 
-- 계약을 바꾸면 문서·타입을 먼저 함께 고치고 영향받는 계층을 PR에 적는다. [구조 §4](docs/architecture.md#4-의존-규칙)의 import 방향과 기능 간 import 금지를 지킨다.
-- 기능은 `features/<id>/`에 둔다. `Feature`·동작 목록·기본 바인딩·설정을 함께 두고 조립 지점에서 연결한다. 겹치는 상태를 공유하는 동작을 억지로 분리하지 않는다.
-- QML·브리지는 판정·임계값·OS 실행을 하지 않는다. UI는 Snapshot을 그리고 명령 큐를 쓴다. Windows 입력은 `output/windows`만 담당한다.
-- 기능 간 상태는 `FrameContext.others`의 `Activity`로만 본다. 비공개 필드를 읽지 않는다. 시작·해제 짝, reset, 손 소실과 오류 안전성을 시험한다.
-- MediaPipe/OpenCV/ONNX는 실제로 사용할 때 지연 import한다. torch는 학습 도구/별도 worker에만 둔다. 사용자 데이터·특징 캐시·개인 모델은 저장소 밖에 둔다.
-- D-009에 따라 v0.3 동등성 시험은 이식 당시 S2·S4 확인으로 갈음한다. v0.5는 현재 기능·계약을 시험하며 자동 시험을 실물 인식률로 표현하지 않는다.
+- 계약을 바꿀 때 문서·타입을 먼저 함께 고치고 영향받는 계층을 PR에 적는다. [구조 §4](docs/architecture.md#4-의존-규칙)의 import 방향을 지킨다.
+- 기능은 `src/manux/features/<id>/`에 판정·동작 목록·기본 바인딩·설정을 함께 둔다. 기능끼리 import하지 않는다. 겹치는 상태를 공유하는 동작을 억지로 분리하지 않는다.
+- 동작 ID와 액션 ID는 다르다. 기능은 동작 ID만 내고 액션은 바인딩으로 연결한다(D-004). 바인딩 없는 동작은 실행하지 않는다.
+- QML·브리지는 판정·임계값·OS 실행을 하지 않는다. Snapshot을 표시하고 요청은 큐로 보낸다. Windows 입력은 `output/windows`에서만 수행한다.
+- 기능 간 상태는 `FrameContext.others`의 `Activity`로만 읽는다. 비공개 필드를 읽지 않는다.
+- 오래된 프레임을 쌓지 않고 동시에 한 프레임만 처리한다. 종료한 세션의 결과를 무시하고 자원을 정리한다. 단계 전환·일시정지·손 소실·오류·종료 때 누른 입력을 해제한다.
+- 등록·검증 중 실제 명령을 실행하지 않는다. 취소·실패·검증 전 저장이 기존 유효 등록이나 모델을 손상시키면 안 된다. 개인 모델이 거절한 입력을 기본 모델·규칙 명령으로 우회하지 않는다.
+- MediaPipe/OpenCV/ONNX는 필요할 때 지연 import한다. torch는 학습 도구·별도 worker에서만 쓴다. 앱 프로세스에 넣지 않는다.
 
-## 검증
+## 데이터와 보안
 
-`apps/manux`에서 `uv run --locked --python 3.12 pytest -q`. 선택 의존성·skip·실물 미검증 항목을 보고한다. 실행과 설치는 [README](README.md)를 따른다.
+- 원시 영상·실명·실제 계정/PC 식별자·키·토큰을 Git, 시험 fixture, PR, 로그에 넣지 않는다. fixture는 짧은 합성 입력만 쓴다.
+- 개인 녹화·특징 캐시·학습 모델은 저장소 밖 사용자 폴더에 둔다. 새 녹화와 개인 모델을 코드 브랜치에 커밋하지 않는다.
+- 팀 데이터 공유는 [허브](docs/dataset-hub.md)의 `tools/hub.py` 검증 경로를 쓴다(D-006). 업로드는 사용자가 명시적으로 요청한 경우에만 하며 자동 업로드하지 않는다. 앱·에이전트가 토큰을 출력하지 않는다.
+- 학습과 평가는 별도 시도·세션으로 나눈다. 같은 손 자세의 인접 프레임을 독립적인 사용자 시도로 세지 않는다. 평가 데이터는 학습에 섞지 않는다.
+
+## 검증·전달
+
+1. 문제의 환경·입력 순서·예상/실제 결과를 기록하고 가설과 사실을 구분한다. 요청 범위의 작은 변경을 구현한다.
+2. 루트에서 `uv run --locked --python 3.12 pytest -q`를 실행한다. 계층·계약 변경에는 `tests/architecture`·`tests/contract`도 확인한다. 시험 삭제나 기대값 변경만으로 실패를 숨기지 않는다.
+3. 필요한 화면·설치·실물 검사를 수행한다. 자동 합성 시험·자가 진단·실제 웹캠·실제 Windows 입력을 구분하고 skip·실패·미실행을 기록한다. 시험 수·프레임 점수는 제품 정확도가 아니다.
+4. 작업 브랜치를 push하고 `manux-preview` 대상 PR을 연다. 리뷰어 승인은 필수가 아니다. `MANUX required` 통과와 시험 설치본 확인 후 병합하며 squash를 권장한다.
+5. 정식 반영은 같은 저장소의 `manux-preview → manux-production` PR로만 한다. 작업 브랜치에서 직접 릴리스 브랜치로 PR을 보내지 않는다. 보호 브랜치 직접 push·강제 push·필수 검사 우회는 금지한다.
+
+보고는 **상태 → 요약 → 변경 → 검증 → 다음** 순서로 쓴다. 실제 증거와 한계를 간단한 문장·목록으로 설명한다. 작업 검증 완료·PR 게시·병합·릴리스는 각각 구분하고, 미실행을 성공으로 표현하지 않는다. 별도 보고서 생성기는 요구하지 않는다.
