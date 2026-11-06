@@ -27,6 +27,7 @@ from manux.perception.local3d import FEATURES, FEATURE_VERSION
 from manux.output.null import NullSink
 from manux.output.practice import PracticeSink
 from manux.settings.builtin import ALL
+from manux.settings.sensitivity import CURSOR_SETTINGS
 from manux.settings.paths import resolve
 from manux.settings.schema import Schema, Setting
 from manux.settings.store import Settings, load
@@ -42,7 +43,7 @@ _SETTING_TYPES = {bool: "bool", int: "int", float: "float", str: "str"}
 
 
 def schema() -> Schema:
-    settings = Schema(ALL)
+    settings = Schema(ALL + CURSOR_SETTINGS)
     for module in [*(module for module, _ in _FEATURES), tcn_gate]:
         settings.add(Setting(key, default, kind=_SETTING_TYPES[type(default)])
                      for key, default in module.SETTINGS.items() if default is not None)

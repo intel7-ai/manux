@@ -123,6 +123,79 @@ def test_idle_preview_has_motion_ring_without_control_recording_or_os_input(tmp_
         runtime.stop()
 
 
+def test_sensitivity_apply_reaches_cursor_and_feature_and_survives_restart(tmp_path, monkeypatch):
+    from manux.core.contracts import OutputTarget, RuntimeRequest
+    from manux.settings.store import load
+    from manux.output.windows.backend import FakeBackend
+    from manux.platform.monitors import ScreenLayout
+    import manux.output.windows as windows
+    settings = Settings(schema(), {"tracking.control_hand": "Right", "unclaimed.keep": 123})
+    runtime, backend = windows_runtime(tmp_path, settings)
+    sink = runtime.engine.sinks[OutputTarget.WINDOWS]
+    sink.set_frame_aspect(.5625)
+    def distance():
+        sink.cursor.warp(960, 540)
+        sink.cursor.step((.5, .5), 1.)
+        return sink.cursor.step((.51, .5), 1.033)[0] - 960
+    original = distance()
+    runtime.engine.commands.put(SetStage(Stage.MAIN))
+    runtime.engine.commands.put(SetControl(True))
+    run_frames(runtime, 1)
+    # Simulate a held drag: a settings change must release it without another click/move.
+    sink.buttons.press("left")
+    sink.set_frame_aspect(.5625)
+    event_count = len(backend.events)
+    runtime.request(RuntimeRequest("sensitivity", str(tmp_path / "config"), {
+        "cursor.relative_gain_min": 2., "cursor.relative_gain_max": 3., "cursor.smoothing": 1.,
+        "pinch.click_threshold": .08, "pinch.pinch_threshold": .07}))
+    try:
+        runtime._drain_runtime_requests()
+        assert runtime.sensitivity_result[1]
+        assert not runtime.engine.state.control_on
+        assert not sink.buttons.down
+        assert backend.events[event_count:] == [("button", "left", False)]
+        assert sink.config.frame_aspect == .5625
+        assert distance() > original * 2
+        assert runtime.settings_for("pinch")["click_threshold"] == .08
+        assert runtime.settings_for("pinch")["release_threshold"] == .09
+        restored = load(schema(), tmp_path / "config")
+        assert restored.get("unclaimed.keep") == 123
+        monkeypatch.setattr(windows, "Win32Backend", FakeBackend)
+        monkeypatch.setattr(ScreenLayout, "detect", lambda: ScreenLayout.single(1920, 1080))
+        restarted = build(restored, runtime.source, windows=True)
+        try:
+            assert restarted.engine.sinks[OutputTarget.WINDOWS].config.relative_gain_max == 3.
+            assert restarted.settings_for("pinch")["click_threshold"] == .08
+        finally:
+            restarted.stop()
+    finally:
+        runtime.stop()
+
+
+def test_sensitivity_save_failure_keeps_live_and_saved_values(tmp_path, monkeypatch):
+    from manux.core.contracts import OutputTarget, RuntimeRequest
+    from manux.settings import store
+    settings = Settings(schema(), {"pinch.click_threshold": .06})
+    runtime, _ = windows_runtime(tmp_path, settings)
+    config_dir = tmp_path / "config"
+    saved = store.save(settings, config_dir)
+    original = saved.read_bytes()
+    config = runtime.engine.sinks[OutputTarget.WINDOWS].config
+    def fail(*args):
+        raise OSError("synthetic disk failure")
+    monkeypatch.setattr(store, "save", fail)
+    try:
+        runtime.request(RuntimeRequest("sensitivity", str(config_dir), {"pinch.click_threshold": .08}))
+        runtime._drain_runtime_requests()
+        assert not runtime.sensitivity_result[1]
+        assert "저장 실패" in runtime.sensitivity_result[2]
+        assert settings.get("pinch.click_threshold") == .06
+        assert runtime.engine.sinks[OutputTarget.WINDOWS].config == config
+        assert saved.read_bytes() == original
+    finally:
+        runtime.stop()
+
+
 def test_tracking_test_needs_windows_output(tmp_path):
     runtime = build(Settings(schema()), ReplayInput(recording(tmp_path / "r.jsonl.gz")), windows=False)
     assert runtime.start_tracking_test()            # a reason, not started
