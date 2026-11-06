@@ -568,3 +568,20 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 - 연습 싱크는 OS 호출 없는 `CursorMapper` 계산을 재사용한다. 감도·가속·손 모양 배율을 가상 1920×1080 화면에 적용하고 `cursor_position`으로 전달한다. 실제 Windows 커서·클릭을 보내지 않는다. 출력 해제는 가상 커서 위치를 유지하고 이동 앵커만 끊는다.
 - `ViewFrame.actions`에는 출력 결과가 `ok`인 동작만 포함한다. 거절/오류는 온보딩 성공으로 세지 않는다. 제어 전환 뒤 Bridge의 일시정지 표시는 Snapshot.control_on을 따른다.
 - `RuntimeRequest('advanced', config_dir, values)`는 bool/int/float/choice 설정 편집을 런타임 큐로 전달한다. 고급 설정은 알려진 실행 중 조절 가능한 키만 검증하며, 전체 검증·임시 저장 성공 후 메모리 설정과 연습/Windows 싱크를 갱신한다. 실패는 기존 설정 파일·실효값을 유지한다. 저장 중·실패·성공은 별도 revision 결과로 UI에 전달한다. 설정 변경 때 출력 해제·기능 reset·제어 끔을 먼저 적용한다. 프로필이 덮어쓴 값은 편집할 수 없다.
+
+## 14. 휴대폰 연결 (`link`, v0.8)
+
+출처: Dan(한순중)의 `hand-mouse-gesture-overhaul@9da1f634e8c0afd9d3d6b32a56c83cddfb23d5f8`,
+`src/phone_web_bridge.py`와 `src/camera.py`. 영향 계층: core, capture, 신규 link.
+
+- 기본 꺼짐. 명시적 PhoneLink.start()/개발 실행기만 HTTPS listener를 연다. 앱 선택·QR 표시는 #96 이후 별도 PR이다.
+- peer/bind 허용 주소는 RFC1918 IPv4(10/8, 172.16/12, 192.168/16), IPv6 ULA(fc00::/7), 로컬 시험용 loopback뿐이다. 공인·문서용·multicast·unspecified 주소 거절. 실제 TCP peer를 검사하며 Forwarded/X-Forwarded-For는 신뢰하지 않는다. Host와 HTTPS Origin은 listener 주소와 일치해야 한다.
+- PC에서 6자리 난수 코드 발급, 단조시계 120초 만료·성공 한 번만 사용. 재발급은 이전 코드/미접속 토큰 폐기. 코드 교환은 전역 분당 5회, HTTP는 전역 분당 120회 제한.
+- POST /pair의 {code, device} 검증 후 256bit 이상 접속 토큰 응답. 메모리에서만 관리하고 IP에 묶으며 120초 안에 한 번 WebSocket 인증에 쓴다. /ws 첫 JSON {kind:"auth", token} 없이는 프레임을 받지 않고 5초 내 인증하지 않으면 닫는다. 코드·토큰을 URL/QR/로그에 넣지 않는다.
+- 한 기기만 접속. PC에 device(64자 이하 표시명, 권한 아님)·peer 표시. disconnect()는 연결·토큰·코드·프레임 폐기. block()은 전역 차단하고 끊는다. unblock() 후 새 코드 필요. 종료도 같은 정리.
+- 첫 명시 실행 때 사용자 데이터 폴더 link/certs에 자체 서명 인증서/키 생성. Git checkout/worktree 내부와 그 안을 가리키는 링크 경로 거절. TLS 1.2 이상 HTTPS만 제공. 인증서 경고 후 iOS Safari getUserMedia 가능 여부는 사람이 검증한다.
+- binary 프레임 하나 = 4byte big-endian JSON 길이 + UTF-8 JSON + JPEG. JSON ≤1024byte, 전체 ≤1MiB. JSON: {kind:"frame", seq, captured_at, width, height, mirrored, rotation, facing}. seq는 연결 내 증가 정수, captured_at은 PC epoch 초로 보정한 촬영 시각, JPEG 각 변 ≤1280·총 ≤1280×960, rotation은 적용할 시계방향 0/90/180/270, facing은 user|environment, mirrored는 적용할 좌우 반전이다. 캔버스는 회전 반영 픽셀이므로 기본 rotation=0, 전면만 mirrored=true. **480×360 상한·품질 0.55·목표 최대 30fps**는 원본 유지.
+- sync JSON {kind:"sync", sent:epoch_ms} → {kind:"sync", sent, server:epoch_ms} 왕복 중간점으로 시계 보정. 촬영 시각은 JPEG 인코딩 직전 추정치이고 센서 노출 시각이 아니다. 데모 지연은 추정 촬영→PC 수신 시간이며 오차가 있다.
+- 초당 프레임 36회(여유 포함) 제한. 서버 ack 전에 다음 프레임을 보내지 않고 건너뛴다. 잘못된 메시지는 닫고 이전 seq·750ms 초과/250ms 이상 미래 촬영 시각은 ack accepted=false로 버린다. audio 종류는 예약만 하고 현재 거절한다. 원격 명령·마이크·Bluetooth 없음.
+- RemoteCamera는 압축 최신 하나만 보관, 덮어쓴 수를 센다. read(timeout)은 소비 스레드에서 JPEG 해독·반전·회전 후 FrameInfo와 BGR image 반환. FrameInfo.t는 수신 perf_counter, seq는 소스 전체에서 증가. 해독 중 연결이 바뀌면 결과 폐기. fps·actual_mode·추정 수신 지연 제공.
+- 새 프레임이 없으면 read는 None. 마지막 수신/접속 뒤 2초 정체면 is_open=false. 끊기/정지 때 즉시 슬롯을 비우고 대기자를 깨운다. QR 대기 화면·이전 프레임은 판정기에 넣지 않는다. 조립자가 Engine.frame_missing(now)으로 손 소실·입력 해제를 처리한다. link는 엔진·Windows 입력을 호출하지 않는다.
