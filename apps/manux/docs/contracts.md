@@ -291,6 +291,25 @@ class OutputSink(Protocol):
 
 ## 10. 모델 파일
 
+### 선택적 하드웨어 가속 (2026-11-06)
+
+- 학습 worker·도구의 장치는 `auto|cpu|cuda|xpu`다. 명시한 장치의 실제 순전파·역전파·Adam
+  검사가 실패하면 이유와 함께 실패한다. auto만 검증한 장치를 선택하거나 이유를 표시하고 CPU로
+  전환할 수 있다. 요청·실제 장치·이름·런타임·전환 사유는 `ExecutionDevice`로 기록한다.
+- 모델을 최적화기 생성 전에 옮긴다. 손실 가중치·증강 난수·미니배치·라벨은 같은 장치·자료형을
+  사용한다. 입력 전체를 GPU에 올리지 않는다. 예측 반환·ONNX 내보내기는 CPU 배열/복사본을 쓴다.
+  시드를 기록하되 장치 간 학습 가중치가 같다고 약속하지 않는다.
+- 추론은 `cpu|cuda|openvino-cpu|openvino-gpu|openvino-npu|auto`를 `Predictor` 뒤에서 선택한다.
+  기본은 cpu다. 명시적 가속 장치를 열거나 모델을 컴파일하지 못하면 모델 로드를 거부한다.
+  공급자 이름만으로 실제 가속을 주장하지 않는다. OpenVINO는 EXECUTION_DEVICES를 검사하며
+  NPU·GPU는 해당 장치만 명시한다. CUDA는 CPU EP 할당/실행 fallback을 금지한다.
+- auto는 초기화 실패 이유와 실제 CPU 선택을 기록할 수 있다. 실행 중 오류·모델 거절은
+  자동 재실행·다른 판정기로 우회하지 않고 기존 오류 해제·중립 복귀 계약을 따른다.
+- 번들 기본 worker는 CPU 환경이다. CUDA/XPU/OpenVINO는 선택 환경에 설치하며 설치본 지원은
+  별도 패키징 시험으로 구분한다. 추론 가속이 학습·MediaPipe 손 추적까지 가속한다는 뜻은 아니다.
+- 비교는 같은 모델/입력의 출력 차이와 실제 명령 이벤트, 초기 로딩/컴파일, 준비 후 p50/p95를
+  기록한다. 학습은 데이터 준비·전송·학습·내보내기를 분리하고 가속 장치를 동기화해 측정한다.
+
 출처: Dan 브랜치 `models/gesture_tcn.onnx` + `models/gesture_tcn.json`, `scripts/train_tcn.py`.
 
 모델 정보 파일(`.json`)의 필수 키:

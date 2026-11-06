@@ -15,6 +15,17 @@ from typing import Literal, Mapping, Optional, Protocol, Sequence, Tuple, runtim
 N_LANDMARKS = 21
 
 Landmark = Tuple[float, float, float]
+
+
+@dataclass(frozen=True)
+class ExecutionDevice:
+    """Reported execution choice; requested hardware is distinct from actual execution."""
+    requested: str
+    actual: str
+    runtime: str
+    name: str = ""
+    reason: str = ""
+
 Point = Tuple[float, float]
 GestureId = str
 ActionId = str

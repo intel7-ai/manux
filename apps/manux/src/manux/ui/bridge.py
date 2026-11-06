@@ -1170,6 +1170,9 @@ class Bridge(QObject):
         if not s.get("stage"):
             return ""
         text = str(s["stage"])
+        execution = s.get("execution")
+        if execution:
+            text += " · " + str(execution["actual"]) + " · " + str(execution.get("name", ""))
         if s.get("target") and not text.startswith("선택"):
             name = self.tc.names.get(s["target"], s["target"])
             text = f"{name} · {text}"

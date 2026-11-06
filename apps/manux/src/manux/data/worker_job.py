@@ -85,7 +85,7 @@ class WorkerJob:
                 elif event["event"] == "done":
                     completed = event
                 else:
-                    for key in ("stage", "progress", "epoch", "epochs", "loss", "fold", "folds"):
+                    for key in ("stage", "progress", "epoch", "epochs", "loss", "fold", "folds", "execution"):
                         if key in event:
                             self.state[key] = event[key]
                     if "epoch" in event and "loss" in event:
