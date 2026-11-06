@@ -41,6 +41,9 @@ def check_cancel(request):
 
 def run_training(request, send=emit):
     import train_tcn
+    from training_device import select, record
+    execution = select(request.get("device", os.environ.get("MANUX_TRAIN_DEVICE", "auto")))
+    send("progress", stage="학습 장치 · " + execution.actual, execution=record(execution))
     from promote_tcn import validate_and_install
     from tcn_data import load, class_mapping, class_names
     from manux.ml.store import active_token, load_active
@@ -100,12 +103,14 @@ def run_training(request, send=emit):
                     check_cancel(request)
                     send("progress", stage="통합 모델 학습 중", progress=.1 + .6 * row["epoch"] / row["epochs"],
                          epoch=row["epoch"], epochs=row["epochs"], loss=row["loss"])
+                elif isinstance(row, dict) and row.get("event") == "device":
+                    send("progress", stage="학습 장치 · "+row["actual"], execution={k:row[k] for k in ("requested","actual","runtime","name","reason")})
             return len(text)
         def flush(self): pass
     with redirect_stdout(EventOutput()):
         train_tcn.main([*[str(p) for p in train_paths], "--output", str(candidate), "--classes", *classes,
                         "--decisions", str(declarations), "--cache-dir", str(cache),
-                        "--epochs", str(request.get("epochs", 20)), "--events", "--skip-folds"])
+                        "--epochs", str(request.get("epochs", 20)), "--device", request.get("device", os.environ.get("MANUX_TRAIN_DEVICE","auto")), "--events", "--skip-folds"])
     check_cancel(request)
     if active_token(store) != token:
         raise ValueError("학습 중 사용 모델이 바뀌었습니다. 다시 평가해 주세요.")

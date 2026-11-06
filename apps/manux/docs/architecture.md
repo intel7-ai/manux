@@ -80,6 +80,7 @@ apps/manux/
 | `cv2`, `mediapipe` | `capture`, `tracking` |
 | `pyautogui`, `ctypes`, `uiautomation`, `win32*` | `output`, `platform` |
 | `onnxruntime` | `ml` |
+| `openvino` (선택 의존성) | `ml` (실제 GPU/NPU 실행 장치 확인) |
 | `torch` | `tools/`만 (앱 프로세스에는 없음. 설치본의 별도 MANUXWorker에 포함) |
 
 ## 5. 기능 모듈
