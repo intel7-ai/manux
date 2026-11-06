@@ -79,3 +79,75 @@ def test_progress_navigation_eta_and_close_keep_training_alive(tmp_path):
             bridge.close()
         runtime.stop()
         qInstallMessageHandler(previous)
+
+
+def test_studio_restores_per_gesture_actions_saved_plans_and_visible_progress(tmp_path, monkeypatch):
+    from PySide6.QtQuick import QQuickItem
+    from manux.data import capture_plan
+    application = QApplication.instance() or QApplication([])
+    settings = Settings(schema())
+    runtime = desktop.build(settings, SimpleNamespace(close=lambda: None), windows=False)
+    service = TrainingCenterService(tmp_path / "config", tmp_path / "data", tmp_path / "recordings", specs=training_specs())
+    service.configure("synthetic")
+    service.save_plan(capture_plan.preset("quick_click"), "thumb_middle")
+    service.save_plan(capture_plan.preset("positions"), "thumb_ring")
+    original_summary = service.summary_and_rows
+    def summary():
+        data, report, rows, storage = original_summary()
+        for row in rows:
+            if row["key"] == "thumb_middle": row["reps"] = 30
+        return data, report, rows, storage
+    monkeypatch.setattr(service, "summary_and_rows", summary)
+    requests = []
+    def start(**kwargs):
+        requests.append(kwargs)
+        service.job.state = {"running": True, "task_names": ["좌클릭"]}
+        return True
+    monkeypatch.setattr(service.job, "start", start)
+    bridge = Bridge(runtime, settings, tmp_path / "config", services={"training_center": service})
+    def visual_child(item, name):
+        if item.objectName() == name: return item
+        for child in item.childItems():
+            found = visual_child(child, name)
+            if found is not None: return found
+        return None
+    try:
+        bridge._set_stage("main")
+        center = bridge.window.findChild(QObject, "trainingCenter")
+        QMetaObject.invokeMethod(center, "open")
+        for _ in range(40):
+            QTest.qWait(50)
+            if not bridge.training_busy:
+                bridge.trainingChanged.emit(); QTest.qWait(50); break
+        assert len(bridge.trainingRows) == 18
+        progress = bridge.window.findChild(QQuickItem, "openTrainingProgress")
+        assert progress.isVisible() and progress.mapToScene(QPointF(0, 0)).y() < 140
+        listing = bridge.window.findChild(QQuickItem, "trainingTasks")
+        focus = visual_child(listing, "focusRecord_thumb_middle")
+        assert focus is not None and focus.property("text") == "집중 녹화 설정"
+        assert QMetaObject.invokeMethod(focus, "clicked")
+        QTest.qWait(80)
+        assert bridge.recordingPlan.focus == "thumb_middle"
+        assert len(bridge.recordingPlan.plan["conditions"]) == 27 and bridge.recordingPlan.clickGesture
+        bridge.recordingPlan.open("thumb_ring")
+        assert len(bridge.recordingPlan.plan["conditions"]) == 9
+        bridge.recordingPlan.open("none")
+        assert not bridge.recordingPlan.clickGesture
+        # Close the recording popup and use the restored single-action training button.
+        QTest.keyClick(bridge.window, Qt.Key.Key_Escape)
+        QMetaObject.invokeMethod(center, "open")
+        for _ in range(40):
+            QTest.qWait(50)
+            if not bridge.training_busy:
+                bridge.trainingChanged.emit(); QTest.qWait(50); break
+        train = visual_child(listing, "trainGesture_thumb_middle")
+        assert train is not None and train.property("enabled"), (bridge.training_busy, bridge.recActive, service.job.running, service.hub_job.running, bridge.trainingRows[0])
+        assert QMetaObject.invokeMethod(train, "clicked")
+        QTest.qWait(60)
+        assert requests == [{"gestures": ["thumb_middle"]}]
+        assert bridge.window.findChild(QObject, "trainingProgressPage").property("visible")
+    finally:
+        service.job.state = {"running": False}
+        deadline = time.monotonic() + 2
+        while bridge.training_busy and time.monotonic() < deadline: QTest.qWait(10)
+        bridge.close(); runtime.stop()

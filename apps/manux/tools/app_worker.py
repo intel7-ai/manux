@@ -78,6 +78,9 @@ def run_training(request, send=emit):
     current = None
     if token is not None:
         current = load_active(store, FEATURE_VERSION, FEATURES)
+    elif request.get("previous_candidate"):
+        from manux.ml.predictor import load_model
+        current = load_model(Path(request["previous_candidate"]), FEATURE_VERSION, FEATURES)
     retained = set(current.card.gestures) if current else set()
     output_classes = {"none", *retained, *selected}
     evaluation = load(eval_paths, split="eval", cache_dir=cache)
@@ -87,7 +90,9 @@ def run_training(request, send=emit):
         raise ValueError(f"평가 녹화가 부족한 동작: {missing}. 별도 시도로 녹화하세요.")
     folder = Path(request["job_dir"])
     candidate = folder / "candidate.onnx"
-    send("progress", stage="선택 동작 학습 준비 · 다른 분류기 유지", phase="loading", progress=.1, steps=len(selected))
+    send("progress", stage="선택 동작 학습 준비 · 다른 분류기 유지", phase="loading", progress=.1, steps=len(selected),
+         train_files=len(train_paths), eval_files=len(eval_paths), conditions=len({s.condition for s in segments}),
+         frames=sum(len(s.frames) for s in segments))
     # The training CLI prints its legacy report; only explicit progress events leave this worker.
     class EventOutput:
         buffer = ""
@@ -178,6 +183,33 @@ def run_hub(request, send=emit, client=None):
          upload_access=can_upload, job_id=request["job_id"])
 
 
+def run_import(request, send=emit):
+    from import_training import restore
+    send("progress", stage="이전 녹화·설정·선택 모델을 로컬로 가져오는 중", phase="loading", progress=.1)
+    report = restore(Path(request["source"]), Path(request["data_dir"]), request.get("profile", ""),
+                     cancelled=lambda: Path(request["cancel_path"]).exists())
+    send("done", stage=f"이전 작업 복구 · 녹화 {len(report['recordings'])}개 · 모델은 별도 평가 전 시험 상태",
+         candidate=str(Path(request["data_dir"]) / report["candidate"]) if report["candidate"] else "",
+         profile=report["profile"], job_id=request["job_id"])
+
+
+def run_validate_import(request, send=emit):
+    from promote_tcn import validate_and_install
+    from manux.data.training_center import recording_sets
+    from manux.ml.store import active_token
+    identity = RecordingIdentity(request["profile"], request.get("preset", "pinch"))
+    _, paths = recording_sets(Path(request["recordings_dir"]), identity)
+    if not paths:
+        raise ValueError("가져온 녹화는 학습용입니다. 별도 평가용(eval) 시도를 새로 녹화한 뒤 검증하세요.")
+    send("progress", stage="가져온 모델을 별도 평가 녹화로 검증 중", phase="evaluating", progress=.2)
+    store = Path(request["store"])
+    _, report = validate_and_install(Path(request["candidate"]), paths, store, mode=request.get("mode", "pinch"),
+                                    cache_dir=Path(request["cache_dir"]), expected_active=active_token(store),
+                                    cancelled=lambda: Path(request["cancel_path"]).exists())
+    send("done", stage="가져온 모델 검증 통과 · 동작별 시험/적용 선택 가능", store=str(store),
+         metrics=report["candidate"], job_id=request["job_id"])
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--request", type=Path)
@@ -194,6 +226,10 @@ def main(argv=None):
             raise ValueError("지원하지 않는 작업 요청입니다.")
         if request["kind"] == "train":
             run_training(request)
+        elif request["kind"] == "import":
+            run_import(request)
+        elif request["kind"] == "validate_import":
+            run_validate_import(request)
         elif request["kind"] == "hub":
             try:
                 run_hub(request)

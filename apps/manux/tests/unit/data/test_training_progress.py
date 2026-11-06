@@ -58,3 +58,26 @@ def test_cancellation_is_cooperative_and_never_says_complete(tmp_path):
     job._read(job.proc, {"job_id": "current"})
     assert view(job.snapshot())["status"] == "cancelled"
     assert view(job.snapshot())["percent"] == 40
+
+
+def test_completed_progress_is_restored_with_metrics_but_never_restarts_job(tmp_path):
+    job = WorkerJob(tmp_path)
+    job.state = dict(job_id="finished", running=True, started=100., losses=[.8, .3], loss=.3,
+                     train_files=4, eval_files=2, conditions=9, frames=300, task_names=["좌클릭"])
+    job._cancel = tmp_path / "cancel"
+    proc = SimpleNamespace(stdout=io.StringIO('{"event":"done","stage":"saved"}\n'), wait=lambda: 0)
+    job._read(proc, {"job_id": "finished"})
+    restored = WorkerJob(tmp_path)
+    state = view(restored.snapshot())
+    assert not restored.running and state["restored"] and state["percent"] == 100
+    assert state["bestLoss"] == "0.3000" and "학습 녹화 4개" in state["data"]
+
+
+@pytest.mark.parametrize("kind", ["import", "validate_import"])
+def test_import_and_validation_cancel_at_safe_boundaries(tmp_path, kind):
+    job = WorkerJob(tmp_path)
+    job._cancel = tmp_path / "cancel"
+    job.state = dict(running=True, kind=kind)
+    job.proc = object()  # No terminate/taskkill path is allowed.
+    job.stop()
+    assert job._cancel.exists() and job.state["cancelled"]
