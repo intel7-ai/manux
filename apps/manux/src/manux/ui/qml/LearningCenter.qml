@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import "components"
 import "theme" as Theme
 
@@ -46,10 +47,12 @@ Popup {
             ColumnLayout {
                 Layout.fillWidth: true
                 Copy { text: "학습 센터"; font.pixelSize: 24; font.bold: true }
-                Copy { Layout.fillWidth: true; text: "동작 선택 → 학습·평가 따로 녹화 → 팀 공유 → 검증 후 적용"; color: Theme.Studio.muted }
+                Copy { Layout.fillWidth: true; text: "동작별 집중 녹화 → 원하는 동작만 학습 → 진행률·성적 확인"; color: Theme.Studio.muted }
             }
+            StudioButton { objectName: "openTrainingProgress"; text: "학습 진행 보기"; primary: studio.controller.trainingRunning; onClicked: { studio.close(); studio.progressRequested() } }
             StudioButton { text: "닫기"; onClicked: studio.close() }
         }
+        Copy { Layout.fillWidth: true; text: studio.controller.trainingImportStatus; visible: text !== ""; color: Theme.Studio.mintDark; font.pixelSize: 12 }
         ScrollView {
             id: page
             objectName: "learningPage"
@@ -150,6 +153,7 @@ Popup {
                         Flow {
                             Layout.fillWidth: true
                             spacing: 8
+                            StudioButton { objectName: "selectRecordedTraining"; text: "녹화된 동작 전체 선택"; enabled: studio.idle; onClicked: studio.controller.selectRecordedTraining() }
                             StudioButton {
                                 objectName: "recordSelection"
                                 text: "선택한 동작 녹화"; primary: true
@@ -212,14 +216,21 @@ Popup {
                                         RowLayout {
                                             Layout.fillWidth: true
                                             StudioButton {
-                                                text: "이 동작 녹화"; enabled: studio.idle
+                                                objectName: "focusRecord_" + task.modelData.key
+                                                text: "집중 녹화 설정"; enabled: studio.idle
                                                 onClicked: { if (studio.controller.focusRecord(task.modelData.key)) { studio.close(); studio.recordingRequested() } }
+                                            }
+                                            StudioButton {
+                                                objectName: "trainGesture_" + task.modelData.key
+                                                text: "이 동작만 학습"; enabled: studio.idle && task.modelData.can_train && task.modelData.reps > 0
+                                                visible: task.modelData.label !== "none"
+                                                onClicked: studio.controller.trainSelectedGesture(task.modelData.key)
                                             }
                                             StudioSelect {
                                                 objectName: "tcnMode_" + task.modelData.key
                                                 Layout.fillWidth: true
                                                 model: ["규칙 사용", "TCN 시험", "TCN 적용"]
-                                                enabled: studio.idle && !!task.modelData.model_id
+                                                enabled: studio.idle && !!task.modelData.model_id && !task.modelData.import_pending
                                                 currentIndex: Math.max(0, ["rules", "shadow", "apply"].indexOf(task.modelData.tcn_mode || "rules"))
                                                 onActivated: studio.controller.setGestureTcnMode(task.modelData.key, ["rules", "shadow", "apply"][currentIndex], task.modelData.model_id)
                                             }
@@ -277,7 +288,8 @@ Popup {
                             Layout.fillWidth: true
                             spacing: 8
                             StudioButton { text: "학습 멈춤"; visible: studio.controller.trainingRunning; onClicked: studio.controller.stopTraining() }
-                            StudioButton { objectName: "openTrainingProgress"; text: "학습 진행 보기"; onClicked: { studio.close(); studio.progressRequested() } }
+                            StudioButton { objectName: "importTrainingWork"; text: "이전 작업 가져오기"; enabled: studio.idle; onClicked: legacyFolder.open() }
+                            StudioButton { objectName: "validateImportedModel"; text: "가져온 모델 검증"; visible: studio.controller.trainingImportStatus !== ""; enabled: studio.idle; onClicked: studio.controller.validateImportedModel() }
                             StudioButton { text: "새로고침"; enabled: studio.idle; onClicked: studio.controller.refreshTraining() }
                             StudioButton { text: "모델 내보내기"; enabled: studio.idle; onClicked: studio.controller.exportModel() }
                             StudioButton { text: "내보낸 폴더 열기"; onClicked: studio.controller.openExports() }
@@ -287,6 +299,11 @@ Popup {
                 }
             }
         }
+    }
+    FolderDialog {
+        id: legacyFolder
+        title: "recordings · models · config가 있는 이전 작업 폴더 선택"
+        onAccepted: studio.controller.importTrainingWork(selectedFolder.toString())
     }
     Popup {
         id: uploadConfirm

@@ -9,6 +9,7 @@ Popup {
     objectName: "trainingProgressPage"
     required property var controller
     readonly property var state: controller.trainingProgressState
+    property bool expandedEvents: false
     signal backRequested()
     anchors.centerIn: parent
     width: Math.min(1000, parent.width - 32)
@@ -51,6 +52,8 @@ Popup {
                 width: scroll.availableWidth; spacing: 16
                 Copy { text: page.state.statusText || "학습 대기"; font.pixelSize: 21; font.bold: true; color: Theme.Studio.mintDark }
                 Copy { text: page.state.tasks || "선택한 학습 동작"; Layout.fillWidth: true }
+                Copy { objectName: "trainingData"; text: page.state.data || ""; Layout.fillWidth: true; color: Theme.Studio.muted }
+                Copy { text: "앱을 닫기 전 마지막 완료·중단 결과입니다."; visible: page.state.restored === true; color: Theme.Studio.muted }
                 Copy { text: page.state.stage || "학습센터에서 학습을 시작하세요"; Layout.fillWidth: true }
                 RowLayout {
                     Layout.fillWidth: true
@@ -67,7 +70,7 @@ Popup {
                     Metric { caption: "반복 / 분류기"; value: (page.state.epoch || "—") + " · " + (page.state.stageCount || "—") }
                 }
                 Copy { text: page.state.etaHint || ""; Layout.fillWidth: true; color: Theme.Studio.muted }
-                Copy { text: "학습 손실 · " + (page.state.loss || "—"); font.bold: true }
+                Copy { text: "현재 단계 학습 손실 · 최근 " + (page.state.loss || "—") + " · 최저 " + (page.state.bestLoss || "—"); font.bold: true }
                 Canvas {
                     id: graph
                     objectName: "trainingLossGraph"
@@ -75,6 +78,7 @@ Popup {
                     property var values: page.state.losses || []
                     onValuesChanged: requestPaint()
                     onWidthChanged: requestPaint()
+                    Copy { anchors.centerIn: parent; text: "학습이 진행되면 손실 그래프가 나타납니다"; visible: graph.values.length < 2; color: Theme.Studio.muted }
                     onPaint: {
                         const ctx = getContext("2d")
                         ctx.clearRect(0, 0, width, height)
@@ -98,11 +102,15 @@ Popup {
                     color: Theme.Studio.muted
                 }
                 StudioButton { text: "학습 중단"; enabled: page.state.cancellable === true; onClicked: page.controller.stopTraining() }
-                Copy { text: "진행 기록"; font.bold: true }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Copy { text: "진행 기록 · 최신순"; font.bold: true; Layout.fillWidth: true }
+                    StudioButton { text: page.expandedEvents ? "접기" : "전체 기록 보기"; onClicked: page.expandedEvents = !page.expandedEvents }
+                }
                 Copy {
                     objectName: "trainingEvents"
                     Layout.fillWidth: true
-                    text: (page.state.events || []).slice(-16).join("\n") || "학습을 시작하면 단계별 기록이 표시됩니다."
+                    text: (page.state.events || []).slice(page.expandedEvents ? -120 : -16).reverse().join("\n") || "학습을 시작하면 단계별 기록이 표시됩니다."
                     color: Theme.Studio.muted
                 }
             }

@@ -30,6 +30,12 @@ class WorkerJob:
         self.jobs_dir, self.on_done, self.tools_dir = Path(jobs_dir), on_done, tools_dir
         self.proc = None
         self.state = {"running": False}
+        try:
+            saved = json.loads((Path(jobs_dir) / "last-job.json").read_text(encoding="utf-8"))
+            if isinstance(saved, dict) and saved.get("finished") and not saved.get("running"):
+                self.state = {**saved, "restored": True}
+        except (OSError, ValueError):
+            pass
         self._lock = threading.Lock()
         self._cancel = None
 
@@ -94,7 +100,8 @@ class WorkerJob:
                         self.state.pop("last_epoch_at", None)
                         self.state["epoch_seconds"] = []
                         self.state["losses"] = []
-                    for key in ("stage", "phase", "epoch", "epochs", "loss", "fold", "folds", "step", "steps"):
+                    for key in ("stage", "phase", "epoch", "epochs", "loss", "fold", "folds", "step", "steps",
+                                "train_files", "eval_files", "conditions", "frames"):
                         if key in event:
                             self.state[key] = event[key]
                     progress = event.get("progress")
@@ -123,6 +130,11 @@ class WorkerJob:
             elif not self.state.get("error"):
                 self.state["error"] = ("작업을 중단했습니다. 마지막 적용·업로드 상태를 확인하세요." if self._cancel.exists()
                                        else "작업을 완료하지 못했습니다. 데이터·연결·설치 상태를 확인하세요.")
+            try:
+                from manux.data.legacy_import import atomic_json
+                atomic_json(self.jobs_dir / "last-job.json", self.state)
+            except OSError:
+                pass  # Result display persistence must not change a completed installation.
         if code == 0 and completed is not None and self.on_done is not None and self.state.get("job_id") == request["job_id"]:
             self.on_done(completed)
 
@@ -139,7 +151,7 @@ class WorkerJob:
             self.state["cancelled"] = True
             proc = self.proc
             kind = self.state.get("kind")
-        if kind == "train":
+        if kind in ("train", "import", "validate_import"):
             return  # checked at epoch/validation/install boundaries; never kill inside atomic installation
         if os.name == "nt":
             subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],

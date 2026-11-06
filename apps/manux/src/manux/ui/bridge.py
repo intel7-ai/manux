@@ -25,8 +25,8 @@ from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication
 
-from manux.core.contracts import Stage
-from manux.engine.commands import Mark, RequestMode, SetBaseMode, SetControl, SetStage
+from manux.core.contracts import RuntimeRequest, Stage
+from manux.engine.commands import Mark, RequestMode, SetBaseMode, SetBusy, SetControl, SetStage
 from manux.settings import profiles, store
 from manux.ui import cards as guide
 from manux.ui.finger import overlay_frame
@@ -199,6 +199,11 @@ class RecordingPlanEditor(QObject):
         keys = (self.focus,) if isinstance(self.focus, str) else self.focus
         return bool(keys) and all(self.tc.is_free(key) for key in keys)
 
+    @Property(bool, notify=changed)
+    def clickGesture(self):
+        keys = (self.focus,) if isinstance(self.focus, str) else self.focus
+        return bool(keys) and all(key in ("thumb_middle", "thumb_ring") for key in keys)
+
     @Property(str, notify=changed)
     def instruction(self):
         if not isinstance(self.focus, str):
@@ -307,16 +312,23 @@ class Bridge(QObject):
     trackingActiveChanged = Signal()
     trainingChanged = Signal()
     trainingStarted = Signal()
+    settingsRequested = Signal()
 
     def __init__(self, runtime, settings: store.Settings, config_dir: Path, *,
                  services: Optional[Dict[str, Callable]] = None, hotkeys=None, hotkey_defaults=None,
                  normalize_combo: Callable[[str], Optional[str]] = lambda c: c, combo_label=lambda c: c,
-                 hide_to_tray: bool = False) -> None:
+                 hide_to_tray: bool = False, layout: str = "standard") -> None:
         super().__init__()
         self.runtime = runtime
         self.settings = settings
         self.config_dir = Path(config_dir)
         self.services = services or {}
+        self.layout = layout
+        self._palm_cal = None
+        self._palm_axes = None
+        self._palm_hint = ""
+        self._tcn_enabled = True
+        self._studio_center_open = False
         self.application = QApplication.instance() or QApplication([])
         self.application.setQuitOnLastWindowClosed(False)
         # UI preferences (hand, shortcuts, calibration axes ...) live next to settings.json, not in the
@@ -373,7 +385,8 @@ class Bridge(QObject):
         self.recording_editor.startRequested.connect(self._start_focused_plan)
         self.training_job = self.tc.job
         self.training_rows = []
-        self.training_selected = []
+        self.training_selected = [key for key in self.preferences.value("trainingSelected", [], type=list)
+                                  if self.tc.has_task(key)]
         self.training_filter = "전체"
         self.training_info = ("", "")
         self.training_storage = ("", False)
@@ -415,6 +428,10 @@ class Bridge(QObject):
         self.runtime.use_crop = self.hand_crop
         self.runtime.set_pointer_gain(self.pointer_sensitivity / 100)
         self.runtime.set_override("pointer", "axes", self.axes)
+        self._load_palm_axes()
+        if self.layout == "studio":
+            self._tcn_enabled = self.preferences.value("tcnEnabled", True, type=bool)
+            self.runtime.request(RuntimeRequest("tcn_toggle", "on" if self._tcn_enabled else "off"))
         self._send(SetBaseMode("pointer" if self.use_index_pointer else "pinch"))
         self._send(SetStage(Stage.SPLASH))
         # Qt
@@ -423,14 +440,178 @@ class Bridge(QObject):
         self.provider = CameraImage()
         self.engine.addImageProvider("vision", self.provider)
         self.engine.rootContext().setContextProperty("dashboard", self)
-        self.engine.load(QUrl.fromLocalFile(str(QML)))
+        qml = QML.parent / "studio" / "dashboard.qml" if self.layout == "studio" else QML
+        self.engine.load(QUrl.fromLocalFile(str(qml)))
         if not self.engine.rootObjects():
             raise RuntimeError("MANUX 화면을 열지 못했습니다.")
         self.window = self.engine.rootObjects()[0]
-        self.window.setProperty("title", "MANUX")
+        if self.layout != "studio":
+            self.window.setProperty("title", "MANUX")
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
         self.timer.start(15)
+
+    # Original Rasp-Jun studio presentation and calibration adapters.
+    @Property(str, constant=True)
+    def appName(self):
+        return "MANUX TCN"
+
+    @Property(str, constant=True)
+    def appTitle(self):
+        return "MANUX TCN"
+
+    @Property("QVariantList", notify=trainingChanged)
+    def studioTrainingRows(self):
+        files = self._training_summary.get("files", [])
+        rows = []
+        for row in self.trainingRows:
+            info = self.tc.task_info(row["key"]) or {}
+            count = sum(bool(f.get("coverage", {}).get(row["key"])) for f in files if "error" not in f)
+            rows.append({**row, "free": info.get("free", False), "recordings": count,
+                         "can_train": row.get("can_train", False) and (count > 0 or row.get("reps", 0) > 0),
+                         "tcn_available": bool(row.get("model_id")),
+                         "tcn_mode": {"rules": 0, "shadow": 1, "apply": 2}.get(row.get("tcn_mode"), 0),
+                         "interaction_text": ("가져온 모델 · 별도 평가 전 시험만 가능" if row.get("import_pending")
+                                              else "별도 평가 결과를 기준으로 동작별 시험·적용을 선택하세요.")})
+        return rows
+
+    @Property(int, notify=trainingChanged)
+    def trainingSelectedCount(self):
+        return len(self.training_selected)
+
+    @Property(str, notify=trainingChanged)
+    def trainingSelectionText(self):
+        if not self.training_selected:
+            return "학습할 동작을 체크하세요. 선택하지 않은 동작의 기존 학습 결과는 유지됩니다."
+        return f"선택 {len(self.training_selected)}종: " + " · ".join(
+            (self.tc.task_info(key) or {}).get("name", key) for key in self.training_selected)
+
+    @Slot(str, bool)
+    def selectTrainingTask(self, key, selected):
+        if not self.training_job.running and not self.training_busy:
+            self.setTrainingSelected(key, selected)
+
+    @Slot(bool)
+    def selectAllTraining(self, selected):
+        if self.training_job.running or self.training_busy:
+            return
+        if selected:
+            self.selectRecordedTraining()
+        else:
+            self.training_selected = []
+            self.preferences.setValue("trainingSelected", [])
+            self.trainingChanged.emit()
+
+    @Slot(str, int)
+    def setTaskTcnMode(self, key, index):
+        row = next((r for r in self.training_rows if r["key"] == key), None)
+        if row and index in (0, 1, 2):
+            self.setGestureTcnMode(key, ("rules", "shadow", "apply")[index], row.get("model_id", ""))
+
+    @Slot()
+    def openTrainingProgress(self):
+        self.showTrainingProgress(True)
+
+    @Slot()
+    def closeTrainingProgress(self):
+        self.showTrainingProgress(False)
+
+    @Property("QVariantMap", notify=trainingChanged)
+    def trainingDetails(self):
+        return self.trainingProgressState
+
+    @Property(str, notify=trainingChanged)
+    def trainingProgressSummary(self):
+        details = self.trainingDetails
+        if details.get("status", "idle") == "idle":
+            return "진행 페이지에서 학습 단계·남은 시간·완료 예상 시각을 확인할 수 있습니다."
+        return f"{details['percent']}% · 남은 시간 {details['remaining']} · 완료 예상 {details['finish']}"
+
+    @Property(bool, notify=trainingChanged)
+    def tcnAvailable(self):
+        return hasattr(self.tc, "current_model") and self.tc.current_model().is_file()
+
+    @Property(bool, notify=stateChanged)
+    def tcnGate(self):
+        return self._tcn_enabled
+
+    @Slot(bool)
+    def setTcnGate(self, enabled):
+        self._pause()
+        self._tcn_enabled = bool(enabled)
+        self.preferences.setValue("tcnEnabled", self._tcn_enabled)
+        self.runtime.request(RuntimeRequest("tcn_toggle", "on" if enabled else "off"))
+        self.stateChanged.emit()
+
+    def _palm_key(self):
+        return f"palmAxes/{self.control_hand}/{int(bool(self.settings.get('camera.mirror')))}"
+
+    def _load_palm_axes(self):
+        saved = self.preferences.value(self._palm_key(), [])
+        valid = self.services.get("valid_palm_axes", lambda v: False)
+        self._palm_axes = tuple(map(float, saved)) if valid(saved) else None
+        self.runtime.set_override("pinch", "palm_axes", self._palm_axes)
+
+    @Property(bool, notify=stateChanged)
+    def palmCalibrating(self):
+        return self._palm_cal is not None
+
+    @Property(bool, notify=stateChanged)
+    def palmCalibrated(self):
+        return self._palm_axes is not None
+
+    @Property(str, notify=stateChanged)
+    def palmAxesHint(self):
+        return self._palm_hint
+
+    @Slot()
+    def beginPalmCalibration(self):
+        if (self.stage_name != "main" or self.use_index_pointer or self.rec_mode != "off"
+                or self.training_job.running or "palm_calibration" not in self.services):
+            return
+        self.cancelPointerCalibration()
+        self._pause()
+        self._send(SetBusy("calibrating", True))
+        self._palm_cal = self.services["palm_calibration"](start=time.perf_counter())
+        self._palm_hint = "주먹을 쥐고 위아래로 움직일 준비를 하세요."
+        self.stateChanged.emit()
+
+    @Slot()
+    def cancelPalmCalibration(self):
+        if self._palm_cal is not None:
+            self._palm_cal = None
+            self._palm_hint = "방향 보정을 취소했습니다. 기존 보정은 유지됩니다."
+            self._send(SetBusy("calibrating", False))
+            self.stateChanged.emit()
+
+    @Slot()
+    def resetPalmCalibration(self):
+        self.cancelPalmCalibration()
+        self._pause()
+        self._palm_axes = None
+        self.preferences.remove(self._palm_key())
+        self.runtime.set_override("pinch", "palm_axes", None)
+        self._palm_hint = "방향 보정을 초기화했습니다."
+        self.stateChanged.emit()
+
+    def _update_palm_view(self, view):
+        cal = self._palm_cal
+        if cal is not None:
+            now = time.perf_counter()
+            if cal.update(now, self.services["palm_point"](view.landmarks), view.aspect):
+                if cal.axes is not None:
+                    self._palm_axes = tuple(cal.axes)
+                    self.preferences.setValue(self._palm_key(), list(self._palm_axes))
+                    self.preferences.sync()
+                    self.runtime.set_override("pinch", "palm_axes", self._palm_axes)
+                self._palm_hint = cal.view(now)[0] + " · " + cal.error
+                self._palm_cal = None
+                self._send(SetBusy("calibrating", False))
+            else:
+                prompt, progress, note = cal.view(now)
+                self._palm_hint = f"{prompt} · {note} {int(progress * 100)}%"
+            self.stateChanged.emit()
+
 
     # ------------------------------------------------------------------ helpers
     def _send(self, command) -> None:
@@ -496,6 +677,7 @@ class Bridge(QObject):
 
     @Slot(bool)
     def setPointerPreset(self, index_pointer):
+        self.cancelPalmCalibration()
         if self.stage_name != "main" or bool(index_pointer) == self.use_index_pointer:
             return
         self._pause()
@@ -836,11 +1018,14 @@ class Bridge(QObject):
 
     @Slot()
     def openTraining(self):
+        self._pause()
+        self._studio_center_open = True
         self.refreshTraining()
         self.training_timer.start()
 
     @Slot()
     def closeTraining(self):
+        self._studio_center_open = False
         if not self.training_job.running and not self.tc.hub_job.running and not self._progress_visible:
             self.training_timer.stop()
 
@@ -879,6 +1064,8 @@ class Bridge(QObject):
                     data += f" · 다음 학습에 포함 {waiting}개 (끝나지 않았거나 받는 중)"
                 model = (f"모델: {report.get('trained')} 학습 · 녹화 {len(report.get('data', []))}개로" if report
                          else "모델: 아직 없음 (학습하세요)")
+                if report and report.get("import_pending") and not report.get("evaluation_source"):
+                    model = "이전 모델 복구 · TCN 시험 중 · 별도 평가 전"
                 self.training_rows, self.training_info = rows, (data, model)
                 self._training_summary = summary
                 self.training_storage = storage
@@ -891,6 +1078,9 @@ class Bridge(QObject):
 
     @Slot()
     def startTraining(self):
+        if self.layout == "studio":
+            self.trainTrainingSelection()
+            return
         if self.rec_mode != "off" or self.tc.hub_job.running:
             return
         self._pause()
@@ -1010,7 +1200,11 @@ class Bridge(QObject):
             if s.get("error"):
                 self.training_note = str(s["error"])
             else:
-                self.training_note = "별도 평가 통과 · 새 동작은 TCN 시험 모드입니다. 확인 후 동작별로 TCN 적용을 선택하세요."
+                if s.get("kind") == "import":
+                    self.tc.profile = s.get("result", {}).get("profile", self.tc.profile)
+                    self.training_note = "이전 작업을 가져왔습니다. 모델은 시험 상태입니다. 가져온 개인 설정은 앱 재시작 후 반영됩니다."
+                else:
+                    self.training_note = "별도 평가 통과 · 새 동작은 TCN 시험 모드입니다. 확인 후 동작별로 TCN 적용을 선택하세요."
                 self.stateChanged.emit()
             self.refreshTraining()
         self.trainingChanged.emit()
@@ -1043,6 +1237,7 @@ class Bridge(QObject):
             self.training_selected = [*self.training_selected, key]
         elif not selected:
             self.training_selected = [k for k in self.training_selected if k != key]
+        self.preferences.setValue("trainingSelected", self.training_selected)
         self.trainingChanged.emit()
 
     @Slot(bool)
@@ -1050,6 +1245,48 @@ class Bridge(QObject):
         visible = [r["key"] for r in self.trainingRows]
         self.training_selected = (list(dict.fromkeys([*self.training_selected, *visible])) if selected
                                   else [k for k in self.training_selected if k not in visible])
+        self.preferences.setValue("trainingSelected", self.training_selected)
+        self.trainingChanged.emit()
+
+    @Slot()
+    def selectRecordedTraining(self):
+        self.training_selected = [row["key"] for row in self.training_rows if row.get("can_train") and
+                                  (row.get("reps", 0) > 0 or row.get("minutes", 0) > 0)]
+        self.preferences.setValue("trainingSelected", self.training_selected)
+        self.trainingChanged.emit()
+
+    @Property(str, notify=trainingChanged)
+    def trainingImportStatus(self):
+        return self.tc.import_status() if hasattr(self.tc, "import_status") else ""
+
+    @Slot(str)
+    def importTrainingWork(self, url):
+        if self.training_busy or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+            return
+        path = QUrl(url).toLocalFile()
+        if not path:
+            return
+        self._pause()
+        if self.training_job.import_legacy(path, self.tc.data_dir, self.tc.profile):
+            self._training_was_running = True
+            self.training_timer.start()
+            self.trainingStarted.emit()
+        self.trainingChanged.emit()
+
+    @Slot()
+    def validateImportedModel(self):
+        if self.training_busy or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+            return
+        self._pause()
+        candidate = self.tc.imported_candidate()
+        if candidate is None:
+            self.training_note = "가져온 모델 후보가 없습니다. 녹화한 동작을 선택해 학습하세요."
+            self.trainingChanged.emit()
+            return
+        if self.training_job.validate_import(candidate):
+            self._training_was_running = True
+            self.training_timer.start()
+            self.trainingStarted.emit()
         self.trainingChanged.emit()
 
     @Slot(result=bool)
@@ -1407,6 +1644,7 @@ class Bridge(QObject):
 
     @Slot()
     def beginHandSetup(self):
+        self.cancelPalmCalibration()
         self.cancelPointerCalibration()
         self.choice = _HandChoice()
         self.candidate, self.remaining = "", 5
@@ -1418,10 +1656,12 @@ class Bridge(QObject):
             self._set_stage("main")
 
     def _save_hand(self, side: str) -> None:
+        self.cancelPalmCalibration()
         self.control_hand = side
         self.runtime.control_hand = side
         self.preferences.setValue("controlHand", side)
         self._set("tracking.control_hand", side)
+        self._load_palm_axes()
         self.axes = self._load_axes()
         self.runtime.set_override("pointer", "axes", self.axes)
         self._set_stage("main")
@@ -1559,6 +1799,23 @@ class Bridge(QObject):
     # ------------------------------------------------------------------ keys, window, tray
     @Slot(int)
     def command(self, key):
+        if self.palmCalibrating and key != KEY_Q:
+            if key == KEY_ESC:
+                self.cancelPalmCalibration()
+            return
+        if key == KEY_SPACE and self.layout == "studio" and (
+                self._studio_center_open or self._progress_visible or self.rec_mode != "off"
+                or bool(self.window.property("learningDialogOpen"))):
+            return
+        if key == 111 and self.layout == "studio":
+            self._pause()
+            self.settingsRequested.emit()
+            return
+        if key == 110 and self.layout == "studio":
+            if self.stage_name == "main" and self.rec_mode == "off" and not self.calibrating:
+                self._pause()
+                self.runtime.request(RuntimeRequest("next_monitor"))
+            return
         if self.calibrating and key != KEY_Q:
             if key == KEY_ESC:
                 self.cancelPointerCalibration()
@@ -1678,6 +1935,7 @@ class Bridge(QObject):
             self.apply_view(view)
 
     def apply_view(self, view: ViewFrame) -> None:
+        self._update_palm_view(view)
         snap = view.snapshot
         rec_view = dict(view.rec) if view.rec is not None else None
         if rec_view != self.rec_view:
@@ -1816,12 +2074,16 @@ class _HandChoice:
 
 def run(runtime, settings, paths, *, tray: bool = True, screenshot: Optional[Path] = None,
         services: Optional[Dict[str, Callable]] = None, hotkeys=None, hotkey_defaults=None,
-        normalize_combo=None, combo_label=None, make_tray=None) -> int:
+        normalize_combo=None, combo_label=None, make_tray=None, layout=None) -> int:
     """Run the desktop window until the user quits. The composition root passes the platform pieces."""
     app = QApplication.instance() or QApplication([])
-    bridge = Bridge(runtime, settings, paths.config_dir, services=services, hotkeys=hotkeys,
+    preferences = QSettings(str(paths.config_dir / "ui.ini"), QSettings.Format.IniFormat)
+    layout = layout or preferences.value("layout", "standard", type=str)
+    bridge = Bridge(runtime, settings, paths.config_dir, services=services, hotkeys=hotkeys, layout=layout,
                     hotkey_defaults=hotkey_defaults, normalize_combo=normalize_combo or (lambda c: c),
                     combo_label=combo_label or (lambda c: c), hide_to_tray=tray and make_tray is not None)
+    preferences.setValue("layout", layout)
+    preferences.sync()
     if hotkeys is not None:
         hotkeys.callbacks.update({"toggle": lambda: bridge.ui_requests.append("toggle"),
                                   "hide": lambda: bridge.ui_requests.append("hide")})

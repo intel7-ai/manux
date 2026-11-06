@@ -40,6 +40,8 @@ def view(state, now=None):
         finish = time.strftime("%H:%M:%S", time.localtime(state.get("finished") or now)) if success else "—"
     losses = list(state.get("losses", []))[-120:]
     return {
+        "phase": state.get("phase", "idle"), "skipped": state.get("skipped", 0),
+        "log": "\n".join(map(str, state.get("log", []))) if isinstance(state.get("log"), list) else str(state.get("log") or ""),
         "status": status, "statusText": {"idle": "학습 대기", "running": "학습 진행 중", "stopping": "중단 중",
             "success": "학습 완료", "cancelled": "학습 중단", "error": "학습 실패"}[status],
         "stage": state.get("stage") or "학습센터에서 동작을 선택하세요", "progress": progress,
@@ -47,6 +49,10 @@ def view(state, now=None):
         "remaining": remaining, "finish": finish, "etaSeconds": eta, "etaHint": hint,
         "epoch": f"{epoch} / {epochs}" if epochs else "—", "stageCount": f"{step} / {steps}",
         "loss": f"{state['loss']:.4f}" if state.get("loss") is not None else "—", "losses": losses,
+        "bestLoss": f"{min(losses):.4f}" if losses else "—",
+        "data": (f"학습 녹화 {state['train_files']}개 · 평가 녹화 {state.get('eval_files', 0)}개 · "
+                 f"자세 {state.get('conditions', 0)}개 · 관측 프레임 {state.get('frames', 0):,}개") if "train_files" in state else "녹화 자료를 읽으면 수집량이 표시됩니다.",
+        "restored": bool(state.get("restored")),
         "tasks": " · ".join(state.get("task_names", [])) or "전체 학습 가능한 동작",
         "events": list(state.get("events", []))[-120:], "error": state.get("error", ""),
         "cancellable": status == "running",
