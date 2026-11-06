@@ -3,6 +3,55 @@
 프레임 하나의 손 모양(관절 각도·비율 33개)으로 클래스 확률을 내는 작은 MLP가 **TCN을 보조**한다. TCN을 대체하지 않는다.
 기본은 꺼짐이다. 이 문서는 구현된 것, 제안인 것, 구현하지 않은 것을 나눠 적는다.
 
+## 0. 로컬에서 직접 확인하기 (PR #82, 브랜치 `pose-assist-v1`)
+
+PowerShell 기준입니다. `uv`가 설치되어 있어야 합니다.
+
+**1) 브랜치 받기**
+
+```powershell
+git fetch origin pose-assist-v1
+git switch pose-assist-v1          # 로컬에 아직 없으면 origin/pose-assist-v1을 추적하는 브랜치가 자동으로 만들어집니다
+git log --oneline -3               # 마지막 커밋이 PR #82의 최신 커밋인지 확인
+```
+
+작업 중인 변경이 있으면 먼저 커밋하거나 다른 작업 폴더(`git worktree add ../manux-pose pose-assist-v1`)를 쓰세요. 다른 브랜치에는 영향이 없습니다.
+
+**2) 시험 실행**
+
+```powershell
+cd apps/manux
+uv run --locked --python 3.12 --extra train pytest -q
+```
+
+- 기대 결과(작성 시점): **758 passed, 1 skipped**(PySide6가 없으면 1개 skip). `--extra train`이 없으면 ONNX 학습·내보내기 시험이 skip됩니다.
+- 보조 관련 시험만:
+
+```powershell
+uv run --locked --python 3.12 --extra train pytest -q tests/unit/perception/test_pose_angles.py tests/unit/features/test_pose.py tests/unit/engine/test_pose_assist.py tests/unit/test_app_pose.py tests/unit/test_desktop_pose.py tests/unit/data/test_pose_data.py tests/unit/data/test_train_pose.py tests/unit/data/test_pose_compare.py
+```
+
+**3) 앱·도구를 켜서 확인**
+
+```powershell
+cd apps/manux
+# (a) 보조 꺼짐(기본) 상태로 데스크톱 앱 실행: 기존 동작과 같아야 합니다
+uv run --locked --python 3.12 --extra ui --extra vision --extra train python -m manux
+
+# (b) 웹캠 없이 녹화를 재생하며 화면 확인(실제 마우스 입력 없음)
+uv run --python 3.12 --extra ui python -m manux --replay <녹화.jsonl.gz> --no-windows-input
+
+# (c) 보조 켜기: 모델(.onnx)과 같은 이름의 카드(.json)가 필요합니다
+uv run --locked --python 3.12 --extra ui --extra vision --extra train python -m manux --pose-model <경로>/pose.onnx
+```
+
+**지금 눈으로 확인할 수 있는 것과 없는 것**
+
+- 모델이 없으면 `--pose-model`을 줘도 **보조 없이 실행**하고 이유만 남깁니다. 보조가 실제로 켜진 모습을 보려면 먼저 **실제 녹화로 모델을 만들어야** 합니다(아래 "학습" 절의 `tools/train_pose.py`). 합성 데이터로 만든 모델은 실제 손에 의미가 없습니다.
+- 화면(UI)에는 **보조 상태 표시가 없습니다**(`pose_status`를 ViewFrame에 싣지 않음, 4절). 켜졌는지는 시작 로그와 거부·휴식 이유(`vetoed_by_pose` 등)로만 알 수 있습니다.
+- 효과(오인식·휴식 중 이동·클릭 성공)는 5절의 `tools/pose_compare.py`를 **실제 eval 녹화와 모델로** 돌려야 나옵니다. 지금까지는 실측하지 않았고 합성 시험으로 동작만 확인했습니다.
+- 웹캠·실제 Windows 입력으로 직접 써 보는 확인은 이 브랜치에서 아직 수행하지 않았습니다.
+
 ## 1. 구현됨 (이 브랜치, 합성 데이터 시험까지)
 
 | 부분 | 위치 | 내용 |

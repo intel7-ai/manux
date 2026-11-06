@@ -28,6 +28,7 @@ uv run --locked --python 3.12 --extra ui --extra vision --extra train --extra hu
 - 설치본 없이 빠르게 점검: `python -m manux --self-check out.json` (번들 모델·MediaPipe·OpenCV·Qt를 확인하고 결과를 씁니다)
 - 트래킹 측정: 왼쪽 패널의 **트래킹 측정 (클릭 없음)**. v0.3과 같은 표적·수치이며, 측정 중에는 검지 포인터로 바꾸고 클릭을 끕니다. 결과는 `%APPDATA%\MANUX-dev\v04\logs\tracking-*.csv`(설치본은 해당 앱의 `logs`)에 저장되고 최근 결과 목록에 나옵니다. 실제 Windows 출력이 있어야 합니다(`--no-windows-input`이면 측정하지 않음).
 - [학습 센터](docs/learning-center.md): 별명·train/eval 녹화, HF 연결/본인 업로드/팀 다운로드, 통합 재학습·독립 평가·검증 후 앱 적용. 설치본에는 별도 worker가 포함됩니다.
+- [자세 보조 (pose assist)](docs/pose-assist.md) (PR #82): TCN 보조 모듈(기본 꺼짐). 브랜치를 받아 시험·실행하는 방법은 문서의 "0. 로컬에서 직접 확인하기"를 보세요.
 - 아직 없는 것: 미리보기 위 손가락 번호 그리기, 사용자 정의 카탈로그·바인딩 편집 화면.
 
 학습 센터·별명별 녹화·HF 공유·별도 worker는 [#72](https://github.com/intel7-ai/manux/pull/72), 별명 입력·권한 표시는 [#75](https://github.com/intel7-ai/manux/pull/75), 기본 한 손 추적·앱 내 프레임 지연 표시는 [#76](https://github.com/intel7-ai/manux/pull/76)으로 연결합니다. 현재 앱의 [학습 센터 사용법](docs/learning-center.md)과 [커서 지연 측정 범위](docs/cursor-performance.md)를 참고하세요. 직접 TCN·특징 캐시·검증 후 개인 모델 설치/교체는 이미 [직접 TCN 안내](docs/direct-tcn.md)에 있습니다.
