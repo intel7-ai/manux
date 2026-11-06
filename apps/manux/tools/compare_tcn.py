@@ -209,10 +209,6 @@ def main(argv=None) -> int:
     ap.add_argument("--json", type=Path, help="also write the full results here (outside the repository)")
     ap.add_argument("--device", choices=("auto","cpu","cuda","xpu"), default=os.environ.get("MANUX_TRAIN_DEVICE","auto"))
     args = ap.parse_args(argv)
-    global TRAINING_DEVICE
-    try: execution = select(args.device)
-    except ValueError as error: ap.error(str(error))
-    TRAINING_DEVICE = execution.actual
 
     if args.epochs < 1 or args.count < 1 or not 0 < args.threshold <= 1:
         ap.error("epochs and count must be positive; threshold must be within (0, 1]")
@@ -240,6 +236,10 @@ def main(argv=None) -> int:
     except (ValueError, OSError) as error:
         ap.error(str(error))
     load_s = time.perf_counter() - t0
+    global TRAINING_DEVICE
+    try: execution = select(args.device)
+    except (ImportError, ValueError) as error: ap.error(str(error))
+    TRAINING_DEVICE = execution.actual
     gestures = classes[1:]
     new = gestures[-1]
     old_classes = [c for c in classes if c != new]
