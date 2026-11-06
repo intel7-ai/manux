@@ -152,8 +152,8 @@ _DEFAULT_STUDIO_ACTIONS = (
      "desc": "엄지 끝과 약지 끝을 맞대어 우클릭하는 자세"},
     {"id": "thumb_index", "category": "click", "key": "3", "icon": "📜", "label": "3. 스크롤 진입 (엄지+검지)", "short": "스크롤 (엄지+검지)",
      "desc": "엄지 끝과 검지 끝을 맞대어 상하 스크롤 모드로 진입하는 자세"},
-    {"id": "thumb_middle_ring", "category": "click", "key": "4", "icon": "🤞", "label": "4. 동시·휠클릭 (엄지+중지+약지)", "short": "동시클릭 (엄지+중지+약지)",
-     "desc": "엄지 끝에 중지와 약지를 동시에 맞대어 좌우 동시 클릭 및 휠 클릭하는 자세"},
+    {"id": "thumb_middle_ring", "category": "click", "key": "4", "icon": "🤞", "label": "4. 양쪽 클릭 (엄지+중지+약지)", "short": "양쪽 클릭 (엄지+중지+약지)",
+     "desc": "엄지 끝에 중지와 약지를 동시에 맞대어 좌클릭·우클릭을 독립적으로 함께 판정하는 자세"},
     # window
     {"id": "thumb_pinky", "category": "window", "key": "1", "icon": "🤙", "label": "1. 창 전환 (엄지+새끼)", "short": "창 전환 (엄지+새끼)",
      "desc": "엄지 끝과 새끼손가락 끝을 맞대어 창 전환(Alt+Tab) 창을 띄우는 자세"},

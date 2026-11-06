@@ -91,9 +91,9 @@ STUDIO_ACTIONS: Tuple[Dict[str, str], ...] = (
         "category": "click",
         "key": "4",
         "icon": "🤞",
-        "label": "4. 동시·휠클릭 (엄지+중지+약지)",
-        "short": "동시클릭 (엄지+중지+약지)",
-        "desc": "엄지 끝에 중지와 약지를 동시에 맞대어 좌우 동시 클릭 및 휠 클릭하는 자세",
+        "label": "4. 양쪽 클릭 (엄지+중지+약지)",
+        "short": "양쪽 클릭 (엄지+중지+약지)",
+        "desc": "엄지 끝에 중지와 약지를 동시에 맞대어 좌클릭·우클릭을 독립적으로 함께 판정하는 자세",
     },
     # --- [window] 창·시스템 제어 ---
     {
@@ -182,6 +182,13 @@ GESTURE_TO_STUDIO_CLASS: Dict[str, str] = {
 def normalize_system_action(snapshot: Any, actions: Sequence[str] = ()) -> str:
     """Extract the current rule-engine class (`STUDIO_ACTIONS` id) from an engine Snapshot."""
     if snapshot is not None:
+        # Left (thumb+middle) and right (thumb+ring) are judged independently; both live -> "both click".
+        live = {gid for gid, phase in getattr(snapshot, "intents", ()) if phase != "end"}
+        live |= {act for act, phase, _r in getattr(snapshot, "results", ()) if phase != "end"}
+        left = bool(live & {"pinch.thumb_middle", "mouse.left_click", "pointer.left_click"})
+        right = bool(live & {"pinch.thumb_ring", "mouse.right_click", "pointer.right_click"})
+        if left and right:
+            return "thumb_middle_ring"
         for gid, phase in getattr(snapshot, "intents", ()):
             if phase != "end" and gid in GESTURE_TO_STUDIO_CLASS:
                 cls = GESTURE_TO_STUDIO_CLASS[gid]

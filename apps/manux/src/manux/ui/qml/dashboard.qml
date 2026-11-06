@@ -1061,7 +1061,7 @@ ApplicationWindow {
                                                 anchors.fill: parent
                                                 anchors.margins: 8
                                                 spacing: 2
-                                                TextLabel { text: "기계·수학 규칙 판정"; font.pixelSize: 11; color: window.muted }
+                                                TextLabel { text: "시스템 판정"; font.pixelSize: 11; color: window.muted }
                                                 TextLabel { text: dashboard.studioSystemAction; font.pixelSize: 14; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
                                             }
                                         }

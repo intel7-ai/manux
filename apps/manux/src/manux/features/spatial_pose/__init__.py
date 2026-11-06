@@ -38,6 +38,7 @@ CLASS_TO_GESTURE: Mapping[str, str] = {
 }
 
 GESTURE_TO_CLASS: Mapping[str, str] = {v: k for k, v in CLASS_TO_GESTURE.items()}
+BOTH_CLICK_GESTURES = frozenset({"pinch.thumb_middle", "pinch.thumb_ring"})
 DEFAULT_VETO_GESTURES = frozenset({"pinch.thumb_ring", "pinch.thumb_middle", "pointer.right_click", "pointer.click"})
 
 
@@ -194,7 +195,9 @@ class SpatialPoseGuard(IntentFilter):
                 # If MLP is confident that hand is doing a completely different explicit pinch
                 if ev is not None and ev.confidence >= self.tau_veto and ev.action != "none":
                     expected_gesture = CLASS_TO_GESTURE.get(ev.action)
-                    if expected_gesture and expected_gesture != intent.gesture:
+                    # "Both click" = left and right fire independently; never veto either one.
+                    both_click = ev.action == "thumb_middle_ring" and intent.gesture in BOTH_CLICK_GESTURES
+                    if expected_gesture and expected_gesture != intent.gesture and not both_click:
                         self.vetoed_count += 1
                         self._events.append(f"spatial_guard:vetoed_mismatch:{intent.gesture}_vs_{expected_gesture}")
                         continue
