@@ -30,6 +30,26 @@ def visual_child(item, name):
             return found
 
 
+def test_idle_main_camera_paints_motion_ring_and_clears_it_when_hand_leaves(studio):
+    import numpy as np
+    bridge, service, runtime, messages = studio
+    bridge.use_index_pointer = False
+    assert bridge.paused and bridge.rec_mode == "off"
+    raw = np.zeros((480, 640, 3), dtype=np.uint8)
+    landmarks = tuple((.2+.01*(i%5), .2+.02*(i//5), 0.) for i in range(21))
+    view = ViewFrame(None, image=raw, landmarks=landmarks,
+                     preview_anchor=(.5, .5), preview_moving=True, preview_guides=((12, "pinched"),))
+    bridge.last_preview = 0
+    bridge.apply_view(view)
+    assert bridge.provider.image.pixelColor(320, 240).name() == "#76e600"
+    assert bridge.provider.image.pixelColor(330, 240).name() != "#000000"
+    assert not raw.any()  # overlays never change camera/recording source data
+    bridge.last_preview = 0
+    bridge.apply_view(ViewFrame(None, image=raw))
+    assert bridge.provider.image.pixelColor(320, 240).name() == "#000000"
+    assert bridge.paused and bridge.rec_mode == "off"
+
+
 @pytest.fixture
 def studio(tmp_path):
     app = QApplication.instance() or QApplication([])

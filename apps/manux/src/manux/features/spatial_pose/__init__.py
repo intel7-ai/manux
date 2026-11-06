@@ -34,6 +34,7 @@ CLASS_TO_GESTURE: Mapping[str, str] = {
     "thumbs_up": "motion.thumbs_up",
     "v_sign": "pointer.v_sign",
     "thumb_middle_ring": "pinch.thumb_middle_ring",
+    "rock_sign": "window.close",
 }
 
 GESTURE_TO_CLASS: Mapping[str, str] = {v: k for k, v in CLASS_TO_GESTURE.items()}

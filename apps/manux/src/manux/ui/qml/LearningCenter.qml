@@ -188,7 +188,7 @@ Popup {
                         contentWidth: availableWidth; clip: true
                         ColumnLayout {
                         width: recordingDetail.availableWidth; spacing: Theme.Studio.gap
-                        StudioPlayer { Layout.fillWidth: true; Layout.preferredHeight: Math.max(300,studio.height*0.5); studio: studio.library }
+                        StudioPlayer { Layout.fillWidth: true; Layout.minimumHeight: implicitHeight; studio: studio.library }
                         Copy { Layout.fillWidth: true; text: (studio.library.selected.quality || {}).summary || "관절 품질을 확인한 뒤 학습 데이터를 선택하세요."; color: Theme.Studio.muted }
                         Flow {
                             Layout.fillWidth: true; spacing: 6
@@ -215,7 +215,7 @@ Popup {
                         Copy { Layout.fillWidth: true; text: studio.library.selected.name || "녹화 탭에서 비교할 녹화를 선택하세요"; font.bold: true }
                         StudioButton { objectName: "simulateRecording"; text: "현재 모델로 비교"; primary: true; enabled: studio.idle && studio.library.selectedKey!==""; onClicked: studio.library.simulate() }
                     }
-                    StudioPlayer { Layout.fillWidth: true; Layout.preferredHeight: Math.max(300,studio.height*0.43); studio: studio.library }
+                    StudioPlayer { Layout.fillWidth: true; Layout.minimumHeight: implicitHeight; studio: studio.library }
                     Copy { Layout.fillWidth: true; text: studio.library.simulationReport.note || "실제 엔진의 중립 복귀·연속 확정·모드·바인딩을 재생합니다. Windows 입력은 보내지 않습니다."; color: Theme.Studio.muted }
                     Copy { Layout.fillWidth: true; visible: !!studio.library.simulationReport.counts; text: "모델 · "+(studio.library.simulationReport.model || "")+"  |  규칙 "+((studio.library.simulationReport.counts || {}).rules || 0)+" / 현재 정책 "+((studio.library.simulationReport.counts || {}).model || 0)+" / TCN 연습 적용 "+((studio.library.simulationReport.counts || {}).preview || 0) }
                     ListView {

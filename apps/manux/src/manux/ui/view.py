@@ -43,3 +43,6 @@ class ViewFrame:
     frame_age_ms: Optional[float] = None      # app capture timestamp -> runtime publish, not sensor/display latency
     pose_status: str = ""                    # optional recording-only Pose tracking status
     spatial_guard_enabled: bool = False      # actual runtime state, never a UI prediction
+    preview_guides: Tuple[Tuple[int, str], ...] = ()  # fingertip index + near/pinched/action; display only
+    preview_anchor: Optional[Tuple[float, float]] = None
+    preview_moving: bool = False              # rule preview, not evidence of OS output

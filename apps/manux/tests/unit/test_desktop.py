@@ -102,6 +102,27 @@ def windows_runtime(tmp_path, settings):
     return runtime, backend
 
 
+def test_idle_preview_has_motion_ring_without_control_recording_or_os_input(tmp_path):
+    from manux.core.contracts import OutputTarget
+    settings = Settings(schema(), {"tracking.control_hand": "Right"})
+    runtime, backend = windows_runtime(tmp_path, settings)
+    runtime.engine.commands.put(SetStage(Stage.MAIN))
+    try:
+        views = run_frames(runtime, 12)
+        assert all(v.preview_anchor is not None for v in views)
+        assert all(not v.snapshot.control_on and v.snapshot.output is OutputTarget.NONE for v in views)
+        assert not backend.events
+        assert runtime._rec is None
+        pinch = next(f for f in runtime.engine.features if f.id == "pinch")
+        assert runtime.pinch_preview.core is not pinch.core
+        from copy import deepcopy
+        before, last = deepcopy(pinch.core.__dict__), pinch.last_frame
+        runtime.pinch_preview.step(None, {})
+        assert pinch.core.__dict__ == before and pinch.last_frame is last
+    finally:
+        runtime.stop()
+
+
 def test_tracking_test_needs_windows_output(tmp_path):
     runtime = build(Settings(schema()), ReplayInput(recording(tmp_path / "r.jsonl.gz")), windows=False)
     assert runtime.start_tracking_test()            # a reason, not started

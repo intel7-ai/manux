@@ -185,6 +185,9 @@ def run(request, send, cancelled):
                 raise ValueError("모델 공유 실패 · .env의 저장소·읽기/쓰기 권한·네트워크와 파일 해시를 확인하세요.") from None
             result = {"models": models.scan(library), "remote_models": remote,
                       "note": f"{provider} · {repo} · 원격 모델 {len(remote)}개 · 다운로드는 사용 모델을 바꾸지 않습니다."}
+        elif action == "model_import":
+            models.add(library, Path(request["source"]))
+            result = {"models": models.scan(library), "note": "모델 파일을 검증해 보관함에 복사했습니다. 원본과 active는 유지했습니다."}
         elif action == "model_rename":
             models.rename(library, identifier, request.get("name", ""))
             result = {"models": models.scan(library), "note": "모델 표시 이름을 저장했습니다."}

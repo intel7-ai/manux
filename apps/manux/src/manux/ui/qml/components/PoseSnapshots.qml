@@ -22,10 +22,17 @@ ScrollView {
             }
         }
         Flow {
+            Layout.fillWidth:true;spacing:6
+            Repeater {
+                model:page.controller.studioCategories
+                StudioButton {required property var modelData;text:modelData.name;primary:modelData.selected;enabled:page.idle;onClicked:page.controller.setStudioCategory(modelData.id)}
+            }
+        }
+        Flow {
             Layout.fillWidth: true; spacing: 6
             Repeater {
-                model: page.controller.studioActions
-                StudioButton { required property var modelData; width: Math.max(145,(page.width-18)/3); text: modelData.short+" · "+modelData.totalCount; primary: modelData.selected; enabled: page.idle; onClicked: page.controller.setStudioGroundTruth(modelData.id) }
+                model: page.controller.studioCategoryActions
+                StudioButton { required property var modelData; width: Math.max(140,(page.availableWidth-8)/2); text: modelData.short+" · "+modelData.totalCount; primary: modelData.selected; enabled: page.idle; onClicked: page.controller.setStudioGroundTruth(modelData.id) }
             }
         }
         Copy { Layout.fillWidth: true; text: page.controller.studioGroundTruthDesc; font.bold: true }

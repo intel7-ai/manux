@@ -30,11 +30,12 @@ from manux.data.recording import read, replay
 from manux.data.tracking_test import TrackingTest, load_recent_results, result_line, view as tracking_view
 from manux.data.training_center import TrainingCenterService
 from manux.data.legacy_import import pending_model
-from manux.data.pose_studio import ACTION_IDS, PoseSnapshotStudio, STUDIO_ACTIONS, normalize_system_action
+from manux.data.pose_studio import ACTION_IDS, PoseSnapshotStudio, STUDIO_ACTIONS, STUDIO_CATEGORIES, normalize_system_action
 from manux.engine.commands import RequestMode, SetBusy, SetControl
 from manux.engine.pipeline import Engine
 from manux.features import tcn_gate
 from manux.features.spatial_pose import SpatialPoseFeature, SpatialPoseGuard
+from manux.features.pinch.preview import PinchPreview
 from manux.ml.card import ModelError
 from manux.ml.predictor import load_model
 from manux.ml.spatial_mlp import SpatialMlpModel, train_spatial_mlp
@@ -166,6 +167,7 @@ class DesktopRuntime:
         self.control_hand = settings.get("tracking.control_hand")
         self.use_crop = bool(settings.get("tracking.hand_crop"))
         self.want_image = True
+        self.pinch_preview = PinchPreview()
         self._overrides: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._latest = ViewFrame(None)
@@ -495,6 +497,8 @@ class DesktopRuntime:
         elif image is None:
             self._metrics = (self.source.mode_text(), -1, False)
         actions = tuple(a for a, _phase, _reason in snap.results)
+        guides, anchor, moving = self.pinch_preview.step(
+            hand if self.want_image and snap.mode == "pinch" else None, self.settings_for("pinch"))
         self._publish(ViewFrame(
             snapshot=snap, image=image if self.want_image else None, hands=hands,
             landmarks=hand.landmarks if hand is not None else None,
@@ -505,6 +509,7 @@ class DesktopRuntime:
             model_status=self._model_view_status(), tracking=tracking, recent=self.recent,
             rec=self._rec_view(frame.t), pose_status=self.pose_status,
             spatial_guard_enabled=bool(self.spatial_guard and self.spatial_guard.enabled),
+            preview_guides=guides, preview_anchor=anchor, preview_moving=moving,
             frame_age_ms=max(0.0, (time.perf_counter() - frame.t) * 1000.0)))
 
     def _pose_step(self, image, now):
@@ -861,6 +866,7 @@ def main(argv=None) -> int:
                    "training_center": tc,
                    "pose_studio": studio,
                    "studio_actions": lambda: list(STUDIO_ACTIONS),
+                   "studio_categories": lambda: list(STUDIO_CATEGORIES),
                    "studio_system_action": normalize_system_action,
                },
                hotkeys=hotkeys.GlobalHotkeys({}), hotkey_defaults=hotkeys.DEFAULTS,

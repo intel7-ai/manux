@@ -23,6 +23,7 @@ ScrollView {
         Flow {
             Layout.fillWidth: true; spacing: 6
             StudioButton { text: "로컬 새로고침"; enabled: page.idle; onClicked: page.library.refresh() }
+            StudioButton { text: "모델 파일 가져오기"; enabled: page.idle; onClicked: page.library.importModel() }
             StudioButton { objectName: "fetchRemoteModels"; text: "공유 모델 불러오기"; enabled: page.idle; onClicked: page.library.modelAction("remote", "", "") }
             StudioButton { text: "진단"; enabled: page.idle; onClicked: page.library.diagnose() }
         }
