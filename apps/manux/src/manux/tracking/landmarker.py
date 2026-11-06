@@ -72,10 +72,13 @@ class MediaPipeLandmarker:
         self.crop_max_side = int(crop_max_side)
         self.last_detect_ms = 0.0
         vision = mp.tasks.vision
+        # MediaPipe's native file loader can reject Unicode Windows paths.
+        # Python reads those paths correctly; share one buffer with both detectors.
+        model_data = ensure_model(Path(model_path)).read_bytes()
 
         def options(hands: int):
             return vision.HandLandmarkerOptions(
-                base_options=mp.tasks.BaseOptions(model_asset_path=str(ensure_model(Path(model_path)))),
+                base_options=mp.tasks.BaseOptions(model_asset_buffer=model_data),
                 running_mode=vision.RunningMode.VIDEO, num_hands=hands,
                 min_hand_detection_confidence=min_detection_confidence,
                 min_hand_presence_confidence=min_presence_confidence,
