@@ -599,6 +599,8 @@ class DesktopRuntime:
             self.current_model = model
             self.preview_only = False
             self.model_status = "TCN 모델 갱신됨 · 학습센터에서 동작별 시험/적용 확인"
+            from manux.ml.backends import describe
+            self.model_status += " · " + describe(model.predictor)["actual"]
             return True
         except (ModelError, OSError, ValueError) as error:
             self.model_status = f"모델 갱신 실패 · 기존 모델 유지 ({getattr(error, 'text', '정보 확인 필요')})"
@@ -625,12 +627,17 @@ def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, t
         if direct.card.kind == "personal" and tcn_store is None and windows and shadow_model is None:
             raise ValueError("personal direct Windows input requires a verified --tcn-store; use --no-windows-input for file tests")
         status = "이전 모델 시험 중 · 별도 평가 후 적용 가능" if shadow_model is not None else "TCN 직접 판정"
+        from manux.ml.backends import describe
+        status += " · " + describe(direct.predictor)["actual"]
     elif tcn_model is not None:
         eligible = {gid for module, _ in _FEATURES for gid in module.DEFAULT_BINDINGS
                     if module.GESTURE_PHASES[gid] & {"tap", "begin"}}
         gate = tcn_gate.create_gate(Path(tcn_model), settings.section("tcn_gate"), eligible=eligible)
         filters = (gate.gate,) if gate.gate is not None else ()
         status = "TCN 확인기" if filters else f"TCN 확인기 꺼짐 · {gate.text}"
+        if filters:
+            from manux.ml.backends import describe
+            status += " · " + describe(gate.gate.predictor)["actual"]
     engine = build_engine(settings, "pinch", filters, direct_model=direct, binding_overrides=binding_overrides,
                           policies=({g: "shadow" for g in direct.card.gestures.values()} if shadow_model is not None
                                     else policy_store.modes(direct.card.raw) if policy_store and direct else None))
@@ -663,6 +670,8 @@ def main(argv=None) -> int:
     parser.add_argument("--screenshot", type=Path, help="save the window to this PNG after a few seconds, then quit")
     parser.add_argument("--self-check", type=Path, metavar="OUT.json",
                         help="check the bundled model, MediaPipe, OpenCV and Qt, write the result, then quit")
+    parser.add_argument("--train-device", choices=("auto","cpu","cuda","xpu"))
+    parser.add_argument("--inference-device", choices=("auto","cpu","cuda","openvino-cpu","openvino-gpu","openvino-npu"))
     args = parser.parse_args(argv)
     paths = resolve()
     from manux.platform.updater import Updater, read_build_info
@@ -672,6 +681,9 @@ def main(argv=None) -> int:
     updater = Updater(info, paths.frozen)
     updater.start()
     settings = load(schema(), paths.config_dir)
+    from manux.app import configure_acceleration
+    try: configure_acceleration(args, settings)
+    except ValueError as error: parser.error(str(error))
     policy_store = GesturePolicies(paths.config_dir / "tcn-policies.json")
     default_store = paths.data_dir / "models" / "personal"
     if args.tcn_model is None and args.tcn_store is None and (default_store / "active.json").is_file():
