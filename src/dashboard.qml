@@ -659,8 +659,26 @@ ApplicationWindow {
     }
 
     // Training center (src/training_center.py): data per gesture, scores, focused recording, training, export
+    Connections {
+        target: dashboard
+        function onTrainingStarted() {
+            trainingCenter.close()
+            trainingProgressPage.open()
+        }
+    }
+
+    TrainingProgressPage {
+        id: trainingProgressPage
+        controller: dashboard
+        onBackRequested: {
+            close()
+            trainingCenter.open()
+        }
+    }
+
     Popup {
         id: trainingCenter
+        objectName: "trainingCenter"
         anchors.centerIn: parent
         width: Math.min(1040, window.width - 40)
         height: Math.min(820, window.height - 40)
@@ -679,11 +697,21 @@ ApplicationWindow {
                     spacing: 2
                     TextLabel { text: "학습 센터"; font.pixelSize: 22; font.bold: true }
                     TextLabel {
-                        text: "녹화 → 학습 → 동작별 성적 확인 → 부족한 동작 집중 녹화 → 다시 학습 → 내보내기"
+                        text: "동작별 집중 녹화 → 원하는 동작 선택 학습 → 성적 확인 → 내보내기"
+                        Layout.fillWidth: true; wrapMode: Text.Wrap
                         font.pixelSize: 12; color: window.muted
                     }
                 }
                 Item { Layout.fillWidth: true }
+                ActionButton {
+                    objectName: "open-training-progress"
+                    text: "학습 진행 보기"
+                    accent: dashboard.trainingRunning
+                    onClicked: {
+                        trainingCenter.close()
+                        trainingProgressPage.open()
+                    }
+                }
                 ActionButton { text: "새로고침"; enabled: dashboard.trainingBusy === ""; onClicked: dashboard.refreshTraining() }
                 ActionButton { text: "닫기"; onClicked: trainingCenter.close() }
             }
@@ -718,7 +746,7 @@ ApplicationWindow {
             }
             TextLabel {
                 Layout.fillWidth: true
-                text: "인식 = 학습에 쓰지 않은 자세에서 맞힌 비율 (처음 보는 상황에서의 실력) · 학습 = 학습한 데이터를 맞힌 비율 · 괄호는 규칙만 썼을 때"
+                text: "자세 분류 = 학습에서 제외한 자세의 평가 · 학습 = 학습 데이터 정확도 · 실제 클릭·동작 전달 결과는 아래에 별도로 표시됩니다."
                 font.pixelSize: 11; color: window.muted; wrapMode: Text.Wrap
             }
             RowLayout {
@@ -735,6 +763,29 @@ ApplicationWindow {
                 Item { Layout.fillWidth: true }
             }
             TextLabel { text: dashboard.trainingCatalog; font.pixelSize: 12; color: window.muted }
+            RowLayout {
+                Layout.fillWidth: true
+                ActionButton {
+                    text: "녹화된 동작 전체 선택"
+                    enabled: !dashboard.trainingRunning && dashboard.trainingBusy === ""
+                    onClicked: dashboard.selectAllTraining(true)
+                }
+                ActionButton {
+                    text: "선택 해제"
+                    enabled: !dashboard.trainingRunning && dashboard.trainingBusy === ""
+                    onClicked: dashboard.selectAllTraining(false)
+                }
+                TextLabel {
+                    Layout.fillWidth: true
+                    text: dashboard.trainingSelectionText
+                    font.pixelSize: 12; wrapMode: Text.Wrap
+                }
+            }
+            TextLabel {
+                Layout.fillWidth: true
+                text: "새 모델은 시험 모드로 시작합니다. 자세 분류율과 실제 동작 전달 평가를 확인하세요. 좌클릭·중지 드래그는 함께 학습하고 적용은 따로 설정합니다."
+                font.pixelSize: 11; color: window.muted; wrapMode: Text.Wrap
+            }
             ScrollView {
                 id: trainScroll
                 Layout.fillWidth: true
@@ -761,6 +812,15 @@ ApplicationWindow {
                                 anchors.fill: parent
                                 anchors.margins: 12
                                 spacing: 14
+                                CheckBox {
+                                    objectName: "train-select-" + row.modelData.key
+                                    visible: !row.modelData.free
+                                    checked: row.modelData.selected
+                                    enabled: !dashboard.trainingRunning && dashboard.trainingBusy === ""
+                                             && (row.modelData.can_train || checked)
+                                    Accessible.name: row.modelData.name + " 학습 선택"
+                                    onClicked: dashboard.selectTrainingTask(row.modelData.key, checked)
+                                }
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     spacing: 5
@@ -795,12 +855,35 @@ ApplicationWindow {
                                         TextLabel { text: row.modelData.score_text; font.pixelSize: 13; font.bold: true }
                                         TextLabel { text: row.modelData.fit_text; font.pixelSize: 12; color: window.muted }
                                     }
-                                    TextLabel { text: row.modelData.model_text; font.pixelSize: 11; color: window.muted }
                                     TextLabel {
-                                        visible: row.modelData.label === "thumb_middle"
-                                        text: "좌클릭과 중지 유지 드래그가 같은 모델을 공유합니다."
-                                        font.pixelSize: 11
-                                        color: window.muted
+                                        text: row.modelData.model_text + (row.modelData.free ? " · 선택 학습 시 자동 포함"
+                                              : row.modelData.can_train ? " · 학습에 사용할 녹화 " + row.modelData.recordings + "개"
+                                              : " · 집중 녹화 후 선택 가능")
+                                        font.pixelSize: 11; color: window.muted
+                                        Layout.fillWidth: true; wrapMode: Text.Wrap
+                                    }
+                                    TextLabel {
+                                        visible: !row.modelData.free
+                                        text: row.modelData.interaction_text
+                                        Layout.fillWidth: true; wrapMode: Text.Wrap
+                                        font.pixelSize: 11; color: window.muted
+                                    }
+                                    RowLayout {
+                                        visible: !row.modelData.free
+                                        Layout.fillWidth: true
+                                        TextLabel { text: "TCN 동작"; font.pixelSize: 12 }
+                                        ComboBox {
+                                            objectName: "tcn-mode-" + row.modelData.key
+                                            model: ["기존 규칙", "시험 · 기록만", "TCN 적용"]
+                                            currentIndex: row.modelData.tcn_mode
+                                            enabled: row.modelData.tcn_available && !dashboard.trainingRunning && dashboard.trainingBusy === ""
+                                            onActivated: dashboard.setTaskTcnMode(row.modelData.key, currentIndex)
+                                        }
+                                        TextLabel {
+                                            Layout.fillWidth: true; wrapMode: Text.Wrap
+                                            font.pixelSize: 11; color: window.muted
+                                            text: !row.modelData.tcn_available ? "학습 후 선택 가능" : row.modelData.tcn_mode === 1 ? "마우스 동작을 바꾸지 않고 비교 기록" : row.modelData.tcn_mode === 2 ? "좌·우클릭은 3D 보완 · 나머지는 의도 확인" : "이 동작은 기존 규칙 사용"
+                                        }
                                     }
                                     TextLabel {
                                         Layout.fillWidth: true
@@ -812,20 +895,16 @@ ApplicationWindow {
                                 }
                                 ColumnLayout {
                                     ActionButton {
+                                        objectName: "train-single-" + row.modelData.key
                                         text: "이 동작만 학습"
                                         visible: row.modelData.can_train
                                         accent: true
-                                        enabled: !dashboard.trainingRunning && !dashboard.recActive && dashboard.trainingBusy === ""
+                                        enabled: !dashboard.trainingRunning && dashboard.recMode === "off" && dashboard.trainingBusy === ""
                                         onClicked: dashboard.trainSelectedGesture(row.modelData.key)
-                                    }
-                                    TextLabel {
-                                        visible: !row.modelData.can_train
-                                        text: "선택 학습의 공통 오답 자료"
-                                        font.pixelSize: 11
-                                        color: window.muted
                                     }
                                     ActionButton {
                                         text: "집중 녹화 설정"
+                                        accent: row.modelData.level === "need"
                                         enabled: !dashboard.trainingRunning && dashboard.recMode === "off"
                                         onClicked: {
                                             if (dashboard.focusRecord(row.modelData.key)) {
@@ -850,7 +929,7 @@ ApplicationWindow {
                     TextLabel {
                         Layout.fillWidth: true
                         text: dashboard.trainingStage !== "" ? dashboard.trainingStage
-                              : "학습: 자세 하나씩 빼고 평가한 뒤 전체로 최종 모델을 만들어요 (CPU로 몇 분)"
+                              : "선택한 동작만 자세별로 평가하고 학습합니다. 기존 다른 동작의 모델은 유지됩니다."
                         font.pixelSize: 13; wrapMode: Text.Wrap
                     }
                     Rectangle {
@@ -862,30 +941,10 @@ ApplicationWindow {
                             height: parent.height; radius: 3; color: "#45E0B4"
                         }
                     }
-                    Canvas {
-                        id: lossChart
-                        visible: dashboard.trainingLosses.length > 1
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 34
-                        property var losses: dashboard.trainingLosses
-                        onLossesChanged: requestPaint()
-                        onPaint: {
-                            var ctx = getContext("2d")
-                            ctx.reset()
-                            var v = losses
-                            if (!v || v.length < 2) return
-                            var hi = Math.max.apply(null, v), lo = Math.min.apply(null, v)
-                            var span = Math.max(1e-6, hi - lo)
-                            ctx.strokeStyle = "#16846E"
-                            ctx.lineWidth = 2
-                            ctx.beginPath()
-                            for (var i = 0; i < v.length; i++) {
-                                var x = i / (v.length - 1) * (width - 4) + 2
-                                var y = 3 + (1 - (v[i] - lo) / span) * (height - 6)
-                                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
-                            }
-                            ctx.stroke()
-                        }
+                    TextLabel {
+                        text: dashboard.trainingProgressSummary
+                        Layout.fillWidth: true; wrapMode: Text.Wrap
+                        font.pixelSize: 12; color: window.muted
                     }
                     TextLabel {
                         Layout.fillWidth: true
@@ -895,9 +954,10 @@ ApplicationWindow {
                     }
                 }
                 ActionButton {
-                    text: dashboard.trainingRunning ? "학습 멈춤" : "전체 통합 학습"
+                    text: dashboard.trainingRunning ? "학습 멈춤" : "선택 동작 학습 (" + dashboard.trainingSelectedCount + ")"
                     accent: !dashboard.trainingRunning
-                    enabled: dashboard.trainingBusy === "" && !dashboard.recActive
+                    enabled: dashboard.trainingBusy === "" && dashboard.recMode === "off"
+                             && (dashboard.trainingRunning || dashboard.trainingSelectedCount > 0)
                     onClicked: dashboard.trainingRunning ? dashboard.stopTraining() : dashboard.startTraining()
                 }
                 ActionButton {

@@ -117,7 +117,7 @@ def test_condition_identity_does_not_depend_on_order_title_or_reps():
     assert plans.condition_key(row) != plans.condition_key({**row, "position": "왼쪽"})
 
 
-def test_condition_groups_and_windows_do_not_mix_between_recordings_or_poses(tmp_path):
+def test_conditions_share_physical_context_but_recordings_start_fresh(tmp_path):
     a, b = plans.condition_key(plans.condition()), plans.condition_key(plans.condition(position="왼쪽"))
     p1 = write_session(tmp_path / "a", labels(a) + labels(b, offset=1))
     p2 = write_session(tmp_path / "b", labels(b, index=0) + labels(a, index=1, offset=1))
@@ -125,16 +125,19 @@ def test_condition_groups_and_windows_do_not_mix_between_recordings_or_poses(tmp
     s, t = sessions
     assert s["cond"][0] == t["cond"][12] and s["cond"][12] == t["cond"][0]
     assert s["cond"][0] != s["cond"][12]
-    assert np.count_nonzero(s["x"][12, :-1]) == 0
+    assert np.count_nonzero(s["x"][12, :-1]) > 0
+    assert not t["x"][0, :-1].any()
     assert np.count_nonzero(s["features"][12, 63:126]) == 0
 
 
-def test_pauses_and_missing_3d_reset_temporal_context(tmp_path):
+def test_instruction_pauses_do_not_change_inputs_and_missing_hand_is_a_zero_step(tmp_path):
     rows = labels("pose-a") + [{"target": "idle", "phase": "paused", "condition_key": "pose-a"}] + labels("pose-a")
     rows[14]["hand"] = False
     s = load_sessions([write_session(tmp_path, rows)])[0]
     assert s["y"][12] == s["y"][14] == -1
-    assert not s["x"][13, :-1].any() and not s["x"][15, :-1].any()
+    assert s["x"][13, :-1].any() and s["x"][15, :-2].any()
+    assert not s["x"][15, -2].any()
+    assert not s["features"][15, 63:126].any()
 
 
 def test_coverage_uses_actual_time_and_requires_a_complete_repetition(tmp_path):

@@ -28,6 +28,7 @@ class CameraConfig:
     mirror: bool = True
     auto_reconnect: bool = True
     phone_port: int = 8443
+    backend: str = "auto"
 
 
 class CameraStream:
@@ -93,10 +94,21 @@ class CameraStream:
 
         # 2. Local USB Webcam (index 0, 1, ...)
         if isinstance(source, int):
-            # In OpenCV 5.0 on Windows, default CAP_ANY works reliably with USB UVC cameras (like SNAP U2)
-            self.cap = cv2.VideoCapture(source)
-            if not self.cap or not self.cap.isOpened():
-                self.cap = cv2.VideoCapture(source, cv2.CAP_DSHOW)
+            # Some RealSense RGB devices open under MSMF but never deliver frames.
+            # Keep an explicit backend selectable instead of falling back only when
+            # isOpened() fails. Device indexes are specific to each backend.
+            backend = self.config.backend.lower()
+            if backend not in ("auto", "dshow", "msmf"):
+                raise ValueError(f"Unsupported camera backend: {backend}")
+            if backend == "auto":
+                self.cap = cv2.VideoCapture(source)
+                if not self.cap or not self.cap.isOpened():
+                    if self.cap is not None:
+                        self.cap.release()
+                    self.cap = cv2.VideoCapture(source, cv2.CAP_DSHOW)
+            else:
+                api = cv2.CAP_DSHOW if backend == "dshow" else cv2.CAP_MSMF
+                self.cap = cv2.VideoCapture(source, api)
         else:
             # 3. Network MJPEG / RTSP stream
             self.cap = cv2.VideoCapture(source)

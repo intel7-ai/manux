@@ -75,6 +75,10 @@ class RecordingPlanEditor(QObject):
     def allGestures(self):
         return not self.focus
 
+    @Property(bool, notify=changed)
+    def clickGesture(self):
+        return self.focus in ("thumb_middle", "thumb_ring")
+
     @Property(str, notify=changed)
     def summary(self):
         count = sum(r["enabled"] for r in self.plan["conditions"])

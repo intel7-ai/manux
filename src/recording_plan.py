@@ -17,7 +17,7 @@ OPTIONS = {
     "camera": ["눈높이", "위에서 아래로", "아래에서 위로", "왼쪽 측면", "오른쪽 측면", "직접 지정"],
     "lighting": ["보통", "밝음", "어두움", "역광", "직접 지정"],
 }
-TIMINGS = {"reps": (1, 100, 10), "prep": (0.5, 10, 1.5), "hold": (0.5, 10, 2.0),
+TIMINGS = {"reps": (1, 100, 10), "prep": (0.5, 10, 1.5), "hold": (0.2, 10, 2.0),
            "rest": (0.5, 10, 1.5), "free_seconds": (10, 900, 60)}
 
 
@@ -30,6 +30,10 @@ def condition(**values):
 
 
 def preset(name="basic"):
+    if name == "quick_click":
+        rows = [dict(row, name=f"{row['name']} · {hold:.1f}초 클릭", hold=hold, reps=6, rest=1.2)
+                for row in preset("diverse")["conditions"] for hold in (.3, .5, .7)]
+        return {"schema": SCHEMA, "conditions": rows}
     rows = [condition(name="정면 · 중앙"),
             condition(name="왼쪽 방향 · 왼쪽", orientation="왼쪽으로 기울임", position="왼쪽", posture="몸을 왼쪽으로"),
             condition(name="오른쪽 방향 · 오른쪽", orientation="오른쪽으로 기울임", position="오른쪽", posture="몸을 오른쪽으로")]

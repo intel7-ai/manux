@@ -32,3 +32,6 @@ recordings/*.part
 config/tcn-ui.ini
 config/recording-plans.json
 config/recording-plans.tmp
+models/selected/
+models/gesture_tcn.selected.json
+models/gesture_tcn.selected.json.*.tmp

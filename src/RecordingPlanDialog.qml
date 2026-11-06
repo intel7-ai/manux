@@ -48,7 +48,7 @@ Dialog {
         Caption { text: seconds.label }
         SpinBox {
             Layout.fillWidth: true
-            from: 5; to: 100; stepSize: 5; editable: true
+            from: seconds.field === "hold" ? 2 : 5; to: 100; stepSize: 1; editable: true
             value: Math.round(dialog.editor.selected[seconds.field] * 10)
             textFromValue: function(value, locale) { return (value / 10).toLocaleString(locale, 'f', 1) }
             valueFromText: function(text, locale) { return Math.round(Number.fromLocaleString(locale, text) * 10) }
@@ -73,6 +73,7 @@ Dialog {
             Button { text: "기본 3자세"; onClicked: dialog.editor.usePreset("basic") }
             Button { text: "다양한 조건 9자세"; onClicked: dialog.editor.usePreset("diverse") }
             Button { text: "화면 위치 9곳"; onClicked: dialog.editor.usePreset("positions") }
+            Button { text: "짧은 클릭 · 각도×속도"; visible: dialog.editor.clickGesture; onClicked: dialog.editor.usePreset("quick_click") }
             Item { Layout.fillWidth: true }
         }
         Caption { text: dialog.editor.instruction; Layout.fillWidth: true; color: "#16846E" }

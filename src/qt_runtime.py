@@ -70,6 +70,7 @@ class UiState:
     model_version: int = 0              # +1 when the training center saved a new model: reload the gate
     rec_plan: Optional[Dict[str, Any]] = None
     rec_paused: bool = False
+    tcn_policies: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -399,6 +400,7 @@ class QtRuntime:
         if gate is not None:
             gate.step(t0, detections[0] if detections else None, frame.shape[0] / max(1, frame.shape[1]))
         self._rule_action = "none"
+        self._rule_gesture = "NONE"
         toggle_hold = (not palm_calibrating) and self._toggle_sign(t0, ui, detections)
         motion_active = (not toggle_hold) and self._motion(t0, ui, detections)
         close_hold = (not motion_active) and (not toggle_hold) and self._close_sign(t0, ui, detections)
@@ -478,8 +480,9 @@ class QtRuntime:
                 cv2.putText(frame, str(number), (px - 5, py + 5), cv2.FONT_HERSHEY_SIMPLEX, .46, color, 1, cv2.LINE_AA)
         elif detections and not index_mode and not motion_active and not close_hold and not toggle_hold and not palm_calibrating:
             hand = detections[0]
-            result = engine.process(hand.landmarks)
+            result = engine.process(hand.landmarks, timestamp=t0)
             rule_action = result.action
+            self._rule_gesture = result.active_gesture
             if gate is not None:
                 result = gate.filter(t0, result)
                 if gate.last_note:
@@ -505,7 +508,7 @@ class QtRuntime:
                 self._last_fling = mouse.fling_count
                 self._say(f"FLING! ~{mouse.last_fling_distance:.0f}px", .8)
         elif not index_mode:
-            result = engine.process(None)
+            result = engine.process(None, timestamp=t0)
 
         if roi is not None:
             cv2.rectangle(frame, roi[:2], roi[2:], (189, 229, 70), 2, cv2.LINE_AA)
@@ -712,12 +715,17 @@ class QtRuntime:
         if reload:
             self._model_version = version
             self._gate_failed = False
+            if isinstance(self.gate, GestureGate):
+                self.gate.policies = getattr(ui, "tcn_policies", None) or {}
+                self.gate.reset()
         if not ui.tcn_gate or self._gate_failed:
+            if self.gate is not None:
+                self.gate.reset()
             return None
         if self.gate is None or reload:
             try:
                 predict, info = load_predictor(GATE_MODEL)
-                replacement = GestureGate(predict, info, self.engine.config)
+                replacement = GestureGate(predict, info, self.engine.config, getattr(ui, "tcn_policies", None))
                 self.mouse.release_all()
                 self.engine.reset()
                 self.pointer.reset()
@@ -750,8 +758,10 @@ class QtRuntime:
                        "note": str(cfg.get("camera_note", ""))},
             "frame_aspect": round(float(self.mouse.frame_aspect), 5),
             "control_hand": self.ui.control_hand, "profile": self.engine.profile_name or "",
+            "capture_instructions": 2,
             "pose": self.pose is not None,
             "rules": {k: cfg.get(k) for k in keys if k in cfg},
+            "config": dict(cfg),
             "pose_joints": "MediaPipe Pose 11-16: left shoulder, right shoulder, left elbow, right elbow, left wrist, "
                            "right wrist (x, y, visibility)",
         }
@@ -813,14 +823,15 @@ class QtRuntime:
         rule = None
         if result is not None:
             dd = result.distances or {}
-            rule = {"action": getattr(self, "_rule_action", result.action), "gesture": result.active_gesture,
+            rule = {"action": getattr(self, "_rule_action", result.action), "gesture": getattr(self, "_rule_gesture", result.active_gesture),
                     "gated": result.action if self.gate is not None and ui_gate_on(self) else None,
+                    "tcn": self.gate.diagnostics() if self.gate is not None and ui_gate_on(self) else None,
                     "dpi": round(float(getattr(result, "dpi_multiplier", 1.0) or 1.0), 2),
                     "curl": round(float(self.engine._curl_s), 3) if self.engine._curl_s is not None else None,
                     "size": round(float(dd.get("hand_size", 0.0)), 4)}
             if self._guided is not None:
                 from types import SimpleNamespace
-                observed = SimpleNamespace(action=rule["action"], active_gesture=result.active_gesture)
+                observed = SimpleNamespace(action=rule["action"], active_gesture=rule["gesture"])
                 rule["evaluated"] = True
                 rule["targets"] = self._capture_rules.observe(t0, hand, observed, label)
         self._rec.frame(t0, hand, pose, label, rule, self.mouse.last_screen_pos)
@@ -986,6 +997,9 @@ class QtRuntime:
                 crop=list(roi) if roi else None, cursor=list(self.mouse.last_screen_pos),
                 speed=round(self.pointer.latch.speed, 3), mode="index" if index_mode else "palm",
                 **self._gesture_fields(t0, index_mode, result, frame_out),
+                world=hand.world if hand is not None else None,
+                rule_action=getattr(self, "_rule_action", None) if not index_mode else None,
+                tcn=self.gate.diagnostics() if self.gate is not None and ui_gate_on(self) and not index_mode else None,
                 brightness=self._metrics[1] if self._metrics else None,
                 fps=round(self.camera.fps, 1), detect_ms=round(self.tracker.last_detect_ms, 1), paused=self.paused,
                 path=self._det_path, raw=self._raw_hands, latched=bool(self.pointer.latch.latched),

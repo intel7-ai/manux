@@ -86,8 +86,9 @@ def test_new_actions_need_confirmation_only_when_model_learned_them(action, targ
     g = GestureGate(lambda x: np.eye(len(CLASSES))[0], info)
     g.step(0, None, .5)
     result = lambda: SimpleNamespace(action=action, active_gesture=gesture, is_moving=True)
-    assert g.filter(0, result()).action == "none"
-    g._probs.append((.1, np.eye(len(CLASSES))[CLASSES.index(target)]))
+    assert g.filter(0, result()).action == (action if action == "left_click" else "none")
+    features = np.zeros(133); features[-1] = 1
+    g.observe(.1, np.eye(len(CLASSES))[CLASSES.index(target)], features)
     assert g.filter(.1, result()).action == action
     legacy = GestureGate(lambda x: np.array([1, 0, 0]), {**info, "classes": CLASSES[:3]})
     assert legacy.filter(0, result()).action == action

@@ -120,6 +120,7 @@ class GuidedSession:
                  "rep": rep, "condition": self.conditions[cond], "condition_index": cond, "set": self.index}
         if self.rows:
             label["condition_key"] = condition_key(self.rows[cond])
+        label["requested_hold"] = self.cfg("rec_do")
         return label
 
     def view(self, now: float) -> Dict[str, Any]:
@@ -140,8 +141,17 @@ class GuidedSession:
             prompt = task.do
             sub = f"{head} · 남은 시간 {max(0, int(self._set_length(task) - (now - self._t0)))}초"
         else:
-            prompt = {"prep": "준비… " + task.do, "do": task.do,
-                      "rest": "쉬세요 · 시작 위치로 천천히 돌아오세요" if task.direction else "쉬세요 (손을 편하게)"}[phase]
+            cycle = self.cfg("rec_prep") + self.cfg("rec_do") + self.cfg("rec_rest")
+            inner = (now - self._t0) % cycle
+            prompt = {"prep": f"손을 편하게 펴고 준비 · {max(0, self.cfg('rec_prep') - inner):.1f}초 후 동작 시작",
+                      "do": task.do,
+                      "rest": "쉬세요 · 시작 위치로 천천히 돌아오세요" if task.direction else "손가락을 떼세요 · 편하게 쉬세요"}[phase]
             sub = f"{head} · {rep}/{int(self.cfg('rec_reps'))}회"
+            if task.key in ("thumb_middle", "thumb_ring") and self.cfg("rec_do") <= .7:
+                cycle = self.cfg("rec_prep") + self.cfg("rec_do") + self.cfg("rec_rest")
+                inner = (now - self._t0) % cycle
+                prompt = {"prep": f"손가락을 떼고 준비 · {max(0, self.cfg('rec_prep') - inner):.1f}초 후 붙이세요",
+                          "do": f"지금 붙이세요! {self.cfg('rec_do'):.1f}초 클릭",
+                          "rest": "바로 떼세요 · 다음 클릭 준비"}[phase]
         return {"prompt": self.hold_reason or prompt, "sub": sub, "progress": progress,
                 "overall": overall + progress / len(self.sets), "waiting": False, "phase": phase, **extra}

@@ -2,6 +2,7 @@
 from collections import deque
 from pathlib import Path
 import copy
+import json
 import time
 import math
 
@@ -54,6 +55,7 @@ class QtDashboard(QObject):
     hiddenToTray = Signal()           # the window was closed into the tray
     trackingActiveChanged = Signal()  # only when the test window opens or closes
     trainingChanged = Signal()        # training center: data, scores, training job, export
+    trainingStarted = Signal()        # navigate to progress only after the process really started
 
     def __init__(self, dry_run=False, *, hide_to_tray=False, start_hidden=False,
                  overlay=False, overlay_corner="top-right", tcn_app=False):
@@ -111,16 +113,27 @@ class QtDashboard(QObject):
         from src.training_center import TrainingJob
         self.training_job = TrainingJob()
         self.training_rows = []                                 # one row per gesture (src/training_center.gesture_rows)
+        self.training_selected = set()                          # model labels; shared-pose tasks are linked
         self.training_info = ("", "")                           # (data line, model line)
         self.training_storage = ("", False)                     # (recordings size in git, past the split limit)
         self.training_busy = ""                                 # "읽는 중…" / "내보내는 중…"
         self.training_note = ""
         self._training_was_running = False
+        self._training_center_open = False
+        self._training_progress_open = False
         self.training_timer = QTimer()
         self.training_timer.setInterval(400)
         self.training_timer.timeout.connect(self._training_tick)
         from src.gesture_gate import DEFAULT_MODEL
-        self.tcn_gate = DEFAULT_MODEL.exists()                  # intent check by the trained model: on when one exists
+        from src.tcn_models import available
+        self.tcn_gate = available(DEFAULT_MODEL)
+        try:
+            self.tcn_policies = json.loads(self.preferences.value("tcnPolicies", "{}", type=str))
+            if not isinstance(self.tcn_policies, dict):
+                self.tcn_policies = {}
+        except (ValueError, TypeError):
+            self.tcn_policies = {}
+        self._training_report = {}
         self.palm_axes_view = (False, "", 0.0, "", False)       # running, prompt, progress, note, saved
         self.motion_state = (False, 0.0, "", 0.0, 0.0)           # (on, seconds left, last command, entering, leaving)
         self.motion_exit_until = 0.0                             # the "motion mode off" notice stays until then
@@ -471,12 +484,30 @@ class QtDashboard(QObject):
     # ------------------------------------------------------------------ training center (src/training_center.py)
     @Slot()
     def openTraining(self):
+        self._training_center_open = True
         self.refreshTraining()
         self.training_timer.start()
 
     @Slot()
     def closeTraining(self):
-        if not self.training_job.running:
+        self._training_center_open = False
+        self._sync_training_timer()
+
+    @Slot()
+    def openTrainingProgress(self):
+        self._training_progress_open = True
+        self.training_timer.start()
+        self.trainingChanged.emit()
+
+    @Slot()
+    def closeTrainingProgress(self):
+        self._training_progress_open = False
+        self._sync_training_timer()
+
+    def _sync_training_timer(self):
+        if self._training_center_open or self._training_progress_open or self.training_job.running or self.training_busy:
+            self.training_timer.start()
+        else:
             self.training_timer.stop()
 
     @Slot()
@@ -492,6 +523,7 @@ class QtDashboard(QObject):
             try:
                 summary = tc.dataset_summary()
                 report = tc.model_report()
+                self._training_report = report or {}
                 rows = tc.gesture_rows(summary, report)
                 files = [f for f in summary["files"] if "error" not in f]
                 frames = sum(f.get("frames", 0) for f in files)
@@ -501,7 +533,7 @@ class QtDashboard(QObject):
                 waiting = len(summary["files"]) - len(files)
                 if waiting:
                     data += f" · 다음 학습에 포함 {waiting}개 (끝나지 않았거나 받는 중)"
-                model = (f"모델: {report.get('trained')} 학습 · 녹화 {len(report.get('data', []))}개로" if report
+                model = (f"모델: {len(report['classes']) - 1}종 학습됨 · 선택 학습 {len(report.get('selected_classes', []))}종" if report
                          else "모델: 아직 없음 (학습하세요)")
                 self.training_rows, self.training_info = rows, (data, model)
                 self._training_summary = summary
@@ -516,11 +548,22 @@ class QtDashboard(QObject):
 
     @Slot()
     def startTraining(self):
-        if self.training_job.start():
-            self.training_note = ""
+        if self.training_busy or self.rec_mode != "off" or self.training_job.running:
+            return
+        from src.gesture_catalog import BY_KEY
+        tasks = [key for key, task in BY_KEY.items() if task.label in self.training_selected]
+        try:
+            if not tasks:
+                raise ValueError("학습할 동작을 체크하세요. 중립·휴식 구간은 자동으로 포함됩니다.")
+            if not self.training_job.start(tasks=tasks):
+                return
+            self.training_note = "선택한 동작만 학습 중입니다. 다른 동작의 기존 학습 결과는 유지됩니다."
             self._training_was_running = True
             self.training_timer.start()
-            self.trainingChanged.emit()
+            self.trainingStarted.emit()
+        except (ValueError, OSError) as exc:
+            self.training_note = str(exc)
+        self.trainingChanged.emit()
 
     @Slot(str)
     def trainSelectedGesture(self, key):
@@ -535,15 +578,17 @@ class QtDashboard(QObject):
             self.training_note = task.name + " 선택 학습을 시작합니다."
             self._training_was_running = True
             self.training_timer.start()
+            self.trainingStarted.emit()
             self.trainingChanged.emit()
 
     @Slot()
     def stopTraining(self):
         self.training_job.stop()
+        self.trainingChanged.emit()
 
     @Slot()
     def exportModel(self):
-        if self.training_busy:
+        if self.training_busy or self.training_job.running:
             return
         self.training_busy = "내보내는 중… (녹화 전체를 데이터셋으로 묶어요)"
         self.trainingChanged.emit()
@@ -598,17 +643,76 @@ class QtDashboard(QObject):
             s = job.snapshot()
             if s.get("error"):
                 self.training_note = s["error"]
-            else:
-                self.training_note = "학습 끝! 새 모델의 성적을 보여 드려요."
-                self.model_version += 1
-                self.stateChanged.emit()
+            elif s.get("success"):
+                if s.get("published", True):
+                    self.training_note = "선택 동작 학습 완료 · 새 모델은 시험 모드입니다. 동작별 비교 결과를 보고 TCN 적용을 선택하세요."
+                    self.model_version += 1
+                    self.stateChanged.emit()
+                else:
+                    self.training_note = "구분 성능 기준 미달로 기존 모델을 유지합니다. " + " / ".join(s.get("publication_issues", []))
+            elif s.get("cancelled"):
+                self.training_note = "학습을 멈췄어요. 기존 모델을 유지합니다."
             self.refreshTraining()
         self.trainingChanged.emit()
+        self._sync_training_timer()
 
     @Property("QVariantList", notify=trainingChanged)
     def trainingRows(self):
         category = getattr(self, "training_filter", "전체")
-        return [r for r in self.training_rows if category == "전체" or r["category"] == category]
+        from src.tcn_policy import mode_for, MODES
+        return [dict(r, selected=r["label"] in self.training_selected,
+                     tcn_mode=MODES.index(mode_for(r["key"], getattr(self, "_training_report", {}),
+                                                  getattr(self, "tcn_policies", {}))))
+                for r in self.training_rows if category == "전체" or r["category"] == category]
+
+    @Slot(str, int)
+    def setTaskTcnMode(self, task, index):
+        from src.tcn_policy import MODES, policy_entry
+        if self.training_job.running or self.training_busy or not 0 <= index < len(MODES):
+            return
+        try:
+            self.tcn_policies[task] = policy_entry(task, MODES[index], self._training_report)
+            self.preferences.setValue("tcnPolicies", json.dumps(self.tcn_policies))
+            self.preferences.sync()
+            self.model_version += 1  # discard any pending action when policy changes
+            self.stateChanged.emit()
+            self.trainingChanged.emit()
+        except ValueError as exc:
+            self.training_note = str(exc)
+            self.trainingChanged.emit()
+
+    @Slot(str, bool)
+    def selectTrainingTask(self, key, selected):
+        if self.training_job.running or self.training_busy:
+            return
+        row = next((r for r in self.training_rows if r["key"] == key), None)
+        if row is None or row["free"] or (selected and not row["can_train"]):
+            return
+        if selected:
+            self.training_selected.add(row["label"])
+        else:
+            self.training_selected.discard(row["label"])
+        self.trainingChanged.emit()
+
+    @Slot(bool)
+    def selectAllTraining(self, selected):
+        if self.training_job.running or self.training_busy:
+            return
+        # Category filters only change visibility; selection and the count are global.
+        self.training_selected = {r["label"] for r in self.training_rows if r["can_train"]} if selected else set()
+        self.trainingChanged.emit()
+
+    @Property(int, notify=trainingChanged)
+    def trainingSelectedCount(self):
+        return len(self.training_selected)
+
+    @Property(str, notify=trainingChanged)
+    def trainingSelectionText(self):
+        from src.gesture_catalog import NAMES
+        if not self.training_selected:
+            return "학습할 동작을 체크하세요. 선택하지 않은 동작의 기존 학습 결과는 유지됩니다."
+        names = [name for key, name in NAMES.items() if key in self.training_selected]
+        return f"선택 {len(self.training_selected)}종: " + " · ".join(names)
 
     @Property(str, notify=trainingChanged)
     def trainingFilter(self):
@@ -683,6 +787,18 @@ class QtDashboard(QObject):
     def trainingLosses(self):
         return list(self.training_job.snapshot().get("losses", []))[-60:]
 
+    @Property("QVariantMap", notify=trainingChanged)
+    def trainingDetails(self):
+        from src.training_progress import progress_details
+        return progress_details(self.training_job.snapshot())
+
+    @Property(str, notify=trainingChanged)
+    def trainingProgressSummary(self):
+        details = self.trainingDetails
+        if details["status"] == "idle":
+            return "진행 페이지에서 학습 단계·남은 시간·완료 예상 시각을 확인할 수 있습니다."
+        return f"{details['percent']}% · 남은 시간 {details['remaining']} · 완료 예상 {details['finish']}"
+
     @Property(bool, notify=stateChanged)
     def tcnGate(self):
         return bool(self.tcn_gate)
@@ -690,7 +806,8 @@ class QtDashboard(QObject):
     @Property(bool, notify=stateChanged)
     def tcnAvailable(self):
         from src.gesture_gate import DEFAULT_MODEL
-        return DEFAULT_MODEL.exists()
+        from src.tcn_models import available
+        return available(DEFAULT_MODEL)
 
     @Slot(bool)
     def setTcnGate(self, on):
@@ -860,6 +977,7 @@ class QtDashboard(QObject):
             palm_axes_reset=self.palm_axes_requests[2],
             rec_mode=self.rec_mode, rec_advance=self.rec_advance, tcn_gate=self.tcn_gate,
             rec_focus=self.rec_focus, model_version=self.model_version,
+            tcn_policies=copy.deepcopy(self.tcn_policies),
             rec_plan=copy.deepcopy(self.rec_plan), rec_paused=self.rec_paused,
         )
 

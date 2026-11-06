@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent
 
 
 def check_model(model_path=None):
-    """Run the shipped ONNX model before opening the camera; never silently skip TCN."""
+    """Run all active TCN models before opening the camera; never silently skip TCN."""
     import numpy as np
     from src.gesture_gate import DEFAULT_MODEL, load_predictor
     from src.tcn_features import FEATURES
@@ -28,14 +28,23 @@ def check_model(model_path=None):
     probs = predict(np.zeros((1, int(info["window"]), FEATURES), dtype=np.float32))
     if (probs.shape != (len(classes),) or not np.isfinite(probs).all()
             or (probs < 0).any() or (probs > 1).any()
-            or (not info.get("independent_gestures") and not np.isclose(probs.sum(), 1.0))):
+            or (not info.get("selected_classes") and not np.isclose(probs.sum(), 1.0))):
         raise ValueError("TCN model returned invalid probabilities")
+    from src.tcn_models import components
+    cards, overrides = components(path)
+    hashes = {p.relative_to(path.resolve().parent).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in cards}
+    bundle = {"models": hashes, "routes": {label: p.relative_to(path.resolve().parent).as_posix()
+                                          for label, p in overrides.items()}}
+    digest = (next(iter(hashes.values())) if len(hashes) == 1 and not overrides else
+              hashlib.sha256(json.dumps(bundle, sort_keys=True).encode()).hexdigest())
     return {
         "model": path.name,
         "trained": info.get("trained", "unknown"),
         "classes": info["classes"],
         "input": [1, int(info["window"]), FEATURES],
-        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "sha256": digest,
+        "models": hashes,
         "inference": "passed",
     }
 

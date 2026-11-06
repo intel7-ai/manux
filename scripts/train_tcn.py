@@ -18,8 +18,10 @@ import argparse
 import glob
 import json
 import math
+import os
 import sys
 import time
+import uuid
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -33,7 +35,8 @@ import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 
 from src.recorder import public_source  # noqa: E402
-from src.tcn_features import FEATURE_VERSION, FEATURES  # noqa: E402
+from src.tcn_features import FEATURE_VERSION, FEATURES, PIPELINE_VERSION  # noqa: E402
+from src.tcn_augmentation import augment  # noqa: E402
 from src.gesture_catalog import CLASSES, TASKS, BY_KEY  # noqa: E402
 
 CLICKY = {"right_click", "left_click", "task_switcher"}
@@ -53,18 +56,44 @@ def emit(event: str, **info) -> None:
 
 
 # ---------------------------------------------------------------- data
-def load(paths):
+def load(paths, selected_tasks=None):
     from src.capture_dataset import load_sessions
-    return load_sessions(paths, WINDOW)
+    return load_sessions(paths, WINDOW, selected_tasks=selected_tasks)
 
 
 def pick(sessions, conds):
     xs, ys = [], []
     for s in sessions:
-        m = (s["y"] >= 0) & np.isin(s["cond"], conds)
+        m = sample_mask(s, conds)
         xs.append(s["x"][m])
         ys.append(s["y"][m])
     return np.concatenate(xs), np.concatenate(ys)
+
+
+def sample_mask(session, conds):
+    eligible = np.isin(session["cond"], conds)
+    # Purge windows crossing a held-out posture; preserving physical context
+    # must not leak that posture into training through an adjacent window.
+    safe = eligible.copy()
+    for offset in range(1, WINDOW + 1):
+        safe[offset:] &= eligible[:-offset] | (session["segments"][offset:] != session["segments"][:-offset])
+    return (session["y"] >= 0) & safe
+
+
+def sample_weights(sessions, conds):
+    groups = []
+    for si, s in enumerate(sessions):
+        mask = sample_mask(s, conds)
+        groups += [(int(y), si, int(c)) for y, c in zip(s["y"][mask], s["cond"][mask])]
+    counts = Counter(groups)
+    per_label = Counter(key[0] for key in counts)
+    positives = max(1, len(per_label) - 1)
+    # Most real use is movement/neutral. Equal positive/neutral class priors
+    # produced too many gesture activations in free movement; retain that prior
+    # while balancing sessions and poses *within* each class.
+    neutral_prior = .5 if positives == 1 else .65
+    return np.asarray([(neutral_prior if key[0] == 0 else (1 - neutral_prior) / positives) /
+                       (counts[key] * per_label[key[0]]) for key in groups], np.float64)
 
 
 # ---------------------------------------------------------------- model
@@ -85,40 +114,21 @@ class TCN(nn.Module):
         return self.head(h[:, :, -1])
 
 
-def augment(x: torch.Tensor) -> torch.Tensor:
-    """Different seats / camera angles: small 3D rotation of the hand-frame joints, size and jitter."""
-    b = x.shape[0]
-    ang = (torch.rand(b, 3) - 0.5) * math.radians(30)
-    cx, cy, cz = torch.cos(ang).unbind(1)
-    sx, sy, sz = torch.sin(ang).unbind(1)
-    one, zero = torch.ones(b), torch.zeros(b)
-    rx = torch.stack([one, zero, zero, zero, cx, -sx, zero, sx, cx], 1).view(b, 3, 3)
-    ry = torch.stack([cy, zero, sy, zero, one, zero, -sy, zero, cy], 1).view(b, 3, 3)
-    rz = torch.stack([cz, -sz, zero, sz, cz, zero, zero, zero, one], 1).view(b, 3, 3)
-    r = rz @ ry @ rx
-    x = x.clone()
-    for lo in (0, 63):
-        pts = x[:, :, lo:lo + 63].reshape(b, x.shape[1], 21, 3)
-        x[:, :, lo:lo + 63] = torch.einsum("btjk,blk->btjl", pts, r).reshape(b, x.shape[1], 63)
-    scale = 1.0 + (torch.rand(b, 1, 1) - 0.5) * 0.2
-    x[:, :, :130] = x[:, :, :130] * scale
-    x[:, :, :130] += torch.randn_like(x[:, :, :130]) * 0.01
-    return x
-
-
-def train(x, y, epochs: int, seed: int = 0, stage: str = "", losses=None, classes=None):
+def train(x, y, epochs: int, seed: int = 0, stage: str = "", losses=None, classes=None, weights=None, samples_per_epoch=16384):
     classes = classes or CLASSES
     torch.manual_seed(seed)
     np.random.seed(seed)
     model = TCN(n_out=len(classes))
     counts = np.bincount(y, minlength=len(classes)).astype(np.float64)
     weight = torch.tensor((counts.sum() / np.maximum(counts, 1)) ** 0.5, dtype=torch.float32)
-    lossf = nn.CrossEntropyLoss(weight=weight / weight.mean())
+    lossf = nn.CrossEntropyLoss(weight=weight / weight.mean() if weights is None else None)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     xt, yt = torch.from_numpy(x), torch.from_numpy(y)
     for ep in range(epochs):
         model.train()
-        perm = torch.randperm(len(xt))
+        count = min(len(xt), samples_per_epoch)
+        perm = (torch.randperm(len(xt))[:count] if weights is None else
+                torch.multinomial(torch.as_tensor(weights), count, replacement=True))
         total = 0.0
         for i in range(0, len(perm), 256):
             idx = perm[i:i + 256]
@@ -297,20 +307,45 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--recordings", default=str(ROOT / "recordings" / "*-guided.jsonl.gz"))
     ap.add_argument("--test-condition", type=int, default=2)
-    ap.add_argument("--folds", action="store_true", help="hold out each posture in turn")
+    ap.add_argument("--folds", action="store_true", help="test every posture in grouped cross-validation")
+    ap.add_argument("--validation-folds", type=int, default=5, help="number of disjoint posture groups; every posture is tested once")
+    ap.add_argument("--samples-per-epoch", type=int, default=16384, help="fresh balanced samples per epoch (limits redundant overlapping frames)")
     ap.add_argument("--epochs", type=int, default=25)
+    ap.add_argument("--threads", type=int, default=min(4, os.cpu_count() or 1), help="CPU training threads")
     ap.add_argument("--thr", type=float, default=0.7)
     ap.add_argument("--k", type=int, default=3, help="frames in a row above the threshold that count as the gesture")
     ap.add_argument("--no-export", action="store_true")
     ap.add_argument("--progress", action="store_true", help="JSON progress lines for the app")
     ap.add_argument("--output-dir", type=Path, default=ROOT / "models", help="model output folder")
-    ap.add_argument("--gestures", nargs="+", help="train only these gesture tasks as independent binary models")
+    ap.add_argument("--tasks", "--gestures", dest="tasks", nargs="+", help="train only these tasks; preserve all other learned gestures")
     a = ap.parse_args()
     global PROGRESS
     PROGRESS = a.progress
-    if a.gestures:
-        from scripts.train_selected import run
-        return run(a, sys.modules[__name__])
+    if a.epochs < 1:
+        ap.error("--epochs must be at least 1")
+    if a.threads < 1:
+        ap.error("--threads must be at least 1")
+    if a.validation_folds < 2 or a.samples_per_epoch < 1:
+        ap.error("--validation-folds must be >=2 and --samples-per-epoch >=1")
+    torch.set_num_threads(a.threads)
+    from src.gesture_models import training_lock
+    try:
+        with training_lock(a.output_dir / "gestures"):
+            return run_training(a)
+    except (ValueError, OSError) as exc:
+        emit("error", text=str(exc))
+        return 1
+
+
+def run_training(a):
+    selected_tasks, selected_classes = None, None
+    if a.tasks is not None:
+        from src.capture_dataset import training_selection
+        try:
+            selected_tasks, selected_classes = training_selection(a.tasks)
+        except ValueError as exc:
+            emit("error", text=str(exc))
+            return 1
 
     # The list is fixed here: files that arrive (git pull) or finish recording while training wait for the next run.
     from src.recorder import finished_recordings
@@ -328,50 +363,64 @@ def main() -> int:
         print("no recordings found:", a.recordings)
         return 1
     t0 = time.perf_counter()
-    sessions = load(paths)
+    sessions = load(paths, selected_tasks)
+    source_classes = selected_classes or CLASSES
     present = {int(y) for s in sessions for y in s["y"] if y >= 0}
-    classes = [name for i, name in enumerate(CLASSES) if i in present]
+    classes = [name for i, name in enumerate(source_classes) if i in present]
+    if selected_classes and set(selected_classes) - set(classes):
+        missing = set(selected_classes) - set(classes)
+        names = [BY_KEY[c].name for c in selected_classes if c in missing]
+        emit("error", text="유효한 녹화가 부족해 학습하지 않았어요: " + ", ".join(names))
+        return 1
     if "none" not in classes or len(classes) < 2:
         emit("error", text="중립 구간과 한 가지 이상 동작의 유효 녹화가 필요합니다.")
         return 1
     for s in sessions:
         original = s["y"].copy()
         for c, name in enumerate(classes):
-            s["y"][original == CLASSES.index(name)] = c
+            s["y"][original == source_classes.index(name)] = c
         s["classes"] = classes
+    sessions = [s for s in sessions if (s["y"] >= 0).any()]
     conds = sorted({int(c) for s in sessions for c, y in zip(s["cond"], s["y"]) if c >= 0 and y >= 0})
     xa, ya = pick(sessions, conds)
     per_class = dict(Counter(classes[i] for i in ya))
     if not PROGRESS:
         print(f"{len(paths)} recording(s), postures {conds}, {len(ya)} labelled windows {per_class}"
               f"  ({time.perf_counter() - t0:.1f} s to load)")
-    emit("loaded", recordings=len(paths), postures=conds, windows=int(len(ya)), per_class=per_class,
-         folds=len(conds) if a.folds else (0 if a.test_condition < 0 else 1))
-
-    held = conds if a.folds else ([] if a.test_condition < 0 else [a.test_condition])
+    n_folds = min(a.validation_folds, len(conds))
+    held = ([conds[i::n_folds] for i in range(n_folds)] if a.folds else
+            ([] if a.test_condition < 0 else [[a.test_condition]]))
+    emit("loaded", recordings=len(paths), postures=conds, windows=int(len(ya)), per_class=per_class, folds=len(held))
     summary = []
+    interaction_reports = []
     for test in held:
-        train_conds = [c for c in conds if c != test]
+        train_conds = [c for c in conds if c not in test]
         x, y = pick(sessions, train_conds)
-        if test not in conds or not len(y) or len(set(y)) < len(classes):
+        if not set(test) <= set(conds) or not len(y) or len(set(y)) < len(classes):
             emit("note", text=f"조건 {test} 제외 평가는 보류: 나머지 조건에도 학습할 모든 동작의 데이터가 필요합니다.")
+            emit("fold_skip", posture=test, fold=held.index(test) + 1)
             continue
         if not PROGRESS:
             print(f"\n== held-out posture {test} (train on {train_conds}, {len(y)} windows)")
         emit("fold_start", posture=test, fold=held.index(test) + 1, folds=len(held))
         t1 = time.perf_counter()
-        model = train(x, y, a.epochs, stage=f"fold{test}", classes=classes)
+        model = train(x, y, a.epochs, stage=f"fold{held.index(test) + 1}", classes=classes,
+                      weights=sample_weights(sessions, train_conds), samples_per_epoch=a.samples_per_epoch)
         if not PROGRESS:
             print(f"    trained in {time.perf_counter() - t1:.0f} s")
+        emit("evaluation_start", posture=test, fold=held.index(test) + 1)
         for s in sessions:
             prob = predict(model, s["x"])
-            rule = evaluate(s, [test])
-            tcn = evaluate(s, [test], prob, a.thr, a.k)
+            rule = evaluate(s, test)
+            tcn = evaluate(s, test, prob, a.thr, a.k)
+            from src.tcn_evaluation import replay_interactions
+            interaction_reports.append(replay_interactions(s, test, prob, a.thr, a.k))
             if not PROGRESS:
                 show("rules", rule)
                 show("TCN", tcn)
-            summary.append((test, rule, tcn, free_minutes(s, [test])))
+            summary.append((test, rule, tcn, free_minutes(s, test)))
             emit("fold_result", posture=test, rules=rule, tcn=tcn)
+        emit("evaluation_done", posture=test, fold=held.index(test) + 1)
 
     if a.no_export:
         return 0
@@ -379,33 +428,61 @@ def main() -> int:
         print(f"\n== final model on all postures {conds}")
     emit("final_start")
     losses: list = []
-    model = train(xa, ya, a.epochs, stage="final", losses=losses, classes=classes)
+    model = train(xa, ya, a.epochs, stage="final", losses=losses, classes=classes,
+                  weights=sample_weights(sessions, conds), samples_per_epoch=a.samples_per_epoch)
+    emit("evaluation_start")
     pred = predict(model, xa).argmax(1)
     train_acc = {name: round(float((pred[ya == c] == c).mean()), 3) for c, name in enumerate(classes) if (ya == c).any()}
-    a.output_dir.mkdir(parents=True, exist_ok=True)
-    out = a.output_dir / "gesture_tcn.onnx"
+    output_dir = a.output_dir
+    from src.tcn_models import registry_path
+    independent_output = True  # immutable model versions, including full-catalog training
+    if independent_output:
+        output_dir = output_dir / "selected" / (time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:8])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out = output_dir / "gesture_tcn.onnx"
+    emit("export_start")
     model.eval()
     torch.onnx.export(model, torch.zeros(1, WINDOW, FEATURES), str(out), input_names=["x"], output_names=["logits"],
                       dynamic_axes={"x": {0: "batch"}, "logits": {0: "batch"}}, opset_version=18,
                       external_data=False)
     results = [{"posture": t, "rules": r, "tcn": m, "free_minutes": round(fm, 2)} for t, r, m, fm in summary]
+    from src.tcn_evaluation import summarise_interactions
     info = {
         "classes": classes, "window": WINDOW, "features": FEATURES, "feature_version": FEATURE_VERSION,
+        "pipeline_version": PIPELINE_VERSION, "augmentation": "canonical-mirror-depth-jitter-speed-v2",
+        "sampling": "neutral-50pct-binary-65pct-multiclass; balanced-session-condition", "deployment": "shadow",
+        "samples_per_epoch": min(len(ya), a.samples_per_epoch), "validation_groups": held,
         "threshold": a.thr, "frames_in_a_row": a.k, "epochs": a.epochs,
         "trained": time.strftime("%Y-%m-%d %H:%M:%S"),
         "data": [{"file": Path(s["path"]).name, "pc": public_source(s["meta"])[0],
                   "camera": dict(s["meta"].get("camera") or {}, note=public_source(s["meta"])[1]),
-                  "frames": len(s["frames"])} for s in sessions],
+                  "frames": len(s["frames"]), "windows": int((s["y"] >= 0).sum()),
+                  "size": Path(s["path"]).stat().st_size, "mtime_ns": Path(s["path"]).stat().st_mtime_ns} for s in sessions],
         "held_out_results": results,
+        "interaction_validation": summarise_interactions(interaction_reports, classes),
+        "interaction_validation_tasks": summarise_interactions(interaction_reports, [t.key for t in TASKS if t.label in classes and not t.free]),
+        "validation_scope": "held-out-condition; recorded instruction labels; no independent user/session guarantee",
         "condition_groups": sessions[0]["condition_groups"],
         "loss_curve": losses, "train_accuracy": train_acc,
         "per_gesture": per_gesture(results, per_class, train_acc, classes),
         "per_task": per_gesture(results, per_class, train_acc, classes, by_task=True),
+        "training_tasks": selected_tasks,
+        "task_targets": {task.key: task.label for task in TASKS},
     }
     out.with_suffix(".json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+    from src.tcn_models import load_predictor
+    from src.tcn_validation import publication_issues
+    load_predictor(out)
+    issues = publication_issues(info)
+    if independent_output and not issues:
+        from src.tcn_models import publish_selected
+        publish_selected(a.output_dir / "gesture_tcn.onnx", out, [c for c in classes if c != "none"])
+    if issues:
+        emit("note", text="모델 구분 성능이 기준에 못 미쳐 기존 모델을 유지합니다. " + " / ".join(issues))
     if not PROGRESS:
         print(f"saved {out.name} ({out.stat().st_size // 1024} KB) and gesture_tcn.json")
-    emit("done", model=out.name, kb=out.stat().st_size // 1024, per_gesture=info["per_gesture"])
+    emit("done", model=str(out), kb=out.stat().st_size // 1024, per_gesture=info["per_gesture"], tasks=selected_tasks,
+         published=not issues, publication_issues=issues)
     return 0
 
 

@@ -28,7 +28,7 @@ def test_enough_data_and_good_scores_say_ok():
     rows = rows_by_key(summary(), report())
     assert all(rows[k]["level"] == "ok" for k in ("none", "thumb_index", "thumb_ring"))
     assert rows["thumb_middle"]["level"] == "need"  # old model has no left-click examples
-    assert rows["thumb_ring"]["score_text"].startswith("인식 90%")
+    assert rows["thumb_ring"]["score_text"].startswith("자세 분류 90%")
 
 
 def test_low_recognition_asks_for_focused_recording():
@@ -42,7 +42,7 @@ def test_little_data_and_one_posture_are_flagged():
     assert rows["thumb_index"]["level"] == "need"
     assert "부족" in rows["thumb_index"]["advice"] and "자세" in rows["thumb_index"]["advice"]
     assert "부족" in rows["none"]["advice"]
-    assert rows["thumb_index"]["score_text"] == "아직 평가 없음"
+    assert rows["thumb_index"]["score_text"] == "아직 자세 평가 없음"
 
 
 def test_many_misfires_ask_for_more_half_fist_moving():

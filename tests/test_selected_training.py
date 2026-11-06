@@ -119,6 +119,7 @@ def test_ui_row_starts_only_its_selected_gesture():
         training_job=SimpleNamespace(running=False, start=lambda **kw: seen.append(kw) or True),
         _pause_for_change=lambda: None,
         training_timer=SimpleNamespace(start=lambda: None),
+        trainingStarted=SimpleNamespace(emit=lambda: None),
         trainingChanged=SimpleNamespace(emit=lambda: None),
     )
     QtDashboard.trainSelectedGesture(ui, "thumb_middle")
@@ -171,3 +172,27 @@ def test_hot_reload_failure_keeps_previous_gate_and_success_releases_inputs(tmp_
     ui.model_version += 1
     assert rt._gate_for(ui) is not previous
     assert released == [True]
+
+
+def test_remote_model_bank_and_local_registry_run_and_export_together(tmp_path, monkeypatch):
+    from tests.test_selective_training import write_model
+    from src import tcn_models
+    base = write_model(tmp_path / "models", ["none", "thumb_index"], 1)
+    legacy = write_model(base.parent / "gestures", ["none", "thumb_ring"], 2)
+    bank.publish_bank(legacy.parent, {"thumb_ring": {
+        "model": legacy.name, "card": legacy.with_suffix(".json").name,
+        "sha256": hashlib.sha256(legacy.read_bytes()).hexdigest()}})
+    selected = write_model(base.parent / "selected" / "middle", ["none", "thumb_middle"], 3)
+    tcn_models.publish_selected(base, selected, ["thumb_middle"])
+    predict, info = tcn_models.load_predictor(base)
+    ring_predict, _ = tcn_models.load_predictor(legacy)
+    x = np.ones((1, 15, 133), np.float32)
+    assert predict(x)[info["classes"].index("thumb_ring")] == ring_predict(x)[1]
+    monkeypatch.setattr(tc, "MODEL", base)
+    out = tc.export_package(tmp_path / "exports", with_dataset=False)
+    exported, exported_info = tcn_models.load_predictor(out / "gesture_tcn.onnx")
+    assert exported_info["classes"] == info["classes"]
+    np.testing.assert_array_equal(exported(x), predict(x))
+    legacy.write_bytes(b"corrupt")
+    with pytest.raises(ValueError, match="해시"):
+        tcn_models.load_predictor(base)

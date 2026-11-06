@@ -9,6 +9,7 @@ The loop it supports: record -> train -> look at each gesture's score -> record 
 from __future__ import annotations
 
 import json
+import copy
 import os
 import shutil
 import subprocess
@@ -41,7 +42,7 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
     if cache.exists():
         try:
             data = json.loads(cache.read_text(encoding="utf-8"))
-            if data.get("summary_version") == 3 and data.get("size") == stat.st_size and data.get("mtime") == int(stat.st_mtime):
+            if data.get("summary_version") == 4 and data.get("size") == stat.st_size and data.get("mtime") == int(stat.st_mtime):
                 return data
         except Exception:
             pass
@@ -58,6 +59,8 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
     seconds = frame_durations(frames)
     coverage = {k: {} for k in NAMES}
     valid_frames = 0
+    click_phases = defaultdict(lambda: defaultdict(int))
+    quick_reps = defaultdict(int)
     for i, f in enumerate(frames):
         lab = f.get("label") or {}
         if not usable(f):
@@ -65,10 +68,13 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
         valid_frames += 1
         ck = label_condition_key(lab)
         task = lab.get("task")
+        if task in ("thumb_middle", "thumb_ring") and (f.get("rule") or {}).get("action") == BY_KEY[task].action:
+            click_phases[task][lab.get("phase", "unknown")] += 1
         if lab.get("phase") in ("do", "rest") and task in BY_KEY and not is_free(task):
             key = (lab["task"], ck, lab.get("set"), lab.get("rep"))
             item = repetitions[key]
             item["new"] = bool(lab.get("condition_key"))
+            item["requested_hold"] = lab.get("requested_hold")
             if lab["phase"] == "do":
                 item["do"] += seconds[i]
             else:
@@ -78,14 +84,20 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
         elif meta.get("mode") == "free" and lab.get("target") == "none":
             free[("none", "use")] += seconds[i]
     for (task, ck, _, _), item in repetitions.items():
-        if item["do"] > 0 and (not item.get("new") or (item["do"] >= 0.25 and item["rest"])):
+        short = item.get("requested_hold") is not None and float(item["requested_hold"]) <= .7
+        minimum = .15 if short else .25
+        if item["do"] > 0 and (not item.get("new") or (item["do"] >= minimum and item["rest"])):
             reps[task][ck] += 1
+            if short and item["rest"]:
+                quick_reps[task] += 1
     for task, by_condition in reps.items():
         coverage[task] = {ck: {"reps": n, "seconds": 0.0} for ck, n in by_condition.items()}
     for (task, ck), value in free.items():
         coverage[task][ck] = {"reps": 0, "seconds": value}
     data = {
-        "summary_version": 3,
+        "summary_version": 4,
+        "click_phases": {task: dict(counts) for task, counts in click_phases.items()},
+        "quick_reps": dict(quick_reps),
         "file": path.name, "size": stat.st_size, "mtime": int(stat.st_mtime), "mode": meta.get("mode"),
         "created": meta.get("created"), "pc": public_source(meta)[0], "camera": public_source(meta)[1],
         "frames": len(frames), "reps": {k: dict(v) for k, v in reps.items()},
@@ -140,20 +152,8 @@ def storage_text(summary: Dict[str, Any]) -> Tuple[str, bool]:
 
 
 def model_report(model: Optional[Path] = None) -> Optional[Dict[str, Any]]:
-    model = Path(model) if model is not None else MODEL
-    info_path = Path(model).with_suffix(".json")
-    if not Path(model).exists() or not info_path.exists():
-        return None
-    info = json.loads(info_path.read_text(encoding="utf-8"))
-    info["mtime"] = Path(model).stat().st_mtime
-    from src.gesture_models import read_bank
-    info["specialists"] = {}
-    for label, entry in read_bank(Path(model).parent / "gestures").items():
-        path = Path(model).parent / "gestures" / entry["card"]
-        card = json.loads(path.read_text(encoding="utf-8"))
-        card["mtime"] = path.stat().st_mtime
-        info["specialists"][label] = card
-    return info
+    from src.tcn_models import model_info
+    return model_info(MODEL if model is None else model)
 
 
 # ---------------------------------------------------------------- what to do next
@@ -163,17 +163,24 @@ def gesture_rows(summary: Dict[str, Any], report: Optional[Dict[str, Any]]) -> L
     pg = (report or {}).get("per_gesture", {})
     for key, name in NAMES.items():
         task = BY_KEY[key]
+        trained_at = (report or {}).get("class_mtime", {}).get(task.label, (report or {}).get("mtime", 0))
+        related = [f for f in summary.get("files", []) if not f.get("error")
+                   and (any(f.get("reps", {}).get(t.key) for t in BY_KEY.values() if t.label == task.label)
+                        or (task.free and f.get("free_minutes", {}).get(key, 0) > 0))]
+        stale = report is not None and max((f.get("mtime", 0) for f in related),
+                                          default=summary.get("newest", 0) if not summary.get("files") else 0) > trained_at
         d = summary["per_gesture"].get(key, {"reps": 0, "postures": {}, "minutes": 0.0})
-        specialist = (report or {}).get("specialists", {}).get(task.label)
-        current = specialist or report or {}
-        m = current.get("per_task", {}).get(key, current.get("per_gesture", pg).get(task.label, {}))
-        classes = current.get("classes", list(pg))
-        stale = bool(current) and summary.get("newest", 0) > current.get("mtime", 0)
+        m = (report or {}).get("per_task", {}).get(key, pg.get(key, {}) if key == task.label else {})
+        classes = (report or {}).get("classes", list(pg))
         row = {"key": key, "name": name, "reps": d["reps"], "postures": len(d["postures"]),
                "category": task.category, "instruction": task.do,
-               "model_text": ("선택 동작 모델 · " + str(specialist.get("trained", "")) if specialist else
-                              "TCN 학습됨" if task.label in classes else "TCN 학습 전 · 현재 규칙으로 동작"),
-               "can_train": task.label != "none", "label": task.label,
+               "label": task.label, "free": task.free,
+               "tcn_available": not task.free and task.label in classes,
+               "can_train": not task.free and any(summary["per_gesture"].get(t.key, {}).get("reps", 0) > 0
+                                                   for t in BY_KEY.values() if t.label == task.label),
+               "recordings": len(related),
+               "model_text": "선택 동작 모델" if task.label in (report or {}).get("selected_classes", []) else
+                             "TCN 학습됨" if task.label in classes else "TCN 학습 전 · 현재 규칙으로 동작",
                "minutes": d.get("minutes", 0.0), "train_accuracy": m.get("train_accuracy"),
                "rate": m.get("rate"), "rules_rate": m.get("rules_rate"),
                "misfires_per_min": m.get("misfires_per_min"), "rules_misfires_per_min": m.get("rules_misfires_per_min")}
@@ -200,9 +207,12 @@ def gesture_rows(summary: Dict[str, Any], report: Optional[Dict[str, Any]]) -> L
                 advice.append("여러 자세로 녹화하세요")
             if row["rate"] is not None and row["rate"] < GOAL_RATE:
                 advice.append(f"인식률이 낮아요 ({row['rate'] * 100:.0f}%): 이 동작을 집중 녹화하세요")
-            row["score_text"] = "아직 평가 없음" if row["rate"] is None else f"인식 {row['rate'] * 100:.0f}%"
+            row["score_text"] = "아직 자세 평가 없음" if row["rate"] is None else f"자세 분류 {row['rate'] * 100:.0f}%"
             if row["rate"] is not None and row["rules_rate"] is not None:
                 row["score_text"] += f" (규칙 {row['rules_rate'] * 100:.0f}%)"
+        quality = (report or {}).get("task_quality", {}).get(key) or (
+            (report or {}).get("class_quality", {}).get(key, {}) if key == task.label else {})
+        row["interaction_text"] = quality.get("text", "실제 동작 전달 평가 없음 · 자세 분류율은 클릭 성공률이 아닙니다.") if not task.free else ""
         if row["train_accuracy"] is not None:
             row["fit_text"] = f"학습 {row['train_accuracy'] * 100:.0f}%"
         else:
@@ -213,6 +223,14 @@ def gesture_rows(summary: Dict[str, Any], report: Optional[Dict[str, Any]]) -> L
             advice.append("아직 학습한 모델이 없어요")
         elif task.label not in classes:
             advice.append("이 동작을 녹화하고 다시 학습하면 모델에 추가됩니다")
+        if key in ("thumb_middle", "thumb_ring") and related:
+            quick = sum(f.get("quick_reps", {}).get(key, 0) for f in related)
+            if quick < 20:
+                advice.append(f"짧은 클릭 검증 녹화 {quick}/20회 · 집중 녹화의 각도×속도 추천안을 사용하세요")
+            prep = sum(f.get("click_phases", {}).get(key, {}).get("prep", 0) for f in related)
+            performed = sum(f.get("click_phases", {}).get(key, {}).get("do", 0) for f in related)
+            if prep > performed and prep >= 5:
+                advice.append(f"준비 중 규칙 클릭 후보 {prep}회: 동작 시작 시점 확인 필요")
         if advice:
             level = "need" if any(("부족" in a or "낮아요" in a or "많아요" in a) for a in advice) else "retrain"
         row["advice"] = " · ".join(advice) if advice else "좋아요"
@@ -223,7 +241,7 @@ def gesture_rows(summary: Dict[str, Any], report: Optional[Dict[str, Any]]) -> L
 
 # ---------------------------------------------------------------- training in the background
 def terminate_training_process(proc):
-    """Windows venv launchers have a child interpreter; stop that child as well."""
+    """Stop the Windows venv child interpreter as well as its launcher."""
     if os.name == "nt":
         subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -244,21 +262,31 @@ class TrainingJob:
     def running(self) -> bool:
         return bool(self.state.get("running"))
 
-    def start(self, epochs: int = 25, gestures=None) -> bool:
+    def start(self, epochs: int = 25, tasks=None, gestures=None) -> bool:
         if self.running:
             return False
+        if tasks is not None and gestures is not None:
+            raise ValueError("tasks와 gestures 중 하나로 동작을 지정하세요.")
+        if gestures is not None:
+            tasks = gestures
+        if tasks is not None:
+            from src.capture_dataset import training_selection
+            tasks, _ = training_selection(tasks)
         env = dict(os.environ, PYTHONIOENCODING="utf-8")
         args = [sys.executable, str(ROOT / "scripts" / "train_tcn.py"), "--folds", "--progress", "--epochs", str(epochs)]
         if gestures is not None:
-            if not gestures or any(key not in BY_KEY or BY_KEY[key].label == "none" for key in gestures):
-                raise ValueError("학습할 동작을 선택하세요. 중립은 오답 자료로 함께 사용됩니다.")
-            args.extend(["--gestures", *gestures])
+            args += ["--gestures", *gestures]
+        elif tasks is not None:
+            args += ["--tasks", *tasks]
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         self.proc = subprocess.Popen(args, cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                      encoding="utf-8", errors="replace", env=env, creationflags=flags)
         with self._lock:
-            self.state = {"running": True, "stage": "데이터 읽는 중", "fold": 0, "folds": 0, "epoch": 0, "epochs": epochs,
-                          "progress": 0.0, "started": time.time(), "log": []}
+            self.state = {"running": True, "stage": "데이터 읽는 중", "phase": "loading", "fold": 0, "folds": 0,
+                          "epoch": 0, "epochs": epochs, "completed_epochs": 0, "epoch_seconds": [],
+                          "evaluated_folds": [], "evaluation_seconds": [], "events": [],
+                          "progress": 0.0, "started": time.time(), "log": [], "tasks": tasks}
+            self._event("학습을 시작했습니다. 녹화를 읽는 중입니다.")
         threading.Thread(target=self._read, daemon=True).start()
         return True
 
@@ -271,65 +299,128 @@ class TrainingJob:
             try:
                 ev = json.loads(line)
             except ValueError:
+                ev = None
+            if not isinstance(ev, dict):
                 with self._lock:
-                    self.state["log"] = (self.state.get("log", []) + [line])[-20:]
+                    self.state["log"] = (self.state.get("log", []) + [line])[-200:]
                 continue
             self._apply(ev)
         code = self.proc.wait()
+        self._finish(code)
+
+    def _finish(self, code):
         with self._lock:
             self.state["running"] = False
-            if code != 0 and not self.state.get("error"):
+            if self.state.get("cancelled") and not self.state.get("success"):
+                self.state["stage"] = "학습을 멈췄어요. 기존 모델을 유지합니다."
+                self.state["phase"] = "cancelled"
+                self._event(self.state["stage"])
+            elif code != 0 and not self.state.get("error"):
                 self.state["error"] = "학습이 실패했어요: " + " / ".join(self.state.get("log", [])[-3:])
+            elif code == 0 and not self.state.get("success") and not self.state.get("error"):
+                self.state["error"] = "학습 완료 결과를 받지 못했습니다. 진행 기록을 확인하세요."
+            if self.state.get("error"):
+                self.state["phase"], self.state["stage"] = "error", "학습에 실패했습니다"
+                self._event(self.state["error"])
             self.state["finished"] = time.time()
+
+    def _event(self, text):
+        """Caller holds _lock. Keep a bounded human-readable history separate from raw process output."""
+        line = time.strftime("%H:%M:%S") + "  " + text
+        self.state["events"] = (self.state.get("events", []) + [line])[-100:]
 
     def _apply(self, ev: Dict[str, Any]) -> None:
         with self._lock:
             s = self.state
+            now = time.time()
             kind = ev.get("event")
-            if kind == "gesture_start":
-                s["gesture_index"], s["gesture_count"] = ev["index"], ev["count"]
-                s["target"] = ev["target"]
-                s["stage"] = "선택 동작 학습 · " + NAMES.get(ev["target"], ev["target"])
-            elif kind == "loaded":
+            if kind == "loaded":
                 s["folds"] = int(ev.get("folds", 0))
-                s["windows"] = ev.get("windows")
+                for key in ("windows", "recordings", "postures", "per_class"):
+                    s[key] = ev.get(key, {} if key == "per_class" else [] if key == "postures" else 0)
                 s["stage"] = f"데이터 {ev.get('windows')}개 구간"
-            elif kind == "fold_start":
-                s["fold"] = int(ev.get("fold", 0))
-                s["stage"] = f"평가 학습 {s['fold']}/{s['folds']} (자세 {ev.get('posture')} 빼고)"
+                self._event(f"데이터 읽기 완료 · 녹화 {s['recordings']}개 · 학습 구간 {s['windows']:,}개")
+            elif kind in ("fold_start", "final_start"):
+                s["fold"] = int(ev.get("fold", 0)) if kind == "fold_start" else s["folds"] + 1
+                s["stage"] = (f"자세별 평가 학습 {s['fold']}/{s['folds']} (자세 {ev.get('posture')} 제외)"
+                              if kind == "fold_start" else "최종 모델 학습")
+                s["phase"] = "training"
                 s["epoch"], s["losses"] = 0, []
-            elif kind == "final_start":
-                s["fold"] = s["folds"] + 1
-                s["stage"] = "최종 모델 학습"
-                s["epoch"], s["losses"] = 0, []
+                s.pop("loss", None)
+                s["last_epoch_at"] = now
+                s["completed_epochs"] = max(s.get("completed_epochs", 0), (s["fold"] - 1) * s["epochs"])
+                self._event(s["stage"] + " 시작")
             elif kind == "epoch":
+                delta = now - s.get("last_epoch_at", now)
+                if delta > 0:
+                    s["epoch_seconds"] = (s.get("epoch_seconds", []) + [delta])[-20:]
+                s["last_epoch_at"] = now
                 s["epoch"], s["loss"] = int(ev["epoch"]), float(ev["loss"])
                 s.setdefault("losses", []).append(float(ev["loss"]))
+                s["completed_epochs"] = (max(1, s["fold"]) - 1) * s["epochs"] + s["epoch"]
+                self._event(f"반복 {s['epoch']}/{s['epochs']} 완료 · 손실 {s['loss']:.4f}")
+            elif kind == "evaluation_start":
+                s["phase"], s["evaluation_started"] = "evaluating", now
+                s["stage"] = (f"자세 {ev.get('posture')} 인식률 평가 중" if ev.get("posture") is not None
+                              else "최종 모델 성적 계산 중")
+                self._event(s["stage"])
+            elif kind in ("evaluation_done", "fold_skip"):
+                fold = int(ev.get("fold", s["fold"]))
+                if fold not in s.setdefault("evaluated_folds", []):
+                    s["evaluated_folds"].append(fold)
+                if kind == "fold_skip":
+                    s["completed_epochs"] = max(s.get("completed_epochs", 0), fold * s["epochs"])
+                    self._event(f"평가 {fold}회차 보류 · 다른 자세에 필요한 동작 데이터가 부족합니다.")
+                else:
+                    seconds = max(0, now - s.get("evaluation_started", now))
+                    s.setdefault("evaluation_seconds", []).append(seconds)
+                    self._event(f"평가 {fold}회차 완료")
+            elif kind == "export_start":
+                s["phase"], s["stage"] = "saving", "모델 저장·실행 검증 중"
+                self._event(s["stage"])
             elif kind == "fold_result":
                 s.setdefault("results", []).append(ev)
             elif kind == "done":
-                s["stage"] = "끝! 새 모델 저장됨"
+                s["stage"] = "끝! 선택한 동작 학습 완료" if ev.get("tasks") else "끝! 새 모델 저장됨"
+                s["published"] = ev.get("published", True)
+                s["publication_issues"] = ev.get("publication_issues", [])
+                s["model"] = ev.get("model", "")
+                if not s["published"]:
+                    s["stage"] = "학습 완료 · 구분 성능 기준 미달로 기존 모델 유지"
+                s["success"] = True
+                s["phase"] = "done"
+                s["finished"] = now
                 s["per_gesture"] = ev.get("per_gesture")
+                self._event(s["stage"])
+                for issue in s["publication_issues"]:
+                    self._event(issue)
             elif kind == "skipped":
                 s.setdefault("skipped", []).append(ev.get("file"))
+                self._event("끝나지 않았거나 읽을 수 없는 녹화 제외: " + str(ev.get("file")))
             elif kind == "note":
-                s["log"] = (s.get("log", []) + [ev.get("text", "")])[-20:]
+                self._event(ev.get("text", ""))
             elif kind == "error":
                 s["error"] = ev.get("text")
-            steps = s["folds"] + 1
-            done = (max(0, s["fold"] - 1) + s["epoch"] / max(1, s["epochs"])) / max(1, steps)
-            s["progress"] = 1.0 if kind == "done" else round(min(0.99, done), 3)
-            if kind != "done" and s.get("gesture_count"):
-                s["progress"] = round((s["gesture_index"] - 1 + s["progress"]) / s["gesture_count"], 3)
+                s["phase"] = "error"
+                self._event(s["error"])
+            total = max(1, (s["folds"] + 1) * s["epochs"])
+            trained = s.get("completed_epochs", 0) / total
+            evaluated = len(s.get("evaluated_folds", [])) / max(1, s["folds"])
+            done = (.96 * trained + .02 * evaluated) if s["folds"] else .98 * trained
+            if kind == "export_start":
+                done = .98
+            s["progress"] = 1.0 if kind == "done" else round(min(.99, max(s.get("progress", 0), done)), 3)
 
     def snapshot(self) -> Dict[str, Any]:
         with self._lock:
-            return dict(self.state)
+            return copy.deepcopy(self.state)
 
     def stop(self) -> None:
         if self.proc is not None and self.running:
             with self._lock:
-                self.state["error"] = "학습 중단을 요청했습니다. 게시 전 모델은 적용되지 않습니다."
+                if self.state.get("success"):
+                    return
+                self.state["cancelled"] = True
             terminate_training_process(self.proc)
 
 
@@ -346,26 +437,28 @@ import json
 from collections import deque
 
 import numpy as np
-from tcn_features import FEATURE_VERSION, frame_features, windows
-from gesture_models import load_single, compose_predictor
+from tcn_features import temporal_inputs
+from tcn_models import load_predictor
+from pathlib import Path
 
 
 class GestureModel:
     def __init__(self, folder="."):
-        from pathlib import Path
-        path = Path(folder) / "gesture_tcn.onnx"
-        base, info = load_single(path, FEATURE_VERSION)
-        self.predict, self.info = compose_predictor(path, base, info)
+        self.predict, self.info = load_predictor(Path(folder) / "gesture_tcn.onnx")
         self.frames = deque(maxlen=self.info["window"] + 1)
 
     def step(self, t, world, image, aspect):
         """t: seconds; world / image: 21 x (x, y, z) or None when no hand. Returns {{class: probability}}."""
-        self.frames.append({{"t": t, "world": world, "lm": image}} if world else {{"t": t}})
-        x = windows(frame_features(list(self.frames), aspect), self.info["window"])[-1:]
-        p = self.predict(x)
+        self.frames.append({{"t": t, "world": world, "lm": image}} if world is not None else {{"t": t}})
+        features, x, _ = temporal_inputs(list(self.frames), aspect, self.info["window"])
+        p = self.predict(x[-1:])
+        if not features[-1, -1]:
+            p[:] = 0
+            p[self.info["classes"].index("none")] = 1
         return dict(zip(self.info["classes"], p.tolist()))
 
-# A gesture counts when its probability stays >= info["threshold"] for info["frames_in_a_row"] frames in a row.
+# Use info["class_decisions"][gesture] for its threshold and required consecutive frames.
+# Each selected gesture keeps its own confirmer; scores across models need not sum to 1.
 '''
 
 
@@ -375,24 +468,16 @@ def export_package(out_root: Path = EXPORT_DIR, with_dataset: bool = True) -> Pa
     report = model_report()
     if report is None:
         raise FileNotFoundError("학습한 모델이 없어요. 먼저 학습하세요.")
-    from uuid import uuid4
-    stamp = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid4().hex[:8]
+    from src.tcn_models import copy_bundle
+    import uuid
+    stamp = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
     out = Path(out_root) / f"gesture-tcn-{stamp}"
     out.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(MODEL, out / "gesture_tcn.onnx")
-    shutil.copy2(MODEL.with_suffix(".json"), out / "gesture_tcn.json")
+    copy_bundle(MODEL, out)
     shutil.copy2(ROOT / "src" / "tcn_features.py", out / "tcn_features.py")
+    shutil.copy2(ROOT / "src" / "tcn_models.py", out / "tcn_models.py")
     shutil.copy2(ROOT / "src" / "gesture_models.py", out / "gesture_models.py")
-    from src.gesture_models import SCHEMA, read_bank
-    entries = read_bank(MODEL.parent / "gestures")
-    if entries:
-        target = out / "gestures"
-        target.mkdir()
-        for entry in entries.values():
-            for key in ("model", "card"):
-                shutil.copy2(MODEL.parent / "gestures" / entry[key], target / entry[key])
-        (target / "manifest.json").write_text(
-            json.dumps({"schema": SCHEMA, "models": entries}, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "active-model-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     (out / "example_use.py").write_text(EXAMPLE.format(window=report["window"]), encoding="utf-8")
     pg = report.get("per_gesture", {})
     lines = [f"# 손짓 TCN 모델 ({report.get('trained')})", "",
@@ -403,14 +488,15 @@ def export_package(out_root: Path = EXPORT_DIR, with_dataset: bool = True) -> Pa
     for key, g in pg.items():
         if "rate" in g:
             pct = lambda v: "-" if v is None else f"{v * 100:.0f}%"  # noqa: E731
-            lines.append(f"- {key}: 인식 {g['recognised']}/{g['total']} = {pct(g.get('rate'))} (규칙만 {pct(g.get('rules_rate'))})"
+            lines.append(f"- {key}: 자세 분류 {g['recognised']}/{g['total']} = {pct(g.get('rate'))} (규칙만 {pct(g.get('rules_rate'))})"
                          f" · 학습 데이터 정확도 {pct(g.get('train_accuracy'))}")
         else:
             lines.append(f"- {key}: 오작동 {g.get('misfires_per_min')}회/분 (규칙 {g.get('rules_misfires_per_min')}회/분)")
-    lines += ["", "## 쓰는 법", "`example_use.py` 참고. 필요한 것: numpy, onnxruntime, MediaPipe Hand Landmarker(world landmarks 포함)."]
-    if entries:
-        lines += ["", "## 선택 학습 모델", "선택 모델은 해당 동작에 우선 적용되며 각 확률은 독립적입니다.",
-                  ", ".join(entries)]
+    lines += ["", "## 동작 전달 비교"] + [f"- {key}: {quality.get('text', '평가 없음')}" for key, quality in report.get("class_quality", {}).items() if key != "none"]
+    lines += ["", "## 쓰는 법", "`example_use.py` 참고. 필요한 것: numpy, onnxruntime, MediaPipe Hand Landmarker(world landmarks 포함).",
+              "새 모델은 앱에서 시험 모드로 시작합니다. 이 예시는 점수 계산만 제공하며 OS 동작이나 앱의 적용 설정을 내보내지 않습니다.",
+              "선택 학습한 동작은 selected/ 모델과 gesture_tcn.selected.json을 함께 사용합니다. 폴더 전체를 복사하세요.",
+              "동작마다 독립 판정하므로 점수의 합은 1이 아닐 수 있습니다. 판정 기준은 class_decisions를 사용하세요."]
     if with_dataset:
         lines += ["", "## dataset.npz", "녹화 전체의 프레임별 특징 `x` (n, features), 정답 `y` (-1 = 학습 제외, 그 외 classes 순서), "
                   "자세 `posture`, 녹화 번호 `recording`. 다른 프레임워크에서 다시 학습할 때 쓴다."]

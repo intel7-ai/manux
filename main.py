@@ -226,8 +226,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source",
         type=str,
-        default="0",
-        help="Camera source: USB webcam index ('0'), 'phone' (app-less smartphone browser), or IP URL",
+        default=None,
+        help="Camera source: USB webcam index, 'phone', or IP URL (default: saved camera_source, then 0)",
     )
     parser.add_argument(
         "--phone-web",
@@ -650,7 +650,9 @@ def main() -> int:
     if engine.config.get("start_in_tray", False):
         args.headless = True
 
-    chosen_source = "phone" if args.phone_web else args.source
+    chosen_source = "phone" if args.phone_web else (
+        args.source if args.source is not None else engine.config.get("camera_source", 0)
+    )
     def cfg_int(key: str, default: int) -> int:
         try:
             value = int(engine.config.get(key, default))
@@ -666,6 +668,7 @@ def main() -> int:
         width=cfg_int("camera_width", 1280),
         height=cfg_int("camera_height", 720),
         fps=cfg_int("camera_fps", 60),
+        backend=str(engine.config.get("camera_backend", "auto")),
     )
     camera = CameraStream(cam_cfg)
     if not camera.open():
