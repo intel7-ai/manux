@@ -163,7 +163,8 @@ def capture(cv2, camera, tracker, engine, hand_side, sets, args, folder, setting
                     if stage != shown_stage:
                         shown_stage = stage
                         repetition = f" {label['rep']}/{take.session.reps}" if label["rep"] else ""
-                        print(f"[{index + 1}/{len(sets)} {task.key}] {view['prompt']}{repetition}", flush=True)
+                        console_prompt = "준비…" if label["phase"] == "prep" else view["prompt"]
+                        print(f"[{index + 1}/{len(sets)} {task.key}] {console_prompt}{repetition}", flush=True)
                     prompt = {"prep": "GET READY", "rest": "REST - relax your hand", "free": "GO", "do": "GO",
                               "paused": "PAUSED - show your hand (timer stopped)"}[phase]
                     if phase == "free":

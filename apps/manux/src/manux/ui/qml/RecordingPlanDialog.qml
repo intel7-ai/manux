@@ -53,7 +53,7 @@ Dialog {
         Caption { text: seconds.label }
         StudioStepper {
             Layout.fillWidth: true
-            from: 0.5; to: 10; stepSize: 0.5;
+            from: seconds.field === "hold" ? 0.2 : 0.5; to: 10; stepSize: seconds.field === "hold" ? 0.1 : 0.5;
             value: dialog.editor.selected[seconds.field]
             onEdited: dialog.editor.setField(seconds.field, value)
             Accessible.name: seconds.label
@@ -66,7 +66,7 @@ Dialog {
             ColumnLayout {
                 Layout.fillWidth: true
                 Caption { text: dialog.editor.title; font.pixelSize: 21; font.bold: true; Layout.fillWidth: true }
-                Caption { text: "선택한 동작에 적용할 자세와 녹화량을 정하세요."; color: "#526575" }
+                Caption { text: "자세를 고르고 조건을 편집하세요. 동작마다 설정을 따로 저장합니다."; color: "#526575" }
             }
             StudioButton { text: "닫기"; onClicked: dialog.close() }
         }
@@ -76,6 +76,7 @@ Dialog {
             StudioButton { text: "기본 3자세"; onClicked: dialog.editor.usePreset("basic") }
             StudioButton { text: "다양한 조건 9자세"; onClicked: dialog.editor.usePreset("diverse") }
             StudioButton { text: "화면 위치 9곳"; onClicked: dialog.editor.usePreset("positions") }
+            StudioButton { objectName: "quickClickPreset"; text: "짧은 클릭 · 각도×속도"; visible: dialog.editor.clickGesture; onClicked: dialog.editor.usePreset("quick_click") }
             Item { Layout.fillWidth: true }
         }
         Caption { text: dialog.editor.instruction; Layout.fillWidth: true; color: "#16846E" }

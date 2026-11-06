@@ -8,6 +8,8 @@ from __future__ import annotations
 from manux.settings.schema import Setting
 
 APP = (
+    Setting("app.training_device", "auto", kind="choice", choices=("auto","cpu","cuda","xpu")),
+    Setting("app.inference_device", "cpu", kind="choice", choices=("auto","cpu","cuda","openvino-cpu","openvino-gpu","openvino-npu")),
     Setting("app.hand_lost_reset", 0.3, minimum=0.0, maximum=5.0,
             doc="seconds without a hand before features reset and the output releases everything"),
     Setting("app.pc_alias", "", kind="str", doc="nickname written into recordings instead of the PC name"),
@@ -26,6 +28,8 @@ CAMERA = (
 )
 
 TRACKING = (
+    Setting("tracking.pose_enabled", False, kind="bool", doc="record optional shoulder/elbow/wrist landmarks; extra processing only during capture"),
+    Setting("tracking.pose_every_n_frames", 5, kind="int", minimum=1, maximum=30),
     Setting("tracking.num_hands", 1, kind="int", minimum=1, maximum=2,
             doc="maximum detected hands; one avoids searching continuously for a second hand"),
     Setting("tracking.min_detection_confidence", 0.6, minimum=0.05, maximum=0.95),

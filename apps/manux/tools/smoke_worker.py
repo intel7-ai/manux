@@ -10,21 +10,22 @@ import sys
 import tempfile
 
 
-def recording(path, split):
+def recording(path, split, target="thumb_ring"):
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = [{"type": "meta", "schema": "hand-mouse-recording/1", "mode": "guided",
              "person": "synthetic", "preset": "pinch", "split": split,
              "camera": {"mode": [640, 480, 30], "mirror": False}}]
-    labels = (["none"] * 40 + ["thumb_ring"] * 40) * 4 + ["none"] * 40
+    labels = (["none"] * 40 + [target] * 40) * 4 + ["none"] * 40
     for i, label in enumerate(labels):
         world = [[j % 5 * .01, j // 5 * .01, j % 2 * .001] for j in range(21)]
         world[0], world[9], world[5], world[17] = [0., 0., 0.], [0., .1, 0.], [-.04, .08, 0.], [.04, .08, 0.]
         world[8] = [-.04, .08, 0.]
-        world[4] = [-.04, .08, 0.] if label == "thumb_ring" else [.15, .08, 0.]
+        world[4] = ([-.04, .08, 0.] if label == "thumb_ring" else
+                    [.15, .25, 0.] if label == "thumb_middle" else [.15, .08, 0.])
         rows.append({"type": "frame", "t": i / 30, "world": world,
                      "lm": [[.4 + j * .005, .6 - j * .005, 0.] for j in range(21)],
                      "hand": ["Right", .95], "label": {"target": label,
-                         "gesture": "pinch.thumb_ring" if label != "none" else None},
+                         "gesture": "pinch." + label if label != "none" else None},
                      "rule": {"action": "none"}})
     rows.append({"type": "end", "frames": len(labels)})
     with gzip.open(path, "wt", encoding="utf-8") as stream:
@@ -80,6 +81,53 @@ def main(argv=None):
         runtime._drain_runtime_requests()
         assert runtime.engine.features[-1].card.gestures == model.card.gestures
         runtime.stop()
+        from uuid import uuid4
+        def studio_job(action, **values):
+            studio_dir = root / ("studio-" + uuid4().hex)
+            studio_dir.mkdir()
+            payload = {**request, "kind": "studio", "action": action, "job_id": uuid4().hex,
+                       "data_dir": str(root / "data"),
+                       "job_dir": str(studio_dir), "cancel_path": str(studio_dir / "cancel"), **values}
+            studio_request = studio_dir / "request.json"
+            studio_request.write_text(json.dumps(payload), encoding="utf-8")
+            result = subprocess.run([*command, "--request", str(studio_request)], capture_output=True,
+                                    timeout=60, env=env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            if result.returncode: raise RuntimeError(f"studio worker failed: {result.stdout[-2000:]}")
+            return json.loads((studio_dir / "result.json").read_text(encoding="utf-8"))
+        library = studio_job("scan")
+        trial = next(row for row in library["recordings"] if row["split"] == "eval")
+        simulated = studio_job("simulate", key=trial["key"])
+        assert simulated["simulation"]["counts"].get("preview", simulated["simulation"]["counts"]["model"]) > 0
+        assert simulated["simulation"]["errors"] == 0
+        old_version = json.loads(active_token(root / "store"))["version"]
+        restored = studio_job("restore", version=old_version)
+        assert len(restored["versions"]) == 2 and json.loads(active_token(root / "store"))["version"] != old_version
+        named = studio_job("scan")["models"][0]
+        renamed = studio_job("model_rename", identifier=named["id"], name="Synthetic desk v2")
+        assert renamed["models"][0]["name"] == "Synthetic desk v2"
+        token = active_token(root / "store")
+        studio_job("model_preview", identifier=named["id"])
+        assert active_token(root / "store") == token
+        candidate = root / "data/models/library" / named["id"] / "model.onnx"
+        runtime = desktop.build(Settings(schema()), SimpleNamespace(close=lambda: None), windows=False,
+                                tcn_store=root / "store", tcn_mode="direct")
+        runtime.request(RuntimeRequest("preview_model", str(candidate)))
+        runtime._drain_runtime_requests()
+        assert runtime.preview_only and runtime.current_model.path == candidate
+        applied = studio_job("model_apply", identifier=named["id"])
+        runtime.request(RuntimeRequest("activate_model", str(root / "store")))
+        runtime._drain_runtime_requests()
+        assert not runtime.preview_only and active_token(root / "store") != token
+        runtime.stop()
+        assert len(applied["versions"]) == 3
+        evaluation_file = root / "recordings/profile-synthetic/pinch/eval/test.jsonl.gz"
+        evaluation_file.rename(root / "evaluation.not-used")
+        before_failed_apply = active_token(root / "store")
+        try:
+            studio_job("model_apply", identifier=named["id"])
+            raise AssertionError("missing independent evaluation was accepted")
+        except RuntimeError:
+            assert active_token(root / "store") == before_failed_apply
         before = active_token(root / "store")
         (job / "cancel").touch()
         cancelled = subprocess.run([*command, "--request", str(path)], capture_output=True, timeout=60, env=env,
@@ -88,6 +136,10 @@ def main(argv=None):
         report = {"packaged": args.worker is not None, "components": json.loads((root / "components.json").read_text()),
                   "training": True, "independent_evaluation": done["metrics"],
                   "runtime_activation": True, "cancel_preserved_model": True}
+        report["studio"] = {"recordings": len(library["recordings"]), "simulation": simulated["simulation"],
+                            "restore_revalidated": True, "versions": len(restored["versions"])}
+        report["model_library"] = {"named_artifact": True, "preview_with_existing_active": True,
+                                   "independent_apply": True, "missing_eval_preserved_active": True}
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(json.dumps(report))

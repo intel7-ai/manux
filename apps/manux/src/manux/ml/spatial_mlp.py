@@ -2,11 +2,14 @@
 
 평가용 변경: 33/96차원과 동적 클래스 허용, 내부 무작위 프레임 분할 제거.
 Adam/LeakyReLU/가중치 초기화·역전파는 원본 유지. 학습 시간은 실행해 측정한다.
-저장/설치/UI는 가져오지 않는다. 실제 독립 평가 지표는 tools/eval_judges.py가 계산한다.
+저장·로드는 #82와 통합한다. 명시적 validation_data만 계산하며 무작위 분할은 하지 않는다.
+실제 독립 평가 지표는 tools/eval_judges.py가 계산한다.
 """
 from __future__ import annotations
 
 import math
+import json
+from pathlib import Path
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -107,6 +110,50 @@ class SpatialMlpModel:
             arr = arr[-1]
         return self.predict_proba(arr)
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "schema": "manux-spatial-mlp/1",
+            "feature_version": self.feature_version,
+            "feat_dim": self.feat_dim,
+            "hidden_units": self.hidden_units,
+            "classes": list(self.classes),
+            "metadata": self.metadata,
+            "weights": {
+                "W1": np.round(self.w1, 6).tolist(),
+                "b1": np.round(self.b1, 6).tolist(),
+                "W2": np.round(self.w2, 6).tolist(),
+                "b2": np.round(self.b2, 6).tolist(),
+            },
+        }
+
+    def save(self, path: Path) -> Path:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        return path
+
+    @classmethod
+    def from_dict(cls, doc: Mapping[str, Any]) -> SpatialMlpModel:
+        if not isinstance(doc, Mapping) or doc.get("schema") != "manux-spatial-mlp/1":
+            raise ValueError("invalid spatial MLP document")
+        weights = doc["weights"]
+        return cls(
+            w1=np.asarray(weights["W1"], dtype=np.float64),
+            b1=np.asarray(weights["b1"], dtype=np.float64),
+            w2=np.asarray(weights["W2"], dtype=np.float64),
+            b2=np.asarray(weights["b2"], dtype=np.float64),
+            classes=tuple(doc["classes"]),
+            feature_version=str(doc.get("feature_version", "spatial-mlp-v1")),
+            metadata=dict(doc.get("metadata") or {}),
+        )
+
+    @classmethod
+    def load(cls, path: Path) -> SpatialMlpModel:
+        if Path(path).stat().st_size > 16 * 1024 * 1024:
+            raise ValueError("Spatial MLP 파일이 너무 큽니다.")
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+        return cls.from_dict(doc)
+
 
 def train_spatial_mlp(
     x_all: np.ndarray,
@@ -121,6 +168,7 @@ def train_spatial_mlp(
     l2: float = 1e-4,
     seed: int = 42,
     feature_version: str = "spatial-mlp-v1",
+    validation_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
 ) -> Tuple[SpatialMlpModel, SpatialMlpMetrics]:
     """NumPy Adam으로 외부에서 분리한 학습 표본 전체를 학습한다."""
     t0 = time.perf_counter()
@@ -246,12 +294,19 @@ def train_spatial_mlp(
             "accuracy": round((correct_c / total_c) * 100.0, 1) if total_c > 0 else None,
         }
 
+    test_acc = None
+    test_samples = 0
+    if validation_data is not None:
+        vx, vy = validation_data
+        test_samples = len(vy)
+        test_acc = round(float(np.mean(np.argmax(temp_model.predict_proba(vx), axis=1) == vy) * 100), 2)
+
     metrics = SpatialMlpMetrics(
         train_accuracy=round(train_acc, 2),
-        test_accuracy=None,
+        test_accuracy=test_acc,
         total_samples=int(n_samples),
         train_samples=int(len(x_train)),
-        test_samples=0,
+        test_samples=test_samples,
         elapsed_ms=round(elapsed_ms, 1),
         per_class=per_class,
         trained_at=trained_at,

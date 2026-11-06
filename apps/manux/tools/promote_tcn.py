@@ -17,6 +17,8 @@ from manux.perception.local3d import FEATURES, FEATURE_VERSION
 from manux.settings.paths import resolve
 from tcn_data import LEGACY_RULES, load
 from manux.data.rule_replay import rule_action
+from manux.data.studio import capture_hashes
+from manux.data.catalog import BY_KEY
 
 
 def measure(segments, mapping, model=None, mode="pinch", known_labels=None):
@@ -32,7 +34,9 @@ def measure(segments, mapping, model=None, mode="pinch", known_labels=None):
             rec = Recording(Path("evaluation"), {"frame_aspect": segment.aspect, "camera": {"mirror": False}},
                             frames=segment.frames)
             for i, item in enumerate(replay(rec)):
-                ctx = FrameContext(item.frame, Stage.TUTORIAL, OutputTarget.PRACTICE, mode)
+                task = BY_KEY.get((segment.frames[i].get("label") or {}).get("task"))
+                frame_mode = "motion" if task is not None and task.direction else mode
+                ctx = FrameContext(item.frame, Stage.TUTORIAL, OutputTarget.PRACTICE, frame_mode)
                 for intent in feature.step(item.hand, ctx):
                     if intent.phase in ("tap", "begin"):
                         events[i] = by_gesture.get(intent.gesture)
@@ -64,8 +68,10 @@ def measure(segments, mapping, model=None, mode="pinch", known_labels=None):
 
 
 def validate_and_install(candidate_path, recordings, store, *, mode="pinch", cache_dir=None, loader=load_model,
-                         cancelled=None):
+                         cancelled=None, expected_active=...):
     token = active_token(store)
+    if expected_active is not ... and token != expected_active:
+        raise ValueError("학습 중 사용 모델이 바뀌었습니다. 다시 평가해 주세요.")
     current = load_active(store, FEATURE_VERSION, FEATURES) if token is not None else None
     before_model = sha256(Path(candidate_path).read_bytes()).hexdigest()
     before_card = sha256(card_path(Path(candidate_path)).read_bytes()).hexdigest()
@@ -75,11 +81,14 @@ def validate_and_install(candidate_path, recordings, store, *, mode="pinch", cac
             if candidate.card.gestures.get(name) != gesture:
                 raise ValueError("existing gesture classes cannot be removed or remapped during installation")
     paths = list(dict.fromkeys(Path(p).resolve() for p in recordings))
-    hashes = []
+    hashes, captures = [], set()
     for path in paths:
         rec = read(path)
         if rec.meta.get("split") != "eval":
             raise ValueError("installation requires explicitly marked split=eval recordings")
+        if rec.meta.get("lineage"):
+            raise ValueError("evaluation requires original independent captures")
+        captures.update(capture_hashes(path, rec))
         hashes.append(sha256(path.read_bytes()).hexdigest())
     for model in (candidate, current):
         if model is None:
@@ -87,7 +96,10 @@ def validate_and_install(candidate_path, recordings, store, *, mode="pinch", cac
         training = [row.get("sha256") for row in model.card.raw["data"] if isinstance(row, dict)]
         if not training or any(not isinstance(h, str) or len(h) != 64 or set(h) - set("0123456789abcdef") for h in training):
             raise ValueError("model must identify every training recording by SHA256")
-        if set(training).intersection(hashes):
+        training_captures = set(training)
+        for row in model.card.raw["data"]:
+            training_captures.update(row.get("capture_sha256", [row["sha256"]]))
+        if training_captures.intersection(captures):
             raise ValueError("evaluation recordings overlap model training")
     segments = load(paths, split="eval", cache_dir=cache_dir)
     if current is None:

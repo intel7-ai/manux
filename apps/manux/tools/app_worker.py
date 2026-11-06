@@ -41,6 +41,10 @@ def check_cancel(request):
 
 def run_training(request, send=emit):
     import train_tcn
+    from compose_tcn import compose
+    from training_device import select, record
+    execution = select(request.get("device", os.environ.get("MANUX_TRAIN_DEVICE", "auto")))
+    send("progress", stage="학습 장치 · " + execution.actual, execution=record(execution))
     from promote_tcn import validate_and_install
     from tcn_data import load, class_mapping, class_names
     from manux.ml.store import active_token, load_active
@@ -59,7 +63,7 @@ def run_training(request, send=emit):
     all_classes = class_names(segments)
     from manux.features.tcn_gate import LEGACY_GESTURES
     mode = request.get("mode", "pinch")
-    specs = {g: d for g, d in request["specs"].items() if mode in d["modes"]}
+    specs = {g: d for g, d in request["specs"].items() if mode in d["modes"] or "motion" in d["modes"]}
     mapping = class_mapping(segments, [c for c in all_classes if c == "none" or LEGACY_GESTURES.get(c) in specs or any(
         (f.get("label") or {}).get("target") == c and (f.get("label") or {}).get("gesture") in specs
         for s in segments for f in s.frames)])
@@ -69,22 +73,29 @@ def run_training(request, send=emit):
     focused = request.get("focus_labels", [request["focus_label"]] if request.get("focus_label") else [])
     if set(focused) - set(classes):
         raise ValueError("선택한 동작의 학습 녹화가 없습니다.")
+    selected = sorted(set(focused or classes[1:]))
+    if any(not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name == "none" for name in selected):
+        raise ValueError("학습할 동작 이름이 잘못되었습니다.")
     store = Path(request["store"])
     token = active_token(store)
+    current = None
     if token is not None:
         current = load_active(store, FEATURE_VERSION, FEATURES)
-        if not set(current.card.gestures) <= set(classes):
-            raise ValueError("기존 동작의 학습 데이터가 부족합니다. 팀 데이터를 받거나 다시 녹화하세요.")
+    elif request.get("previous_candidate"):
+        from manux.ml.predictor import load_model
+        current = load_model(Path(request["previous_candidate"]), FEATURE_VERSION, FEATURES)
+    retained = set(current.card.gestures) if current else set()
+    output_classes = {"none", *retained, *selected}
     evaluation = load(eval_paths, split="eval", cache_dir=cache)
     targets = {name for s in evaluation for name in s.labels()}
-    if not set(classes) <= targets:
-        missing = ", ".join(sorted(set(classes) - targets))
+    if not output_classes <= targets:
+        missing = ", ".join(sorted(output_classes - targets))
         raise ValueError(f"평가 녹화가 부족한 동작: {missing}. 별도 시도로 녹화하세요.")
     folder = Path(request["job_dir"])
     candidate = folder / "candidate.onnx"
-    declarations = folder / "decisions.json"
-    declarations.write_text(json.dumps({c: specs[mapping[c]] for c in classes if c != "none"}), encoding="utf-8")
-    send("progress", stage="통합 모델 학습 중 · 기존 동작 함께 유지", progress=.1)
+    send("progress", stage="선택 동작 학습 준비 · 다른 분류기 유지", phase="loading", progress=.1, steps=len(selected),
+         train_files=len(train_paths), eval_files=len(eval_paths), conditions=len({s.condition for s in segments}),
+         frames=sum(len(s.frames) for s in segments))
     # The training CLI prints its legacy report; only explicit progress events leave this worker.
     class EventOutput:
         buffer = ""
@@ -98,22 +109,35 @@ def run_training(request, send=emit):
                     continue
                 if isinstance(row, dict) and row.get("event") == "epoch":
                     check_cancel(request)
-                    send("progress", stage="통합 모델 학습 중", progress=.1 + .6 * row["epoch"] / row["epochs"],
-                         epoch=row["epoch"], epochs=row["epochs"], loss=row["loss"])
+                    send("progress", stage=f"선택 동작 학습 중 · {label}", phase="training",
+                         progress=.1 + .6 * (step - 1 + row["epoch"] / row["epochs"]) / len(selected),
+                         step=step, steps=len(selected), epoch=row["epoch"], epochs=row["epochs"], loss=row["loss"])
+                elif isinstance(row, dict) and row.get("event") == "device":
+                    send("progress", stage="학습 장치 · "+row["actual"], execution={k:row[k] for k in ("requested","actual","runtime","name","reason")})
             return len(text)
         def flush(self): pass
-    with redirect_stdout(EventOutput()):
-        train_tcn.main([*[str(p) for p in train_paths], "--output", str(candidate), "--classes", *classes,
-                        "--decisions", str(declarations), "--cache-dir", str(cache),
-                        "--epochs", str(request.get("epochs", 20)), "--events", "--skip-folds"])
+    replacements = []
+    for step, label in enumerate(selected, 1):
+        check_cancel(request)
+        trained = folder / f"component-{label}.onnx"
+        declarations = folder / f"decisions-{label}.json"
+        declarations.write_text(json.dumps({label: specs[mapping[label]]}), encoding="utf-8")
+        with redirect_stdout(EventOutput()):
+            train_tcn.main([*[str(p) for p in train_paths], "--output", str(trained), "--classes", "none", label,
+                            "--decisions", str(declarations), "--cache-dir", str(cache), "--negative-other-classes",
+                            "--epochs", str(request.get("epochs", 20)), "--device", request.get("device", os.environ.get("MANUX_TRAIN_DEVICE","auto")), "--events", "--skip-folds"])
+        replacements.append(trained)
     check_cancel(request)
     if active_token(store) != token:
         raise ValueError("학습 중 사용 모델이 바뀌었습니다. 다시 평가해 주세요.")
-    send("progress", stage="별도 평가 녹화로 검증 중", progress=.8)
+    send("progress", stage="선택 분류기 결합 중 · 기존 가중치 유지", phase="saving", progress=.75)
+    compose(current.path if current else None, replacements, candidate)
+    check_cancel(request)
+    send("progress", stage="모든 동작의 별도 평가 녹화로 검증 중", phase="evaluating", progress=.8)
     installed, report = validate_and_install(candidate, eval_paths, store, mode=request.get("mode", "pinch"),
-                                             cache_dir=cache, cancelled=lambda: Path(request["cancel_path"]).exists())
-    send("done", stage="검증 통과 · 모델 적용 요청 완료", store=str(store),
-         classes=len(classes) - 1, metrics=report["candidate"], job_id=request["job_id"])
+                                             cache_dir=cache, cancelled=lambda: Path(request["cancel_path"]).exists(), expected_active=token)
+    send("done", stage="검증 통과 · 선택한 동작의 새 모델은 시험 모드", store=str(store),
+         classes=len(output_classes) - 1, trained_labels=selected, metrics=report["candidate"], job_id=request["job_id"])
 
 
 def run_hub(request, send=emit, client=None):
@@ -124,17 +148,19 @@ def run_hub(request, send=emit, client=None):
     preset = request.get("preset", "pinch")
     if preset not in ("pinch", "pointer", "trigger"):
         raise ValueError("녹화 방식을 확인하세요.")
-    if not getattr(sys, "frozen", False):
-        hub.load_dotenv()
-    hub.load_dotenv([Path(path) for path in request.get("env_files", ())], override=True)
-    repo = os.environ.get(hub.ENV_REPO) or request.get("repo") or hub.DEFAULT_REPO
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
-        raise ValueError("HF 저장소는 소유자/저장소 형식으로 입력하세요.")
-    client = client or hub.HfDatasetHub(repo, create_repo=False)
+    if not getattr(sys, "frozen", False): hub.load_dotenv()
+    hub.load_dotenv([Path(p) for p in request.get("env_files", ())], override=True)
+    if client is None:
+        client, repo, _provider = hub.configured_client(request)
+    else:
+        repo = os.environ.get(hub.ENV_REPO) or getattr(client, "repo_id", request.get("repo", hub.DEFAULT_REPO))
     root = Path(request["recordings_dir"])
     action = request["action"]
     check_cancel(request)
     send("progress", stage="팀 저장소 연결 중", progress=.1)
+    classes = request.get("classes", ())
+    if not isinstance(classes, (list, tuple)) or any(not re.fullmatch(r"[a-z][a-z0-9_]*", c) for c in classes):
+        raise ValueError("공유할 동작을 다시 선택하세요.")
     can_upload = None
     if action == "upload":
         if hasattr(client, "check_upload_access"):
@@ -149,10 +175,10 @@ def run_hub(request, send=emit, client=None):
             raise ValueError("내 별명의 완료된 녹화만 올릴 수 있습니다. 녹화 정보를 확인하세요.")
         if not valid:
             raise ValueError("내 별명으로 완료된 녹화가 없습니다.")
-        result = hub.push_to_hub(client, own)
+        result = hub.push_to_hub(client, own, classes=classes)
         message = f"업로드 완료 · 새 녹화 {result['new_recordings']}개"
     elif action == "download":
-        result = hub.pull_from_hub(client, root, presets=[preset])
+        result = hub.pull_from_hub(client, root, presets=[preset], classes=classes)
         message = f"팀 데이터 받기 완료 · {result['downloaded']}개"
     elif action == "status":
         result = hub.summarize_entries(client.read_manifest())
@@ -162,6 +188,67 @@ def run_hub(request, send=emit, client=None):
         raise ValueError("알 수 없는 허브 작업입니다.")
     send("done", stage=message, summary=result, repo=repo, read_access=True,
          upload_access=can_upload, job_id=request["job_id"])
+
+
+def run_pose_training(request, send=emit):
+    import numpy as np
+    from manux.data.pose_studio import ACTION_IDS, PoseSnapshotStudio
+    from manux.ml.spatial_mlp import train_spatial_mlp
+    from manux.perception.spatial_features import extract_spatial_features
+    from manux.data.studio import atomic_json
+    from model_library import add
+    studio = PoseSnapshotStudio(Path(request["data_dir"]))
+    xs, ys, weights = [], [], []
+    send("progress", stage="포즈 표본 준비 중", progress=.1, phase="loading")
+    for sample in studio.load_all_samples():
+        check_cancel(request)
+        label = sample.get("groundTruthAction")
+        if label not in ACTION_IDS: continue
+        features = extract_spatial_features(sample.get("rawLandmarks"))
+        if features is None: continue
+        xs.append(features); ys.append(ACTION_IDS.index(label))
+        weights.append(1.8 if sample.get("isFailureSample") else 1.)
+    if len(xs) < 2: raise ValueError("유효한 포즈 표본을 2개 이상 모으세요.")
+    send("progress", stage="포즈 MLP 학습 중 · 제어 모델은 유지", progress=.4, phase="training")
+    from manux.data.pose_studio import pose_training_partition
+    tx, ty, tw, validation = pose_training_partition(np.stack(xs), np.asarray(ys), np.asarray(weights))
+    model, metrics = train_spatial_mlp(tx, ty, tw, validation_data=validation, classes=ACTION_IDS)
+    check_cancel(request)
+    from manux.data.pose_studio import summarize_pose_fit
+    metrics = summarize_pose_fit(model, metrics, np.stack(xs), np.asarray(ys))
+    # Serialize atomically. This is a studio candidate, never the TCN active pointer.
+    path = studio.models_dir / "spatial_pose_mlp.json"
+    atomic_json(path, model.to_dict())
+    add(Path(request["data_dir"]) / "models/library", path, "포즈 MLP · " + metrics.trained_at)
+    send("done", stage="포즈 학습 완료 · 프레임 참고 점수이며 제어에는 자동 적용하지 않습니다",
+         job_id=request["job_id"], spatial_candidate=str(path))
+
+
+def run_import(request, send=emit):
+    from import_training import restore
+    send("progress", stage="이전 녹화·설정·선택 모델을 로컬로 가져오는 중", phase="loading", progress=.1)
+    report = restore(Path(request["source"]), Path(request["data_dir"]), request.get("profile", ""),
+                     cancelled=lambda: Path(request["cancel_path"]).exists())
+    send("done", stage=f"이전 작업 복구 · 녹화 {len(report['recordings'])}개 · 모델은 별도 평가 전 시험 상태",
+         candidate=str(Path(request["data_dir"]) / report["candidate"]) if report["candidate"] else "",
+         profile=report["profile"], job_id=request["job_id"])
+
+
+def run_validate_import(request, send=emit):
+    from promote_tcn import validate_and_install
+    from manux.data.training_center import recording_sets
+    from manux.ml.store import active_token
+    identity = RecordingIdentity(request["profile"], request.get("preset", "pinch"))
+    _, paths = recording_sets(Path(request["recordings_dir"]), identity)
+    if not paths:
+        raise ValueError("가져온 녹화는 학습용입니다. 별도 평가용(eval) 시도를 새로 녹화한 뒤 검증하세요.")
+    send("progress", stage="가져온 모델을 별도 평가 녹화로 검증 중", phase="evaluating", progress=.2)
+    store = Path(request["store"])
+    _, report = validate_and_install(Path(request["candidate"]), paths, store, mode=request.get("mode", "pinch"),
+                                    cache_dir=Path(request["cache_dir"]), expected_active=active_token(store),
+                                    cancelled=lambda: Path(request["cancel_path"]).exists())
+    send("done", stage="가져온 모델 검증 통과 · 동작별 시험/적용 선택 가능", store=str(store),
+         metrics=report["candidate"], job_id=request["job_id"])
 
 
 def main(argv=None):
@@ -180,6 +267,12 @@ def main(argv=None):
             raise ValueError("지원하지 않는 작업 요청입니다.")
         if request["kind"] == "train":
             run_training(request)
+        elif request["kind"] == "pose_train":
+            run_pose_training(request)
+        elif request["kind"] == "import":
+            run_import(request)
+        elif request["kind"] == "validate_import":
+            run_validate_import(request)
         elif request["kind"] == "hub":
             try:
                 run_hub(request)
@@ -188,6 +281,9 @@ def main(argv=None):
             except Exception:
                 # Never echo HTTP headers, auth tokens or remote exception bodies.
                 raise ValueError("허브 작업 실패 · 저장소 주소, 읽기/쓰기 권한, 토큰과 네트워크를 확인하세요.") from None
+        elif request["kind"] == "studio":
+            from studio_worker import run
+            run(request, emit, lambda: Path(request["cancel_path"]).exists())
         else:
             raise ValueError("알 수 없는 작업입니다.")
         return 0

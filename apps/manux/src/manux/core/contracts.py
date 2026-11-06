@@ -15,6 +15,17 @@ from typing import Literal, Mapping, Optional, Protocol, Sequence, Tuple, runtim
 N_LANDMARKS = 21
 
 Landmark = Tuple[float, float, float]
+
+
+@dataclass(frozen=True)
+class ExecutionDevice:
+    """Reported execution choice; requested hardware is distinct from actual execution."""
+    requested: str
+    actual: str
+    runtime: str
+    name: str = ""
+    reason: str = ""
+
 Point = Tuple[float, float]
 GestureId = str
 ActionId = str
@@ -152,12 +163,17 @@ class RecordingIdentity:
 
 @dataclass(frozen=True)
 class RuntimeRequest:
-    kind: Literal["activate_model"]
-    path: str
+    kind: Literal["activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard", "sensitivity"]
+    path: str = ""
+    values: Mapping[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.kind != "activate_model" or not isinstance(self.path, str) or not self.path:
+        if (self.kind not in ("activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard", "sensitivity")
+                or not isinstance(self.path, str)
+                or self.kind in ("activate_model", "preview_model", "sensitivity") and not self.path
+                or self.kind in ("tcn_toggle", "spatial_guard") and self.path not in ("on", "off")):
             raise ValueError("invalid runtime request")
+        object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
 
 
 class Stage(str, Enum):

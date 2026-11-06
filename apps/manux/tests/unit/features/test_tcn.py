@@ -64,6 +64,76 @@ class Run:
         return [i for _ in range(n) for i in self.step(name)]
 
 
+@pytest.mark.parametrize("policy", ["rules", "shadow"])
+def test_non_applied_gesture_has_no_intents_activity_or_authority(policy):
+    run = Run()
+    run.feature = TcnFeature(run.predictor, run.card, {"pinch.thumb_ring": policy, "pinch.scroll": "apply"})
+    run.repeat("none", 2)
+    assert run.repeat("ring", 10) == []
+    assert not run.feature.activity().holding
+    assert run.feature.authoritative == ("pinch.scroll",)
+    assert run.feature.last_prediction[0] == "ring"
+    run.repeat("none", 2)
+    assert [i.phase for i in run.repeat("scroll", 2)] == ["begin"]
+
+
+def test_continuous_training_and_live_inference_receive_identical_windows():
+    from manux.perception.temporal import inputs
+    run = Run(card(window=3, training_pipeline="continuous-v2"))
+    frames, observed = [], []
+    original = run.predictor
+    def infer(window):
+        observed.append(window.copy())
+        return original(window)
+    run.feature.predictor = infer
+    for i, t in enumerate([.03, .06, .09, .12, .15, .18, .21, .24, .7, .73, .76]):
+        h = hand(t)
+        frame = {"t": t, "world": h.world, "lm": h.landmarks,
+                 "label": {"target": "none" if i < 3 else "ring", "phase": "prep" if i < 3 else "do"}}
+        if i == 4:
+            frame.pop("world")
+        frames.append(frame)
+        run.feature.step(None if i == 4 else h, FrameContext(h.frame, Stage.TUTORIAL, OutputTarget.PRACTICE, "pinch"))
+    windows, valid = inputs(frames, .75, 3)
+    assert list(np.flatnonzero(valid)) == [2, 3, 7, 10]
+    np.testing.assert_allclose(np.array(observed), windows[valid])
+
+
+def test_runtime_policy_switch_releases_open_span_and_changes_only_authority(tmp_path):
+    from types import SimpleNamespace
+    from manux.core.contracts import RuntimeRequest
+    from manux.desktop import DesktopRuntime
+    from manux.settings.tcn_policy import GesturePolicies
+    model = card(model_sha256="a" * 64, class_default_modes={"ring": "shadow", "scroll": "shadow"})
+    predictor = Predictor(model)
+    loaded = LoadedModel(Path("synthetic.onnx"), model, predictor)
+    policies = GesturePolicies(tmp_path / "policies.json")
+    settings = Settings(schema())
+    engine = build_engine(settings, "pinch", direct_model=loaded, policies=policies.modes(model.raw))
+    runtime = DesktopRuntime(engine, SimpleNamespace(close=lambda: None), settings, policy_store=policies, current_model=loaded)
+    try:
+        assert engine.gesture_sources == {}
+        policies.set(model.raw, "pinch.scroll", "apply", "a" * 64)
+        runtime.request(RuntimeRequest("tcn_policy"))
+        runtime._drain_runtime_requests()
+        assert engine.gesture_sources == {"pinch.scroll": "tcn"}
+        for i, name in enumerate(["none", "none", "scroll", "scroll", "scroll"]):
+            predictor.name = name
+            h = hand(1 + i * .03)
+            engine.step(h.frame, h)
+        feature = engine.features[-1]
+        assert feature.activity().holding
+        assert "TCN 적용 예측" in runtime._model_view_status()
+        policies.set(model.raw, "pinch.scroll", "rules", "a" * 64)
+        runtime.request(RuntimeRequest("tcn_policy"))
+        runtime._drain_runtime_requests()
+        assert engine.gesture_sources == {} and not feature.activity().holding
+        assert not engine.sink().holding()
+        assert runtime.current_model is loaded
+    finally:
+        runtime.stop()
+
+
 def test_tap_requires_neutral_then_class_specific_count_and_rearms_only_on_neutral():
     run = Run()
     assert run.repeat("ring", 8) == []

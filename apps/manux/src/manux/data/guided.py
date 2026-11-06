@@ -233,7 +233,7 @@ class GuidedSession:
             sub = f"{head} · 남은 시간 {max(0, int(self.set_length(spec) - (now - self._t0)))}초"
         else:
             rest = "쉬세요 · 시작 위치로 천천히 돌아오세요" if spec.direction else "쉬세요 (손을 편하게)"
-            prompt = {"prep": "준비…", "do": spec.do, "rest": rest}[phase]
+            prompt = {"prep": "손을 편하게 · 다음 신호에 동작하세요", "do": spec.do, "rest": rest}[phase]
             sub = f"{head} · {rep}/{self.reps}회"
         return {"prompt": self.hold_reason or prompt, "sub": sub, "progress": progress,
                 "overall": overall + progress / len(self.sets), "waiting": False, "phase": phase, **extra}

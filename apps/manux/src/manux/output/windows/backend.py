@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import List, Protocol, Tuple, runtime_checkable
 
 BUTTONS = ("left", "right")
-KEY_NAMES = ("alt", "ctrl", "shift", "win", "tab", "esc", "left", "right", "up", "down", "d")
+KEY_NAMES = ("alt", "ctrl", "shift", "win", "tab", "esc", "left", "right", "up", "down", "d", "f4")
 MODIFIERS = ("alt", "ctrl", "shift", "win")
 
 
