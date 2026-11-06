@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import math
-from collections import Counter
 
 import pytest
 
@@ -11,14 +10,12 @@ from manux.core.contracts import Activity, Feature
 from manux.engine.arbiter import Arbiter
 from manux.features.motion import (
     DEFAULT_BINDINGS, ENTER, EXIT, GESTURE_PHASES, GESTURES, SETTINGS, SWIPE_LEFT, SWIPE_LEFT_TUCKED, SWIPE_RIGHT,
-    SWIPE_RIGHT_TUCKED, V03_KEYS, MotionFeature,
+    SWIPE_RIGHT_TUCKED, MotionFeature,
 )
 from manux.features.motion.detector import MotionCore
-from manux.settings.migrate_v03 import RENAMES
 
-from pinch_hands import ctx, motion_hand, motion_sequence, obs, swipe, v03_modules
+from pinch_hands import ctx, motion_hand, obs, swipe
 
-V03_SWIPE = {"back": SWIPE_LEFT, "forward": SWIPE_RIGHT, "tab_prev": SWIPE_LEFT_TUCKED, "tab_next": SWIPE_RIGHT_TUCKED}
 
 
 class Driver:
@@ -55,53 +52,6 @@ def taps(intents):
     return [i.gesture for i in intents]
 
 
-# ----------------------------------------------------------------------------- parity with v0.3
-@pytest.mark.parametrize("seed", range(4))
-def test_core_matches_v03_motion_mode(seed):
-    with v03_modules() as v03:
-        legacy, current = v03.mm.MotionMode(), MotionCore()
-        for t, points, request, blocked in motion_sequence(seed, 3000):
-            expected = legacy.update(t, points, request, blocked)
-            actual = current.update(t, points, request, blocked)
-            assert current.active == legacy.active and current.last_miss == legacy.last_miss, (seed, t)
-            assert ((actual.kind, actual.info, actual.action) if actual else None) == (
-                (expected.kind, expected.info, expected.action) if expected else None), (seed, t)
-
-
-@pytest.mark.parametrize("settings", [{}, {"timeout": 3.0, "hand_lost_exit": 1.5}], ids=["toggle", "timeouts"])
-def test_feature_with_the_arbiter_matches_v03(settings):
-    """Unblocked sequences (blocking is the arbiter's now, see the module docstring of the feature).
-    v0.3 button presses are UI mode requests to the arbiter here."""
-    seen = Counter()
-    with v03_modules() as v03:
-        for seed in range(4):
-            legacy = v03.mm.MotionMode({"motion_" + k: v for k, v in settings.items()})
-            d = Driver(settings=settings)
-            for t, points, request, _ in motion_sequence(seed, 3000):
-                expected = legacy.update(t, points, request)
-                if request:
-                    d.arbiter.request(None if d.arbiter.mode == "motion" else "motion")
-                intents, _ = d.step(t, points)
-                if expected is None or (expected.kind in ("enter", "exit") and expected.info.get("how") == "button"
-                                        or expected.info.get("why") == "request"):
-                    want = []
-                elif expected.kind == "enter":
-                    want = [ENTER]
-                elif expected.kind == "exit":
-                    want = [EXIT]
-                else:
-                    want = [V03_SWIPE[expected.action]]
-                assert taps(intents) == want, (seed, t, expected)
-                if expected is not None and expected.kind == "swipe":
-                    assert dict(intents[0].info) == expected.info
-                assert (d.arbiter.mode == "motion") == legacy.active, (seed, t)
-                seen[want[0] if want else None] += 1
-    must = (ENTER, EXIT, SWIPE_LEFT, SWIPE_RIGHT, SWIPE_LEFT_TUCKED, SWIPE_RIGHT_TUCKED) if not settings         else (ENTER, EXIT, SWIPE_LEFT)                      # the timeouts end the mode early: fewer swipes
-    for g in must:
-        assert seen[g] >= 1, (g, seen)
-
-
-# ----------------------------------------------------------------------------- declarations
 def test_declarations_fit_the_contract_and_the_engine():
     f = MotionFeature()
     assert isinstance(f, Feature) and f.modes == frozenset({"pointer", "pinch", "motion"})
@@ -111,8 +61,6 @@ def test_declarations_fit_the_contract_and_the_engine():
     assert not problems
     assert {g: b.action for g, b in bindings.items()} == {
         SWIPE_LEFT: "nav.back", SWIPE_RIGHT: "nav.forward", SWIPE_LEFT_TUCKED: "tab.prev", SWIPE_RIGHT_TUCKED: "tab.next"}
-    for v03, v04 in V03_KEYS.items():
-        assert RENAMES[v03] == v04 and v04 in SETTINGS
 
 
 # ----------------------------------------------------------------------------- behaviour

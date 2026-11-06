@@ -3,8 +3,7 @@ name: MANUX app (apps/manux, Windows)
 # The apps/manux desktop app as an installed Windows program (S6). Builds "MANUX Preview" (package id
 # MANUXPreview): it installs next to the released app, keeps its own settings and never updates, so a PR
 # build can be tried on a real PC without replacing anything. This workflow never publishes; the
-# Releases installer is still hand-mouse-release.yml until the release channel is switched
-# (apps/manux/docs/architecture.md section 8, S6).
+# 정식 production 발행은 manux-release.yml이 담당한다. 이 workflow는 게시하지 않는다.
 on:
   pull_request:
     paths: ["apps/manux/**", ".github/workflows/manux-app.yml"]
@@ -22,7 +21,11 @@ concurrency:
 
 jobs:
   installer:
-    name: MANUX Preview installer (apps/manux, windows-latest)
+    name: MANUX Preview installer (${{ matrix.flavor }}, windows-latest)
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [base, trainer]
     runs-on: windows-latest
     timeout-minutes: 60
     defaults:
@@ -34,9 +37,18 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
-      - run: uv sync --locked --python 3.12 --extra ui --extra vision --extra ml --extra train --extra hub --extra package
+      - name: Install build dependencies
+        run: |
+          $extras = @('--extra', 'ui', '--extra', 'vision', '--extra', 'ml', '--extra', 'package')
+          if ('${{ matrix.flavor }}' -eq 'trainer') { $extras += @('--extra', 'train', '--extra', 'hub') }
+          uv sync --locked --python 3.12 @extras
+          if ($LASTEXITCODE -ne 0) { throw 'uv sync failed' }
       - name: pytest (Windows)
-        run: uv run --locked --python 3.12 --extra ui --extra vision --extra ml --extra train --extra hub --extra package pytest -q -p no:cacheprovider
+        run: |
+          $extras = @('--extra', 'ui', '--extra', 'vision', '--extra', 'ml', '--extra', 'package')
+          if ('${{ matrix.flavor }}' -eq 'trainer') { $extras += @('--extra', 'train', '--extra', 'hub') }
+          uv run --locked --python 3.12 @extras pytest -q -p no:cacheprovider
+          if ($LASTEXITCODE -ne 0) { throw 'pytest failed' }
       - name: Self-check from source (bundled model, MediaPipe, OpenCV, Qt)
         run: |
           uv run --locked --python 3.12 --extra ui --extra vision python -m manux --self-check "$env:RUNNER_TEMP/source-check.json"
@@ -52,22 +64,39 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
           Write-Output "MANUX Preview $version"
       - run: dotnet tool install -g vpk --version 1.2.161
-      - run: ./packaging/build.ps1 -Version ${{ steps.version.outputs.version }} -SourceSha ${{ github.sha }}
+      - name: Build selected package
+        run: |
+          $options = @{ Version = '${{ steps.version.outputs.version }}'; SourceSha = '${{ github.sha }}' }
+          if ('${{ matrix.flavor }}' -eq 'trainer') { $options.WithTrainer = $true }
+          ./packaging/build.ps1 @options
+      - name: Log actual package size
+        run: |
+          $size = Get-Content build/package-size.json -Raw
+          Write-Output "${{ matrix.flavor }} package size: $size"
+          "### MANUX ${{ matrix.flavor }} package size" >> $env:GITHUB_STEP_SUMMARY
+          $size >> $env:GITHUB_STEP_SUMMARY
+      - name: Base package excludes Trainer
+        if: matrix.flavor == 'base'
+        run: |
+          if (Test-Path build/dist/MANUX/worker) { throw 'Base package contains a worker' }
+          $torch = Get-ChildItem build/dist/MANUX -Recurse -Directory | Where-Object { $_.Name -eq 'torch' }
+          if ($torch) { throw 'Base package contains torch' }
       - name: Packaged worker trains, validates and installs a synthetic model (offline)
+        if: matrix.flavor == 'trainer'
         run: |
           uv run --locked --python 3.12 --extra ui --extra vision --extra ml --extra train --extra hub --extra package python tools/smoke_worker.py --worker build/dist/MANUX/worker/MANUXWorker.exe --report "$env:RUNNER_TEMP/worker-check.json"
           if ($LASTEXITCODE -ne 0) { throw "packaged worker end-to-end failed" }
       - name: Built app passes its self-check
         run: |
           $out = "$env:RUNNER_TEMP/built-check.json"
-          $p = Start-Process build/dist/MANUX/MANUX.exe -ArgumentList '--self-check', "`"$out`"" -PassThru
+          $p = Start-Process build/dist/MANUX/MANUX.exe -ArgumentList '--self-check', "`"$out`"" -WindowStyle Hidden -PassThru
           if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "MANUX.exe --self-check did not finish in 120 s" }
           if (Test-Path $out) { Get-Content $out } else { throw "no self-check result" }
           if ($p.ExitCode -ne 0) { throw "MANUX.exe --self-check exited $($p.ExitCode)" }
       - name: Built app opens its window (no webcam on the runner, no Windows input)
         run: |
           $shot = "$env:RUNNER_TEMP/window.png"
-          $p = Start-Process build/dist/MANUX/MANUX.exe -ArgumentList '--no-windows-input', '--no-tray', '--screenshot', "`"$shot`"" -PassThru
+          $p = Start-Process build/dist/MANUX/MANUX.exe -ArgumentList '--no-windows-input', '--no-tray', '--screenshot', "`"$shot`"" -WindowStyle Hidden -PassThru
           if (-not $p.WaitForExit(90000)) { $p.Kill(); throw "the window did not close after its screenshot in 90 s" }
           if (-not (Test-Path $shot)) { throw "no screenshot: the window did not open" }
           Write-Output "window screenshot $((Get-Item $shot).Length) bytes, exit $($p.ExitCode)"
@@ -75,7 +104,7 @@ jobs:
         run: |
           $setup = Get-ChildItem build/releases -Filter '*-Setup.exe' | Select-Object -First 1
           if ($null -eq $setup) { throw "no Setup.exe in build/releases" }
-          $p = Start-Process $setup.FullName -ArgumentList '--silent' -PassThru
+          $p = Start-Process $setup.FullName -ArgumentList '--silent' -WindowStyle Hidden -PassThru
           if (-not $p.WaitForExit(300000)) { $p.Kill(); throw "Setup did not finish in 300 s" }
           if ($p.ExitCode -ne 0) { throw "Setup exited $($p.ExitCode)" }
           Start-Sleep -Seconds 5
@@ -83,7 +112,7 @@ jobs:
           $exe = Join-Path $env:LOCALAPPDATA 'MANUXPreview/current/MANUX.exe'
           if (-not (Test-Path $exe)) { throw "installed app not found at $exe" }
           $out = "$env:RUNNER_TEMP/installed-check.json"
-          $q = Start-Process $exe -ArgumentList '--self-check', "`"$out`"" -PassThru
+          $q = Start-Process $exe -ArgumentList '--self-check', "`"$out`"" -WindowStyle Hidden -PassThru
           if (-not $q.WaitForExit(120000)) { $q.Kill(); throw "installed MANUX.exe --self-check did not finish" }
           Get-Content $out
           if ($q.ExitCode -ne 0) { throw "installed self-check exited $($q.ExitCode)" }
@@ -93,17 +122,18 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: manux-app-checks-${{ steps.version.outputs.version }}
+          name: manux-app-checks-${{ steps.version.outputs.version }}-${{ matrix.flavor }}
           path: |
             ${{ runner.temp }}/*-check.json
             ${{ runner.temp }}/window.png
+            apps/manux/build/package-size.json
           if-no-files-found: ignore
           retention-days: 14
       # Setup.exe only: the portable zip and update packages are for releases (a preview build never updates)
       - name: MANUX Preview installer
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: MANUX-Preview-${{ steps.version.outputs.version }}
+          name: MANUX-Preview-${{ steps.version.outputs.version }}-${{ matrix.flavor }}
           path: apps/manux/build/releases/*-Setup.exe
           if-no-files-found: error
           retention-days: 14

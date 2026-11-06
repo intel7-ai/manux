@@ -1,7 +1,7 @@
 [project]
 name = "manux"
-version = "0.4.0.dev0"
-description = "MANUX v0.4: webcam hand control for Windows (Qt/QML + Python)"
+version = "0.5.0"
+description = "MANUX v0.5: webcam hand control for Windows (Qt/QML + Python)"
 readme = "README.md"
 requires-python = ">=3.12"
 # Added stage by stage (docs/architecture.md section 8). numpy is needed everywhere frames or

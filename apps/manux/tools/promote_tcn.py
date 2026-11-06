@@ -117,7 +117,8 @@ def main(argv=None):
     parser.add_argument("--mode", choices=("pointer", "pinch", "motion"), default="pinch")
     parser.add_argument("--cache-dir", type=Path, default=resolve().data_dir / "features")
     args = parser.parse_args(argv)
-    repo = Path(__file__).resolve().parents[3]
+    from manux.data.repository import repository_root
+    repo = repository_root(Path(__file__))
     if args.store.resolve().is_relative_to(repo) or args.cache_dir.resolve().is_relative_to(repo):
         parser.error("write the model store and feature cache outside the repository")
     try:

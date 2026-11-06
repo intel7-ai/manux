@@ -11,6 +11,18 @@ import threading
 import time
 from uuid import uuid4
 
+COMPONENT_REQUIRED = "추가 구성요소 필요: TCN 고급 학습·팀 공유는 Trainer 포함 설치본이 필요합니다."
+
+
+def worker_available(*, frozen=None, executable=None, tools_dir=None):
+    """현재 설치본의 실행 파일 존재 여부만 확인한다. torch를 앱에서 import하지 않는다."""
+    frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
+    executable = Path(executable or sys.executable)
+    if frozen:
+        return (executable.parent / "worker" / "MANUXWorker.exe").is_file()
+    tools = Path(tools_dir) if tools_dir else Path(__file__).resolve().parents[3] / "tools"
+    return (tools / "app_worker.py").is_file()
+
 
 def worker_command(request: Path, *, frozen=None, executable=None, tools_dir=None):
     frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
@@ -18,7 +30,7 @@ def worker_command(request: Path, *, frozen=None, executable=None, tools_dir=Non
     if frozen:
         worker = executable.parent / "worker" / "MANUXWorker.exe"
         if not worker.is_file():
-            raise ValueError("학습·업로드 구성요소가 없습니다. 최신 MANUX Preview를 설치하세요.")
+            raise ValueError(COMPONENT_REQUIRED)
         return [str(worker), "--request", str(request)]
     tools = Path(tools_dir) if tools_dir else Path(__file__).resolve().parents[3] / "tools"
     return [str(executable), str(tools / "app_worker.py"), "--request", str(request)]
@@ -28,7 +40,8 @@ class WorkerJob:
     def __init__(self, jobs_dir: Path, *, on_done=None, tools_dir=None):
         self.jobs_dir, self.on_done, self.tools_dir = Path(jobs_dir), on_done, tools_dir
         self.proc = None
-        self.state = {"running": False}
+        self.state = ({"running": False} if worker_available(tools_dir=tools_dir) else
+                      {"running": False, "stage": "추가 구성요소 필요", "error": COMPONENT_REQUIRED})
         self._lock = threading.Lock()
         self._cancel = None
 
@@ -46,6 +59,9 @@ class WorkerJob:
     def start_request(self, request):
         with self._lock:
             if self.state.get("running"):
+                return False
+            if not worker_available(tools_dir=self.tools_dir):
+                self.state = {"running": False, "error": COMPONENT_REQUIRED, "stage": "추가 구성요소 필요"}
                 return False
             job_id = uuid4().hex
             folder = self.jobs_dir / job_id

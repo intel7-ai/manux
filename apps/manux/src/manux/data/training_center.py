@@ -25,7 +25,7 @@ from manux.data.catalog import ALL_TASKS, BY_KEY, CATEGORIES, DISPLAY_KEYS, NONE
 from manux.data.recorder import public_source
 from manux.data.recording import read
 from manux.core.contracts import RecordingIdentity
-from manux.data.worker_job import WorkerJob
+from manux.data.worker_job import COMPONENT_REQUIRED, WorkerJob, worker_available
 
 GOAL_REPS = 30            # repetitions per gesture worth aiming for (3 postures x 10)
 GOAL_POSTURES = 3
@@ -596,8 +596,14 @@ class TrainingCenterService:
         summary["coverage"] = dataset_summary(self.recordings_dir, profile=self.profile, split=self.split)["coverage"]
         report = model_report(self.current_model())
         rows = gesture_rows(summary, report)
+        trainer_available = worker_available(tools_dir=self.job.tools_dir)
         mode = self.preset_name if self.preset_name != "trigger" else "pointer"
         for row in rows:
+            row["trainer_available"] = trainer_available
+            if not trainer_available:
+                row["can_train"] = False
+                row["advice"] = COMPONENT_REQUIRED
+                continue
             declaration = self.job.specs.get(BY_KEY[row["key"]].gesture, {})
             if mode not in declaration.get("modes", []):
                 row["can_train"] = False

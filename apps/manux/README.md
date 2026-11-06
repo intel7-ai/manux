@@ -1,8 +1,8 @@
-# MANUX (apps/manux, v0.4)
+# MANUX (v0.5)
 
 웹캠으로 Windows를 손짓으로 다루는 앱 MANUX. Qt/QML + Python 한 프로세스이고, MediaPipe 손 인식 위에 규칙 판정과 가벼운 TCN 모델을 같은 계약으로 얹는다.
 
-**현재 상태 (2026-11-06):** 포인터·핀치·모션, TCN 확인기·명시적 직접 판정, 개인 모델 검증/교체와 헤드리스 실행기가 병합됐습니다. 데스크톱·트래킹 측정·MANUX Preview 시험 설치본도 있습니다. 실제 PC 확인 뒤 정식 배포 채널을 전환하기 전까지 Releases는 `hand-mouse/`(v0.3)에서 빌드합니다. 자세한 상태와 미검증 항목은 [AGENTS.md](AGENTS.md#현재-상태)가 기준입니다.
+**현재 상태 (2026-11-06):** 포인터·핀치·모션, TCN 확인기·명시적 직접 판정, 개인 모델 검증/교체와 헤드리스 실행기가 병합됐습니다. 데스크톱·트래킹 측정·MANUX Preview 시험 설치본도 있습니다. 2026-11-06 승인(D-009)에 따라 정식 채널을 이 앱으로 전환합니다. production 병합 전 실제 발행은 하지 않습니다. 자세한 상태와 미검증 항목은 [AGENTS.md](AGENTS.md#현재-상태)가 기준입니다.
 
 ## 먼저 읽을 것
 
@@ -18,7 +18,7 @@ v0.3과 같은 화면(`ui/qml/dashboard.qml`)이 v0.4 엔진 위에서 돕니다
 
 ```powershell
 cd apps/manux
-uv run --locked --python 3.12 --extra ui --extra vision --extra train --extra hub python -m manux
+uv run --locked --python 3.12 --extra ui --extra vision --extra ml python -m manux
 ```
 
 - 웹캠 없이 화면 확인: `uv run --python 3.12 --extra ui python -m manux --replay <녹화.jsonl.gz> --no-windows-input`
@@ -27,7 +27,7 @@ uv run --locked --python 3.12 --extra ui --extra vision --extra train --extra hu
 - 손 모델은 `models/hand_landmarker.task`(번들)를 씁니다. 다른 파일은 `--hand-model`로 지정합니다.
 - 설치본 없이 빠르게 점검: `python -m manux --self-check out.json` (번들 모델·MediaPipe·OpenCV·Qt를 확인하고 결과를 씁니다)
 - 트래킹 측정: 왼쪽 패널의 **트래킹 측정 (클릭 없음)**. v0.3과 같은 표적·수치이며, 측정 중에는 검지 포인터로 바꾸고 클릭을 끕니다. 결과는 `%APPDATA%\MANUX-dev\v04\logs\tracking-*.csv`(설치본은 해당 앱의 `logs`)에 저장되고 최근 결과 목록에 나옵니다. 실제 Windows 출력이 있어야 합니다(`--no-windows-input`이면 측정하지 않음).
-- [학습 센터](docs/learning-center.md): 별명·train/eval 녹화, HF 연결/본인 업로드/팀 다운로드, 통합 재학습·독립 평가·검증 후 앱 적용. 설치본에는 별도 worker가 포함됩니다.
+- [학습 센터](docs/learning-center.md): 별명·train/eval 녹화, HF 연결/본인 업로드/팀 다운로드, 통합 재학습·독립 평가·검증 후 앱 적용. 고급 학습·현재 HF 작업에는 Trainer 구성이 필요합니다.
 - 아직 없는 것: 미리보기 위 손가락 번호 그리기, 사용자 정의 카탈로그·바인딩 편집 화면.
 
 학습 센터·별명별 녹화·HF 공유·별도 worker는 [#72](https://github.com/intel7-ai/manux/pull/72), 별명 입력·권한 표시는 [#75](https://github.com/intel7-ai/manux/pull/75), 기본 한 손 추적·앱 내 프레임 지연 표시는 [#76](https://github.com/intel7-ai/manux/pull/76)으로 연결합니다. 현재 앱의 [학습 센터 사용법](docs/learning-center.md)과 [커서 지연 측정 범위](docs/cursor-performance.md)를 참고하세요. 직접 TCN·특징 캐시·검증 후 개인 모델 설치/교체는 이미 [직접 TCN 안내](docs/direct-tcn.md)에 있습니다.
@@ -39,7 +39,7 @@ uv run --locked --python 3.12 --extra ui --extra vision --extra train --extra hu
 - 이름은 **MANUX Preview**이고 Releases의 MANUX(v0.3)와 **나란히** 설치됩니다. 서로 덮어쓰지 않습니다.
 - 설정은 `%APPDATA%\MANUXPreview\v04`에 둡니다. 자동 업데이트는 하지 않습니다. 새 PR 설치파일을 다시 설치하면 교체됩니다.
 - CI가 설치 → 자가 진단(`--self-check`) → 창 스크린샷까지 확인합니다. 실제 웹캠·실제 Windows 입력은 확인하지 않습니다.
-- 직접 빌드: `packaging/build.ps1 -Version 0.4.0-local` (vpk 필요, 스크립트 머리말 참고). `-Release`(package id MANUX, 자동 업데이트 켬)는 배포 채널 전환 때만 씁니다.
+- 직접 빌드: `packaging/build.ps1 -Version 0.5.0-local` (vpk 필요, 스크립트 머리말 참고). `-Release`는 정식 MANUX 채널입니다. 고급 학습을 포함하려면 `-WithTrainer`를 추가합니다.
 
 ## 시험
 
@@ -141,3 +141,25 @@ PC를 공유하면 사람마다 다른 별명이 필요합니다. 자세 그룹�
 녹화에 포함해야 합니다. 더블클릭·스크롤 방향별 사용성은 실제 출력 평가가 필요합니다.
 커서 이동과 엄지 척도 학습 데이터에 포함할 수 있으며 실행기의 TCN 확인은 클릭처럼
 `tap` 또는 `begin`으로 시작하는 바인딩에 적용됩니다. 원본과 모델은 작업 폴더 밖에 보관합니다.
+
+
+## v0.5 설치·독립 브랜치
+
+정식 발행은 루트 `manux-release.yml`에서 production push에만 실행되며 버전은 `0.5.<run_number>`다. 이 PR 준비 중에는 실제 발행하지 않는다. v0.3 설정·데이터 변환이나 업데이트 연속성은 보장하지 않으며 필요하면 이전 앱을 제거하고 새 설치본을 설치한다. 사용자 데이터는 자동 삭제하지 않는다.
+
+기본 Preview artifact 이름은 `MANUX-Preview-<버전>-base`, Trainer 구성은 `...-trainer`다. 기본 구성에는 torch worker가 없으며 TCN 고급 학습 버튼은 **추가 구성요소 필요**로 비활성화된다. 현재 HF 연결·다운로드·업로드도 같은 worker를 사용하므로 Trainer 구성이 필요하다. 녹화와 기본 마우스 기능은 기본 구성에서 사용할 수 있다.
+
+```powershell
+# 기본 / 고급 학습 포함 / 정식 채널 로컬 빌드
+./packaging/build.ps1 -Version 0.5.0-local
+./packaging/build.ps1 -Version 0.5.0-local -WithTrainer
+./packaging/build.ps1 -Version 0.5.0 -Release
+```
+
+CI는 두 구성의 실제 설치파일 MB·MiB와 폴더 크기를 로그·`package-size.json`에 남긴다. 크기 비교는 같은 실행의 artifact를 기준으로 한다. 실제 웹캠·Windows 입력 수동 확인은 CI 자가 진단·합성 시험과 별도다.
+
+`preview` push의 `split-manux.yml`은 이 폴더를 subtree split하여 `manux-preview`에 fast-forward로만 올린다. 분기되면 실패하며 강제 push하지 않는다. 해당 브랜치를 checkout하면 `cd apps/manux` 없이 루트에서 같은 uv 명령으로 실행한다. 루트의 `standalone.yml`은 pytest와 Preview 빌드를 제공한다. 모노레포에서는 이 파일이 중첩 경로에 있어 GitHub가 무시한다.
+
+GitHub의 재귀 실행 방지 때문에 `GITHUB_TOKEN`으로 자동 push한 분리 브랜치에서는 새 push workflow가 자동 시작되지 않는다. 권한은 contents:write로 제한한다. 자동 검증은 원본 preview CI가 담당하며, 독립 workflow는 일반 push/PR 또는 해당 브랜치의 수동 실행으로 시험한다. 이 작업에서는 분리 시험용 임시 폴더를 push하지 않는다.
+
+D-009에 따라 v0.3 동등성 시험·golden fixture·생성기는 폐기했다. 이식 당시 S2·S4 확인으로 갈음하며 v0.5부터 현재 동작·계약을 기준으로 시험한다. 시험은 레거시 소스나 실제 사용자 녹화를 요구하지 않는다.
