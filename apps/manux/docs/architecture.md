@@ -106,6 +106,7 @@ v0.3에서 옮길 첫 기능 후보 (이름은 제안):
 | `pinch` | `gesture_engine.py`의 핀치 판정과 스크롤 잡기·드래그 | 좌·우클릭, 스크롤 잡기, 드래그가 누름 상태와 다시 누름 히스테리시스를 공유하므로 한 기능. 스크롤 관성(`mouse_controller.ScrollPump`)은 출력 쪽 |
 | `motion` | `motion_mode.py` | 스와이프 → 뒤로/앞으로/탭 |
 | `tcn_gate` | Dan `hand-mouse-gesture-overhaul@7448e4a`의 `gesture_gate.py`, `tcn_features.py` | `IntentFilter`로 구현 (§6) |
+| `pose` | park 자세 MLP 분석 (제안 D-009) | `Feature`(증거만)와 `IntentFilter`(거부권·휴식 게이트, 버리기만); 기본 꺼짐, [pose-assist.md](pose-assist.md) |
 | `tcn` | v0.4 직접 판정 | `Feature`; 모델 정보의 동작·phase·모드로 의도를 냄. 규칙과의 출처 선택은 엔진이 담당 |
 
 ## 6. 프레임 흐름

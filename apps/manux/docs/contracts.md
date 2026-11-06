@@ -182,6 +182,10 @@ v0.4 확인기는 모델 정보 파일의 클래스 → 동작 ID 대응표를 �
 
 실패하면: 모델이 없거나 정보가 맞지 않으면 필터를 **만들지 않는다**(§10). 실행 중 추론 오류는 그 프레임 확률을 "없음"으로 두고 보류 규칙을 그대로 적용한다(확인 안 됨 → 시간이 지나면 버림).
 
+### 자세 보조 (`pose`, 제안 D-009)
+
+`features/pose`는 `Feature`(자세 증거만 만든다, `Intent`를 내지 않는다)와 `IntentFilter`(`pose_guard`)로 이뤄진다. 필터 계약(위)을 그대로 따른다: 버리기만 하고, 버린 `begin`의 `hold`/`end`도 버리며, 모드 의도는 통과시킨다. 필터는 선택적 `drain_events() -> Sequence[str]`로 Snapshot `events`에 남길 메모를 낼 수 있다(엔진이 필터 호출 뒤 비운다). 모델 정보는 `window=1`, `features=33`, `feature_version="pose-angles-v1"`, `role="pose_evidence"`이고 `gestures`는 클래스 → 동작 ID(액션 이름 금지)다. 기본 꺼짐, 보조가 침묵하거나 실패하면 출력은 보조가 없을 때와 같다. 자세한 내용: [pose-assist.md](pose-assist.md).
+
 ## 7. 액션과 바인딩 (`actions`)
 
 출처: `gesture_engine.VALID_ACTIONS`, `motion_mode.ACTION_KEYS`, `mouse_controller.apply`.

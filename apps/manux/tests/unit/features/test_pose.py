@@ -310,6 +310,11 @@ def test_mode_intents_always_pass():
     exit_ = Intent(t=rig.t, source="motion", gesture="motion.exit", phase="tap")
     got, notes = rig.frame(AGAINST_RING, [enter, exit_])
     assert [i.gesture for i in got] == ["motion.enter", "motion.exit"] and notes == []
+    # even from the source the rest gate holds back (tcn) and as a begin, while the hand rests
+    assert rig.guard.resting
+    modes = [span("begin", "pinch.enter", source="tcn"), tap("pinch.exit", source="tcn")]
+    got, notes = rig.frame(AGAINST_RING, modes)
+    assert [i.gesture for i in got] == ["pinch.enter", "pinch.exit"] and notes == []
 
 
 # ================================================================ PoseGuard: rest evidence
