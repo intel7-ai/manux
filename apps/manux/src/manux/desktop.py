@@ -216,6 +216,7 @@ class DesktopRuntime:
         self._pose_tracker = None
         self._pose_failed = False
         self.pose_status = "팔·어깨 기록 꺼짐"
+        self.sensitivity_result = (0, True, "")
 
     # ------------------------------------------------------------------ settings the UI changes
     def settings_for(self, fid: str) -> Mapping[str, object]:
@@ -561,6 +562,8 @@ class DesktopRuntime:
                 self.spatial_guard.reset("settings")
         while not self._runtime_requests.empty():
             command = self._runtime_requests.get_nowait()
+            if command.kind == "sensitivity":
+                self._apply_sensitivity(command)
             if command.kind == "spatial_guard":
                 try:
                     self.engine.prepare_model_reload()
@@ -605,6 +608,30 @@ class DesktopRuntime:
                 self._model_token = None
                 if not self.reload_model(force=True):
                     self.model_store, self._model_token, self._attempted_model_token = previous
+
+    def _apply_sensitivity(self, command):
+        from dataclasses import replace
+        from manux.settings.sensitivity import prepare
+        from manux.settings.store import save
+        revision = self.sensitivity_result[0] + 1
+        self.engine.pause_for_settings()
+        try:
+            values = prepare(self.settings, command.values)
+            candidate = Settings(self.settings.schema, self.settings.stored())
+            for key, value in values.items():
+                if not candidate.set(key, value):
+                    raise ValueError("민감도 값을 저장할 수 없습니다.")
+            save(candidate, Path(command.path))
+        except (OSError, ValueError) as exc:
+            self.sensitivity_result = (revision, False, f"저장 실패 · 기존 설정 유지: {exc}")
+            return
+        for key, value in values.items():
+            self.settings.set(key, value)
+        sink = self.engine.sinks.get(OutputTarget.WINDOWS)
+        if sink is not None and hasattr(sink, "configure"):
+            sink.configure(replace(sink.config, **self.settings.section("cursor")))
+        self.pinch_preview.step(None, self.settings_for("pinch"))
+        self.sensitivity_result = (revision, True, "저장·적용 완료 · 제어 시작을 누르면 새 감도로 동작합니다.")
 
     def _model_modes(self, model):
         if not self.tcn_enabled:
@@ -686,8 +713,10 @@ def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, t
                                     else policy_store.modes(direct.card.raw) if policy_store and direct else None))
     if windows:
         from manux.output.windows import Win32Backend, WindowsOutputSink
+        from manux.output.windows.config import WindowsOutputConfig
         from manux.platform.monitors import ScreenLayout
-        engine.sinks[OutputTarget.WINDOWS] = WindowsOutputSink(Win32Backend(), ScreenLayout.detect())
+        engine.sinks[OutputTarget.WINDOWS] = WindowsOutputSink(
+            Win32Backend(), ScreenLayout.detect(), WindowsOutputConfig(**settings.section("cursor")))
     runtime = DesktopRuntime(engine, source, settings, model_store=tcn_store, model_token=token, model_status=status,
                              policy_store=policy_store, current_model=direct)
     runtime.spatial_feature = spatial_pose_feature

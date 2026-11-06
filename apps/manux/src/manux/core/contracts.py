@@ -163,15 +163,17 @@ class RecordingIdentity:
 
 @dataclass(frozen=True)
 class RuntimeRequest:
-    kind: Literal["activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard"]
+    kind: Literal["activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard", "sensitivity"]
     path: str = ""
+    values: Mapping[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if (self.kind not in ("activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard")
+        if (self.kind not in ("activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard", "sensitivity")
                 or not isinstance(self.path, str)
-                or self.kind in ("activate_model", "preview_model") and not self.path
+                or self.kind in ("activate_model", "preview_model", "sensitivity") and not self.path
                 or self.kind in ("tcn_toggle", "spatial_guard") and self.path not in ("on", "off")):
             raise ValueError("invalid runtime request")
+        object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
 
 
 class Stage(str, Enum):

@@ -28,6 +28,7 @@ from PySide6.QtWidgets import QApplication
 from manux.core.contracts import RuntimeRequest, Stage
 from manux.engine.commands import Mark, RequestMode, SetBaseMode, SetBusy, SetControl, SetStage
 from manux.settings import profiles, store
+from manux.settings.sensitivity import rows as sensitivity_rows
 from manux.ui import cards as guide
 from manux.ui.finger import overlay_frame
 from manux.ui.hand_preview import draw_hand_preview
@@ -432,6 +433,8 @@ class RecordingPlanEditor(QObject):
 
 class Bridge(QObject):
     stateChanged = Signal()
+    sensitivityChanged = Signal()
+    sensitivityApplied = Signal()
     previewChanged = Signal()
     trackingChanged = Signal()
     liveChanged = Signal()
@@ -796,6 +799,31 @@ class Bridge(QObject):
         self.settings.apply_profile(values)
 
     # ------------------------------------------------------------------ basic state
+    @Property("QVariantList", notify=sensitivityChanged)
+    def sensitivityRows(self):
+        return sensitivity_rows(self.settings)
+
+    @Property(str, notify=sensitivityChanged)
+    def sensitivityStatus(self):
+        return getattr(self, "_sensitivity_status", "")
+
+    @Property(bool, notify=sensitivityChanged)
+    def sensitivityPending(self):
+        return getattr(self, "_sensitivity_pending", False)
+
+    @Slot("QVariantMap", result=bool)
+    def applySensitivity(self, values):
+        if self.sensitivityPending:
+            return False
+        self._pause()
+        self._sensitivity_revision = self.runtime.sensitivity_result[0]
+        accepted = self.runtime.request(RuntimeRequest("sensitivity", str(self.config_dir), values))
+        self._sensitivity_pending = accepted
+        self._sensitivity_status = "설정 저장 중…" if accepted else "앱이 종료 중이라 저장할 수 없습니다."
+        self.sensitivityChanged.emit()
+        self.stateChanged.emit()
+        return accepted
+
     @Property(str, notify=stateChanged)
     def stage(self):
         return self.stage_name
@@ -2357,6 +2385,14 @@ class Bridge(QObject):
 
     # ------------------------------------------------------------------ frame rendering (UI thread)
     def poll(self) -> None:
+        result = getattr(self.runtime, "sensitivity_result", (0, True, ""))
+        if result[0] != getattr(self, "_sensitivity_revision", 0):
+            self._sensitivity_revision = result[0]
+            self._sensitivity_pending = False
+            self._sensitivity_status = result[2]
+            self.sensitivityChanged.emit()
+            if result[1]:
+                self.sensitivityApplied.emit()
         while self.ui_requests:
             request = self.ui_requests.pop(0)
             if request == "toggle":

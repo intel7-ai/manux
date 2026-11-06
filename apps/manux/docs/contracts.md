@@ -418,7 +418,7 @@ class OutputSink(Protocol):
 출처: `config/gestures.json`, `gesture_engine.load_config/save_config/set_profile`, `profiles.py`, `app_paths.py`, Qt `QSettings`(화면 선택 값).
 
 **계약:**
-- 설정 키는 `<기능 ID>.<이름>` 또는 공용 `app.<이름>`, `camera.<이름>`, `tracking.<이름>`. 기능의 기본값은 그 기능의 `SETTINGS`에 있다.
+- 설정 키는 `<기능 ID>.<이름>` 또는 공용 `app.<이름>`, `camera.<이름>`, `tracking.<이름>`, `cursor.<이름>`. 기능의 기본값은 그 기능의 `SETTINGS`에 있다.
 - 설정 파일은 `<설정 폴더>/settings.json` = `{"version": 1, "values": {키: 값}}`이다. 읽을 때 이전 버전을 변환한다.
 - v0.3 변환(`settings/migrate_v03.py`): 주인이 있는 키는 표(`RENAMES`)대로 새 키로 바꾸고, 나머지는 `v03.<키>`로 그대로 보존한다. 기능을 옮길 때 그 기능의 v0.3 키를 표에 추가한다. v0.3 파일은 읽기만 하고 고치지 않는다.
 - 잘못된 값(타입·범위)은 그 키만 기본값으로 되돌리고 경고를 남긴다. 앱은 멈추지 않는다. 모르는 키는 지우지 않고 보존한다.
@@ -428,6 +428,14 @@ class OutputSink(Protocol):
 - 공용 계층의 설정(`app.`, `camera.`, `tracking.`)은 `settings/builtin.py`에 선언한다. 계층 규칙상 `capture`·`tracking`은 `settings`를 import할 수 없으므로 조립 지점이 값을 넘긴다.
 
 ## 12. 화면과 엔진 사이 (`Snapshot`, `UiCommand`)
+
+- 스튜디오 민감도 편집은 Dan `hand-mouse-gesture-overhaul@a60241d`의 지원되는 핀치·이동 항목만 노출한다.
+  `RuntimeRequest(kind="sensitivity", path=<config dir>, values=<편집한 키/값>)`를 런타임 큐로 보낸다.
+  런타임은 범위·핀치 해제 기준(+0.02)·최소/최대 이동 감도를 검증하고 원자 저장한다. 실패 시 기존 값과 파일을 유지한다.
+  성공하면 출력 해제·기능 reset·제어 일시정지 후 적용하며, 다시 제어를 시작해야 실제 입력을 낸다.
+  결과는 `DesktopRuntime.sensitivity_result`(revision, success, text)로 UI가 읽는다.
+  `cursor.relative_gain_min/max`, `cursor.smoothing`은 공유 설정으로 저장하며 조립 지점에서 Windows 출력에 전달한다.
+  현재 프로필이 덮어쓴 값은 편집을 막고 표시한다. 창 열기·취소는 감도를 변경하지 않는다.
 
 - `ViewFrame.frame_age_ms`는 앱이 카메라 프레임을 받은 시각부터 런타임 처리 후 화면 상태를
   발행하기 직전까지의 경과 시간이다. `None`은 측정값 없음이다. UI는 측정값만 표시한다.
