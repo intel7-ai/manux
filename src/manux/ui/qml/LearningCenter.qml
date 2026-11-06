@@ -12,6 +12,8 @@ Popup {
     signal recordingRequested()
     readonly property bool idle: !controller.recActive && !controller.trainingRunning
                                  && !controller.hubRunning && controller.trainingBusy === ""
+    readonly property bool trainerAvailable: controller.trainingRows.length === 0
+                                            || controller.trainingRows[0].trainer_available !== false
     anchors.centerIn: parent
     width: Math.min(1040, parent.width - 32)
     height: Math.min(820, parent.height - 32)
@@ -162,8 +164,8 @@ Popup {
                             }
                             StudioButton {
                                 objectName: "trainSelection"
-                                text: "선택한 동작 포함 재학습"
-                                enabled: studio.idle && studio.controller.selectionCanTrain
+                                text: studio.trainerAvailable ? "선택한 동작 포함 재학습" : "추가 구성요소 필요"
+                                enabled: studio.idle && studio.trainerAvailable && studio.controller.selectionCanTrain
                                 onClicked: studio.controller.trainTrainingSelection()
                             }
                         }
@@ -218,7 +220,9 @@ Popup {
                                 }
                             }
                         }
-                        Copy { Layout.fillWidth: true; text: "재학습은 선택한 동작과 기존 클래스를 함께 학습합니다. 현재 직접 적용은 pinch의 tap/span 동작을 지원합니다."; color: Theme.Studio.muted }
+                        Copy { Layout.fillWidth: true; text: studio.trainerAvailable
+                            ? "재학습은 선택한 동작과 기존 클래스를 함께 학습합니다. 현재 직접 적용은 pinch의 tap/span 동작을 지원합니다."
+                            : "추가 구성요소 필요: TCN 고급 학습·팀 공유는 Trainer 포함 설치본이 필요합니다. 기본 손짓 제어와 녹화는 사용할 수 있습니다."; color: Theme.Studio.muted }
                     }
                 }
                 Panel {

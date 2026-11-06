@@ -139,17 +139,17 @@ capture ─► tracking ─► HandObservation | None
 
 ## 8. 이식 순서
 
-`hand-mouse/`는 v0.4가 대체할 때까지 설치본으로 유지하고 버그 수정만 받는다. 각 단계는 **재생 비교**로 v0.3과 같은 출력을 확인한 뒤 끝낸다. 측정하지 않은 단계는 완료로 표시하지 않는다.
+D-009 승인으로 v0.5 정식 설치본은 `apps/manux/`에서 빌드한다. `hand-mouse/`의 정식 발행은 비활성화한다. S2·S4의 v0.3 동등성 확인은 이식 당시 결과로 갈음한다. D-009(2026-11-06, Sean 승인)에 따라 v0.5부터 의도적으로 동작을 바꾸며 동등성을 유지하지 않는다. 현재 기능·계약 시험으로 검증한다. 측정하지 않은 단계는 완료로 표시하지 않는다.
 
 | 단계 | 내용 | 완료 기준 | 상태 (2026-11-05 preview) |
 | --- | --- | --- | --- |
 | S0 | 폴더 골격, 계약 문서·코드, 의존 규칙 시험, 에이전트 안내 | 구조 시험 통과, 팀 검토 | 완료 (#53, CI 강제 #55) |
 | S1 | `core` 보강, `settings`(v0.3 `gestures.json` 변환), `capture`, `tracking`, 재생 도구 | v0.3 녹화를 읽어 `HandObservation` 열로 재생 | 완료 (#56). Dan 녹화 28,557/28,557 손 재생 |
-| S2 | `pointer` 기능 + `output/practice`·`output/null` | 같은 입력 열에서 v0.3 `PointerEngine`과 출력 불일치 0 | 완료 (#58), 합성 비교 |
+| S2 | `pointer` 기능 + `output/practice`·`output/null` | 이식 당시 비교(#58)로 갈음; v0.5 동등성 제약 없음(D-009) | 완료 (#58), 합성 비교 |
 | S3 | `output/windows` (커서 매핑·클릭·스크롤 관성·창 전환을 `mouse_controller.py`에서 분리) | 실제 Windows에서 이동·클릭·드래그·스크롤 수동 확인 기록 | 코드 병합 (#57). **실제 Windows 수동 확인 미실행** |
-| S4 | `pinch`(클릭·스크롤 잡기·드래그), `motion` 기능, 중재기(비공개 필드 읽기 제거) | v0.3 재생 비교, 모션 진입 차단 시험 | 완료 (#59 엔진, #60·#61 기능), 합성 비교 |
+| S4 | `pinch`(클릭·스크롤 잡기·드래그), `motion` 기능, 중재기(비공개 필드 읽기 제거) | 이식 당시 비교(#59~#61)로 갈음; v0.5는 모션 진입·현재 계약 시험(D-009) | 완료 (#59 엔진, #60·#61 기능), 합성 비교 |
 | S5 | `tcn_gate`, `ml`, `data/recorder`, `tools/train_tcn.py` (Dan 브랜치에서) | 모델 정보 검증, 확인기 켬/끔 재생 비교 | 코드 병합 (#60·#62). 모델 정보 검증 완료. **실제 녹화로 확인기 켬/끔 비교 미실행** |
-| S6 | QML 셸: 페이지·튜토리얼·설정·트레이·단축키·업데이트, 설치본 | 설치본으로 v0.3 기능 목록 수동 확인 후 배포 채널 전환 | **진행 중.** 화면(`ui/`, v0.3 `dashboard.qml` 그대로 + 새 브리지)·`desktop.py`·트레이·전역 단축키·손가락 HUD·튜토리얼·방향 보정. 설치본: `packaging/` + `platform/updater.py`, PR마다 `MANUX Preview` 설치파일(`manux-app.yml`, 게시 안 함·업데이트 안 함·v0.3과 나란히 설치). 트래킹 측정(`data/tracking_test.py`). 남음: 미리보기 위 그리기, 학습 센터 화면(S6a 모듈 위), 실제 웹캠·Windows 확인, **배포 채널 전환**(`build.ps1 -Release`를 릴리스 workflow에 연결) |
+| S6 | 데스크톱·Preview/정식 설치본·선택 Trainer | 합성/설치 검사와 실제 웹캠·Windows 수동 확인을 구분 | v0.5 채널 전환 승인(D-009, 2026-11-06). 기본 설치본은 torch worker 제외, -WithTrainer는 선택 구성. production의 manux-release.yml이 apps/manux를 발행. **실제 발행·웹캠·Windows 수동 확인은 미실행** |
 
 S2와 S3, S4와 S5는 서로 다른 폴더를 고치므로 동시에 진행할 수 있다.
 

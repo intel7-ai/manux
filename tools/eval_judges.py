@@ -21,6 +21,7 @@ from manux.app import build_engine, schema
 from manux.data.capture_plan import label_condition_key
 from manux.data.catalog import NONE, RESERVED
 from manux.data.recording import replay
+from manux.data.repository import repository_root
 from manux.data.rule_replay import RuleIntents, TAP, rule_action
 from manux.ml.card import ModelError, validate_card
 from manux.ml.spatial_mlp import train_spatial_mlp
@@ -421,7 +422,8 @@ def evaluate_fold(training, evaluation, seconds, args):
 
 def outside_repo(path: Path) -> Path:
     path = path.expanduser().resolve()
-    roots = {APP.parents[1]}
+    root = repository_root(APP)
+    roots = {root} if root is not None else set()
     # A worktree's .git is a file. The shared repository and every worktree are private-data boundaries.
     common = subprocess.check_output(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
                                      cwd=APP, text=True).strip()

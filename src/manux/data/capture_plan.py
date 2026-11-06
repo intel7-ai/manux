@@ -21,6 +21,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Union
 
+from manux.data.repository import repository_root
+
 SCHEMA = "manux-capture-plan/1"
 FILE_NAME = "capture-plans.json"
 ALL = "all"                       # the plan used when no task is focused
@@ -39,7 +41,7 @@ _TIMING_NAMES = {"reps": "반복 횟수", "prep": "준비 시간", "hold": "동�
                  "free_seconds": "자유 동작 시간"}
 _OPTION_NAMES = {"orientation": "손 방향", "position": "화면 위치", "distance": "거리", "posture": "몸 자세",
                  "camera": "카메라 각도", "lighting": "조명"}
-_REPO = Path(__file__).resolve().parents[5]   # <repo>/apps/manux/src/manux/data/capture_plan.py (from source)
+_REPO = repository_root(Path(__file__))
 
 
 def condition(**values: Any) -> Dict[str, Any]:
@@ -156,7 +158,7 @@ def plans_file(config_dir: Path) -> Path:
 
 
 def _check_outside_repo(path: Path) -> None:
-    if (_REPO / ".git").exists() and Path(path).resolve().is_relative_to(_REPO):
+    if _REPO is not None and Path(path).resolve().is_relative_to(_REPO):
         raise ValueError(f"녹화 설정은 저장소 밖(사용자 설정 폴더)에 저장합니다: {path}")
 
 
