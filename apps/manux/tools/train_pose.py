@@ -43,6 +43,8 @@ from manux.perception.pose_angles import FEATURE_VERSION, FEATURES
 import pose_data
 
 HIDDEN = 64
+SAME_SESSION_WARNING = ("no --eval recordings: held-out segments come from the same recordings (same person, same session) "
+                        "as training, so the held-out result is optimistic; use separate --eval recordings for a fair number")
 LEAK = 0.05          # a penalized class counts as "given" above this probability (park's rule)
 
 
@@ -179,6 +181,7 @@ def main(argv=None) -> None:
         parser.error("write models outside the repository; D-006")
     try:
         penalties = parse_penalties(args.penalize)
+        warnings_extra: List[str] = []
         loaded = pose_data.load_segments(args.recordings, split="train")
         if args.eval:
             held = pose_data.load_segments(args.eval, split="eval")
@@ -193,14 +196,17 @@ def main(argv=None) -> None:
             eval_sources = []
             train_segments, held_segments = pose_data.split_segments(loaded.segments, args.eval_fraction, args.seed)
             split = "segments"
+            warnings_extra = [SAME_SESSION_WARNING]
         pose_data.check_disjoint(train_segments, held_segments)
         classes = args.classes or pose_data.class_names(train_segments)
         if len(classes) < 2 or len(set(classes)) != len(classes) or not all(CLASS_RE.fullmatch(c) for c in classes):
             raise ValueError("need at least two distinct lowercase class names")
         warnings = pose_data.coverage_warnings(train_segments, held_segments, minimum=args.min_segments)
+        coverage_problem = bool(warnings)             # --strict is about coverage, not about the same-session note
+        warnings += warnings_extra
         for line in warnings:
             print(f"warning: {line}", file=sys.stderr)
-        if warnings and args.strict:
+        if coverage_problem and args.strict:
             raise ValueError("coverage warnings with --strict")
         x, y = pose_data.stack(train_segments, classes)
         model = train(x, y, classes, epochs=args.epochs, hidden=args.hidden, weights=args.class_weights,

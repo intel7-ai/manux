@@ -86,6 +86,7 @@ def test_sources_are_public_facts_and_the_person_is_an_alias(tmp_path):
     (source,) = loaded.sources
     assert source["pc"] != "pc-test" and len(source["pc"]) == 7 and source["pc"].startswith("pc-")   # a code, not the name
     assert len(source["sha256"]) == 64 and source["used_frames"] == 5
+    assert source["person"] == loaded.segments[0].person and "tester01" not in str(loaded.sources)   # no real name in the card
     assert loaded.segments[0].person not in ("", "tester01") and len(loaded.segments[0].person) == 12
 
 

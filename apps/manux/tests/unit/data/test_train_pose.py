@@ -166,6 +166,17 @@ def test_few_segments_are_reported_in_the_card_and_strict_refuses(tmp_path, caps
         tp.main([str(train), "--output", str(tmp_path / "o" / "s.onnx"), "--epochs", "5", "--strict"])
 
 
+def test_without_eval_recordings_the_same_session_leak_is_warned_about(tmp_path, capsys):
+    out = run_tool(tmp_path)
+    card = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    assert any("same session" in w for w in card["pose"]["warnings"]) and "same session" in capsys.readouterr().err
+    assert all(src["person"] and src["person"] != "tester01" for src in card["data"])   # an alias, not the name
+    held = write_recording(tmp_path / "h.jsonl.gz", standard_runs(6, 24), person="p2", split="eval", seed=5)
+    out2 = tmp_path / "o2" / "m.onnx"
+    tp.main([str(recordings(tmp_path, person="p1", seed=1)), "--eval", str(held), "--output", str(out2), "--epochs", "5"])
+    assert not any("same session" in w for w in json.loads(out2.with_suffix(".json").read_text(encoding="utf-8"))["pose"]["warnings"])
+
+
 def test_a_model_must_not_be_written_inside_the_repository(tmp_path):
     repo = Path(tp.__file__).resolve().parents[3]
     with pytest.raises(SystemExit) as stop:

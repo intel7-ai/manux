@@ -134,7 +134,7 @@ def load_segments(paths: Iterable[Path], *, split: Optional[str] = None) -> Load
         flush()
         pc, note = public_source(rec.meta)
         camera = {k: v for k, v in (rec.meta.get("camera") or {}).items() if k in ("source", "mode", "mirror")}
-        sources.append({"file": path.name, "sha256": digest, "pc": pc, "person": rec.meta.get("person"),
+        sources.append({"file": path.name, "sha256": digest, "pc": pc, "person": person or None,
                         "camera": dict(camera, note=note), "frames": len(rec.frames), "used_frames": kept})
     for name in set(s.label for s in segments):
         if name in LEGACY_GESTURES and name not in gestures:
