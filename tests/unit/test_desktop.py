@@ -185,3 +185,81 @@ def test_recording_start_failure_is_visible_and_can_retry(tmp_path, monkeypatch)
     runtime.set_recording('guided', focus='thumb_ring', profile='synthetic', split='eval')
     assert run_frames(runtime, 2)[-1].rec['mode'] == 'guided'
     runtime.stop()
+
+
+def test_recording_bundle_shares_session_id_across_files_and_pause(tmp_path, monkeypatch):
+    import manux.desktop as desktop
+    from uuid import UUID, uuid4
+    from manux.data.recording import read
+
+    generated = []
+    def new_id():
+        value = uuid4()
+        generated.append(value)
+        return value
+    monkeypatch.setattr(desktop, "uuid4", new_id)
+    runtime = build(Settings(schema()), ReplayInput(recording(tmp_path / "input.jsonl.gz")), windows=False)
+    runtime.recordings_dir = tmp_path / "recordings"
+    try:
+        runtime.set_recording("guided", focus=("thumb_ring", "thumb_middle"))
+        run_frames(runtime, 2)
+        first_file = runtime._rec.path
+        runtime.set_recording_paused(True)
+        run_frames(runtime, 2)
+        runtime.set_recording_paused(False)
+        runtime.advance_recording()
+        run_frames(runtime, 2)
+        assert len(generated) == 1
+
+        # Reopen a file inside the SAME pending bundle, without issuing a new start.
+        # The current app normally keeps all selected tasks in a single file. This
+        # explicit internal boundary guards against generating an ID per file.
+        runtime._stop_recording(runtime._rec._t0 + 1.)
+        runtime._rec_mode = "off"
+        run_frames(runtime, 2)
+        second_file = runtime._rec.path
+        runtime.set_recording("off")
+        run_frames(runtime, 2)
+        assert first_file != second_file
+        ids = [read(path).meta["session_id"] for path in (first_file, second_file)]
+        assert ids[0] == ids[1] == str(generated[0])
+        assert str(UUID(ids[0])) == ids[0] and UUID(ids[0]).version == 4
+        assert len(generated) == 1
+        assert all(read(p).complete for p in (first_file, second_file))
+    finally:
+        runtime.stop()
+
+
+def test_new_recording_bundle_and_app_restart_get_new_session_ids(tmp_path):
+    from uuid import UUID
+    from manux.data.recording import read
+
+    folder = tmp_path / "recordings"
+    def new_runtime(name):
+        runtime = build(Settings(schema()), ReplayInput(recording(tmp_path / name)), windows=False)
+        runtime.recordings_dir = folder
+        return runtime
+
+    runtime = new_runtime("first-input.jsonl.gz")
+    try:
+        runtime.set_recording("guided", focus=("thumb_ring", "thumb_middle"))
+        run_frames(runtime, 2)
+        first = runtime._rec.path
+        # Same mode/focus/identity, no intermediate off frame: still a NEW bundle.
+        runtime.set_recording("guided", focus=("thumb_ring", "thumb_middle"))
+        run_frames(runtime, 2)
+        second = runtime._rec.path
+        assert first != second and read(first).complete
+    finally:
+        runtime.stop()
+    restarted = new_runtime("restarted-input.jsonl.gz")
+    try:
+        restarted.set_recording("guided", focus=("thumb_ring", "thumb_middle"))
+        run_frames(restarted, 2)
+        third = restarted._rec.path
+    finally:
+        restarted.stop()
+    ids = [read(path).meta["session_id"] for path in (first, second, third)]
+    assert len(set(ids)) == 3
+    assert all(UUID(value).version == 4 and str(UUID(value)) == value for value in ids)
+    assert all(read(path).complete for path in (first, second, third))
