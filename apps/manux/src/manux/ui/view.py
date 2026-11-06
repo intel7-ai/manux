@@ -25,6 +25,7 @@ class ViewFrame:
     image: Any = None                          # BGR numpy frame for the preview, None while the window is hidden
     hands: Tuple[SeenHand, ...] = ()           # every hand tracking found
     landmarks: Optional[Tuple[Landmark, ...]] = None   # the control hand, image coordinates
+    world: Optional[Tuple[Landmark, ...]] = None       # the control hand, 3D world coordinates in metres
     mirrored: bool = True
     aspect: float = 0.5625                     # frame height / width
     camera_mode: str = ""                      # e.g. "1280×720 · 30fps"

@@ -310,6 +310,14 @@ ApplicationWindow {
     Shortcut { sequence: "F"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.markFailure() }
     Shortcut { sequence: "C"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(99) }
     Shortcut { sequence: "P"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(112) }
+    Shortcut { sequence: "1"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(49) }
+    Shortcut { sequence: "2"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(50) }
+    Shortcut { sequence: "3"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(51) }
+    Shortcut { sequence: "4"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(52) }
+    Shortcut { sequence: "5"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(53) }
+    Shortcut { sequence: "6"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(54) }
+    Shortcut { sequence: "7"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(55) }
+    Shortcut { sequence: "8"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(56) }
 
     Timer { interval: 700; running: dashboard.stage === "splash"; onTriggered: dashboard.finishSplash() }
 
@@ -566,6 +574,11 @@ ApplicationWindow {
                     smooth: true
                 }
                 Item { Layout.fillWidth: true }
+                ActionButton {
+                    text: "⚡ 포즈 스튜디오 (MLP)"
+                    accent: dashboard.currentPage === "studio"
+                    onClicked: dashboard.setPage("studio")
+                }
                 ActionButton { text: "학습 센터"; onClicked: trainingCenter.open() }
                 TextLabel { text: dashboard.chosenHand; color: window.muted; font.pixelSize: 13 }
                 ActionButton {
@@ -590,7 +603,7 @@ ApplicationWindow {
                     anchors.margins: 12
                     spacing: 4
                     Repeater {
-                        model: [["home", "홈"], ["profiles", "프로필"], ["customize", "맞춤 설정"]]
+                        model: [["home", "홈"], ["studio", "포즈 스튜디오 (MLP)"], ["profiles", "프로필"], ["customize", "맞춤 설정"]]
                         delegate: Button {
                             id: navItem
                             required property var modelData
@@ -905,6 +918,380 @@ ApplicationWindow {
                 Item { Layout.preferredHeight: 8 }
             }
         }
+
+            // Pose Snapshot Studio: park-style continuous frame stream collection + 4-second Spatial MLP training
+            ScrollView {
+                id: studioScroll
+                visible: dashboard.currentPage === "studio"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: availableWidth
+                ColumnLayout {
+                    width: Math.min(studioScroll.availableWidth - 48, 880)
+                    x: (studioScroll.availableWidth - width) / 2
+                    spacing: 14
+                    Item { Layout.preferredHeight: 4 }
+
+                    // Header & Mode Switcher
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            TextLabel {
+                                text: "⚡ 포즈 스냅샷 & 영상 프레임 스튜디오 (Spatial MLP)"
+                                font.pixelSize: 20
+                                font.bold: true
+                            }
+                            TextLabel {
+                                Layout.fillWidth: true
+                                text: "복잡한 카운트다운 없이 숫자키(1~8)로 동작을 고르고, Space 하나로 영상 프레임을 초당 20장씩 최대 1,000개 수집·즉시 학습합니다."
+                                color: window.muted
+                                font.pixelSize: 12
+                                wrapMode: Text.Wrap
+                            }
+                        }
+                        Segmented {
+                            Layout.fillWidth: false
+                            Layout.preferredWidth: 270
+                            options: [["stream", "🎥 영상 연속 수집 (스트림)"], ["snapshot", "📷 단일 캡처 (스냅샷)"]]
+                            current: dashboard.studioCaptureMode
+                            onPicked: function (value) { dashboard.setStudioCaptureMode(value) }
+                        }
+                    }
+
+                    // Camera Preview + Live 3-Way Judgment Comparison Banner
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: studioLiveCol.implicitHeight + 28
+                        radius: 16
+                        color: "white"
+                        border.color: dashboard.studioStreaming ? "#10B981" : window.line
+                        border.width: dashboard.studioStreaming ? 2 : 1
+                        ColumnLayout {
+                            id: studioLiveCol
+                            anchors.fill: parent
+                            anchors.margins: 14
+                            spacing: 12
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 16
+
+                                // Live Webcam Box
+                                Rectangle {
+                                    Layout.preferredWidth: 260
+                                    Layout.preferredHeight: 146
+                                    radius: 10
+                                    color: window.navy
+                                    clip: true
+                                    Image {
+                                        anchors.fill: parent
+                                        source: dashboard.previewUrl
+                                        cache: false
+                                        fillMode: Image.PreserveAspectFit
+                                    }
+                                    Rectangle {
+                                        visible: dashboard.studioStreaming
+                                        anchors.top: parent.top
+                                        anchors.left: parent.left
+                                        anchors.margins: 8
+                                        width: recBadgeText.implicitWidth + 16
+                                        height: 24
+                                        radius: 12
+                                        color: "#DC2626"
+                                        TextLabel {
+                                            id: recBadgeText
+                                            anchors.centerIn: parent
+                                            text: "● REC " + dashboard.studioTotalSamples + "/" + dashboard.studioMaxSamples
+                                            color: "white"
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                        }
+                                    }
+                                }
+
+                                // Live 3-Way Comparison (System Rule vs Spatial MLP AI vs Ground Truth)
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Chip {
+                                            text: dashboard.studioHandTracked ? "✋ 21관절 추적 정상" : "⚠️ 손 대기 중"
+                                            warn: !dashboard.studioHandTracked
+                                        }
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            height: 28
+                                            radius: 14
+                                            color: !dashboard.studioHandTracked ? "#F0F3F6"
+                                                 : dashboard.studioLiveMatch ? "#E8F7F2" : "#FEE2E2"
+                                            border.color: !dashboard.studioHandTracked ? "transparent"
+                                                        : dashboard.studioLiveMatch ? "#10B981" : "#EF4444"
+                                            TextLabel {
+                                                anchors.centerIn: parent
+                                                text: dashboard.studioCompareBadge
+                                                font.pixelSize: 12
+                                                font.bold: true
+                                                color: !dashboard.studioHandTracked ? window.muted
+                                                     : dashboard.studioLiveMatch ? "#065F46" : "#991B1B"
+                                            }
+                                        }
+                                    }
+
+                                    // 3 Columns: Rule | AI | Ground Truth
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredWidth: 1
+                                            implicitHeight: 54
+                                            radius: 10
+                                            color: "#F8FAFC"
+                                            border.color: window.line
+                                            ColumnLayout {
+                                                anchors.fill: parent
+                                                anchors.margins: 8
+                                                spacing: 2
+                                                TextLabel { text: "기계·수학 규칙 판정"; font.pixelSize: 11; color: window.muted }
+                                                TextLabel { text: dashboard.studioSystemAction; font.pixelSize: 14; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
+                                            }
+                                        }
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredWidth: 1
+                                            implicitHeight: 54
+                                            radius: 10
+                                            color: dashboard.studioModelLoaded ? "#F0FDF4" : "#F8FAFC"
+                                            border.color: dashboard.studioModelLoaded ? "#86EFAC" : window.line
+                                            ColumnLayout {
+                                                anchors.fill: parent
+                                                anchors.margins: 8
+                                                spacing: 2
+                                                TextLabel { text: "Spatial MLP (AI 예측)"; font.pixelSize: 11; color: window.muted }
+                                                TextLabel { text: dashboard.studioAiAction; font.pixelSize: 14; font.bold: true; color: dashboard.studioModelLoaded ? "#065F46" : window.muted; elide: Text.ElideRight; Layout.fillWidth: true }
+                                            }
+                                        }
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredWidth: 1
+                                            implicitHeight: 54
+                                            radius: 10
+                                            color: "#E3F8F1"
+                                            border.color: window.mint
+                                            border.width: 2
+                                            ColumnLayout {
+                                                anchors.fill: parent
+                                                anchors.margins: 8
+                                                spacing: 2
+                                                TextLabel { text: "지정 정답 (Ground Truth)"; font.pixelSize: 11; color: "#08775E"; font.bold: true }
+                                                TextLabel { text: dashboard.studioGroundTruthLabel; font.pixelSize: 14; font.bold: true; color: window.navy; elide: Text.ElideRight; Layout.fillWidth: true }
+                                            }
+                                        }
+                                    }
+
+                                    // Discrepancy-only toggle row
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        CheckBox {
+                                            id: discrepancyCheck
+                                            checked: dashboard.studioDiscrepancyOnly
+                                            onToggled: dashboard.setStudioDiscrepancyOnly(checked)
+                                        }
+                                        TextLabel {
+                                            Layout.fillWidth: true
+                                            text: "🚨 불일치(오인식 사각지대) 프레임만 자동 선별 수집 — 손을 이리저리 돌릴 때 틀리는 각도만 쏙쏙 골라 담습니다"
+                                            font.pixelSize: 12
+                                            font.bold: dashboard.studioDiscrepancyOnly
+                                            color: dashboard.studioDiscrepancyOnly ? "#B91C1C" : window.navy
+                                            wrapMode: Text.Wrap
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                onClicked: dashboard.setStudioDiscrepancyOnly(!dashboard.studioDiscrepancyOnly)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Progress Bar for 1,000 samples
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 8
+                                radius: 4
+                                color: "#E2E8F0"
+                                Rectangle {
+                                    width: parent.width * Math.min(1.0, dashboard.studioTotalSamples / Math.max(1, dashboard.studioMaxSamples))
+                                    height: parent.height
+                                    radius: 4
+                                    color: dashboard.studioStreaming ? "#10B981" : window.mint
+                                }
+                            }
+
+                            // Action Toolbar: Start/Stop Stream, Undo, Clear, Save, Instant 4s Train
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+                                ActionButton {
+                                    Layout.fillWidth: true
+                                    accent: true
+                                    text: dashboard.studioCaptureMode === "stream"
+                                        ? (dashboard.studioStreaming ? "⏹️ 연속 수집 정지 (Space)" : "🎥 연속 프레임 수집 시작 (Space)")
+                                        : "📸 현재 자세 1프레임 스냅샷 캡처 (Space)"
+                                    onClicked: dashboard.triggerStudioCapture()
+                                }
+                                ActionButton {
+                                    text: "↩️ 직전 취소"
+                                    enabled: dashboard.studioTotalSamples > 0
+                                    onClicked: dashboard.undoStudioSample()
+                                }
+                                ActionButton {
+                                    text: "🗑️ 비우기"
+                                    enabled: dashboard.studioTotalSamples > 0
+                                    onClicked: dashboard.clearStudioSamples()
+                                }
+                                ActionButton {
+                                    text: "💾 데이터셋 저장 (" + dashboard.studioTotalSamples + ")"
+                                    enabled: dashboard.studioTotalSamples > 0
+                                    onClicked: dashboard.saveStudioDataset()
+                                }
+                                ActionButton {
+                                    accent: true
+                                    text: "⚡ Spatial MLP 즉시 학습 (4초)"
+                                    onClicked: dashboard.trainStudioModel()
+                                }
+                            }
+
+                            // Status Note & Summary Bar
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+                                TextLabel {
+                                    Layout.fillWidth: true
+                                    text: dashboard.studioNote
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                    color: "#08775E"
+                                    wrapMode: Text.Wrap
+                                }
+                                ActionButton {
+                                    implicitHeight: 30
+                                    text: "📂 데이터 폴더"
+                                    onClicked: dashboard.openStudioSnapshotsFolder()
+                                }
+                            }
+                        }
+                    }
+
+                    // 8 Official Preview Gesture Classes Grid (1~8 Shortcuts)
+                    RowLayout {
+                        Layout.fillWidth: true
+                        TextLabel {
+                            text: "수집할 정답 동작 선택 (단축키 1 ~ 8)"
+                            font.pixelSize: 16
+                            font.bold: true
+                        }
+                        Item { Layout.fillWidth: true }
+                        TextLabel {
+                            text: dashboard.studioSummaryText
+                            font.pixelSize: 12
+                            color: window.muted
+                        }
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width > 640 ? 2 : 1
+                        columnSpacing: 10
+                        rowSpacing: 10
+                        Repeater {
+                            model: dashboard.studioActions
+                            delegate: Rectangle {
+                                required property var modelData
+                                readonly property bool chosen: modelData.selected
+                                Layout.fillWidth: true
+                                Layout.preferredWidth: 1
+                                implicitHeight: actionCardCol.implicitHeight + 20
+                                radius: 12
+                                color: chosen ? "#E3F8F1" : "white"
+                                border.color: chosen ? window.mint : window.line
+                                border.width: chosen ? 2 : 1
+                                ColumnLayout {
+                                    id: actionCardCol
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 4
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        TextLabel {
+                                            text: modelData.icon + "  " + modelData.label
+                                            font.bold: true
+                                            font.pixelSize: 14
+                                            Layout.fillWidth: true
+                                        }
+                                        Chip {
+                                            visible: modelData.accuracyText !== ""
+                                            text: "AI " + modelData.accuracyText
+                                        }
+                                        Chip {
+                                            text: "이번 " + modelData.sessionCount + " · 누적 " + modelData.totalCount
+                                            warn: modelData.totalCount === 0
+                                        }
+                                    }
+                                    TextLabel {
+                                        Layout.fillWidth: true
+                                        text: modelData.desc
+                                        color: window.muted
+                                        font.pixelSize: 12
+                                        wrapMode: Text.Wrap
+                                    }
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: dashboard.setStudioGroundTruth(modelData.id)
+                                }
+                            }
+                        }
+                    }
+
+                    // Bottom Model Status Card
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: modelInfoRow.implicitHeight + 24
+                        radius: 12
+                        color: dashboard.studioModelLoaded ? "#F0FDF4" : "white"
+                        border.color: dashboard.studioModelLoaded ? "#86EFAC" : window.line
+                        RowLayout {
+                            id: modelInfoRow
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 12
+                            TextLabel {
+                                Layout.fillWidth: true
+                                text: dashboard.studioModelText
+                                font.pixelSize: 13
+                                font.bold: true
+                                color: dashboard.studioModelLoaded ? "#065F46" : window.muted
+                                wrapMode: Text.Wrap
+                            }
+                            ActionButton {
+                                text: "기존 학습 센터 (TCN)"
+                                onClicked: trainingCenter.open()
+                            }
+                        }
+                    }
+                    Item { Layout.preferredHeight: 12 }
+                }
+            }
+
             // Profiles: which calibration profile the engine uses
             ScrollView {
                 id: profilesScroll

@@ -17,7 +17,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Tuple
 
 from manux.actions.bindings import Binding
 from manux.app import _FEATURES, _camera_config, build_engine, schema, pipeline_parts, read_bindings, training_specs
@@ -29,13 +29,17 @@ from manux.data.recorder import SessionRecorder
 from manux.data.recording import read, replay
 from manux.data.tracking_test import TrackingTest, load_recent_results, result_line, view as tracking_view
 from manux.data.training_center import TrainingCenterService
+from manux.data.pose_studio import ACTION_IDS, PoseSnapshotStudio, STUDIO_ACTIONS, normalize_system_action
 from manux.engine.commands import RequestMode, SetBusy, SetControl
 from manux.engine.pipeline import Engine
 from manux.features import tcn_gate
+from manux.features.spatial_pose import SpatialPoseFeature, SpatialPoseGuard
 from manux.ml.card import ModelError
 from manux.ml.predictor import load_model
+from manux.ml.spatial_mlp import SpatialMlpModel, train_spatial_mlp
 from manux.ml.store import active_token, load_active
 from manux.perception.local3d import FEATURES, FEATURE_VERSION
+from manux.perception.spatial_features import SPATIAL_FEATURE_VERSION, extract_spatial_features
 from manux.settings.paths import AppPaths, resolve
 from manux.settings.store import Settings, load
 from manux.ui.view import SeenHand, ViewFrame
@@ -173,6 +177,8 @@ class DesktopRuntime:
         self._attempted_model_token = model_token
         self._next_model_check = 0.
         self.model_status = model_status
+        self.spatial_feature: Optional[SpatialPoseFeature] = None
+        self.spatial_guard: Optional[SpatialPoseGuard] = None
         engine.settings_for = self.settings_for
         # tracking test (S6): owned by this thread; the UI asks with start/close and reads ViewFrame.tracking
         self.log_dir: Optional[Path] = None
@@ -214,6 +220,11 @@ class DesktopRuntime:
         if old is not None:
             bindings[POINTER_MOVE] = Binding(old.action, {**old.params, "gain": max(0.1, float(gain))})
             self.engine.router.set_bindings(bindings)
+
+    def set_spatial_model(self, model: Optional[SpatialMlpModel]) -> None:
+        """Hot-reload the 96-dim Spatial MLP on the live engine without restarting."""
+        if self.spatial_feature is not None:
+            self.spatial_feature.set_model(model)
 
     def pointer_gain(self) -> float:
         binding = self.engine.router.bindings.get(POINTER_MOVE)
@@ -466,7 +477,9 @@ class DesktopRuntime:
         actions = tuple(a for a, _phase, _reason in snap.results)
         self._publish(ViewFrame(
             snapshot=snap, image=image if self.want_image else None, hands=hands,
-            landmarks=hand.landmarks if hand is not None else None, mirrored=frame.mirrored, aspect=frame.aspect,
+            landmarks=hand.landmarks if hand is not None else None,
+            world=hand.world if hand is not None else None,
+            mirrored=frame.mirrored, aspect=frame.aspect,
             camera_mode=self._metrics[0], brightness=self._metrics[1], low_light=self._metrics[2],
             fps=float(self.source.fps), detect_ms=float(detect_ms), actions=actions,
             model_status=self.model_status, tracking=tracking, recent=self.recent,
@@ -515,7 +528,8 @@ class DesktopRuntime:
 
 
 def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, tcn_store=None,
-          tcn_mode="gate", binding_overrides=None) -> DesktopRuntime:
+          tcn_mode="gate", binding_overrides=None,
+          spatial_pose_model: Optional[SpatialMlpModel] = None) -> DesktopRuntime:
     if tcn_store is not None and (tcn_model is not None or tcn_mode != "direct"):
         raise ValueError("a model store requires direct mode and cannot be combined with a model path")
     if tcn_mode == "direct" and tcn_model is None and tcn_store is None:
@@ -536,12 +550,89 @@ def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, t
         gate = tcn_gate.create_gate(Path(tcn_model), settings.section("tcn_gate"), eligible=eligible)
         filters = (gate.gate,) if gate.gate is not None else ()
         status = "TCN 확인기" if filters else f"TCN 확인기 꺼짐 · {gate.text}"
-    engine = build_engine(settings, "pinch", filters, direct_model=direct, binding_overrides=binding_overrides)
+
+    # Spatial Pose Assist (96-dim MLP hybrid guard & direct classification)
+    spatial_pose_feature = SpatialPoseFeature(spatial_pose_model, mode="assist")
+    spatial_guard = SpatialPoseGuard(spatial_pose_feature, tau_veto=0.80, k_frames=2)
+    engine_filters = tuple(filters) + ((spatial_guard,) if direct is None else ())
+
+    engine = build_engine(settings, "pinch", engine_filters, direct_model=direct, binding_overrides=binding_overrides)
+    if direct is not None:
+        engine.filters.append(spatial_guard)
     if windows:
         from manux.output.windows import Win32Backend, WindowsOutputSink
         from manux.platform.monitors import ScreenLayout
         engine.sinks[OutputTarget.WINDOWS] = WindowsOutputSink(Win32Backend(), ScreenLayout.detect())
-    return DesktopRuntime(engine, source, settings, model_store=tcn_store, model_token=token, model_status=status)
+    runtime = DesktopRuntime(engine, source, settings, model_store=tcn_store, model_token=token, model_status=status)
+    runtime.spatial_feature = spatial_pose_feature
+    runtime.spatial_guard = spatial_guard
+    return runtime
+
+
+def make_pose_studio(data_dir: Path,
+                     on_model_updated: Optional[Callable[[SpatialMlpModel], None]] = None) -> PoseSnapshotStudio:
+    """Create a PoseSnapshotStudio wired to the 96-dim SpatialFeatureExtractor and 4-second SpatialMlpModel."""
+    import numpy as np
+
+    active_mlp: List[Optional[SpatialMlpModel]] = [None]
+    model_file = Path(data_dir) / "models" / "spatial_mlp" / "spatial_pose_mlp.json"
+    if model_file.is_file():
+        try:
+            active_mlp[0] = SpatialMlpModel.load(model_file)
+        except Exception:
+            active_mlp[0] = None
+
+    def predict_fn(landmarks: Any, _world: Any) -> Optional[Dict[str, Any]]:
+        mlp = active_mlp[0]
+        if mlp is None:
+            return None
+        feats = extract_spatial_features(landmarks)
+        if feats is None:
+            return None
+        return mlp.predict(feats)
+
+    def train_fn(samples: List[Dict[str, Any]], out_path: Path) -> Dict[str, Any]:
+        class_to_idx = {c: i for i, c in enumerate(ACTION_IDS)}
+        xs: List[np.ndarray] = []
+        ys: List[int] = []
+        ws: List[float] = []
+        for s in samples:
+            raw_lm = s.get("rawLandmarks")
+            gt = s.get("groundTruthAction") or s.get("action")
+            if not raw_lm or gt not in class_to_idx:
+                continue
+            feats = extract_spatial_features(raw_lm)
+            if feats is None:
+                continue
+            xs.append(feats)
+            ys.append(class_to_idx[gt])
+            # Emphasize discrepancy (failure boundary) samples so the MLP rapidly corrects blind spots!
+            ws.append(1.8 if s.get("isFailureSample") else 1.0)
+        if len(xs) < 2:
+            raise ValueError("유효한 3D 관절 표본이 2개 미만입니다.")
+        model, metrics = train_spatial_mlp(
+            np.stack(xs),
+            np.array(ys, dtype=np.int64),
+            np.array(ws, dtype=np.float64),
+            classes=ACTION_IDS,
+            feature_version=SPATIAL_FEATURE_VERSION,
+        )
+        model.save(out_path)
+        active_mlp[0] = model
+        if on_model_updated is not None:
+            on_model_updated(model)
+        return {
+            "train_accuracy": metrics.train_accuracy,
+            "test_accuracy": metrics.test_accuracy,
+            "total_samples": metrics.total_samples,
+            "train_samples": metrics.train_samples,
+            "test_samples": metrics.test_samples,
+            "elapsed_ms": metrics.elapsed_ms,
+            "per_class": dict(metrics.per_class),
+            "trained_at": metrics.trained_at,
+        }
+
+    return PoseSnapshotStudio(data_dir, train_fn=train_fn, predict_fn=predict_fn)
 
 
 def default_hand_model(paths: AppPaths) -> Path:
@@ -580,10 +671,19 @@ def main(argv=None) -> int:
     except (OSError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 1
+    spatial_model_path = paths.data_dir / "models" / "spatial_mlp" / "spatial_pose_mlp.json"
+    init_spatial_model: Optional[SpatialMlpModel] = None
+    if spatial_model_path.is_file():
+        try:
+            init_spatial_model = SpatialMlpModel.load(spatial_model_path)
+        except Exception:
+            init_spatial_model = None
+
     try:
         runtime = build(settings, source, windows=not args.no_windows_input and sys.platform == "win32",
                         tcn_model=args.tcn_model, tcn_store=args.tcn_store, tcn_mode=args.tcn_mode,
-                        binding_overrides=read_bindings(args.bindings))
+                        binding_overrides=read_bindings(args.bindings),
+                        spatial_pose_model=init_spatial_model)
     except (ModelError, OSError, ValueError) as error:
         source.close()
         print(error, file=sys.stderr)
@@ -602,11 +702,15 @@ def main(argv=None) -> int:
                                env_files=(Path(sys.executable).parent / ".env",) if paths.frozen else (),
                                specs=training_specs(), on_ready=lambda event: runtime.request(
                                    RuntimeRequest("activate_model", event["store"])))
+    studio = make_pose_studio(paths.data_dir, on_model_updated=runtime.set_spatial_model)
     return run(runtime, settings, paths, tray=not args.no_tray, screenshot=args.screenshot,
                services={
                    "pointer_axes": pointer_axes,
                    "export_logs": lambda metrics: export_logs(paths, metrics, info.label),
                    "training_center": tc,
+                   "pose_studio": studio,
+                   "studio_actions": lambda: list(STUDIO_ACTIONS),
+                   "studio_system_action": normalize_system_action,
                },
                hotkeys=hotkeys.GlobalHotkeys({}), hotkey_defaults=hotkeys.DEFAULTS,
                normalize_combo=hotkeys.normalize, combo_label=hotkeys.label, make_tray=QtTray)

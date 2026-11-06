@@ -47,6 +47,11 @@ Popup {
                 Copy { text: "학습 센터"; font.pixelSize: 24; font.bold: true }
                 Copy { Layout.fillWidth: true; text: "동작 선택 → 학습·평가 따로 녹화 → 팀 공유 → 검증 후 적용"; color: Theme.Studio.muted }
             }
+            StudioButton {
+                text: "⚡ 포즈 스튜디오 (연속 수집 · 4초 MLP 학습)"
+                primary: true
+                onClicked: { studio.close(); studio.controller.setPage("studio") }
+            }
             StudioButton { text: "닫기"; onClicked: studio.close() }
         }
         ScrollView {
