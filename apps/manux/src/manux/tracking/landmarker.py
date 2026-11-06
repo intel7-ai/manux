@@ -64,7 +64,7 @@ def _hands(result: Any, map_point) -> List[RawHand]:
 class MediaPipeLandmarker:
     def __init__(self, model_path: Path, *, min_detection_confidence: float = 0.6,
                  min_presence_confidence: float = 0.5, min_tracking_confidence: float = 0.5,
-                 detect_max_width: int = 640, num_hands: int = 2, crop_max_side: int = 480) -> None:
+                 detect_max_width: int = 640, num_hands: int = 1, crop_max_side: int = 480) -> None:
         import mediapipe as mp  # lazy: see module docstring
 
         self._mp = mp
@@ -158,5 +158,5 @@ def crop_to_frame(roi: Roi, width: int, height: int):
 
 def options_from(section: dict) -> dict:
     """MediaPipeLandmarker keyword arguments from the `tracking.` settings section."""
-    keys = ("min_detection_confidence", "min_presence_confidence", "min_tracking_confidence", "detect_max_width")
+    keys = ("min_detection_confidence", "min_presence_confidence", "min_tracking_confidence", "detect_max_width", "num_hands")
     return {k: section[k] for k in keys if k in section}

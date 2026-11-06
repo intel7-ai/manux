@@ -470,7 +470,7 @@ class DesktopRuntime:
             camera_mode=self._metrics[0], brightness=self._metrics[1], low_light=self._metrics[2],
             fps=float(self.source.fps), detect_ms=float(detect_ms), actions=actions,
             model_status=self.model_status, tracking=tracking, recent=self.recent,
-            rec=self._rec_view(frame.t)))
+            rec=self._rec_view(frame.t), frame_age_ms=max(0.0, (time.perf_counter() - frame.t) * 1000.0)))
 
     def request(self, command: RuntimeRequest):
         if self._stop.is_set():

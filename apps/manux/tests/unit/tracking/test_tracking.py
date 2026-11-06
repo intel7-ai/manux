@@ -114,3 +114,29 @@ def test_crop_miss_falls_back_to_the_whole_frame():
 def test_malformed_landmarks_become_no_hand():
     bad = RawHand(((0.5, 0.5, 0.0),) * 20, "Left", 0.95)
     assert HandTracker(FakeLandmarker([bad])).step(FRAME, None, "Right").hand is None
+
+
+@pytest.mark.parametrize("requested", [None, 2])
+def test_landmarker_defaults_to_one_hand_and_preserves_explicit_two(monkeypatch, tmp_path, requested):
+    """Exercise the adapter's actual MediaPipe options, without loading a model or camera."""
+    import sys
+    import manux.tracking.landmarker as module
+    from manux.app import schema
+    from manux.settings.store import Settings
+    calls = []
+    def create(options):
+        calls.append(options)
+        return NS(close=lambda: None)
+    vision = NS(HandLandmarkerOptions=lambda **values: values, RunningMode=NS(VIDEO="video"),
+                HandLandmarker=NS(create_from_options=create))
+    monkeypatch.setitem(sys.modules, "mediapipe", NS(tasks=NS(vision=vision, BaseOptions=lambda **values: values)))
+    monkeypatch.setattr(module, "ensure_model", lambda path: path)
+    settings = Settings(schema(), {"tracking.num_hands": requested} if requested else {})
+    options = module.options_from(settings.section("tracking"))
+    assert options["num_hands"] == (requested or 1)
+    detector = module.MediaPipeLandmarker(tmp_path / "unused.task", **options)
+    try:
+        assert calls[0]["num_hands"] == (requested or 1)
+        assert detector._crop_options["num_hands"] == 1
+    finally:
+        detector.close()

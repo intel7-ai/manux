@@ -352,3 +352,10 @@ def test_read_connection_does_not_enable_upload_without_verified_write_access(br
     assert b.hubConnected and not b.hubCanUpload
     b.tc.hub_job.state["result"]["upload_access"] = True
     assert b.hubCanUpload
+
+
+def test_runtime_frame_latency_is_shown_without_relabeling_inference_time(bridge):
+    b, _ = bridge
+    b.apply_view(ViewFrame(None, fps=30.0, detect_ms=7.0, frame_age_ms=22.0))
+    assert "추론 7.0 ms" in b.state[-1]
+    assert "앱 내 프레임 지연 22.0 ms" in b.state[-1]
