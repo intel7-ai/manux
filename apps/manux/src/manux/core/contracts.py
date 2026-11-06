@@ -152,11 +152,11 @@ class RecordingIdentity:
 
 @dataclass(frozen=True)
 class RuntimeRequest:
-    kind: Literal["activate_model"]
+    kind: Literal["activate_model", "activate_pose_model"]
     path: str
 
     def __post_init__(self) -> None:
-        if self.kind != "activate_model" or not isinstance(self.path, str) or not self.path:
+        if self.kind not in ("activate_model", "activate_pose_model") or not isinstance(self.path, str) or not self.path:
             raise ValueError("invalid runtime request")
 
 

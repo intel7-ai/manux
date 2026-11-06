@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, Mapping, Optional, Tuple
 
 from manux.actions.bindings import Binding
-from manux.app import _FEATURES, _camera_config, build_engine, schema, pipeline_parts, read_bindings, training_specs
+from manux.app import (_FEATURES, _camera_config, _load_pose_assist, build_engine, schema, pipeline_parts, read_bindings,
+                       training_specs)
 from manux.capture.camera import LatestFrameCamera, brightness
 from manux.core.contracts import FrameInfo, HandObservation, OutputTarget, RecordingIdentity, RuntimeRequest
 from manux.data.catalog import tasks_for
@@ -31,7 +32,7 @@ from manux.data.tracking_test import TrackingTest, load_recent_results, result_l
 from manux.data.training_center import TrainingCenterService
 from manux.engine.commands import RequestMode, SetBusy, SetControl
 from manux.engine.pipeline import Engine
-from manux.features import tcn_gate
+from manux.features import pose, tcn_gate
 from manux.ml.card import ModelError
 from manux.ml.predictor import load_model
 from manux.ml.store import active_token, load_active
@@ -153,8 +154,10 @@ class DesktopRuntime:
     """Runs the input -> engine loop on its own thread and keeps the newest ViewFrame."""
 
     def __init__(self, engine: Engine, source, settings: Settings, *, model_store=None, model_token=None,
-                 model_status="") -> None:
+                 model_status="", pose_assist: Optional[pose.PoseAssist] = None) -> None:
         self.engine = engine
+        self.pose_assist = pose_assist          # kept across TCN model reloads (docs/pose-assist.md)
+        self.pose_status = ""
         self.source = source
         self.settings = settings
         self.control_hand = settings.get("tracking.control_hand")
@@ -488,6 +491,8 @@ class DesktopRuntime:
                 self._model_token = None
                 if not self.reload_model(force=True):
                     self.model_store, self._model_token, self._attempted_model_token = previous
+            elif command.kind == "activate_pose_model":
+                self.reload_pose(Path(command.path))
 
     def reload_model(self, *, force=False) -> bool:
         """Runtime thread only, at a frame boundary. A bad update keeps the live recognizer."""
@@ -505,7 +510,11 @@ class DesktopRuntime:
             parts = pipeline_parts(model, self.engine.router.bindings)
             if self._stop.is_set() or active_token(self.model_store) != token:
                 return False                   # a newer installation superseded this load
-            self.engine.replace_pipeline(parts[0], (), parts[1], parts[2])
+            if self.pose_assist is None:
+                self.engine.replace_pipeline(parts[0], (), parts[1], parts[2])
+            else:                              # a TCN swap keeps the pose pair; replace_pipeline resets its counts
+                self.engine.replace_pipeline([*parts[0], self.pose_assist.feature], (self.pose_assist.guard,),
+                                             parts[1], parts[2])
             self._model_token = token
             self.model_status = "TCN 직접 판정 · 모델 갱신됨"
             return True
@@ -513,9 +522,33 @@ class DesktopRuntime:
             self.model_status = f"모델 갱신 실패 · 기존 모델 유지 ({getattr(error, 'text', '정보 확인 필요')})"
             return False
 
+    def reload_pose(self, path: Path) -> bool:
+        """Runtime thread only. Swap the pose model; a model that does not load keeps the previous assist.
+
+        Held output is released and the counts start from zero (replace_pipeline resets every part). The TCN
+        features, router and sources are not touched."""
+        if self._stop.is_set():
+            return False
+        old = self.pose_assist
+        loaded = pose.create_pose_assist(Path(path), self.settings.section(pose.ID))
+        if loaded.assist is None:
+            self.pose_status = f"자세 보조 갱신 실패 · 기존 유지 ({loaded.text})" if old else f"자세 보조 꺼짐 ({loaded.text})"
+            return False
+        engine = self.engine
+        features = [f for f in engine.features if old is None or f is not old.feature] + [loaded.assist.feature]
+        filters = [f for f in engine.filters if old is None or f is not old.guard] + [loaded.assist.guard]
+        try:
+            engine.replace_pipeline(features, filters, engine.router, engine.gesture_sources)
+        except ValueError as error:
+            self.pose_status = f"자세 보조 갱신 실패 · 기존 유지 ({error})"
+            return False
+        self.pose_assist = loaded.assist
+        self.pose_status = "자세 보조 모델 갱신됨"
+        return True
+
 
 def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, tcn_store=None,
-          tcn_mode="gate", binding_overrides=None) -> DesktopRuntime:
+          tcn_mode="gate", binding_overrides=None, pose_model=None) -> DesktopRuntime:
     if tcn_store is not None and (tcn_model is not None or tcn_mode != "direct"):
         raise ValueError("a model store requires direct mode and cannot be combined with a model path")
     if tcn_mode == "direct" and tcn_model is None and tcn_store is None:
@@ -536,12 +569,15 @@ def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, t
         gate = tcn_gate.create_gate(Path(tcn_model), settings.section("tcn_gate"), eligible=eligible)
         filters = (gate.gate,) if gate.gate is not None else ()
         status = "TCN 확인기" if filters else f"TCN 확인기 꺼짐 · {gate.text}"
-    engine = build_engine(settings, "pinch", filters, direct_model=direct, binding_overrides=binding_overrides)
+    pose_assist = _load_pose_assist(settings, pose_model)
+    engine = build_engine(settings, "pinch", filters, direct_model=direct, binding_overrides=binding_overrides,
+                          pose_assist=pose_assist)
     if windows:
         from manux.output.windows import Win32Backend, WindowsOutputSink
         from manux.platform.monitors import ScreenLayout
         engine.sinks[OutputTarget.WINDOWS] = WindowsOutputSink(Win32Backend(), ScreenLayout.detect())
-    return DesktopRuntime(engine, source, settings, model_store=tcn_store, model_token=token, model_status=status)
+    return DesktopRuntime(engine, source, settings, model_store=tcn_store, model_token=token, model_status=status,
+                          pose_assist=pose_assist)
 
 
 def default_hand_model(paths: AppPaths) -> Path:
@@ -556,6 +592,7 @@ def main(argv=None) -> int:
     parser.add_argument("--tcn-model", type=Path)
     parser.add_argument("--tcn-store", type=Path, help="verified personal model store (hot reload)")
     parser.add_argument("--tcn-mode", choices=("gate", "direct"), default="gate")
+    parser.add_argument("--pose-model", type=Path, help="pose assist model (.onnx + .json); off unless given or enabled in settings")
     parser.add_argument("--bindings", type=Path, help="gesture -> action bindings JSON")
     parser.add_argument("--no-windows-input", action="store_true", help="never send real input (UI check)")
     parser.add_argument("--no-tray", action="store_true")
@@ -583,7 +620,7 @@ def main(argv=None) -> int:
     try:
         runtime = build(settings, source, windows=not args.no_windows_input and sys.platform == "win32",
                         tcn_model=args.tcn_model, tcn_store=args.tcn_store, tcn_mode=args.tcn_mode,
-                        binding_overrides=read_bindings(args.bindings))
+                        binding_overrides=read_bindings(args.bindings), pose_model=args.pose_model)
     except (ModelError, OSError, ValueError) as error:
         source.close()
         print(error, file=sys.stderr)
