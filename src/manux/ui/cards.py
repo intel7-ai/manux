@@ -13,7 +13,7 @@ Card = Dict[str, object]   # key, title, how, actions (tuple of action ids, or (
 MOTION = "motion"
 
 PALM_CARDS: List[Card] = [   # the pinch feature (v0.3 "Dan's engine", the default)
-    {"key": "move", "title": "커서 이동", "how": "손을 편 채 움직이세요. 주먹을 쥘수록 빨라집니다.",
+    {"key": "move", "title": "커서 이동", "how": "손을 편 채 빠르게 움직이고, 주먹을 쥐면 느리고 정밀하게 움직입니다.",
      "actions": ("mouse.move",)},
     {"key": "click", "title": "클릭", "how": "엄지 끝을 중지 끝에 붙였다 떼세요.", "actions": ("mouse.left_click",)},
     {"key": "right", "title": "우클릭", "how": "엄지 끝을 약지 끝에 붙였다 떼세요.", "actions": ("mouse.right_click",)},

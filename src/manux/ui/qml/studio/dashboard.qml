@@ -7,7 +7,7 @@ import "../theme" as Theme
 ApplicationWindow {
     id: window
     objectName: "raspJunStudio"
-    readonly property bool learningDialogOpen: trainingCenter.visible || capturePlan.visible
+    readonly property bool learningDialogOpen: advancedSettings.visible || trainingCenter.visible || capturePlan.visible
         || trainingProgressPage.visible || dataCenter.visible || studioSettings.visible || pointerSettings.visible
     width: 1140
     height: 720
@@ -117,7 +117,7 @@ ApplicationWindow {
 
     Rectangle {
         anchors.fill: parent
-        visible: dashboard.stage !== "main"
+        visible: dashboard.stage !== "main" && dashboard.stage !== "tutorial"
         color: "#F4F6F8"
         ColumnLayout {
             anchors.centerIn: parent
@@ -161,7 +161,9 @@ ApplicationWindow {
                 Layout.preferredHeight: Math.min(300, window.height * .45)
                 radius: 16
                 color: window.navy
-                Image { anchors.fill: parent; source: dashboard.previewUrl; cache: false; fillMode: Image.PreserveAspectFit }
+                Image { anchors.fill: parent; source: dashboard.previewUrl; cache: false; fillMode: Image.PreserveAspectFit
+                    Current.HandSkeleton { anchors.fill: parent; bridge: dashboard; imageWidth: parent.paintedWidth; imageHeight: parent.paintedHeight }
+                }
             }
             TextLabel {
                 visible: dashboard.stage === "capture"
@@ -181,6 +183,12 @@ ApplicationWindow {
 
             }
         }
+    }
+
+    Current.TutorialPage {
+        anchors.fill: parent
+        visible: dashboard.stage === "tutorial"
+        controller: dashboard
     }
 
     component SectionLabel: TextLabel {
@@ -256,12 +264,12 @@ ApplicationWindow {
                 anchors.rightMargin: 24
                 spacing: 12
                 TextLabel { text: dashboard.appName; font.pixelSize: 26; font.bold: true }
-                TextLabel { text: "INPUT STUDIO"; font.pixelSize: 11; font.letterSpacing: 1.4; color: window.muted }
+                TextLabel { visible: window.width >= 1000; text: "INPUT STUDIO"; font.pixelSize: 11; font.letterSpacing: 1.4; color: window.muted }
                 Item { Layout.fillWidth: true }
-                ActionButton { objectName: "openLearningCenter"; text: "학습 센터"; onClicked: {dataCenter.pageIndex=0;dataCenter.open()} }
-                ActionButton { objectName: "openDataStudio"; text: "녹화·시뮬레이터"; onClicked: {dataCenter.pageIndex=1;dataCenter.open()} }
+                ActionButton { objectName: "openLearningCenter"; text: window.width < 1000 ? "학습" : "학습 센터"; onClicked: {dataCenter.pageIndex=0;dataCenter.open()} }
+                ActionButton { objectName: "openDataStudio"; text: window.width < 1000 ? "녹화" : "녹화·시뮬레이터"; onClicked: {dataCenter.pageIndex=1;dataCenter.open()} }
                 ActionButton {
-                    text: dashboard.chosenHand ? dashboard.chosenHand + " · 다시 설정" : "사용할 손 설정"
+                    text: window.width < 1000 ? (dashboard.chosenHand || "손 설정") : dashboard.chosenHand ? dashboard.chosenHand + " · 다시 설정" : "사용할 손 설정"
                     onClicked: dashboard.beginHandSetup()
                 }
                 ActionButton {
@@ -276,7 +284,8 @@ ApplicationWindow {
                         }
                     }
                 }
-                ActionButton { text: dashboard.controlLabel; accent: true; onClicked: dashboard.command(32) }
+                ActionButton { visible: window.width >= 1000; text: "고급 설정"; onClicked: { dashboard.command(27); advancedSettings.open() } }
+                ActionButton { objectName: "mainControlToggle"; text: dashboard.controlLabel; accent: true; onClicked: dashboard.command(32) }
             }
         }
         RowLayout {
@@ -294,6 +303,8 @@ ApplicationWindow {
                     anchors.fill: parent
                     anchors.margins: 16
                     spacing: 8
+                    Current.QuickSpeedControls { Layout.fillWidth: true; controller: dashboard }
+                    ActionButton { text: "동작 다시 배우기"; Layout.fillWidth: true; onClicked: dashboard.beginTutorial() }
                     ScrollView {
                         id: sideScroll
                         Layout.fillWidth: true
@@ -540,7 +551,9 @@ ApplicationWindow {
                             source: dashboard.previewUrl
                             cache: false
                             fillMode: Image.PreserveAspectFit
-                        }
+
+                    Current.HandSkeleton { anchors.fill: parent; bridge: dashboard; imageWidth: parent.paintedWidth; imageHeight: parent.paintedHeight }
+                }
                         Item {
                             visible: dashboard.recMode === "guided" && dashboard.recCondition !== ""
                             x: (parent.width - capturePreview.paintedWidth) / 2
@@ -1003,7 +1016,10 @@ ApplicationWindow {
         id: studioSettings
         controller: dashboard
         onDataRequested: { close(); dataCenter.open() }
+        onAdvancedRequested: advancedSettings.open()
     }
+
+    Current.AdvancedSettings { id: advancedSettings; controller: dashboard }
 
     // Reception overlay: small click-through pill in a screen corner (tray mode / --overlay)
     Window {

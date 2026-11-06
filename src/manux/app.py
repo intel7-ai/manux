@@ -19,7 +19,7 @@ from manux.data.recording import read, replay
 from manux.engine.commands import SetBusy, SetStage
 from manux.engine.pipeline import Engine, EngineConfig
 from manux.engine.snapshot import Snapshot
-from manux.features import motion, pinch, pointer, tcn_gate
+from manux.features import control, motion, pinch, pointer, tcn_gate
 from manux.features.tcn import TcnFeature, SETTINGS as TCN_SETTINGS
 from manux.ml.card import ModelError
 from manux.ml.predictor import LoadedModel, load_model
@@ -29,6 +29,7 @@ from manux.output.null import NullSink
 from manux.output.practice import PracticeSink
 from manux.settings.builtin import ALL
 from manux.settings.sensitivity import CURSOR_SETTINGS
+from manux.settings.advanced import EXTRA_SETTINGS
 from manux.settings.paths import resolve
 from manux.settings.schema import Schema, Setting
 from manux.settings.store import Settings, load
@@ -36,6 +37,7 @@ from manux.tracking.landmarker import MediaPipeLandmarker, options_from
 from manux.tracking.tracker import HandTracker
 
 _FEATURES = (
+    (control, control.ControlFeature),
     (pointer, pointer.PointerFeature),
     (pinch, pinch.PinchFeature),
     (motion, motion.MotionFeature),
@@ -54,7 +56,7 @@ def configure_acceleration(args, settings):
 
 
 def schema() -> Schema:
-    settings = Schema(ALL + CURSOR_SETTINGS)
+    settings = Schema(ALL + CURSOR_SETTINGS + EXTRA_SETTINGS)
     for module in [*(module for module, _ in _FEATURES), tcn_gate]:
         settings.add(Setting(key, default, kind=_SETTING_TYPES[type(default)])
                      for key, default in module.SETTINGS.items() if default is not None)
@@ -93,6 +95,8 @@ def pipeline_parts(direct_model=None, binding_overrides=None, policies=None):
     sources = {}
     if direct_model is not None:
         direct = TcnFeature(direct_model.predictor, direct_model.card, policies)
+        if control.V_SIGN in direct.authoritative:
+            raise ValueError("control.v_sign uses the V hold recognizer and optional MLP, not direct TCN")
         phases.update(direct.gesture_phases)
         sources = {g: direct.id for g in direct.authoritative}
         if any(mode != "rules" for mode in direct.policies.values()):
@@ -116,6 +120,8 @@ def training_specs():
     """Gesture/phase metadata for the external trainer; actions stay in bindings."""
     result = {}
     for module, _ in _FEATURES:
+        if module.ID == control.ID:
+            continue  # V control has its own timed rule + optional MLP contract, not direct TCN decisions.
         mode = module.ID
         for gid, phases in module.GESTURE_PHASES.items():
             if phases == frozenset({"tap"}):

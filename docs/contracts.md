@@ -257,6 +257,7 @@ v0.4 확인기는 모델 정보 파일의 클래스 → 동작 ID 대응표를 �
 | `mouse.scroll` | begin / hold / end | `gain` | `scroll_grab` |
 | `window.task_switcher` | tap | — | `task_switcher`, `alt_tab` |
 | `window.show_desktop` | tap | — | `show_desktop` |
+| `control.toggle` | tap | — | — |
 | `window.close` | tap | — | 창 닫기(Alt+F4), `spatial_pose.rock_sign` 바인딩 |
 | `nav.back`, `nav.forward` | tap | — | 모션 `back`, `forward` |
 | `tab.prev`, `tab.next` | tap | — | 모션 `tab_prev`, `tab_next` |
@@ -286,6 +287,16 @@ v0.3 `grab`의 실제 용도는 이식 때 확인하고 이 표에 추가한다.
 | `params` | 액션별 값(예: 스크롤 배율). 액션 목록에 정의된 키만 |
 
 ## 8. 단계와 출력 대상
+
+### v0.5 V 제어 전환
+
+- `control.v_sign`은 검지·중지 폄, 약지·새끼·엄지 접음을 규칙으로 확인해 기본 0.7초 연속 유지 후 tap을 낸다. 프레임 간격이 0.3초를 넘거나 손이 사라지면 유지 시간을 다시 센다. 기본 쿨다운은 1.5초이며 V를 풀기 전에는 반복하지 않는다.
+- 유지 시간을 우회하지 않도록 `control.v_sign`은 TCN 직접 적용 대상이 아니다. 카탈로그에서 녹화·MLP 표본은 가능하며 TCN 직접 판정 메타데이터에서는 제외한다. 직접 적용 모델이 이를 소유하려 하면 명시 오류로 거부한다.
+- 조립 지점에서 선택한 MLP가 `v_sign` 클래스를 제공하면 같은 손의 확률이 기본 0.8 이상이어야 한다. 모델 거절·오류를 규칙으로 우회하지 않는다. 모델이 없거나 해당 클래스가 없을 때는 규칙만 쓴다.
+- 기본 바인딩 `control.v_sign → control.toggle`을 라우터가 해석한다. 엔진이 `control.toggle`을 소비하며 Windows 출력 싱크로 보내지 않는다. main에서 제어 상태를 반전하고 출력 해제·다른 기능 reset을 먼저 한다. 전환 프레임에는 다른 명령을 내지 않는다. tutorial에서는 Snapshot에 성공 결과와 `control:practice` 이벤트만 남겨 연습을 완료할 수 있고 제어 상태나 실제 입력은 바꾸지 않는다.
+- 제어가 꺼진 main에서는 V 전환 기능만 실행한다. calibrating/enrolling/recording 중에는 V도 실행하지 않으며 전환 상태를 쌓지 않는다. V 유지 중에도 경쟁 클릭·모드 진입·이동을 억제한다.
+- 바탕화면 보기는 기본 0.6초 동안 손이 정지해야 하며 쿨다운은 3초다. 기존 `pinch.enable_thumb_tucked_open`으로 사용자가 끌 수 있다.
+- 기본 손 모양 속도는 켜짐을 유지하며 편 손은 2배, 주먹은 0.35배로 정밀 이동한다. 기존 `pinch.shape_dpi_min`은 편 손 배율, `pinch.fist_dpi_multiplier`는 주먹 배율이며 중간 모양은 두 값 사이를 보간한다. 이는 11/07 실사용 피드백에 따른 조정이며 측정된 최적값은 아니다.
 
 출처: `qt_runtime.UiState.stage`(`splash | welcome | capture | tutorial | main`), `practice_output()`, `paused`, `calibrating`.
 
@@ -497,7 +508,7 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 - `Snapshot`에 들어가는 것(**제안**, S6에서 확정): 프레임 번호, 미리보기 영상(화면이 보일 때만), 손 관절(그리기용), 단계·모드·출력 대상, 최근 동작/액션과 결과, 기능별 상태 문구, 카메라 정보·밝기·어두움 경고, fps·단계별 처리 시간, 모델 상태.
 - 현재 구현(`engine/snapshot.py`, 엔진 부분만): 프레임 번호·시각, 단계, 출력 대상, 모드, 제어 켬, 바쁨(녹화 등), 손 있음, 필터 뒤 의도, 라우팅 안 된 의도와 이유, 출력 결과, 기능별 `holding`, 이벤트(`hand_lost`, `mode:…`, `mark:…`), 오류. 영상·관절·카메라 정보·모델 상태는 조립 지점의 실행기(S6)가 덧붙인다.
 - `ViewFrame.model_status`는 실행기가 읽은 모델 모드·갱신 결과 문구다. 브리지는 그대로 표시하고 판단하지 않는다. 교체 성공은 엔진 이벤트 `model:reloaded`에도 남긴다.
-- `UiCommand`(`engine/commands.py`): `SetStage`, `SetControl`, `SetBusy`(`calibrating`/`enrolling`/`recording`), `RequestMode`, `SetBaseMode`, `Mark`.
+- `UiCommand`(`engine/commands.py`): `SetStage`, `SetControl`, `SetBusy`(`calibrating`/`enrolling`/`recording`), `RequestMode`, `SetBaseMode`, `ResetPractice`, `Mark`. `ResetPractice`는 tutorial에서만 출력 해제 → 모든 기능/필터 reset → 기본 모드 복귀 순서로 처리하며 `practice:reset` 이벤트를 남긴다. 다른 단계에서는 효과가 없다.
 - UI → 엔진은 `UiCommand` 큐로만 보낸다. 예: 단계 바꾸기, 제어 켜기/끄기, 조작 손 바꾸기, 설정 값 바꾸기, 바인딩 바꾸기, 녹화 시작/끝, "방금 이상했어요" 표시. UI는 엔진 객체의 필드를 직접 바꾸지 않는다.
 - UI는 판정 값을 계산하지 않는다. 화면에 보일 문구가 판정에서 나와야 하면 엔진이 Snapshot에 넣는다.
 
@@ -550,3 +561,10 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 - `perception/spatial_features.py`는 #82의 96차원 원본 하나, pose_angles.py는 33차원 평가 비교용으로 유지한다.
 - Pose/TCN/수집·공유 스튜디오는 분리된 서비스로 조립한다. Pose의 현재 모델 선택·저장·로드·재적용은 최신 #82를 따른다. Dan/Rasp-Jun의 과제·진행/공유·민감도 기능은 testing/#91을 보존하며 기존 계층 import 규칙을 완화하지 않는다.
 - 분류 클래스 rock_sign은 `spatial_pose.rock_sign` 동작을 내고, `window.close` 액션은 바인딩으로만 연결한다. close는 tap 한 번에 Alt+F4를 누른 뒤 해제한다. 기본 assist 모드는 직접 명령을 내지 않는다.
+
+### v0.5 사용성 화면·설정 연결 (2026-11-07)
+
+- 실행기가 `ViewFrame.control_hand`(실제 조작 손), `preview_gesture`(엔진이 채택한 동작 ID), `practice_cursor`(연습 싱크의 정규화 가상 커서), `practice_precision`(채택된 이동의 gain < 1)을 전달한다. 관절은 기존 `landmarks`와 같은 영상 좌표다. Bridge는 값을 노출하고 QML은 이미지의 PreserveAspectFit 영역에 21점과 뼈대를 그린다. 영상 자체를 변경하거나 화면에서 손짓을 판정하지 않는다. 손/영상 소실 때 이전 관절을 남기지 않는다.
+- 연습 싱크는 OS 호출 없는 `CursorMapper` 계산을 재사용한다. 감도·가속·손 모양 배율을 가상 1920×1080 화면에 적용하고 `cursor_position`으로 전달한다. 실제 Windows 커서·클릭을 보내지 않는다. 출력 해제는 가상 커서 위치를 유지하고 이동 앵커만 끊는다.
+- `ViewFrame.actions`에는 출력 결과가 `ok`인 동작만 포함한다. 거절/오류는 온보딩 성공으로 세지 않는다. 제어 전환 뒤 Bridge의 일시정지 표시는 Snapshot.control_on을 따른다.
+- `RuntimeRequest('advanced', config_dir, values)`는 bool/int/float/choice 설정 편집을 런타임 큐로 전달한다. 고급 설정은 알려진 실행 중 조절 가능한 키만 검증하며, 전체 검증·임시 저장 성공 후 메모리 설정과 연습/Windows 싱크를 갱신한다. 실패는 기존 설정 파일·실효값을 유지한다. 저장 중·실패·성공은 별도 revision 결과로 UI에 전달한다. 설정 변경 때 출력 해제·기능 reset·제어 끔을 먼저 적용한다. 프로필이 덮어쓴 값은 편집할 수 없다.

@@ -31,8 +31,7 @@ from manux.settings import profiles, store
 from manux.settings.sensitivity import rows as sensitivity_rows
 from manux.ui import cards as guide
 from manux.ui.finger import overlay_frame
-from manux.ui.hand_preview import draw_hand_preview
-from manux.ui.tutorial import Tutorial
+from manux.ui.tutorial import Tutorial, onboarding_steps
 from manux.ui.view import ViewFrame
 from manux.ui.studio import StudioBridge
 
@@ -465,6 +464,8 @@ class Bridge(QObject):
     stateChanged = Signal()
     sensitivityChanged = Signal()
     sensitivityApplied = Signal()
+    advancedChanged = Signal()
+    advancedApplied = Signal()
     previewChanged = Signal()
     trackingChanged = Signal()
     liveChanged = Signal()
@@ -589,6 +590,7 @@ class Bridge(QObject):
         self.remaining = 5
         self.tutorial: Optional[Tutorial] = None
         self._tutorial_progress = -1.0
+        self._preview_view = ViewFrame(None)
         self.axes = self._load_axes()
         self.samples = []
         self.calibrating = False
@@ -856,6 +858,40 @@ class Bridge(QObject):
         self.sensitivityChanged.emit()
         self.stateChanged.emit()
         return accepted
+
+    @Property("QVariantList", notify=advancedChanged)
+    def advancedRows(self):
+        from manux.settings.advanced import rows
+        return rows(self.settings)
+
+    @Property(bool, notify=advancedChanged)
+    def advancedPending(self):
+        return getattr(self, "_advanced_pending", False)
+
+    @Property(str, notify=advancedChanged)
+    def advancedStatus(self):
+        return getattr(self, "_advanced_status", "")
+
+    @Slot("QVariantMap", result=bool)
+    def applyAdvancedSettings(self, values):
+        if self.advancedPending:
+            return False
+        self._pause()
+        self._advanced_revision = self.runtime.advanced_result[0]
+        accepted = self.runtime.request(RuntimeRequest("advanced", str(self.config_dir), values))
+        self._advanced_pending = accepted
+        self._advanced_status = "설정 저장 중…" if accepted else "앱이 종료 중이라 저장할 수 없습니다."
+        self.advancedChanged.emit()
+        self.stateChanged.emit()
+        return accepted
+
+    @Property(bool, notify=advancedChanged)
+    def showDesktopEnabled(self):
+        return bool(self.settings.get("pinch.enable_thumb_tucked_open"))
+
+    @Slot(bool)
+    def setShowDesktopEnabled(self, enabled):
+        self.applyAdvancedSettings({"pinch.enable_thumb_tucked_open": bool(enabled)})
 
     @Property(str, notify=stateChanged)
     def stage(self):
@@ -2235,7 +2271,7 @@ class Bridge(QObject):
         if not self.control_hand:
             return
         self.cancelPointerCalibration()
-        self.tutorial = Tutorial(self._cards())
+        self.tutorial = Tutorial(onboarding_steps(self._cards()))
         self._set_stage("tutorial")
         self.tutorialChanged.emit()
 
@@ -2243,12 +2279,14 @@ class Bridge(QObject):
     def tutorialNext(self):
         if self.tutorial is not None:
             self.tutorial.next()
+            self._reset_practice()
             self.tutorialChanged.emit()
 
     @Slot()
     def tutorialBack(self):
         if self.tutorial is not None:
             self.tutorial.back()
+            self._reset_practice()
             self.tutorialChanged.emit()
 
     @Slot()
@@ -2263,10 +2301,15 @@ class Bridge(QObject):
         if t is None or t.finished:
             return
         now = time.perf_counter()
-        changed = t.observe(view.actions if view.landmarks is not None else (), self.motion_on, now)
+        old_index = t.index
+        changed = t.observe(view.actions if view.landmarks is not None else (), self.motion_on, now,
+                            hand_tracked=view.landmarks is not None, point=view.practice_cursor,
+                            precision=view.practice_precision)
         changed = t.tick(now) or changed
+        if t.index != old_index:
+            self._reset_practice()
         progress = round(t.progress, 2)
-        if changed or progress != self._tutorial_progress:
+        if changed or progress != self._tutorial_progress or t.step_key == "sensitivity":
             self._tutorial_progress = progress
             self.tutorialChanged.emit()
 
@@ -2304,6 +2347,42 @@ class Bridge(QObject):
     def tutorialDoneSteps(self):
         return list(self.tutorial.done) if self.tutorial else []
 
+    def _reset_practice(self):
+        from manux.engine.commands import ResetPractice
+        self._send(ResetPractice())
+
+    @Slot()
+    def tutorialRetry(self):
+        if self.tutorial:
+            self.tutorial.retry()
+            self._reset_practice()
+            self.tutorialChanged.emit()
+
+    @Property(str, notify=tutorialChanged)
+    def tutorialKey(self):
+        return self.tutorial.step_key if self.tutorial else ""
+
+    @Property("QVariantList", notify=tutorialChanged)
+    def tutorialTargets(self):
+        return self.tutorial.targets if self.tutorial else []
+
+    @Property("QVariantList", notify=tutorialChanged)
+    def tutorialCursor(self):
+        p = self.tutorial.cursor if self.tutorial else None
+        return list(p) if p else []
+
+    @Property(int, notify=tutorialChanged)
+    def tutorialFailures(self):
+        return self.tutorial.failures if self.tutorial else 0
+
+    @Property(bool, notify=tutorialChanged)
+    def tutorialCanSkip(self):
+        return bool(self.tutorial and self.tutorial.can_skip)
+
+    @Property(str, notify=tutorialChanged)
+    def tutorialHelp(self):
+        return self.tutorial.help_text if self.tutorial else ""
+
     # ------------------------------------------------------------------ live status
     @Property(str, notify=liveChanged)
     def liveGesture(self):
@@ -2340,6 +2419,36 @@ class Bridge(QObject):
     @Property(str, notify=previewChanged)
     def previewUrl(self):
         return f"image://vision/{self.sequence}" if self.sequence else ""
+
+    @Property("QVariantList", notify=previewChanged)
+    def previewLandmarks(self):
+        v = self._preview_view
+        return [list(p) for p in v.landmarks] if v.image is not None and v.landmarks is not None else []
+
+    @Property(str, notify=previewChanged)
+    def previewHandLabel(self):
+        return {"Right": "조작 손: 오른손", "Left": "조작 손: 왼손"}.get(self._preview_view.control_hand, "조작 손 대기")
+
+    @Property(str, notify=previewChanged)
+    def previewMode(self):
+        snap = self._preview_view.snapshot
+        return snap.mode if snap else "대기"
+
+    @Property(str, notify=previewChanged)
+    def previewGesture(self):
+        return self._preview_view.preview_gesture or "동작 대기"
+
+    @Property("QVariantList", notify=previewChanged)
+    def previewGuides(self):
+        return [list(g) for g in self._preview_view.preview_guides]
+
+    @Property("QVariantList", notify=previewChanged)
+    def previewAnchor(self):
+        return list(self._preview_view.preview_anchor or ())
+
+    @Property(bool, notify=previewChanged)
+    def previewMoving(self):
+        return self._preview_view.preview_moving
 
     # ------------------------------------------------------------------ keys, window, tray
     @Slot(int)
@@ -2475,6 +2584,16 @@ class Bridge(QObject):
 
     # ------------------------------------------------------------------ frame rendering (UI thread)
     def poll(self) -> None:
+        advanced = getattr(self.runtime, "advanced_result", (0, True, ""))
+        if advanced[0] != getattr(self, "_advanced_revision", 0):
+            self._advanced_revision = advanced[0]
+            self._advanced_pending = False
+            self._advanced_status = advanced[2]
+            self.advancedChanged.emit()
+            self.sensitivityChanged.emit()
+            self.stateChanged.emit()
+            if advanced[1]:
+                self.advancedApplied.emit()
         result = getattr(self.runtime, "sensitivity_result", (0, True, ""))
         if result[0] != getattr(self, "_sensitivity_revision", 0):
             self._sensitivity_revision = result[0]
@@ -2498,6 +2617,9 @@ class Bridge(QObject):
             self.apply_view(view)
 
     def apply_view(self, view: ViewFrame) -> None:
+        self._preview_view = view
+        # Notify overlays even with no image so a lost hand cannot leave old joints behind.
+        self.previewChanged.emit()
         if view.spatial_guard_enabled != self._spatial_guard_enabled:
             self._spatial_guard_enabled = view.spatial_guard_enabled
             self.studioChanged.emit()
@@ -2506,6 +2628,9 @@ class Bridge(QObject):
             self.studio.changed.emit()
         self._update_palm_view(view)
         snap = view.snapshot
+        if snap is not None and self.stage_name == "main" and self.paused == snap.control_on:
+            self.paused = not snap.control_on
+            self.stateChanged.emit()
         rec_view = dict(view.rec) if view.rec is not None else None
         if rec_view != self.rec_view:
             self.rec_view = rec_view
@@ -2616,8 +2741,6 @@ class Bridge(QObject):
             image = image[::step, ::step].copy()
             h, w = image.shape[:2]
         self.provider.image = QImage(image.data, w, h, image.strides[0], QImage.Format_BGR888).copy()
-        if self.layout == "studio" and self.stage_name == "main" and not self.use_index_pointer:
-            self.provider.image = draw_hand_preview(self.provider.image, view)
         self.sequence += 1
         self.previewChanged.emit()
 

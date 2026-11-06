@@ -11,7 +11,7 @@ import pytest
 from manux.app import build_engine, schema
 from manux.core.contracts import FrameInfo, HandObservation, OutputTarget
 from manux.data.recording import read
-from manux.features import motion, pinch, pointer
+from manux.features import control, motion, pinch, pointer
 from manux.settings.store import Settings
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools"))
@@ -40,7 +40,7 @@ def test_presets_cover_declared_bindings_and_keep_pilot_labels():
     for preset, feature in (("pinch", pinch), ("pointer", pointer), ("trigger", pointer)):
         tasks = PRESETS[preset]
         assert len({task.key for task in tasks}) == len(tasks)
-        required = set(feature.DEFAULT_BINDINGS) | set(motion.DEFAULT_BINDINGS) | {motion.ENTER}
+        required = set(feature.DEFAULT_BINDINGS) | set(motion.DEFAULT_BINDINGS) | set(control.DEFAULT_BINDINGS) | {motion.ENTER}
         if preset == "pointer":
             required.remove(pointer.DRAG)  # available in trigger mode
         assert {task.gesture_id for task in tasks} == required | {None}
@@ -152,9 +152,13 @@ def cli(*argv):
 
 def test_cli_list_uses_the_catalog_and_the_plan(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("MANUX_DATA_DIR", str(tmp_path))
-    assert collect_mouse.main(["--list", "--plan", "positions", "--focus", "v_sign", "swipe_left"]) == 0
+    assert collect_mouse.main(["--list", "--plan", "positions", "--focus", "v_sign", "swipe_left", "swipe_down"]) == 0
     out = capsys.readouterr().out
-    assert "v_sign" in out and "capture-only" in out and "motion.swipe_left" in out
+    assert "control.v_sign" in out and "motion.swipe_left" in out
+    v_line = next(line for line in out.splitlines() if "v_sign" in line)
+    down_line = next(line for line in out.splitlines() if "swipe_down" in line)
+    assert "control.v_sign" in v_line and "capture-only" not in v_line
+    assert "capture-only" in down_line
     assert out.count("condition ") == 9 and "pose-" in out
 
 

@@ -20,10 +20,10 @@ from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 from manux.actions.router import Router
 from manux.core.contracts import (
     Activity, Feature, FrameContext, FrameInfo, HandObservation, Intent, IntentFilter, OutputResult,
-    OutputSink, OutputTarget,
+    OutputSink, OutputTarget, Stage, CONTROL_TOGGLE_ACTION,
 )
 from manux.engine.arbiter import Arbiter, ModeChange
-from manux.engine.commands import CommandQueue, Mark, RequestMode, SetBaseMode, SetBusy, SetControl, SetStage
+from manux.engine.commands import CommandQueue, Mark, RequestMode, ResetPractice, SetBaseMode, SetBusy, SetControl, SetStage
 from manux.engine.snapshot import FeatureError, Snapshot
 from manux.engine.state import EngineState
 
@@ -63,6 +63,7 @@ class Engine:
         self._sink_target = OutputTarget.NONE
         self._pending_events: List[str] = []
         self._claiming_sources: set[str] = set()
+        self._control_claiming = False
 
     @staticmethod
     def _check_sources(features, sources):
@@ -157,6 +158,13 @@ class Engine:
                                          else old_state.control_on, busy=old_state.busy)
             elif isinstance(cmd, SetControl):
                 self.state = EngineState(old_state.stage, bool(cmd.on), old_state.busy)
+            elif isinstance(cmd, ResetPractice):
+                if self.state.stage is Stage.TUTORIAL:
+                    self._release("stage_change")
+                    self._reset(self.features, "stage_change")
+                    self._apply_mode_change(self.arbiter.request(self.arbiter.base_mode), before)
+                    self._claiming_sources.clear()
+                    events.append("practice:reset")
             elif isinstance(cmd, SetBusy):
                 self.state = old_state.with_busy(cmd.kind, cmd.on)
             elif isinstance(cmd, RequestMode):
@@ -199,8 +207,36 @@ class Engine:
             self._lost_since = None
 
         intents: List[Intent] = []
+        control_intents: List[Intent] = []
+        control_features = [f for f in self._active() if f.id == "control"]
+        for f in control_features:
+            if self.state.busy or self.state.stage not in (Stage.MAIN, Stage.TUTORIAL):
+                f.reset("pause")
+                continue
+            ctx = FrameContext(frame, self.state.stage, self.state.output, self.arbiter.mode,
+                               settings=self.settings_for(f.id))
+            try:
+                out = list(f.step(hand, ctx))
+                if any(i.source != f.id or i.gesture not in f.gestures for i in out):
+                    raise ValueError("undeclared control gesture")
+                control_intents.extend(out)
+            except Exception as exc:
+                errors.append(FeatureError(f.id, repr(exc)))
+                self._release("error")
+                f.reset("error")
+        control_activity = self._activities()
+        control_claiming = any(control_activity.get(f.id, Activity()).holding for f in control_features)
+        if control_claiming and not self._control_claiming:
+            self._release("pause")
+            self._reset([f for f in self.features if f.id != "control"], "pause")
+        self._control_claiming = control_claiming
+        suppress = (control_claiming or bool(control_intents)
+                    or self.state.stage is Stage.MAIN and self.state.output is OutputTarget.NONE
+                    or any(error.source == "control" for error in errors))
         activities = self._activities()
         for f in self._active():
+            if f.id == "control" or suppress:
+                continue
             ctx = FrameContext(frame, self.state.stage, self.state.output, self.arbiter.mode,
                                settings=self.settings_for(f.id),
                                others={k: v for k, v in activities.items() if k != f.id})
@@ -243,6 +279,8 @@ class Engine:
         # filters (e.g. the TCN gate)
         ctx = FrameContext(frame, self.state.stage, self.state.output, self.arbiter.mode)
         for flt in self.filters:
+            if suppress:
+                continue
             try:
                 flt.observe(hand, ctx)
                 intents = list(flt.filter(intents, ctx))
@@ -252,10 +290,28 @@ class Engine:
                 self._release("error")
                 flt.reset("error")
 
+        intents.extend(control_intents)
         intents.sort(key=lambda intent: intent.phase != "end")
         commands, routed = self.router.route_all(intents)
         sink = self.sink(self._sink_target)
         results: List[Tuple[str, str, OutputResult]] = []
+        toggles = [cmd for cmd in commands if cmd.action == CONTROL_TOGGLE_ACTION]
+        if toggles:
+            self._release("pause")
+            self._reset([f for f in self.features if f.id != "control"], "pause")
+            if self.state.stage is Stage.MAIN and not self.state.busy:
+                self.state = EngineState(self.state.stage, not self.state.control_on, self.state.busy)
+                self._sink_target = self.state.output
+                events.append(f"control:{'on' if self.state.control_on else 'off'}")
+                results.append((CONTROL_TOGGLE_ACTION, "tap", OutputResult(True)))
+            elif self.state.stage is Stage.TUTORIAL and not self.state.busy:
+                events.append("control:practice")
+                results.append((CONTROL_TOGGLE_ACTION, "tap", OutputResult(True)))
+            else:
+                results.append((CONTROL_TOGGLE_ACTION, "tap", OutputResult(False, "blocked")))
+            # No pending move, click, begin or tick may cross the toggle boundary.
+            commands = []
+            sink = self.sink(self._sink_target)
         for cmd in commands:
             try:
                 result = sink.apply(cmd)
@@ -263,7 +319,7 @@ class Engine:
                 result = OutputResult(False, f"error:{exc!r}")
             results.append((cmd.action, cmd.phase, result))
         tick = getattr(sink, "tick", None)
-        if callable(tick):
+        if callable(tick) and not toggles:
             try:
                 tick(now)
             except Exception as exc:
