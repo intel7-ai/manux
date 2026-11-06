@@ -50,6 +50,42 @@ def test_idle_main_camera_paints_motion_ring_and_clears_it_when_hand_leaves(stud
     assert bridge.paused and bridge.rec_mode == "off"
 
 
+def test_sensitivity_dialog_applies_only_edited_values_and_cancel_discards_draft(studio):
+    from manux.settings.store import load
+    bridge, service, runtime, messages = studio
+    bridge.command(111)
+    QTest.qWait(60)
+    dialog = bridge.window.findChild(QObject, "studioSettings")
+    assert dialog.property("visible")
+    field = visual_child(bridge.window.contentItem(), "sensitivity-value-pinch.click_threshold")
+    apply = visual_child(bridge.window.contentItem(), "applySensitivity")
+    assert field is not None and apply is not None
+    before = bridge.settings.stored()
+    field.setProperty("text", "0.08")
+    QMetaObject.invokeMethod(field, "textEdited")
+    assert bridge.settings.stored() == before  # typing is a draft
+    QMetaObject.invokeMethod(apply, "clicked")
+    assert bridge.sensitivityPending
+    runtime._drain_runtime_requests()
+    bridge.poll()
+    assert not bridge.sensitivityPending
+    assert "완료" in bridge.sensitivityStatus
+    assert load(schema(), bridge.config_dir).get("pinch.click_threshold") == .08
+    assert bridge.paused and bridge.rec_mode == "off"
+    assert runtime.settings_for("pinch")["click_threshold"] == .08
+    assert not apply.property("enabled")
+    field = visual_child(bridge.window.contentItem(), "sensitivity-value-pinch.click_threshold")
+    field.setProperty("text", "0.09")
+    QMetaObject.invokeMethod(field, "textEdited")
+    QMetaObject.invokeMethod(dialog, "close")
+    QMetaObject.invokeMethod(dialog, "open")
+    QTest.qWait(30)
+    field = visual_child(bridge.window.contentItem(), "sensitivity-value-pinch.click_threshold")
+    assert float(field.property("text")) == .08
+    assert bridge.window.objectName() == "raspJunStudio"
+    assert not [m for m in messages if any(s in m for s in ("ReferenceError", "TypeError", "Error:", "Cannot assign", "Binding loop"))]
+
+
 @pytest.fixture
 def studio(tmp_path):
     app = QApplication.instance() or QApplication([])
