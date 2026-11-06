@@ -1,0 +1,47 @@
+name: Split MANUX preview
+
+on:
+  push:
+    branches: [preview]
+
+permissions:
+  contents: write
+
+# Fast-forward only: serialize all preview snapshots, never cancel an older split mid-push.
+concurrency:
+  group: split-manux-preview
+  cancel-in-progress: false
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          # Trusted preview push needs the contents:write token for this single destination.
+          persist-credentials: true
+      - name: Split and fast-forward manux-preview
+        shell: pwsh
+        run: |
+          $split = git subtree split --prefix=apps/manux $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'git subtree split failed' }
+          $split = ($split | Select-Object -Last 1).Trim()
+          if ($split -notmatch '^[0-9a-f]{40}$') { throw 'Invalid split commit' }
+          git ls-remote --exit-code --heads origin refs/heads/manux-preview
+          $found = $LASTEXITCODE
+          if ($found -eq 0) {
+            git fetch origin refs/heads/manux-preview:refs/remotes/origin/manux-preview
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch existing split branch' }
+            git merge-base --is-ancestor refs/remotes/origin/manux-preview $split
+            if ($LASTEXITCODE -ne 0) { throw 'manux-preview is not a fast-forward; refusing to rewrite history' }
+          } elseif ($found -ne 2) {
+            throw 'Cannot inspect destination branch (network/authentication error)'
+          }
+          # No force: a concurrent destination change must fail rather than lose commits.
+          git push origin "${split}:refs/heads/manux-preview"
+          if ($LASTEXITCODE -ne 0) { throw 'Fast-forward push failed' }
+          Write-Output "manux-preview = $split"
+# GITHUB_TOKEN pushes do not start another push workflow. Root preview CI remains the
+# automatic verifier. standalone.yml also supports explicit workflow_dispatch by a user.

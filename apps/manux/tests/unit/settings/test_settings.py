@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from manux.settings import builtin, migrate_v03, paths, profiles, store
+from manux.settings import builtin, paths, profiles, store
 from manux.settings.schema import Schema, Setting
 
 
@@ -94,32 +94,8 @@ def test_profiles_roundtrip_and_name_rules(tmp_path: Path):
         profiles.profile_path(tmp_path, "../escape")
 
 
-def test_v03_conversion_renames_known_keys_and_keeps_the_rest(tmp_path: Path):
-    v03 = tmp_path / "v03"
-    (v03 / "profiles").mkdir(parents=True)
-    (v03 / "gestures.json").write_text(json.dumps({
-        "tracker_min_presence_confidence": 0.4, "pinch_threshold": 0.05, "smoothing": 0.3,
-        "gestures": {"a": 1}}), encoding="utf-8")
-    (v03 / "profiles" / "p1.json").write_text(json.dumps({"updates": {"hand_lost_reset": 0.5}}), encoding="utf-8")
-    before = (v03 / "gestures.json").read_text(encoding="utf-8")
-    base, profs, warnings = migrate_v03.read_v03(v03)
-    assert base == {"tracking.min_presence_confidence": 0.4, "pinch.pinch_threshold": 0.05,   # owned since S4
-                    "v03.smoothing": 0.3, "v03.gestures": {"a": 1}}
-    assert profs == {"p1": {"app.hand_lost_reset": 0.5}}
-    assert not warnings
-    assert (v03 / "gestures.json").read_text(encoding="utf-8") == before   # never modified
-    s = store.Settings(schema(), base)
-    assert s.get("tracking.min_presence_confidence") == 0.4
 
 
-def test_real_v03_config_converts_without_warnings():
-    repo = Path(__file__).resolve().parents[5]
-    v03_file = repo / "hand-mouse" / "config" / "gestures.json"
-    if not v03_file.exists():
-        pytest.skip("hand-mouse/config/gestures.json not in this checkout")
-    converted = migrate_v03.convert(json.loads(v03_file.read_text(encoding="utf-8")))
-    s = store.Settings(schema(), converted)
-    assert not s.warnings, s.warnings
 
 
 def test_paths_never_point_into_the_repository(tmp_path: Path):

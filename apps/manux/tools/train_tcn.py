@@ -120,7 +120,8 @@ def main(argv=None) -> None:
     AUGMENT = not args.no_augment
     if args.output.suffix.lower() != ".onnx" or args.epochs < 1:
         parser.error("use an .onnx output and at least one epoch")
-    repo = Path(__file__).resolve().parents[3] if not getattr(sys, "frozen", False) else None
+    from manux.data.repository import repository_root
+    repo = repository_root(Path(__file__)) if not getattr(sys, "frozen", False) else None
     if repo is not None and (args.output.resolve().is_relative_to(repo) or args.cache_dir.resolve().is_relative_to(repo)):
         parser.error("write models and feature caches outside the repository; D-006")
     try:

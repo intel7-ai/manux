@@ -1,0 +1,64 @@
+name: MANUX standalone
+
+# This nested file is ignored by GitHub in the preview monorepo. After subtree split
+# it becomes .github/workflows/standalone.yml at the repository root.
+# A GITHUB_TOKEN subtree push does not trigger workflows; normal pushes, PRs and
+# workflow_dispatch on this branch do. The monorepo preview CI verifies every split source.
+on:
+  push:
+    branches: [manux-preview]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: standalone-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+      - run: uv run --locked --python 3.12 pytest -q
+  preview:
+    needs: tests
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+      - run: uv sync --locked --python 3.12 --extra ui --extra vision --extra ml --extra package
+      - run: uv run --locked --python 3.12 --extra ui --extra vision --extra ml --extra package pytest -q
+      - name: Version
+        id: version
+        run: |
+          $base = (Select-String -Path pyproject.toml -Pattern '^version = "(\d+)\.(\d+)\.').Matches[0].Groups
+          "version=$($base[1].Value).$($base[2].Value).${{ github.run_number }}-standalone" >> $env:GITHUB_OUTPUT
+      - run: dotnet tool install -g vpk --version 1.2.161
+      - run: ./packaging/build.ps1 -Version ${{ steps.version.outputs.version }} -SourceSha ${{ github.sha }}
+      - name: Built app self-check (no webcam or Windows input)
+        run: |
+          $out = "$env:RUNNER_TEMP/standalone-check.json"
+          $p = Start-Process build/dist/MANUX/MANUX.exe -ArgumentList '--self-check', "`"$out`"" -WindowStyle Hidden -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'Self-check timed out' }
+          Get-Content $out
+          if ($p.ExitCode -ne 0) { throw 'Self-check failed' }
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: MANUX-Standalone-Preview-${{ steps.version.outputs.version }}
+          path: |
+            build/releases/*-Setup.exe
+            build/package-size.json
+          if-no-files-found: error
+          retention-days: 14

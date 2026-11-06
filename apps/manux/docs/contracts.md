@@ -373,7 +373,10 @@ class OutputSink(Protocol):
   별도 eval 녹화로 §10 검증을 통과한 경우에만 개인 store를 바꾼다. 동작을 선택한 학습도 현재
   모델의 다른 클래스를 유지해 전체 모델을 재학습한다. 독립 이진 모델 bank를 실행 경로에 추가하지 않는다.
 - 학습·HF 작업은 별도 worker 프로세스에서 실행한다. 소스는 Python + `tools/app_worker.py`,
-  설치본은 함께 배포한 `worker/MANUXWorker.exe`를 사용한다. 앱 프로세스는 torch를 import하지 않는다.
+  Trainer 선택 설치본은 `worker/MANUXWorker.exe`를 사용한다. 기본 설치본은 worker/torch를 포함하지 않는다.
+  서비스는 각 학습 행에 `trainer_available`을 노출하며 worker가 없으면 `can_train=false`와
+  "추가 구성요소 필요" 사유를 돌려준다. 화면은 기존 행 전달 경로로 고급 학습을 비활성화한다.
+  worker 직접 요청도 시작 전에 같은 사유로 거절한다. 앱 프로세스는 torch를 import하지 않는다.
   요청·진행·성공·실패를 JSON으로 주고받으며 성공 코드만으로 모델 적용을 주장하지 않는다.
 - 설치 성공은 `RuntimeRequest(kind="activate_model", path=<store>)`로 런타임 요청 큐에 전달한다.
   런타임이 프레임 경계에서 모델을 검사·교체한다. UI는 엔진 필드를 직접 바꾸지 않는다.

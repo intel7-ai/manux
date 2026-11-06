@@ -78,7 +78,9 @@ def test_each_gesture_keeps_its_own_plan_and_disabled_rows_are_skipped(tmp_path)
 
 
 def test_plans_are_never_saved_inside_the_repository():
-    repo = Path(__file__).resolve().parents[5]
+    from manux.data.repository import repository_root
+    repo = repository_root(Path(__file__))
+    assert repo is not None
     with pytest.raises(ValueError, match="저장소 밖"):
         plans.save_plan(plans.preset(), "", repo / "apps" / "manux" / "capture-plans.json")
     assert not (repo / "apps" / "manux" / "capture-plans.json").exists()

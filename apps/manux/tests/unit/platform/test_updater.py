@@ -38,7 +38,7 @@ def release(version="0.4.3"):
 
 def test_build_info_defaults_when_running_from_source(tmp_path):
     info = read_build_info(tmp_path)
-    assert info.updates is False and info.pack_id == "" and info.version == "0.4.0.dev0"
+    assert info.updates is False and info.pack_id == "" and info.version == "0.5.0"
 
 
 def test_build_info_reads_what_build_ps1_writes(tmp_path):
