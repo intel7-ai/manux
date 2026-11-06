@@ -1,0 +1,89 @@
+name: MANUX v0.5 standalone release
+
+# 원본 preview의 중첩 경로에서는 무시되며, subtree split 뒤 루트에서 실행한다.
+# manux-production push에서만 정식 발행한다. PR·수동 발행은 허용하지 않는다.
+on:
+  push:
+    branches: [manux-production]
+
+permissions: {}
+
+concurrency:
+  group: manux-standalone-official-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact_id: ${{ steps.release_artifact.outputs.artifact-id }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+      - run: uv sync --locked --python 3.12 --extra ui --extra vision --extra ml --extra package
+      - run: uv run --locked --python 3.12 --extra ui --extra vision --extra ml --extra package pytest -q
+      - name: Version
+        id: version
+        run: |
+          $version = '0.5.${{ github.run_number }}'
+          if (-not (Select-String -Path pyproject.toml -Pattern '^version = "0\.5\.0"$')) { throw 'Expected v0.5 source' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Output "MANUX official $version"
+      - run: dotnet tool install -g vpk --version 1.2.161
+      - name: Build official base package (no Trainer)
+        run: ./packaging/build.ps1 -Version ${{ steps.version.outputs.version }} -SourceSha ${{ github.sha }} -Release
+      - name: Built release passes self-check (no webcam or Windows input)
+        run: |
+          $out = "$env:RUNNER_TEMP/release-check.json"
+          $p = Start-Process build/dist/MANUX/MANUX.exe -ArgumentList '--self-check', "`"$out`"" -WindowStyle Hidden -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'Release self-check timed out' }
+          Get-Content $out
+          if ($p.ExitCode -ne 0) { throw 'Release self-check failed' }
+          $info = Get-Content $out -Raw | ConvertFrom-Json
+          if ($info.pack_id -ne 'MANUX' -or -not $info.updates) { throw 'Not an official MANUX package' }
+          if (Test-Path build/dist/MANUX/worker) { throw 'Official base package contains Trainer' }
+      - name: Verified release packages
+        id: release_artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: MANUX-release-${{ steps.version.outputs.version }}
+          path: build/releases/
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: MANUX-release-size-${{ steps.version.outputs.version }}
+          path: build/package-size.json
+          if-no-files-found: error
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/manux-production' && github.repository == 'intel7-ai/manux'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          merge-multiple: true
+          path: releases
+      - run: dotnet tool install -g vpk --version 1.2.161
+      - name: Publish the verified MANUX package
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          vpk upload github --repoUrl https://github.com/intel7-ai/manux --channel win --outputDir releases --publish --token $env:GH_TOKEN --releaseName "MANUX ${{ needs.build.outputs.version }}" --tag v${{ needs.build.outputs.version }}
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
