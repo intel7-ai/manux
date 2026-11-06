@@ -38,6 +38,7 @@ class Segment:
     features: np.ndarray
     condition: str = ""
     aspect: float = 0.5625
+    recording_id: str = ""
 
     def labels(self) -> list[str | None]:
         return [(f.get("label") or {}).get("target") for f in self.frames]
@@ -68,6 +69,8 @@ def load(paths: list[Path], *, split: str | None = None, cache_dir: Path | None 
         if not recording.complete or recording.bad_lines:
             raise ValueError(f"{path.name}: incomplete or corrupt recording")
         recorded_split = recording.meta.get("split")
+        if (split == "eval" or recorded_split == "eval") and recording.meta.get("lineage"):
+            raise ValueError("evaluation requires original independent captures, not derived data")
         if split is not None and recorded_split is not None and recorded_split != split:
             raise ValueError(f"{path.name}: expected a {split} recording, got {recorded_split}")
         if preset := recording.meta.get("preset"):
@@ -82,7 +85,8 @@ def load(paths: list[Path], *, split: str | None = None, cache_dir: Path | None 
             batch = list(frames)
             features = (cache.get(batch, height / width, digest, offset) if cache is not None
                         else frame_features(batch, height / width))
-            segments.append(Segment(group, posture, batch, features, condition, height / width))
+            segments.append(Segment(group, posture, batch, features, condition, height / width,
+                                    digest or hashlib.sha256(path.read_bytes()).hexdigest()))
             offset += len(batch)
     return segments
 
@@ -161,7 +165,7 @@ def predicted_events(probabilities: np.ndarray, classes: list[str], threshold: f
             yield i, label
 
 
-def evaluate(segments, classes, mapping, infer, length, threshold, count):
+def evaluate(segments, classes, mapping, infer, length, threshold, count, *, continuous=False):
     """Score gesture attempts and neutral misfires with one event per consecutive prediction run."""
     attempts = {name: {"attempts": 0, "tcn_hits": 0, "rule_hits": 0} for name in classes if name != NONE}
     by_gesture = {gesture: name for name, gesture in mapping.items()}
@@ -169,7 +173,13 @@ def evaluate(segments, classes, mapping, infer, length, threshold, count):
     neutral_seconds = 0.0
     for segment in segments:
         labels = segment.labels()
-        probabilities = infer(windows(segment.features, length))
+        if continuous:
+            from manux.perception.temporal import inputs as continuous_inputs
+            inputs, usable = continuous_inputs(segment.frames, segment.aspect, length)
+            probabilities = infer(inputs)
+            probabilities[~usable] = 0  # no event before a full valid runtime window
+        else:
+            probabilities = infer(windows(segment.features, length))
         model = dict(predicted_events(probabilities, classes, threshold, count))
         rule = {}
         last = None

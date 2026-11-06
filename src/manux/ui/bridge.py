@@ -4,7 +4,7 @@
 same properties and slots under the same names (context property `dashboard`). Differences:
 - it renders `ViewFrame`s from the desktop runtime and sends `UiCommand`s; it never decides gestures,
 - settings go through `settings.store.Settings` (v0.4 keys) and are saved to the user data folder,
-- not ported yet, shown as such: v0.3's frame drawings.
+- the original studio camera retains its hand skeleton, palm ring and pinch guide drawings.
 
 Only `run()` creates Qt objects for the whole app; the runtime thread never touches them.
 """
@@ -18,20 +18,23 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, Property, QSettings, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QCursor, QGuiApplication, QImage
+from PySide6.QtCore import Qt, QCoreApplication, QEvent, QObject, Property, QSettings, QTimer, QUrl, Signal, Slot
+from PySide6.QtGui import QCursor, QGuiApplication, QImage, QFontDatabase
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication
 
-from manux.core.contracts import Stage
-from manux.engine.commands import Mark, RequestMode, SetBaseMode, SetControl, SetStage
+from manux.core.contracts import RuntimeRequest, Stage
+from manux.engine.commands import Mark, RequestMode, SetBaseMode, SetBusy, SetControl, SetStage
 from manux.settings import profiles, store
+from manux.settings.sensitivity import rows as sensitivity_rows
 from manux.ui import cards as guide
 from manux.ui.finger import overlay_frame
+from manux.ui.hand_preview import draw_hand_preview
 from manux.ui.tutorial import Tutorial
 from manux.ui.view import ViewFrame
+from manux.ui.studio import StudioBridge
 
 QML = Path(__file__).with_name("qml") / "dashboard.qml"
 CLICK_STYLES = ("pinch", "trigger", "off")
@@ -138,6 +141,168 @@ class _NullTrainingService:
         raise FileNotFoundError("학습한 모델이 없어요. 먼저 학습하세요.")
 
 
+_DEFAULT_STUDIO_CATEGORIES = (
+    {"id": "click", "name": "마우스·클릭", "icon": "🖱️", "desc": "좌·우클릭, 스크롤, 동시클릭"},
+    {"id": "window", "name": "창·시스템 제어", "icon": "🪟", "desc": "창 전환, 바탕화면, 토글, 닫기"},
+    {"id": "guard", "name": "이동·방어 가드", "icon": "🛡️", "desc": "커서 이동, 휴식 자세, 헛클릭 방어"},
+)
+
+_DEFAULT_STUDIO_ACTIONS = (
+    # click
+    {"id": "thumb_middle", "category": "click", "key": "1", "icon": "👆", "label": "1. 좌클릭 (엄지+중지)", "short": "좌클릭 (엄지+중지)",
+     "desc": "엄지 끝과 중지 끝을 맞대어 좌클릭하는 자세"},
+    {"id": "thumb_ring", "category": "click", "key": "2", "icon": "💍", "label": "2. 우클릭 (엄지+약지)", "short": "우클릭 (엄지+약지)",
+     "desc": "엄지 끝과 약지 끝을 맞대어 우클릭하는 자세"},
+    {"id": "thumb_index", "category": "click", "key": "3", "icon": "📜", "label": "3. 스크롤 진입 (엄지+검지)", "short": "스크롤 (엄지+검지)",
+     "desc": "엄지 끝과 검지 끝을 맞대어 상하 스크롤 모드로 진입하는 자세"},
+    {"id": "thumb_middle_ring", "category": "click", "key": "4", "icon": "🤞", "label": "4. 양쪽 클릭 (엄지+중지+약지)", "short": "양쪽 클릭 (엄지+중지+약지)",
+     "desc": "엄지 끝에 중지와 약지를 동시에 맞대어 좌클릭·우클릭을 독립적으로 함께 판정하는 자세"},
+    # window
+    {"id": "thumb_pinky", "category": "window", "key": "1", "icon": "🤙", "label": "1. 창 전환 (엄지+새끼)", "short": "창 전환 (엄지+새끼)",
+     "desc": "엄지 끝과 새끼손가락 끝을 맞대어 창 전환(Alt+Tab) 창을 띄우는 자세"},
+    {"id": "palm_side", "category": "window", "key": "2", "icon": "🖐️", "label": "2. 바탕화면 (엄지 접고 손 가로)", "short": "바탕화면 (손가로)",
+     "desc": "엄지만 손바닥 안으로 접고 네 손가락을 펴 손을 가로로 세워 모든 창을 최소화하는 자세"},
+    {"id": "v_sign", "category": "window", "key": "3", "icon": "✌️", "label": "3. 제어 켜기·끄기 (V 손 모양)", "short": "제어 토글 (V자)",
+     "desc": "검지와 중지만 V자로 펴고 나머지는 접어 마우스 제어를 토글하는 자세"},
+    {"id": "rock_sign", "category": "window", "key": "4", "icon": "🤘", "label": "4. 창 닫기 (검지·새끼 펴기)", "short": "창 닫기 (Rock)",
+     "desc": "검지와 새끼만 펴고 중지·약지를 접어 현재 창을 닫는(Alt+F4) 자세"},
+    {"id": "thumbs_up", "category": "window", "key": "5", "icon": "👍", "label": "5. 모션 모드 (엄지 위로)", "short": "모션 모드 (엄지척)",
+     "desc": "네 손가락을 접고 엄지만 위로 세워 모션 제어 모드를 전환하는 자세"},
+    # guard
+    {"id": "none", "category": "guard", "key": "1", "icon": "✊", "label": "1. 이동·휴식 가드 (none)", "short": "이동·휴식",
+     "desc": "아무 동작 아님 · 반주먹이나 편 손으로 커서를 이동하거나 쉬는 자세 (헛클릭 방어)"},
+)
+
+
+class _NullPoseStudio:
+    """Fallback when `Bridge` is constructed in unit tests without `services['pose_studio']`."""
+
+    def __init__(self, config_dir: Path) -> None:
+        self.snapshots_dir = Path(config_dir) / "pose_snapshots"
+        self.models_dir = Path(config_dir) / "models" / "spatial_mlp"
+        self.max_samples = 1000
+        self.samples = []
+        self.selected_ground_truth = "none"
+        self.capture_mode = "stream"
+        self.is_streaming = False
+        self.discrepancy_only = False
+        self.require_full_joints = True
+        self.full_joints_tracked = False
+        self.active_model_id = "spatial_pose_mlp.json"
+        self.status_note = "숫자키(1~8)로 동작을 고르고 Space 또는 수집 버튼으로 프레임을 모으세요."
+        self.hand_tracked = False
+        self.live_system_action = "none"
+        self.live_ai_action = "none"
+        self.live_ai_confidence = 0.0
+        self.model_summary: Dict[str, Any] = {"loaded": False}
+
+    def set_capture_mode(self, mode: str) -> str:
+        self.capture_mode = mode
+        if mode == "snapshot":
+            self.is_streaming = False
+        return self.capture_mode
+
+    def set_ground_truth(self, action_id: str) -> bool:
+        self.selected_ground_truth = action_id
+        return True
+
+    def set_discrepancy_only(self, enabled: bool) -> bool:
+        self.discrepancy_only = bool(enabled)
+        return self.discrepancy_only
+
+    def start_stream(self) -> bool:
+        self.capture_mode = "stream"
+        self.is_streaming = True
+        return True
+
+    def stop_stream(self) -> bool:
+        self.is_streaming = False
+        return False
+
+    def toggle_stream_or_snapshot(self) -> Dict[str, Any]:
+        if self.capture_mode == "stream":
+            self.is_streaming = not self.is_streaming
+            return {"mode": "stream", "streaming": self.is_streaming}
+        return self.capture_snapshot()
+
+    def observe_frame(self, landmarks, world, system_action, now_ms=None):
+        self.hand_tracked = landmarks is not None and len(landmarks) == 21
+        self.live_system_action = system_action
+        return None
+
+    def effective_predicted_action(self) -> str:
+        return self.live_ai_action if self.model_summary.get("loaded") else self.live_system_action
+
+    def is_live_match(self) -> bool:
+        return self.hand_tracked and self.effective_predicted_action() == self.selected_ground_truth
+
+    def capture_snapshot(self, **kwargs) -> Dict[str, Any]:
+        if not self.hand_tracked:
+            return {"success": False, "reason": "no_hand_tracked"}
+        self.samples.append({"groundTruthAction": self.selected_ground_truth, "isMatch": True})
+        return {"success": True, "totalSamples": len(self.samples)}
+
+    def undo_last(self) -> bool:
+        if self.samples:
+            self.samples.pop()
+            return True
+        return False
+
+    def clear_samples(self) -> None:
+        self.is_streaming = False
+        self.samples.clear()
+
+    def summary(self) -> Dict[str, Any]:
+        by_act = {a["id"]: 0 for a in _DEFAULT_STUDIO_ACTIONS}
+        for s in self.samples:
+            gt = s.get("groundTruthAction", "none")
+            if gt in by_act:
+                by_act[gt] += 1
+        return {
+            "total": len(self.samples),
+            "maxSamples": self.max_samples,
+            "matches": sum(1 for s in self.samples if s.get("isMatch")),
+            "discrepancies": sum(1 for s in self.samples if not s.get("isMatch")),
+            "byAction": by_act,
+            "savedTotal": 0,
+            "savedByAction": dict(by_act),
+            "savedFiles": 0,
+        }
+
+    def save_dataset(self) -> Optional[Path]:
+        return None
+
+    def set_require_full_joints(self, enabled: bool) -> bool:
+        self.require_full_joints = bool(enabled)
+        return self.require_full_joints
+
+    def list_models(self) -> List[Dict[str, Any]]:
+        return [{
+            "id": "spatial_pose_mlp.json",
+            "name": "기본 모델 (Default)",
+            "active": True,
+            "exists": False,
+            "test_accuracy": 0.0,
+            "train_accuracy": 0.0,
+            "total_samples": 0,
+            "trained_at": "미학습",
+            "file_size_kb": 0.0,
+        }]
+
+    def create_model(self, name: str) -> Dict[str, Any]:
+        return {"success": True, "id": f"{name}.json", "name": name}
+
+    def activate_model(self, model_id: str) -> bool:
+        self.active_model_id = model_id
+        return True
+
+    def delete_model(self, model_id: str) -> bool:
+        return True
+
+    def train_now(self, model_name: Optional[str] = None) -> Dict[str, Any]:
+        return {"success": False, "reason": "not_enough_samples"}
+
+
 class RecordingPlanEditor(QObject):
     """Qt state for `RecordingPlanDialog.qml`; edits are drafts until saved or started."""
 
@@ -198,6 +363,11 @@ class RecordingPlanEditor(QObject):
     def neutral(self):
         keys = (self.focus,) if isinstance(self.focus, str) else self.focus
         return bool(keys) and all(self.tc.is_free(key) for key in keys)
+
+    @Property(bool, notify=changed)
+    def clickGesture(self):
+        keys = (self.focus,) if isinstance(self.focus, str) else self.focus
+        return bool(keys) and all(key in ("thumb_middle", "thumb_ring") for key in keys)
 
     @Property(str, notify=changed)
     def instruction(self):
@@ -293,6 +463,8 @@ class RecordingPlanEditor(QObject):
 
 class Bridge(QObject):
     stateChanged = Signal()
+    sensitivityChanged = Signal()
+    sensitivityApplied = Signal()
     previewChanged = Signal()
     trackingChanged = Signal()
     liveChanged = Signal()
@@ -306,17 +478,31 @@ class Bridge(QObject):
     hiddenToTray = Signal()
     trackingActiveChanged = Signal()
     trainingChanged = Signal()
+    trainingReadComplete = Signal()
+    trainingStarted = Signal()
+    settingsRequested = Signal()
+    studioChanged = Signal()
 
     def __init__(self, runtime, settings: store.Settings, config_dir: Path, *,
                  services: Optional[Dict[str, Callable]] = None, hotkeys=None, hotkey_defaults=None,
                  normalize_combo: Callable[[str], Optional[str]] = lambda c: c, combo_label=lambda c: c,
-                 hide_to_tray: bool = False) -> None:
+                 hide_to_tray: bool = False, layout: str = "standard") -> None:
         super().__init__()
         self.runtime = runtime
         self.settings = settings
         self.config_dir = Path(config_dir)
         self.services = services or {}
+        self.layout = layout
+        self._palm_cal = None
+        self._palm_axes = None
+        self._palm_hint = ""
+        self._tcn_enabled = True
+        self._pose_studio_visible = False
+        self._studio_center_open = False
         self.application = QApplication.instance() or QApplication([])
+        if not getattr(self.application, "_manux_fonts_loaded", False):
+            QFontDatabase.addApplicationFont(str(QML.parent / "assets" / "fonts" / "NotoSansKR.ttf"))
+            self.application._manux_fonts_loaded = True
         self.application.setQuitOnLastWindowClosed(False)
         # UI preferences (hand, shortcuts, calibration axes ...) live next to settings.json, not in the
         # registry: all v0.4 user data stays in one folder (settings/paths.py) and v0.3's are untouched.
@@ -362,6 +548,8 @@ class Bridge(QObject):
         self.recent = ()                     # tracking test result lines, newest first
         # dataset recording & training center
         self.tc = self.services.get("training_center") or _NullTrainingService(self.config_dir)
+        self.studio = StudioBridge(self)
+        self.studio.changed.connect(self.trainingChanged.emit)
         self.rec_mode = "off"
         self.rec_view: Optional[Dict[str, Any]] = None
         self.rec_focus = ""
@@ -372,16 +560,29 @@ class Bridge(QObject):
         self.recording_editor.startRequested.connect(self._start_focused_plan)
         self.training_job = self.tc.job
         self.training_rows = []
-        self.training_selected = []
+        self.training_selected = [key for key in self.preferences.value("trainingSelected", [], type=list)
+                                  if self.tc.has_task(key)]
         self.training_filter = "전체"
         self.training_info = ("", "")
         self.training_storage = ("", False)
         self.training_busy = ""
         self.training_note = ""
         self._training_was_running = False
+        self._progress_visible = False
+        self.trainingReadComplete.connect(self.trainingChanged.emit, Qt.ConnectionType.QueuedConnection)
         self.training_timer = QTimer(self)
         self.training_timer.setInterval(400)
         self.training_timer.timeout.connect(self._training_tick)
+        # pose snapshot studio & spatial MLP
+        self.pose_studio = self.services.get("pose_studio") or _NullPoseStudio(self.config_dir)
+        self._spatial_guard_enabled = False
+        self._studio_categories = self.services["studio_categories"]() if "studio_categories" in self.services else list(_DEFAULT_STUDIO_CATEGORIES)
+        self._studio_category = "guard"
+        self._studio_actions = (self.services["studio_actions"]() if "studio_actions" in self.services
+                                else list(_DEFAULT_STUDIO_ACTIONS))
+        self._studio_category = "click"
+        self._studio_sys_fn = self.services.get("studio_system_action")
+        self._studio_summary_cache = self.pose_studio.summary()
         # hand choice / tutorial / calibration
         self.choice = _HandChoice()
         self.candidate = ""
@@ -413,6 +614,10 @@ class Bridge(QObject):
         self.runtime.use_crop = self.hand_crop
         self.runtime.set_pointer_gain(self.pointer_sensitivity / 100)
         self.runtime.set_override("pointer", "axes", self.axes)
+        self._load_palm_axes()
+        if self.layout == "studio":
+            self._tcn_enabled = self.preferences.value("tcnEnabled", True, type=bool)
+            self.runtime.request(RuntimeRequest("tcn_toggle", "on" if self._tcn_enabled else "off"))
         self._send(SetBaseMode("pointer" if self.use_index_pointer else "pinch"))
         self._send(SetStage(Stage.SPLASH))
         # Qt
@@ -421,14 +626,178 @@ class Bridge(QObject):
         self.provider = CameraImage()
         self.engine.addImageProvider("vision", self.provider)
         self.engine.rootContext().setContextProperty("dashboard", self)
-        self.engine.load(QUrl.fromLocalFile(str(QML)))
+        qml = QML.parent / "studio" / "dashboard.qml" if self.layout == "studio" else QML
+        self.engine.load(QUrl.fromLocalFile(str(qml)))
         if not self.engine.rootObjects():
             raise RuntimeError("MANUX 화면을 열지 못했습니다.")
         self.window = self.engine.rootObjects()[0]
-        self.window.setProperty("title", "MANUX")
+        if self.layout != "studio":
+            self.window.setProperty("title", "MANUX")
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
         self.timer.start(15)
+
+    # Original Rasp-Jun studio presentation and calibration adapters.
+    @Property(str, constant=True)
+    def appName(self):
+        return "MANUX TCN"
+
+    @Property(str, constant=True)
+    def appTitle(self):
+        return "MANUX TCN"
+
+    @Property("QVariantList", notify=trainingChanged)
+    def studioTrainingRows(self):
+        files = self._training_summary.get("files", [])
+        rows = []
+        for row in self.trainingRows:
+            info = self.tc.task_info(row["key"]) or {}
+            count = sum(bool(f.get("coverage", {}).get(row["key"])) for f in files if "error" not in f)
+            rows.append({**row, "free": info.get("free", False), "recordings": count,
+                         "can_train": row.get("can_train", False) and (count > 0 or row.get("reps", 0) > 0),
+                         "tcn_available": bool(row.get("model_id")),
+                         "tcn_mode": {"rules": 0, "shadow": 1, "apply": 2}.get(row.get("tcn_mode"), 0),
+                         "interaction_text": ("가져온 모델 · 별도 평가 전 시험만 가능" if row.get("import_pending")
+                                              else "별도 평가 결과를 기준으로 동작별 시험·적용을 선택하세요.")})
+        return rows
+
+    @Property(int, notify=trainingChanged)
+    def trainingSelectedCount(self):
+        return len(self.training_selected)
+
+    @Property(str, notify=trainingChanged)
+    def trainingSelectionText(self):
+        if not self.training_selected:
+            return "학습할 동작을 체크하세요. 선택하지 않은 동작의 기존 학습 결과는 유지됩니다."
+        return f"선택 {len(self.training_selected)}종: " + " · ".join(
+            (self.tc.task_info(key) or {}).get("name", key) for key in self.training_selected)
+
+    @Slot(str, bool)
+    def selectTrainingTask(self, key, selected):
+        if not self.training_job.running and not self.training_busy:
+            self.setTrainingSelected(key, selected)
+
+    @Slot(bool)
+    def selectAllTraining(self, selected):
+        if self.training_job.running or self.training_busy:
+            return
+        if selected:
+            self.selectRecordedTraining()
+        else:
+            self.training_selected = []
+            self.preferences.setValue("trainingSelected", [])
+            self.trainingChanged.emit()
+
+    @Slot(str, int)
+    def setTaskTcnMode(self, key, index):
+        row = next((r for r in self.training_rows if r["key"] == key), None)
+        if row and index in (0, 1, 2):
+            self.setGestureTcnMode(key, ("rules", "shadow", "apply")[index], row.get("model_id", ""))
+
+    @Slot()
+    def openTrainingProgress(self):
+        self.showTrainingProgress(True)
+
+    @Slot()
+    def closeTrainingProgress(self):
+        self.showTrainingProgress(False)
+
+    @Property("QVariantMap", notify=trainingChanged)
+    def trainingDetails(self):
+        return self.trainingProgressState
+
+    @Property(str, notify=trainingChanged)
+    def trainingProgressSummary(self):
+        details = self.trainingDetails
+        if details.get("status", "idle") == "idle":
+            return "진행 페이지에서 학습 단계·남은 시간·완료 예상 시각을 확인할 수 있습니다."
+        return f"{details['percent']}% · 남은 시간 {details['remaining']} · 완료 예상 {details['finish']}"
+
+    @Property(bool, notify=trainingChanged)
+    def tcnAvailable(self):
+        return hasattr(self.tc, "current_model") and self.tc.current_model().is_file()
+
+    @Property(bool, notify=stateChanged)
+    def tcnGate(self):
+        return self._tcn_enabled
+
+    @Slot(bool)
+    def setTcnGate(self, enabled):
+        self._pause()
+        self._tcn_enabled = bool(enabled)
+        self.preferences.setValue("tcnEnabled", self._tcn_enabled)
+        self.runtime.request(RuntimeRequest("tcn_toggle", "on" if enabled else "off"))
+        self.stateChanged.emit()
+
+    def _palm_key(self):
+        return f"palmAxes/{self.control_hand}/{int(bool(self.settings.get('camera.mirror')))}"
+
+    def _load_palm_axes(self):
+        saved = self.preferences.value(self._palm_key(), [])
+        valid = self.services.get("valid_palm_axes", lambda v: False)
+        self._palm_axes = tuple(map(float, saved)) if valid(saved) else None
+        self.runtime.set_override("pinch", "palm_axes", self._palm_axes)
+
+    @Property(bool, notify=stateChanged)
+    def palmCalibrating(self):
+        return self._palm_cal is not None
+
+    @Property(bool, notify=stateChanged)
+    def palmCalibrated(self):
+        return self._palm_axes is not None
+
+    @Property(str, notify=stateChanged)
+    def palmAxesHint(self):
+        return self._palm_hint
+
+    @Slot()
+    def beginPalmCalibration(self):
+        if (self.stage_name != "main" or self.use_index_pointer or self.rec_mode != "off"
+                or self.training_job.running or "palm_calibration" not in self.services):
+            return
+        self.cancelPointerCalibration()
+        self._pause()
+        self._send(SetBusy("calibrating", True))
+        self._palm_cal = self.services["palm_calibration"](start=time.perf_counter())
+        self._palm_hint = "주먹을 쥐고 위아래로 움직일 준비를 하세요."
+        self.stateChanged.emit()
+
+    @Slot()
+    def cancelPalmCalibration(self):
+        if self._palm_cal is not None:
+            self._palm_cal = None
+            self._palm_hint = "방향 보정을 취소했습니다. 기존 보정은 유지됩니다."
+            self._send(SetBusy("calibrating", False))
+            self.stateChanged.emit()
+
+    @Slot()
+    def resetPalmCalibration(self):
+        self.cancelPalmCalibration()
+        self._pause()
+        self._palm_axes = None
+        self.preferences.remove(self._palm_key())
+        self.runtime.set_override("pinch", "palm_axes", None)
+        self._palm_hint = "방향 보정을 초기화했습니다."
+        self.stateChanged.emit()
+
+    def _update_palm_view(self, view):
+        cal = self._palm_cal
+        if cal is not None:
+            now = time.perf_counter()
+            if cal.update(now, self.services["palm_point"](view.landmarks), view.aspect):
+                if cal.axes is not None:
+                    self._palm_axes = tuple(cal.axes)
+                    self.preferences.setValue(self._palm_key(), list(self._palm_axes))
+                    self.preferences.sync()
+                    self.runtime.set_override("pinch", "palm_axes", self._palm_axes)
+                self._palm_hint = cal.view(now)[0] + " · " + cal.error
+                self._palm_cal = None
+                self._send(SetBusy("calibrating", False))
+            else:
+                prompt, progress, note = cal.view(now)
+                self._palm_hint = f"{prompt} · {note} {int(progress * 100)}%"
+            self.stateChanged.emit()
+
 
     # ------------------------------------------------------------------ helpers
     def _send(self, command) -> None:
@@ -463,6 +832,31 @@ class Bridge(QObject):
         self.settings.apply_profile(values)
 
     # ------------------------------------------------------------------ basic state
+    @Property("QVariantList", notify=sensitivityChanged)
+    def sensitivityRows(self):
+        return sensitivity_rows(self.settings)
+
+    @Property(str, notify=sensitivityChanged)
+    def sensitivityStatus(self):
+        return getattr(self, "_sensitivity_status", "")
+
+    @Property(bool, notify=sensitivityChanged)
+    def sensitivityPending(self):
+        return getattr(self, "_sensitivity_pending", False)
+
+    @Slot("QVariantMap", result=bool)
+    def applySensitivity(self, values):
+        if self.sensitivityPending:
+            return False
+        self._pause()
+        self._sensitivity_revision = self.runtime.sensitivity_result[0]
+        accepted = self.runtime.request(RuntimeRequest("sensitivity", str(self.config_dir), values))
+        self._sensitivity_pending = accepted
+        self._sensitivity_status = "설정 저장 중…" if accepted else "앱이 종료 중이라 저장할 수 없습니다."
+        self.sensitivityChanged.emit()
+        self.stateChanged.emit()
+        return accepted
+
     @Property(str, notify=stateChanged)
     def stage(self):
         return self.stage_name
@@ -494,6 +888,7 @@ class Bridge(QObject):
 
     @Slot(bool)
     def setPointerPreset(self, index_pointer):
+        self.cancelPalmCalibration()
         if self.stage_name != "main" or bool(index_pointer) == self.use_index_pointer:
             return
         self._pause()
@@ -714,7 +1109,14 @@ class Bridge(QObject):
 
     @Slot(str)
     def setPage(self, page):
-        if page in ("home", "profiles", "customize") and page != self.page:
+        if page in ("home", "studio", "profiles", "customize") and page != self.page:
+            if page == "studio":
+                self._pause()
+                self._studio_summary_cache = self.pose_studio.summary()
+                self.studioChanged.emit()
+            elif self.page == "studio" and self.pose_studio.is_streaming:
+                self.pose_studio.stop_stream()
+                self.studioChanged.emit()
             self.page = page
             self.stateChanged.emit()
 
@@ -807,7 +1209,7 @@ class Bridge(QObject):
         if mode not in ("off", "guided", "free") or (mode != "off" and (self.stage_name != "main" or self.use_index_pointer)):
             return
         if mode != "off":
-            if self.training_job.running or self.tc.hub_job.running:
+            if self.training_job.running or self.tc.hub_job.running or self.studio.busy:
                 return
             if not getattr(self.tc, "profile", ""):
                 self.training_note = "학습 센터에서 내 별명을 먼저 저장하세요."
@@ -834,13 +1236,36 @@ class Bridge(QObject):
 
     @Slot()
     def openTraining(self):
+        self._pause()
+        self._studio_center_open = True
         self.refreshTraining()
         self.training_timer.start()
 
     @Slot()
     def closeTraining(self):
-        if not self.training_job.running and not self.tc.hub_job.running:
+        self.setPoseStudioVisible(False)
+        self.studio.active = False
+        self._studio_center_open = False
+        if not self.training_job.running and not self.tc.hub_job.running and not self._progress_visible:
             self.training_timer.stop()
+
+    @Slot(bool)
+    def showTrainingProgress(self, visible):
+        self._progress_visible = bool(visible)
+        if visible:
+            self._pause()
+            self.training_timer.start()
+            self.trainingChanged.emit()
+        else:
+            self.closeTraining()
+
+    @Property("QVariantMap", notify=trainingChanged)
+    def trainingProgressState(self):
+        return self.tc.progress() if hasattr(self.tc, "progress") else {}
+
+    @Property(QObject, constant=True)
+    def learningStudio(self):
+        return self.studio
 
     @Slot()
     def refreshTraining(self):
@@ -863,19 +1288,25 @@ class Bridge(QObject):
                     data += f" · 다음 학습에 포함 {waiting}개 (끝나지 않았거나 받는 중)"
                 model = (f"모델: {report.get('trained')} 학습 · 녹화 {len(report.get('data', []))}개로" if report
                          else "모델: 아직 없음 (학습하세요)")
+                if report and report.get("import_pending") and not report.get("evaluation_source"):
+                    model = "이전 모델 복구 · TCN 시험 중 · 별도 평가 전"
                 self.training_rows, self.training_info = rows, (data, model)
                 self._training_summary = summary
                 self.training_storage = storage
             except Exception as exc:
                 self.training_note = f"읽지 못했어요: {exc}"
             self.training_busy = ""
+            self.trainingReadComplete.emit()
 
         threading.Thread(target=work, daemon=True).start()
         self.training_timer.start()
 
     @Slot()
     def startTraining(self):
-        if self.rec_mode != "off" or self.tc.hub_job.running:
+        if self.layout == "studio":
+            self.trainTrainingSelection()
+            return
+        if self.rec_mode != "off" or self.tc.hub_job.running or self.studio.busy:
             return
         self._pause()
         if self.training_job.start():
@@ -883,6 +1314,7 @@ class Bridge(QObject):
             self._training_was_running = True
             self.training_timer.start()
             self.trainingChanged.emit()
+            self.trainingStarted.emit()
         else:
             err = self.training_job.snapshot().get("error")
             if err:
@@ -891,17 +1323,18 @@ class Bridge(QObject):
 
     @Slot(str)
     def trainSelectedGesture(self, key):
-        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running or self.studio.busy:
             return
         task = self.tc.task_info(key)
         if task is None or task.get("label") == "none":
             return
         self._pause()
         if self.training_job.start(gestures=[key]):
-            self.training_note = str(task.get("name", key)) + "을 포함해 통합 재학습합니다. 기존 동작도 유지합니다."
+            self.training_note = str(task.get("name", key)) + "만 학습합니다. 선택하지 않은 분류기는 유지합니다."
             self._training_was_running = True
             self.training_timer.start()
             self.trainingChanged.emit()
+            self.trainingStarted.emit()
         else:
             err = self.training_job.snapshot().get("error")
             if err:
@@ -911,6 +1344,19 @@ class Bridge(QObject):
     @Slot()
     def stopTraining(self):
         self.training_job.stop()
+
+    @Slot(str, str, str)
+    def setGestureTcnMode(self, key, mode, model_id):
+        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+            return
+        self._pause()
+        try:
+            self.tc.set_policy(key, mode, model_id)
+            self.training_note = "동작별 TCN 설정을 저장했습니다. 제어를 다시 켜서 확인하세요."
+        except (ValueError, OSError) as error:
+            self.training_note = str(error)
+        self.refreshTraining()
+        self.trainingChanged.emit()
 
     @Slot()
     def exportModel(self):
@@ -938,7 +1384,7 @@ class Bridge(QObject):
 
     @Slot(str, result=bool)
     def focusRecord(self, key):
-        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running or self.studio.busy:
             return False
         if not self.tc.profile:
             self.training_note = "내 별명을 먼저 저장한 뒤 녹화를 시작하세요."
@@ -952,7 +1398,7 @@ class Bridge(QObject):
         return True
 
     def _start_focused_plan(self, key: str, plan: Dict[str, Any]) -> None:
-        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+        if self.stage_name != "main" or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running or self.studio.busy:
             return
         if not self.tc.profile:
             self.training_note = "학습 센터에서 내 별명을 먼저 저장하세요."
@@ -972,6 +1418,7 @@ class Bridge(QObject):
         if hub_state.get("finished") and hub_state.get("finished") != getattr(self, "_hub_finished", None):
             self._hub_finished = hub_state["finished"]
             self.refreshTraining()
+            if self.studio.active: self.studio.refresh()
         job = self.training_job
         if self._training_was_running and not job.running:
             self._training_was_running = False
@@ -979,16 +1426,29 @@ class Bridge(QObject):
             if s.get("error"):
                 self.training_note = str(s["error"])
             else:
-                self.training_note = "별도 평가를 통과해 모델을 설치했습니다. 앱 적용 상태는 메인 화면에서 확인하세요."
+                if s.get("kind") == "pose_train":
+                    self.pose_studio.model_summary = self.pose_studio._load_saved_model_summary()
+                    self.pose_studio.status_note = "포즈 모델 준비 완료 · 프레임 참고 점수이며 실제 제어에는 자동 적용하지 않습니다."
+                    self.training_note = self.pose_studio.status_note
+                    self.studioChanged.emit()
+                elif s.get("kind") == "import":
+                    self.tc.profile = s.get("result", {}).get("profile", self.tc.profile)
+                    self.training_note = "이전 작업을 가져왔습니다. 모델은 시험 상태입니다. 가져온 개인 설정은 앱 재시작 후 반영됩니다."
+                else:
+                    self.training_note = "별도 평가 통과 · 새 동작은 TCN 시험 모드입니다. 확인 후 동작별로 TCN 적용을 선택하세요."
                 self.stateChanged.emit()
             self.refreshTraining()
+            if self.studio.active: self.studio.refresh()
         self.trainingChanged.emit()
 
     @Property("QVariantList", notify=trainingChanged)
     def trainingRows(self):
         category = getattr(self, "training_filter", "전체")
-        return [{**r, "selected": r["key"] in self.training_selected} for r in self.training_rows
-                if category == "전체" or r["category"] == category]
+        return [
+            {**r, "selected": r["key"] in self.training_selected}
+            for r in self.training_rows
+            if category == "전체" or r["category"] == category
+        ]
 
     @Property("QStringList", notify=trainingChanged)
     def selectedTrainingKeys(self):
@@ -1012,6 +1472,7 @@ class Bridge(QObject):
             self.training_selected = [*self.training_selected, key]
         elif not selected:
             self.training_selected = [k for k in self.training_selected if k != key]
+        self.preferences.setValue("trainingSelected", self.training_selected)
         self.trainingChanged.emit()
 
     @Slot(bool)
@@ -1019,12 +1480,54 @@ class Bridge(QObject):
         visible = [r["key"] for r in self.trainingRows]
         self.training_selected = (list(dict.fromkeys([*self.training_selected, *visible])) if selected
                                   else [k for k in self.training_selected if k not in visible])
+        self.preferences.setValue("trainingSelected", self.training_selected)
+        self.trainingChanged.emit()
+
+    @Slot()
+    def selectRecordedTraining(self):
+        self.training_selected = [row["key"] for row in self.training_rows if row.get("can_train") and
+                                  (row.get("reps", 0) > 0 or row.get("minutes", 0) > 0)]
+        self.preferences.setValue("trainingSelected", self.training_selected)
+        self.trainingChanged.emit()
+
+    @Property(str, notify=trainingChanged)
+    def trainingImportStatus(self):
+        return self.tc.import_status() if hasattr(self.tc, "import_status") else ""
+
+    @Slot(str)
+    def importTrainingWork(self, url):
+        if self.training_busy or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+            return
+        path = QUrl(url).toLocalFile()
+        if not path:
+            return
+        self._pause()
+        if self.training_job.import_legacy(path, self.tc.data_dir, self.tc.profile):
+            self._training_was_running = True
+            self.training_timer.start()
+            self.trainingStarted.emit()
+        self.trainingChanged.emit()
+
+    @Slot()
+    def validateImportedModel(self):
+        if self.training_busy or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+            return
+        self._pause()
+        candidate = self.tc.imported_candidate()
+        if candidate is None:
+            self.training_note = "가져온 모델 후보가 없습니다. 녹화한 동작을 선택해 학습하세요."
+            self.trainingChanged.emit()
+            return
+        if self.training_job.validate_import(candidate):
+            self._training_was_running = True
+            self.training_timer.start()
+            self.trainingStarted.emit()
         self.trainingChanged.emit()
 
     @Slot(result=bool)
     def recordTrainingSelection(self):
         if (self.stage_name != "main" or not self.training_selected or self.training_busy
-                or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running):
+                or self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running or self.studio.busy):
             if self.stage_name != "main":
                 self.training_note = "메인 화면에서 녹화를 시작하세요."
             elif not self.training_selected:
@@ -1046,14 +1549,15 @@ class Bridge(QObject):
     @Slot()
     def trainTrainingSelection(self):
         if (not self.selectionCanTrain or self.training_busy or self.rec_mode != "off"
-                or self.training_job.running or self.tc.hub_job.running):
+                or self.training_job.running or self.tc.hub_job.running or self.studio.busy):
             return
         keys = [r["key"] for r in self.selectedTrainingRows if r["can_train"]]
         self._pause()
         if self.training_job.start(gestures=keys):
             self._training_was_running = True
-            self.training_note = f"선택한 {len(keys)}개 동작을 포함해 기존 모델과 통합 재학습합니다."
+            self.training_note = f"선택한 {len(keys)}개 동작만 학습합니다. 다른 분류기는 그대로 유지합니다."
             self.training_timer.start()
+            self.trainingStarted.emit()
         else:
             self.training_note = str(self.training_job.snapshot().get("error") or "학습을 시작하지 못했습니다.")
         self.trainingChanged.emit()
@@ -1064,7 +1568,7 @@ class Bridge(QObject):
 
     @Property("QStringList", constant=True)
     def trainingCategories(self):
-        return list(self.tc.categories)
+        return [c for c in self.tc.categories if c not in ("클릭·드래그", "창·모드")]
 
     @Property(str, notify=trainingChanged)
     def trainingCatalog(self):
@@ -1094,7 +1598,7 @@ class Bridge(QObject):
 
     @Property(str, notify=trainingChanged)
     def trainingBusy(self):
-        return self.training_busy
+        return self.training_busy or ("스튜디오 작업 중" if self.studio.busy else "")
 
     @Property(str, notify=trainingChanged)
     def trainingNote(self):
@@ -1128,14 +1632,22 @@ class Bridge(QObject):
 
     @Slot(str)
     def setRecordingSplit(self, split):
-        if split in ("train", "eval") and self.rec_mode == "off":
+        if split != self.tc.split and self.pose_studio.samples:
+            self.training_note = "포즈 표본을 저장하고 ‘새 수집’을 누른 뒤 용도를 바꾸세요. 기존 시도를 평가로 바꾸지 않습니다."
+            self.trainingChanged.emit()
+            return
+        if split in ("train", "eval") and self.rec_mode == "off" and not self.studio.busy:
             self.tc.split = split
             self.refreshTraining()
             self.trainingChanged.emit()
 
     @Slot(str)
     def saveTrainingProfile(self, profile):
-        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+        if profile != self.tc.profile and self.pose_studio.samples:
+            self.training_note = "포즈 표본을 저장하고 ‘새 수집’을 누른 뒤 별명을 바꾸세요."
+            self.trainingChanged.emit()
+            return
+        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running or self.studio.busy:
             return
         try:
             self.tc.configure(profile)
@@ -1147,11 +1659,11 @@ class Bridge(QObject):
 
     @Slot(str)
     def runHub(self, action):
-        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running or self.studio.busy:
             return
         if action not in ("status", "upload", "download"):
             return
-        self.tc.hub_action(action)
+        self.tc.hub_action(action, classes=[row["label"] for row in self.training_rows if row["key"] in self.training_selected])
         self.training_timer.start()
         self.trainingChanged.emit()
 
@@ -1170,6 +1682,9 @@ class Bridge(QObject):
         if not s.get("stage"):
             return ""
         text = str(s["stage"])
+        execution = s.get("execution")
+        if execution:
+            text += " · " + str(execution["actual"]) + " · " + str(execution.get("name", ""))
         if s.get("target") and not text.startswith("선택"):
             name = self.tc.names.get(s["target"], s["target"])
             text = f"{name} · {text}"
@@ -1188,6 +1703,305 @@ class Bridge(QObject):
     @Property("QVariantList", notify=trainingChanged)
     def trainingLosses(self):
         return list(self.training_job.snapshot().get("losses", []))[-60:]
+
+    # ------------------------------------------------------------------ pose snapshot studio & spatial MLP
+    @Slot(bool)
+    def setPoseStudioVisible(self, visible):
+        self._pose_studio_visible = bool(visible)
+        if visible: self._pause()
+        else: self.pose_studio.stop_stream()
+        self.studioChanged.emit()
+
+    @Property(bool, notify=studioChanged)
+    def spatialGuardEnabled(self): return self._spatial_guard_enabled
+
+    @Slot()
+    def toggleSpatialGuard(self):
+        if self.training_job.running or self.pose_studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
+        self._pause()
+        self.runtime.request(RuntimeRequest("spatial_guard", "off" if self._spatial_guard_enabled else "on"))
+
+    def _studio_label(self, action_id: str) -> str:
+        for item in self._studio_actions:
+            if item["id"] == action_id:
+                return item["short"]
+        return action_id
+
+    @Property("QVariantList", notify=studioChanged)
+    def studioCategories(self):
+        counts = self._studio_summary_cache.get("byAction", {})
+        saved = self._studio_summary_cache.get("savedByAction", {})
+        out = []
+        for cat in self._studio_categories:
+            cid = cat["id"]
+            cat_actions = [a for a in self._studio_actions if a.get("category") == cid]
+            total_samples = sum(counts.get(a["id"], 0) + saved.get(a["id"], 0) for a in cat_actions)
+            out.append({
+                **cat,
+                "selected": cid == self._studio_category,
+                "actionCount": len(cat_actions),
+                "totalCount": total_samples,
+            })
+        return out
+
+    @Property(str, notify=studioChanged)
+    def studioCategory(self):
+        return self._studio_category
+
+    @Property("QVariantList", notify=studioChanged)
+    def studioCategoryActions(self):
+        cat = self._studio_category
+        return [a for a in self.studioActions if a.get("category") == cat]
+
+    @Slot(str)
+    def setStudioCategory(self, cat_id):
+        if cat_id != self._studio_category and any(c["id"] == cat_id for c in self._studio_categories):
+            self._studio_category = cat_id
+            curr = self.pose_studio.selected_ground_truth
+            cat_action_ids = [a["id"] for a in self._studio_actions if a.get("category") == cat_id]
+            if curr not in cat_action_ids and cat_action_ids:
+                self.setStudioGroundTruth(cat_action_ids[0])
+            self.studioChanged.emit()
+
+    @Slot()
+    def nextStudioCategory(self):
+        cat_ids = [c["id"] for c in self._studio_categories]
+        if not cat_ids:
+            return
+        idx = cat_ids.index(self._studio_category) if self._studio_category in cat_ids else 0
+        next_cat = cat_ids[(idx + 1) % len(cat_ids)]
+        self.setStudioCategory(next_cat)
+
+    @Property("QVariantList", notify=studioChanged)
+    def studioActions(self):
+        counts = self._studio_summary_cache.get("byAction", {})
+        saved = self._studio_summary_cache.get("savedByAction", {})
+        per_cls = (self.pose_studio.model_summary.get("per_class") or {}) if self.pose_studio.model_summary.get("loaded") else {}
+        out = []
+        for item in self._studio_actions:
+            aid = item["id"]
+            c_session = counts.get(aid, 0)
+            c_saved = saved.get(aid, 0)
+            acc = (per_cls.get(aid) or {}).get("accuracy")
+            out.append({
+                **item,
+                "selected": self.pose_studio.selected_ground_truth == aid,
+                "sessionCount": c_session,
+                "savedCount": c_saved,
+                "totalCount": c_session + c_saved,
+                "accuracyText": f"{acc:.0f}%" if acc is not None else "",
+            })
+        return out
+
+    @Property(str, notify=studioChanged)
+    def studioGroundTruth(self):
+        return self.pose_studio.selected_ground_truth
+
+    @Property(str, notify=studioChanged)
+    def studioGroundTruthLabel(self):
+        return self._studio_label(self.pose_studio.selected_ground_truth)
+
+    @Property(str, notify=studioChanged)
+    def studioGroundTruthDesc(self):
+        for item in self._studio_actions:
+            if item["id"] == self.pose_studio.selected_ground_truth:
+                return item["desc"]
+        return ""
+
+    @Property(str, notify=studioChanged)
+    def studioCaptureMode(self):
+        return self.pose_studio.capture_mode
+
+    @Property(bool, notify=studioChanged)
+    def studioStreaming(self):
+        return bool(self.pose_studio.is_streaming)
+
+    @Property(bool, notify=studioChanged)
+    def studioDiscrepancyOnly(self):
+        return bool(self.pose_studio.discrepancy_only)
+
+    @Property(bool, notify=studioChanged)
+    def studioHandTracked(self):
+        return bool(self.pose_studio.hand_tracked)
+
+    @Property(str, notify=studioChanged)
+    def studioSystemAction(self):
+        if not self.pose_studio.hand_tracked:
+            return "손 대기 중"
+        return self._studio_label(self.pose_studio.live_system_action)
+
+    @Property(str, notify=studioChanged)
+    def studioAiAction(self):
+        if not self.pose_studio.model_summary.get("loaded"):
+            return "미학습 (수집 후 학습 클릭)"
+        if not self.pose_studio.hand_tracked:
+            return "손 대기 중"
+        lbl = self._studio_label(self.pose_studio.live_ai_action)
+        return f"{lbl} ({self.pose_studio.live_ai_confidence * 100:.0f}%)"
+
+    @Property(bool, notify=studioChanged)
+    def studioLiveMatch(self):
+        return bool(self.pose_studio.is_live_match())
+
+    @Property(bool, notify=studioChanged)
+    def studioRequireFullJoints(self):
+        return bool(getattr(self.pose_studio, "require_full_joints", True))
+
+    @Property(bool, notify=studioChanged)
+    def studioFullJointsTracked(self):
+        return bool(getattr(self.pose_studio, "full_joints_tracked", False))
+
+    @Property(str, notify=studioChanged)
+    def studioActiveModelId(self):
+        return str(getattr(self.pose_studio, "active_model_id", "spatial_pose_mlp.json"))
+
+    @Property("QVariantList", notify=studioChanged)
+    def studioModelList(self):
+        if hasattr(self.pose_studio, "list_models"):
+            return self.pose_studio.list_models()
+        return []
+
+    @Property(str, notify=studioChanged)
+    def studioCompareBadge(self):
+        if not self.pose_studio.hand_tracked:
+            return "카메라에 손을 보여주세요"
+        if getattr(self.pose_studio, "require_full_joints", False) and not getattr(self.pose_studio, "full_joints_tracked", True):
+            return "⚠️ 손가락 일부가 화면 밖으로 잘렸습니다 (전체 손을 보여주세요)"
+        if self.pose_studio.is_live_match():
+            return "✅ 판정 일치 (정상 인식 영역)"
+        return "🚨 판정 불일치! (사각지대/오인식 구간 — 지금 수집하면 즉시 교정됩니다)"
+
+    @Property(int, notify=studioChanged)
+    def studioTotalSamples(self):
+        return int(self._studio_summary_cache.get("total", 0))
+
+    @Property(int, notify=studioChanged)
+    def studioMaxSamples(self):
+        return int(self._studio_summary_cache.get("maxSamples", 1000))
+
+    @Property(str, notify=studioChanged)
+    def studioSummaryText(self):
+        s = self._studio_summary_cache
+        return (f"현재 세션: {s.get('total', 0)}/{s.get('maxSamples', 1000)}개 "
+                f"(일치 {s.get('matches', 0)} · 불일치 {s.get('discrepancies', 0)})  |  "
+                f"누적 저장 파일: {s.get('savedFiles', 0)}개 (총 {s.get('savedTotal', 0) + s.get('total', 0)}표본)")
+
+    @Property(str, notify=studioChanged)
+    def studioModelText(self):
+        ms = self.pose_studio.model_summary
+        name = ms.get("name") or getattr(self.pose_studio, "active_model_id", "spatial_pose_mlp.json")
+        if not ms.get("loaded"):
+            return f"Spatial MLP [{name}]: 아직 학습 전 (표본을 모으고 [⚡ 4초 즉시 학습]을 누르세요)"
+        return (f"Spatial MLP [{name}] 활성 · 학습 데이터 내부 확인(실제 정확도 아님) {ms.get('test_accuracy', 0):.1f}% "
+                f"(학습 {ms.get('train_accuracy', 0):.1f}%) · 표본 {ms.get('total_samples', 0)}개 · "
+                f"{ms.get('elapsed_ms', 0):.0f}ms 소요")
+
+    @Property(bool, notify=studioChanged)
+    def studioModelLoaded(self):
+        return bool(self.pose_studio.model_summary.get("loaded"))
+
+    @Property(str, notify=studioChanged)
+    def studioNote(self):
+        return str(self.pose_studio.status_note)
+
+    @Slot(str)
+    def setStudioCaptureMode(self, mode):
+        if mode in ("snapshot", "stream"):
+            self.pose_studio.set_capture_mode(mode)
+            self._studio_summary_cache = self.pose_studio.summary()
+            self.studioChanged.emit()
+
+    @Slot(str)
+    def setStudioGroundTruth(self, action_id):
+        if self.pose_studio.set_ground_truth(action_id):
+            self.studioChanged.emit()
+
+    @Slot(int)
+    def selectStudioActionByNumber(self, num):
+        cat_actions = self.studioCategoryActions
+        if 1 <= num <= len(cat_actions):
+            self.setStudioGroundTruth(cat_actions[num - 1]["id"])
+        elif 1 <= num <= len(self._studio_actions):
+            self.setStudioGroundTruth(self._studio_actions[num - 1]["id"])
+
+    @Slot(bool)
+    def setStudioDiscrepancyOnly(self, enabled):
+        self.pose_studio.set_discrepancy_only(bool(enabled))
+        self.studioChanged.emit()
+
+    @Slot(bool)
+    def setStudioRequireFullJoints(self, enabled):
+        if hasattr(self.pose_studio, "set_require_full_joints"):
+            self.pose_studio.set_require_full_joints(bool(enabled))
+            self.studioChanged.emit()
+
+    @Slot(str)
+    def createStudioModel(self, name):
+        if hasattr(self.pose_studio, "create_model"):
+            self.pose_studio.create_model(str(name))
+            self._studio_summary_cache = self.pose_studio.summary()
+            self.studioChanged.emit()
+
+    @Slot(str)
+    def activateStudioModel(self, model_id):
+        if hasattr(self.pose_studio, "activate_model"):
+            self.pose_studio.activate_model(str(model_id))
+            self._studio_summary_cache = self.pose_studio.summary()
+            self.studioChanged.emit()
+
+    @Slot(str)
+    def deleteStudioModel(self, model_id):
+        if hasattr(self.pose_studio, "delete_model"):
+            self.pose_studio.delete_model(str(model_id))
+            self._studio_summary_cache = self.pose_studio.summary()
+            self.studioChanged.emit()
+
+    @Slot()
+    def triggerStudioCapture(self):
+        if self.training_job.running or self.pose_studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
+        if not self.pose_studio.samples:
+            self.pose_studio.profile, self.pose_studio.split = self.tc.profile, self.tc.split
+        self._pause()
+        self.pose_studio.toggle_stream_or_snapshot()
+        self._studio_summary_cache = self.pose_studio.summary()
+        self.studioChanged.emit()
+
+    @Slot()
+    def undoStudioSample(self):
+        self.pose_studio.undo_last()
+        self._studio_summary_cache = self.pose_studio.summary()
+        self.studioChanged.emit()
+
+    @Slot()
+    def clearStudioSamples(self):
+        self.pose_studio.clear_samples()
+        self._studio_summary_cache = self.pose_studio.summary()
+        self.studioChanged.emit()
+
+    @Slot()
+    def saveStudioDataset(self):
+        self.pose_studio.save_dataset()
+        self._studio_summary_cache = self.pose_studio.summary()
+        self.studioChanged.emit()
+
+    @Slot()
+    def trainStudioModel(self):
+        if self.training_job.running or self.pose_studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
+        self._pause()
+        self.pose_studio.stop_stream()
+        self.pose_studio.save_dataset()
+        if hasattr(self.tc, "pose_train") and self.tc.pose_train():
+            self._training_was_running = True
+            self.training_timer.start()
+            self.trainingChanged.emit()
+        self._studio_summary_cache = self.pose_studio.summary()
+        self.studioChanged.emit()
+
+    @Slot()
+    def openStudioSnapshotsFolder(self):
+        self.pose_studio.snapshots_dir.mkdir(parents=True, exist_ok=True)
+        if hasattr(os, "startfile"):
+            os.startfile(str(self.pose_studio.snapshots_dir))  # noqa: S606
 
     # ------------------------------------------------------------------ tracking test
     # The runtime thread owns the test (data/tracking_test.py); this only shows ViewFrame.tracking.
@@ -1375,6 +2189,7 @@ class Bridge(QObject):
 
     @Slot()
     def beginHandSetup(self):
+        self.cancelPalmCalibration()
         self.cancelPointerCalibration()
         self.choice = _HandChoice()
         self.candidate, self.remaining = "", 5
@@ -1386,10 +2201,12 @@ class Bridge(QObject):
             self._set_stage("main")
 
     def _save_hand(self, side: str) -> None:
+        self.cancelPalmCalibration()
         self.control_hand = side
         self.runtime.control_hand = side
         self.preferences.setValue("controlHand", side)
         self._set("tracking.control_hand", side)
+        self._load_palm_axes()
         self.axes = self._load_axes()
         self.runtime.set_override("pointer", "axes", self.axes)
         self._set_stage("main")
@@ -1527,12 +2344,39 @@ class Bridge(QObject):
     # ------------------------------------------------------------------ keys, window, tray
     @Slot(int)
     def command(self, key):
+        if self.palmCalibrating and key != KEY_Q:
+            if key == KEY_ESC:
+                self.cancelPalmCalibration()
+            return
+        if key == KEY_SPACE and self.layout == "studio" and (
+                self._studio_center_open or self._progress_visible or self.rec_mode != "off"
+                or bool(self.window.property("learningDialogOpen"))):
+            return
+        if key == 111 and self.layout == "studio":
+            self._pause()
+            self.settingsRequested.emit()
+            return
+        if key == 110 and self.layout == "studio":
+            if self.stage_name == "main" and self.rec_mode == "off" and not self.calibrating:
+                self._pause()
+                self.runtime.request(RuntimeRequest("next_monitor"))
+            return
         if self.calibrating and key != KEY_Q:
             if key == KEY_ESC:
                 self.cancelPointerCalibration()
             return
         if key == KEY_Q:
             self.closed = True
+        elif self.stage_name == "main" and self.page == "studio":
+            if key == KEY_SPACE:
+                self.triggerStudioCapture()
+            elif key == KEY_ESC and self.pose_studio.is_streaming:
+                self.pose_studio.stop_stream()
+                self.studioChanged.emit()
+            elif key in (9, 16777217):
+                self.nextStudioCategory()
+            elif 49 <= key <= 57:  # keys '1'..'9' (supports 9th class: both click)
+                self.selectStudioActionByNumber(key - 48)
         elif self.stage_name == "main" and key == KEY_SPACE:
             self.paused = not self.paused
             self._send(SetControl(not self.paused))
@@ -1631,6 +2475,14 @@ class Bridge(QObject):
 
     # ------------------------------------------------------------------ frame rendering (UI thread)
     def poll(self) -> None:
+        result = getattr(self.runtime, "sensitivity_result", (0, True, ""))
+        if result[0] != getattr(self, "_sensitivity_revision", 0):
+            self._sensitivity_revision = result[0]
+            self._sensitivity_pending = False
+            self._sensitivity_status = result[2]
+            self.sensitivityChanged.emit()
+            if result[1]:
+                self.sensitivityApplied.emit()
         while self.ui_requests:
             request = self.ui_requests.pop(0)
             if request == "toggle":
@@ -1646,12 +2498,20 @@ class Bridge(QObject):
             self.apply_view(view)
 
     def apply_view(self, view: ViewFrame) -> None:
+        if view.spatial_guard_enabled != self._spatial_guard_enabled:
+            self._spatial_guard_enabled = view.spatial_guard_enabled
+            self.studioChanged.emit()
+        if view.pose_status and view.pose_status != self.studio.pose_note:
+            self.studio.pose_note = view.pose_status
+            self.studio.changed.emit()
+        self._update_palm_view(view)
         snap = view.snapshot
         rec_view = dict(view.rec) if view.rec is not None else None
         if rec_view != self.rec_view:
             self.rec_view = rec_view
             if rec_view is not None and rec_view.get("mode") == "off":
                 self.rec_mode = "off"
+                self.studio.refresh()
             self.stateChanged.emit()
         if self.tracking_view is not None and view.tracking is not None and view.tracking != self.tracking_view:
             self._set_tracking_view(dict(view.tracking))
@@ -1684,6 +2544,25 @@ class Bridge(QObject):
             tip = view.landmarks[8]
             self.tip, self.tip_at = (tip[0], tip[1]), time.perf_counter()
             self.aspect = view.aspect
+        if self.page == "studio" or self._pose_studio_visible:
+            sys_act = (self._studio_sys_fn(snap, view.actions) if self._studio_sys_fn is not None
+                       else ("none" if not view.actions else view.actions[0]))
+            prev_samples_len = len(self.pose_studio.samples)
+            prev_hand = self.pose_studio.hand_tracked
+            res = self.pose_studio.observe_frame(view.landmarks, view.world, sys_act)
+            now_samples_len = len(self.pose_studio.samples)
+            now_hand = self.pose_studio.hand_tracked
+
+            now_t = time.perf_counter()
+            captured = bool(res and res.get("success"))
+            hand_toggled = (now_hand != prev_hand)
+            if captured or now_samples_len != prev_samples_len or hand_toggled:
+                self._studio_summary_cache = self.pose_studio.summary()
+                self._last_studio_emit = now_t
+                self.studioChanged.emit()
+            elif now_t - getattr(self, "_last_studio_emit", 0.0) >= 0.033:
+                self._last_studio_emit = now_t
+                self.studioChanged.emit()
         frame = (overlay_frame(view.landmarks, view.mirrored, view.actions)
                  if self.finger_overlay and view.landmarks is not None and not self.paused else None)
         if frame is not None or self.finger_frame is not None:
@@ -1737,6 +2616,8 @@ class Bridge(QObject):
             image = image[::step, ::step].copy()
             h, w = image.shape[:2]
         self.provider.image = QImage(image.data, w, h, image.strides[0], QImage.Format_BGR888).copy()
+        if self.layout == "studio" and self.stage_name == "main" and not self.use_index_pointer:
+            self.provider.image = draw_hand_preview(self.provider.image, view)
         self.sequence += 1
         self.previewChanged.emit()
 
@@ -1746,6 +2627,7 @@ class Bridge(QObject):
         self._closed_qml = True
         self.timer.stop()
         self.training_timer.stop()
+        self.studio.close()
         self.tc.close()
         if self.hotkeys is not None:
             self.hotkeys.stop()
@@ -1784,12 +2666,16 @@ class _HandChoice:
 
 def run(runtime, settings, paths, *, tray: bool = True, screenshot: Optional[Path] = None,
         services: Optional[Dict[str, Callable]] = None, hotkeys=None, hotkey_defaults=None,
-        normalize_combo=None, combo_label=None, make_tray=None) -> int:
+        normalize_combo=None, combo_label=None, make_tray=None, layout=None) -> int:
     """Run the desktop window until the user quits. The composition root passes the platform pieces."""
     app = QApplication.instance() or QApplication([])
-    bridge = Bridge(runtime, settings, paths.config_dir, services=services, hotkeys=hotkeys,
+    preferences = QSettings(str(paths.config_dir / "ui.ini"), QSettings.Format.IniFormat)
+    layout = layout or preferences.value("layout", "standard", type=str)
+    bridge = Bridge(runtime, settings, paths.config_dir, services=services, hotkeys=hotkeys, layout=layout,
                     hotkey_defaults=hotkey_defaults, normalize_combo=normalize_combo or (lambda c: c),
                     combo_label=combo_label or (lambda c: c), hide_to_tray=tray and make_tray is not None)
+    preferences.setValue("layout", layout)
+    preferences.sync()
     if hotkeys is not None:
         hotkeys.callbacks.update({"toggle": lambda: bridge.ui_requests.append("toggle"),
                                   "hide": lambda: bridge.ui_requests.append("hide")})

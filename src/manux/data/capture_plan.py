@@ -26,7 +26,7 @@ from manux.data.repository import repository_root
 SCHEMA = "manux-capture-plan/1"
 FILE_NAME = "capture-plans.json"
 ALL = "all"                       # the plan used when no task is focused
-PRESETS = ("basic", "positions", "diverse")
+PRESETS = ("basic", "positions", "diverse", "quick_click")
 OPTIONS: Dict[str, list] = {
     "orientation": ["손바닥 정면", "손등 정면", "왼쪽으로 기울임", "오른쪽으로 기울임", "손끝 위", "손끝 아래", "옆면"],
     "position": ["중앙", "왼쪽 위", "위", "오른쪽 위", "왼쪽", "오른쪽", "왼쪽 아래", "아래", "오른쪽 아래", "자유 이동"],
@@ -35,7 +35,7 @@ OPTIONS: Dict[str, list] = {
     "camera": ["눈높이", "위에서 아래로", "아래에서 위로", "왼쪽 측면", "오른쪽 측면", "직접 지정"],
     "lighting": ["보통", "밝음", "어두움", "역광", "직접 지정"],
 }
-TIMINGS: Dict[str, tuple] = {"reps": (1, 100, 10), "prep": (0.5, 10, 1.5), "hold": (0.5, 10, 2.0),
+TIMINGS: Dict[str, tuple] = {"reps": (1, 100, 10), "prep": (0.5, 10, 1.5), "hold": (0.2, 10, 2.0),
                              "rest": (0.5, 10, 1.5), "free_seconds": (10, 900, 60)}
 _TIMING_NAMES = {"reps": "반복 횟수", "prep": "준비 시간", "hold": "동작 시간", "rest": "쉬는 시간",
                  "free_seconds": "자유 동작 시간"}
@@ -55,6 +55,10 @@ def condition(**values: Any) -> Dict[str, Any]:
 def preset(name: str = "basic") -> Dict[str, Any]:
     if name not in PRESETS:
         raise ValueError(f"녹화 설정 '{name}'은 없습니다. {', '.join(PRESETS)} 중에서 고르세요.")
+    if name == "quick_click":
+        return {"schema": SCHEMA, "conditions": [dict(row, name=f"{row['name']} · {hold:g}초 클릭",
+                 hold=hold, reps=8, prep=1., rest=1.)
+                 for row in preset("diverse")["conditions"] for hold in (.3, .5, .7)]}
     rows = [condition(name="정면 · 중앙"),
             condition(name="왼쪽 방향 · 왼쪽", orientation="왼쪽으로 기울임", position="왼쪽", posture="몸을 왼쪽으로"),
             condition(name="오른쪽 방향 · 오른쪽", orientation="오른쪽으로 기울임", position="오른쪽", posture="몸을 오른쪽으로")]

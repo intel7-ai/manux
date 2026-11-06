@@ -17,28 +17,35 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Tuple
 from uuid import uuid4
-from typing import Any, Callable, Dict, Iterator, Mapping, Optional, Tuple
 
 from manux.actions.bindings import Binding
 from manux.app import _FEATURES, _camera_config, build_engine, schema, pipeline_parts, read_bindings, training_specs
 from manux.capture.camera import LatestFrameCamera, brightness
 from manux.core.contracts import FrameInfo, HandObservation, OutputTarget, RecordingIdentity, RuntimeRequest
-from manux.data.catalog import tasks_for
+from manux.data.catalog import BY_KEY, tasks_for
 from manux.data.guided import GuidedSession
 from manux.data.recorder import SessionRecorder
 from manux.data.recording import read, replay
 from manux.data.tracking_test import TrackingTest, load_recent_results, result_line, view as tracking_view
 from manux.data.training_center import TrainingCenterService
+from manux.data.legacy_import import pending_model
+from manux.data.pose_studio import ACTION_IDS, PoseSnapshotStudio, STUDIO_ACTIONS, STUDIO_CATEGORIES, normalize_system_action
 from manux.engine.commands import RequestMode, SetBusy, SetControl
 from manux.engine.pipeline import Engine
 from manux.features import tcn_gate
+from manux.features.spatial_pose import SpatialPoseFeature, SpatialPoseGuard
+from manux.features.pinch.preview import PinchPreview
 from manux.ml.card import ModelError
 from manux.ml.predictor import load_model
+from manux.ml.spatial_mlp import SpatialMlpModel, train_spatial_mlp
 from manux.ml.store import active_token, load_active
 from manux.perception.local3d import FEATURES, FEATURE_VERSION
+from manux.perception.spatial_features import SPATIAL_FEATURE_VERSION, extract_spatial_features
 from manux.settings.paths import AppPaths, resolve
 from manux.settings.store import Settings, load
+from manux.settings.tcn_policy import GesturePolicies
 from manux.ui.view import SeenHand, ViewFrame
 
 POINTER_MOVE = "pointer.move"
@@ -154,13 +161,14 @@ class DesktopRuntime:
     """Runs the input -> engine loop on its own thread and keeps the newest ViewFrame."""
 
     def __init__(self, engine: Engine, source, settings: Settings, *, model_store=None, model_token=None,
-                 model_status="") -> None:
+                 model_status="", policy_store=None, current_model=None) -> None:
         self.engine = engine
         self.source = source
         self.settings = settings
         self.control_hand = settings.get("tracking.control_hand")
         self.use_crop = bool(settings.get("tracking.hand_crop"))
         self.want_image = True
+        self.pinch_preview = PinchPreview()
         self._overrides: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._latest = ViewFrame(None)
@@ -174,6 +182,13 @@ class DesktopRuntime:
         self._attempted_model_token = model_token
         self._next_model_check = 0.
         self.model_status = model_status
+        self.policy_store = policy_store
+        self.current_model = current_model
+        self.preview_only = False
+        self.tcn_enabled = True
+        self._configured_filters = tuple(engine.filters)
+        self.spatial_feature: Optional[SpatialPoseFeature] = None
+        self.spatial_guard: Optional[SpatialPoseGuard] = None
         engine.settings_for = self.settings_for
         # tracking test (S6): owned by this thread; the UI asks with start/close and reads ViewFrame.tracking
         self.log_dir: Optional[Path] = None
@@ -198,6 +213,13 @@ class DesktopRuntime:
         self._rec_session_id: Optional[str] = None
         self._rec_session_id_active: Optional[str] = None
         self._runtime_requests = queue.SimpleQueue()
+        self._spatial_updates = queue.SimpleQueue()
+        self.spatial_model_path = None
+        self.pose_model = None
+        self._pose_tracker = None
+        self._pose_failed = False
+        self.pose_status = "팔·어깨 기록 꺼짐"
+        self.sensitivity_result = (0, True, "")
 
     # ------------------------------------------------------------------ settings the UI changes
     def settings_for(self, fid: str) -> Mapping[str, object]:
@@ -217,6 +239,10 @@ class DesktopRuntime:
         if old is not None:
             bindings[POINTER_MOVE] = Binding(old.action, {**old.params, "gain": max(0.1, float(gain))})
             self.engine.router.set_bindings(bindings)
+
+    def set_spatial_model(self, model: Optional[SpatialMlpModel]) -> None:
+        """Stage a model; only the engine thread may mutate the live recognizer."""
+        self._spatial_updates.put(model)
 
     def pointer_gain(self) -> float:
         binding = self.engine.router.bindings.get(POINTER_MOVE)
@@ -360,7 +386,7 @@ class DesktopRuntime:
             if self._guided.update(now, available=available) and self._rec is not None:
                 self._rec.event(now, "set_done", {"set": self._guided.index - 1})
 
-    def _record_frame(self, now: float, hand: Optional[HandObservation], snap) -> None:
+    def _record_frame(self, now: float, hand: Optional[HandObservation], snap, pose=None) -> None:
         if self._rec is None:
             return
         with self._lock:
@@ -375,7 +401,7 @@ class DesktopRuntime:
         rule = {"action": rule_act, "gesture": rule_gid}
         sink = self.engine.sinks.get(OutputTarget.WINDOWS)
         cursor = getattr(sink, "cursor_pos", None)
-        self._rec.frame(now, hand, label=label, rule=rule, cursor=cursor)
+        self._rec.frame(now, hand, label=label, rule=rule, cursor=cursor, pose=pose)
         if self._guided is not None and self._guided.done:
             self._stop_recording(now)
             with self._lock:
@@ -423,6 +449,13 @@ class DesktopRuntime:
             pass
         self.engine.shutdown()
         self.source.close()
+        if self._thread is None or not self._thread.is_alive():
+            self._close_pose()
+
+    def _close_pose(self):
+        if self._pose_tracker is not None:
+            self._pose_tracker.close()
+            self._pose_tracker = None
 
     def latest(self) -> Tuple[int, ViewFrame]:
         with self._lock:
@@ -440,6 +473,7 @@ class DesktopRuntime:
             except Exception as exc:                    # never let the runtime thread die silently
                 self._publish(ViewFrame(self._latest.snapshot, message=f"실행 오류: {exc!r}", camera_ok=False))
                 time.sleep(0.2)
+        self._close_pose()
 
     def step(self) -> None:
         self._drain_runtime_requests()
@@ -463,7 +497,7 @@ class DesktopRuntime:
         if sink is not None and hasattr(sink, "set_frame_aspect"):
             sink.set_frame_aspect(frame.aspect)
         snap = self.engine.step(frame, hand)
-        self._record_frame(frame.t, hand, snap)
+        self._record_frame(frame.t, hand, snap, self._pose_step(image, frame.t))
         tracking = self._tracking_step(snap, hand, float(detect_ms))
         self._frames += 1
         if image is not None and self._frames % 10 == 1:
@@ -473,13 +507,54 @@ class DesktopRuntime:
         elif image is None:
             self._metrics = (self.source.mode_text(), -1, False)
         actions = tuple(a for a, _phase, _reason in snap.results)
+        guides, anchor, moving = self.pinch_preview.step(
+            hand if self.want_image and snap.mode == "pinch" else None, self.settings_for("pinch"))
         self._publish(ViewFrame(
             snapshot=snap, image=image if self.want_image else None, hands=hands,
-            landmarks=hand.landmarks if hand is not None else None, mirrored=frame.mirrored, aspect=frame.aspect,
+            landmarks=hand.landmarks if hand is not None else None,
+            world=hand.world if hand is not None else None,
+            mirrored=frame.mirrored, aspect=frame.aspect,
             camera_mode=self._metrics[0], brightness=self._metrics[1], low_light=self._metrics[2],
             fps=float(self.source.fps), detect_ms=float(detect_ms), actions=actions,
-            model_status=self.model_status, tracking=tracking, recent=self.recent,
-            rec=self._rec_view(frame.t), frame_age_ms=max(0.0, (time.perf_counter() - frame.t) * 1000.0)))
+            model_status=self._model_view_status(), tracking=tracking, recent=self.recent,
+            rec=self._rec_view(frame.t), pose_status=self.pose_status,
+            spatial_guard_enabled=bool(self.spatial_guard and self.spatial_guard.enabled),
+            preview_guides=guides, preview_anchor=anchor, preview_moving=moving,
+            frame_age_ms=max(0.0, (time.perf_counter() - frame.t) * 1000.0)))
+
+    def _pose_step(self, image, now):
+        if not self.settings.get("tracking.pose_enabled"):
+            self._close_pose()
+            self._pose_failed = False
+            self.pose_status = "팔·어깨 기록 꺼짐"
+            return None
+        if self._rec is None:
+            self.pose_status = "팔·어깨 기록 켜짐 · 다음 녹화부터 추가 처리"
+            return None
+        if self._pose_failed or image is None or self._frames % self.settings.get("tracking.pose_every_n_frames"):
+            return None
+        try:
+            if self._pose_tracker is None:
+                from manux.tracking.pose import PoseTracker
+                self._pose_tracker = PoseTracker(self.pose_model)
+            pose = self._pose_tracker.detect(image, now)
+            self.pose_status = "팔·어깨 기록 중" if pose else "팔·어깨가 화면에 보이지 않습니다"
+            return pose
+        except Exception:
+            self._pose_failed = True
+            self.pose_status = "팔·어깨 모델 사용 불가 · 손 관절 녹화는 계속합니다"
+            return None
+
+    def _model_view_status(self):
+        for feature in self.engine.features:
+            prediction = getattr(feature, "last_prediction", None) if feature.id == "tcn" else None
+            if prediction is not None:
+                name, confidence = prediction
+                gesture = feature.card.gestures.get(name)
+                mode = {"rules": "규칙", "shadow": "시험", "apply": "적용"}.get(feature.policies.get(gesture), "중립")
+                title = BY_KEY[name].name if name in BY_KEY else name
+                return f"{self.model_status} · TCN {mode} 예측: {title} {confidence:.0%}"
+        return self.model_status
 
     def request(self, command: RuntimeRequest):
         if self._stop.is_set():
@@ -488,8 +563,53 @@ class DesktopRuntime:
         return True
 
     def _drain_runtime_requests(self):
+        while not self._spatial_updates.empty():
+            model = self._spatial_updates.get_nowait()
+            if self.spatial_feature is not None:
+                self.engine.prepare_model_reload()
+                self.spatial_feature.set_model(model)
+                self.spatial_guard.reset("settings")
         while not self._runtime_requests.empty():
             command = self._runtime_requests.get_nowait()
+            if command.kind == "sensitivity":
+                self._apply_sensitivity(command)
+            if command.kind == "spatial_guard":
+                try:
+                    self.engine.prepare_model_reload()
+                    model = (SpatialMlpModel.load(self.spatial_model_path) if self.spatial_model_path else self.spatial_feature.model) if command.path == "on" else None
+                    if command.path == "on" and model is None: raise ValueError("no pose model")
+                    self.spatial_feature.set_model(model)
+                    self.spatial_guard.enabled = command.path == "on"
+                    filters = [f for f in self.engine.filters if f.id != "spatial_pose_guard"] + list(self._aux_filters())
+                    self.engine.replace_pipeline(self.engine.features, filters, self.engine.router, self.engine.gesture_sources)
+                except (ValueError, OSError, KeyError):
+                    self.model_status = "보조 차단 모델을 읽지 못했습니다 · 기존 판정 유지"
+            if command.kind == "next_monitor":
+                sink = self.engine.sinks.get(OutputTarget.WINDOWS)
+                if not self.engine.state.busy and self._rec_want[0] == "off" and hasattr(sink, "next_monitor"):
+                    sink.next_monitor()
+            if command.kind == "tcn_toggle":
+                self.tcn_enabled = command.path == "on"
+                if self.current_model is None:
+                    self.engine.replace_pipeline(self.engine.features,
+                        self._configured_filters if self.tcn_enabled else self._aux_filters(), self.engine.router, {})
+            if command.kind in ("tcn_policy", "tcn_toggle") and self.current_model is not None:
+                parts = pipeline_parts(self.current_model, self.engine.router.bindings,
+                                       self._model_modes(self.current_model))
+                self.engine.replace_pipeline(parts[0], self._aux_filters(), parts[1], parts[2])
+                self.model_status = ("TCN 동작별 설정 갱신됨 · 제어를 다시 켜세요" if self.tcn_enabled
+                                     else "TCN 꺼짐 · 기존 규칙 사용")
+            if command.kind == "preview_model":
+                try:
+                    model = load_model(Path(command.path), FEATURE_VERSION, FEATURES)
+                    self.engine.prepare_model_reload()
+                    modes = {g: "shadow" if self.tcn_enabled else "rules" for g in model.card.gestures.values()}
+                    parts = pipeline_parts(model, self.engine.router.bindings, modes)
+                    self.engine.replace_pipeline(parts[0], self._aux_filters(), parts[1], parts[2])
+                    self.current_model, self.preview_only = model, True
+                    self.model_status = "이전 모델 시험 중 · 별도 평가 전에는 마우스 동작에 적용하지 않습니다"
+                except (ModelError, OSError, ValueError):
+                    self.model_status = "가져온 모델을 읽지 못했습니다 · 기존 판정 유지"
             if command.kind == "activate_model":
                 previous = self.model_store, self._model_token, self._attempted_model_token
                 self.model_store = Path(command.path)
@@ -497,6 +617,40 @@ class DesktopRuntime:
                 self._model_token = None
                 if not self.reload_model(force=True):
                     self.model_store, self._model_token, self._attempted_model_token = previous
+
+    def _apply_sensitivity(self, command):
+        from dataclasses import replace
+        from manux.settings.sensitivity import prepare
+        from manux.settings.store import save
+        revision = self.sensitivity_result[0] + 1
+        self.engine.pause_for_settings()
+        try:
+            values = prepare(self.settings, command.values)
+            candidate = Settings(self.settings.schema, self.settings.stored())
+            for key, value in values.items():
+                if not candidate.set(key, value):
+                    raise ValueError("민감도 값을 저장할 수 없습니다.")
+            save(candidate, Path(command.path))
+        except (OSError, ValueError) as exc:
+            self.sensitivity_result = (revision, False, f"저장 실패 · 기존 설정 유지: {exc}")
+            return
+        for key, value in values.items():
+            self.settings.set(key, value)
+        sink = self.engine.sinks.get(OutputTarget.WINDOWS)
+        if sink is not None and hasattr(sink, "configure"):
+            sink.configure(replace(sink.config, **self.settings.section("cursor")))
+        self.pinch_preview.step(None, self.settings_for("pinch"))
+        self.sensitivity_result = (revision, True, "저장·적용 완료 · 제어 시작을 누르면 새 감도로 동작합니다.")
+
+    def _model_modes(self, model):
+        if not self.tcn_enabled:
+            return {g: "rules" for g in model.card.gestures.values()}
+        if self.preview_only:
+            return {g: "shadow" for g in model.card.gestures.values()}
+        return self.policy_store.modes(model.card.raw) if self.policy_store else None
+
+    def _aux_filters(self):
+        return (self.spatial_guard,) if self.spatial_guard is not None and self.spatial_guard.enabled else ()
 
     def reload_model(self, *, force=False) -> bool:
         """Runtime thread only, at a frame boundary. A bad update keeps the live recognizer."""
@@ -511,12 +665,18 @@ class DesktopRuntime:
             self._attempted_model_token = token
             self.engine.prepare_model_reload()
             model = load_active(self.model_store, FEATURE_VERSION, FEATURES)
-            parts = pipeline_parts(model, self.engine.router.bindings)
+            modes = (self.policy_store.modes(model.card.raw) if self.policy_store else None) if self.tcn_enabled else {
+                g: "rules" for g in model.card.gestures.values()}
+            parts = pipeline_parts(model, self.engine.router.bindings, modes)
             if self._stop.is_set() or active_token(self.model_store) != token:
                 return False                   # a newer installation superseded this load
-            self.engine.replace_pipeline(parts[0], (), parts[1], parts[2])
+            self.engine.replace_pipeline(parts[0], self._aux_filters(), parts[1], parts[2])
             self._model_token = token
-            self.model_status = "TCN 직접 판정 · 모델 갱신됨"
+            self.current_model = model
+            self.preview_only = False
+            self.model_status = "TCN 모델 갱신됨 · 학습센터에서 동작별 시험/적용 확인"
+            from manux.ml.backends import describe
+            self.model_status += " · " + describe(model.predictor)["actual"]
             return True
         except (ModelError, OSError, ValueError) as error:
             self.model_status = f"모델 갱신 실패 · 기존 모델 유지 ({getattr(error, 'text', '정보 확인 필요')})"
@@ -524,7 +684,11 @@ class DesktopRuntime:
 
 
 def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, tcn_store=None,
-          tcn_mode="gate", binding_overrides=None) -> DesktopRuntime:
+          tcn_mode="gate", binding_overrides=None, policy_store=None, shadow_model=None, spatial_pose_model=None) -> DesktopRuntime:
+    if shadow_model is not None:
+        if tcn_model is not None or tcn_store is not None:
+            raise ValueError("a shadow candidate cannot replace an explicitly selected model")
+        tcn_model, tcn_mode = shadow_model, "direct"
     if tcn_store is not None and (tcn_model is not None or tcn_mode != "direct"):
         raise ValueError("a model store requires direct mode and cannot be combined with a model path")
     if tcn_mode == "direct" and tcn_model is None and tcn_store is None:
@@ -536,21 +700,120 @@ def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, t
                   else load_model(Path(tcn_model), FEATURE_VERSION, FEATURES))
         if tcn_store is not None and active_token(tcn_store) != token:
             raise ValueError("active model changed while starting; retry")
-        if direct.card.kind == "personal" and tcn_store is None and windows:
+        if direct.card.kind == "personal" and tcn_store is None and windows and shadow_model is None:
             raise ValueError("personal direct Windows input requires a verified --tcn-store; use --no-windows-input for file tests")
-        status = "TCN 직접 판정"
+        status = "이전 모델 시험 중 · 별도 평가 후 적용 가능" if shadow_model is not None else "TCN 직접 판정"
+        from manux.ml.backends import describe
+        status += " · " + describe(direct.predictor)["actual"]
     elif tcn_model is not None:
         eligible = {gid for module, _ in _FEATURES for gid in module.DEFAULT_BINDINGS
                     if module.GESTURE_PHASES[gid] & {"tap", "begin"}}
         gate = tcn_gate.create_gate(Path(tcn_model), settings.section("tcn_gate"), eligible=eligible)
         filters = (gate.gate,) if gate.gate is not None else ()
         status = "TCN 확인기" if filters else f"TCN 확인기 꺼짐 · {gate.text}"
-    engine = build_engine(settings, "pinch", filters, direct_model=direct, binding_overrides=binding_overrides)
+        if filters:
+            from manux.ml.backends import describe
+            status += " · " + describe(gate.gate.predictor)["actual"]
+    spatial_pose_feature = SpatialPoseFeature(spatial_pose_model, mode="assist")
+    spatial_guard = SpatialPoseGuard(spatial_pose_feature, enabled=False)
+    filters = tuple(filters) + (spatial_guard,)
+    engine = build_engine(settings, "pinch", filters, direct_model=direct, binding_overrides=binding_overrides,
+                          policies=({g: "shadow" for g in direct.card.gestures.values()} if shadow_model is not None
+                                    else policy_store.modes(direct.card.raw) if policy_store and direct else None))
     if windows:
         from manux.output.windows import Win32Backend, WindowsOutputSink
+        from manux.output.windows.config import WindowsOutputConfig
         from manux.platform.monitors import ScreenLayout
-        engine.sinks[OutputTarget.WINDOWS] = WindowsOutputSink(Win32Backend(), ScreenLayout.detect())
-    return DesktopRuntime(engine, source, settings, model_store=tcn_store, model_token=token, model_status=status)
+        engine.sinks[OutputTarget.WINDOWS] = WindowsOutputSink(
+            Win32Backend(), ScreenLayout.detect(), WindowsOutputConfig(**settings.section("cursor")))
+    runtime = DesktopRuntime(engine, source, settings, model_store=tcn_store, model_token=token, model_status=status,
+                             policy_store=policy_store, current_model=direct)
+    runtime.spatial_feature = spatial_pose_feature
+    runtime.spatial_guard = spatial_guard
+    runtime.preview_only = shadow_model is not None
+    return runtime
+
+
+def make_pose_studio(data_dir: Path,
+                     on_model_updated: Optional[Callable[[Optional[SpatialMlpModel]], None]] = None) -> PoseSnapshotStudio:
+    """Create a PoseSnapshotStudio wired to the 96-dim SpatialFeatureExtractor and 4-second SpatialMlpModel."""
+    import numpy as np
+
+    active_mlp: List[Optional[SpatialMlpModel]] = [None]
+
+    def update_model(model: Optional[SpatialMlpModel]) -> None:
+        active_mlp[0] = model
+        if on_model_updated is not None:
+            on_model_updated(model)
+
+    model_stamp = [None]
+
+    def predict_fn(landmarks: Any, _world: Any) -> Optional[Dict[str, Any]]:
+        model_file = studio.models_dir / (studio.active_model_id or "spatial_pose_mlp.json")
+        stamp = (str(model_file), model_file.stat().st_mtime_ns) if model_file.is_file() else None
+        if stamp != model_stamp[0]:
+            try: active_mlp[0] = SpatialMlpModel.load(model_file) if stamp else None
+            except (ValueError, OSError, KeyError): active_mlp[0] = None
+            model_stamp[0] = stamp
+        mlp = active_mlp[0]
+        if mlp is None:
+            return None
+        feats = extract_spatial_features(landmarks)
+        if feats is None:
+            return None
+        return mlp.predict(feats)
+
+    def train_fn(samples: List[Dict[str, Any]], out_path: Path) -> Dict[str, Any]:
+        class_to_idx = {c: i for i, c in enumerate(ACTION_IDS)}
+        xs: List[np.ndarray] = []
+        ys: List[int] = []
+        ws: List[float] = []
+        for s in samples:
+            raw_lm = s.get("rawLandmarks")
+            gt = s.get("groundTruthAction") or s.get("action")
+            if not raw_lm or gt not in class_to_idx:
+                continue
+            feats = extract_spatial_features(raw_lm)
+            if feats is None:
+                continue
+            xs.append(feats)
+            ys.append(class_to_idx[gt])
+            # Emphasize discrepancy (failure boundary) samples so the MLP rapidly corrects blind spots!
+            ws.append(1.8 if s.get("isFailureSample") else 1.0)
+        if len(xs) < 2:
+            raise ValueError("유효한 3D 관절 표본이 2개 미만입니다.")
+        from manux.data.pose_studio import pose_training_partition
+        tx, ty, tw, validation = pose_training_partition(np.stack(xs), np.array(ys, dtype=np.int64), np.array(ws, dtype=np.float64))
+        model, metrics = train_spatial_mlp(
+            tx, ty, tw, validation_data=validation,
+            classes=ACTION_IDS,
+            feature_version=SPATIAL_FEATURE_VERSION,
+        )
+        from manux.data.pose_studio import summarize_pose_fit
+        metrics = summarize_pose_fit(model, metrics, np.stack(xs), np.array(ys))
+        model.save(out_path)
+        update_model(model)
+        return {
+            "train_accuracy": metrics.train_accuracy,
+            "test_accuracy": metrics.test_accuracy,
+            "total_samples": len(xs),
+            "train_samples": metrics.train_samples,
+            "test_samples": metrics.test_samples,
+            "elapsed_ms": metrics.elapsed_ms,
+            "per_class": dict(metrics.per_class),
+            "trained_at": metrics.trained_at,
+        }
+
+    studio = PoseSnapshotStudio(
+        data_dir,
+        train_fn=train_fn,
+        predict_fn=predict_fn,
+        load_model_fn=SpatialMlpModel.load,
+        on_model_updated=update_model,
+    )
+    if studio.active_model is not None:
+        update_model(studio.active_model)
+    return studio
 
 
 def default_hand_model(paths: AppPaths) -> Path:
@@ -568,9 +831,12 @@ def main(argv=None) -> int:
     parser.add_argument("--bindings", type=Path, help="gesture -> action bindings JSON")
     parser.add_argument("--no-windows-input", action="store_true", help="never send real input (UI check)")
     parser.add_argument("--no-tray", action="store_true")
+    parser.add_argument("--ui", choices=("studio", "standard"), help="UI layout; remembered for the next launch")
     parser.add_argument("--screenshot", type=Path, help="save the window to this PNG after a few seconds, then quit")
     parser.add_argument("--self-check", type=Path, metavar="OUT.json",
                         help="check the bundled model, MediaPipe, OpenCV and Qt, write the result, then quit")
+    parser.add_argument("--train-device", choices=("auto","cpu","cuda","xpu"))
+    parser.add_argument("--inference-device", choices=("auto","cpu","cuda","openvino-cpu","openvino-gpu","openvino-npu"))
     args = parser.parse_args(argv)
     paths = resolve()
     from manux.platform.updater import Updater, read_build_info
@@ -580,24 +846,54 @@ def main(argv=None) -> int:
     updater = Updater(info, paths.frozen)
     updater.start()
     settings = load(schema(), paths.config_dir)
+    from manux.app import configure_acceleration
+    try: configure_acceleration(args, settings)
+    except ValueError as error: parser.error(str(error))
+    policy_store = GesturePolicies(paths.config_dir / "tcn-policies.json")
     default_store = paths.data_dir / "models" / "personal"
     if args.tcn_model is None and args.tcn_store is None and (default_store / "active.json").is_file():
         args.tcn_store, args.tcn_mode = default_store, "direct"
+    preview = pending_model(paths.data_dir) if args.tcn_model is None and args.tcn_store is None else None
     try:
         source = ReplayInput(args.replay) if args.replay else CameraInput(
             settings, args.hand_model or default_hand_model(paths), args.source)
     except (OSError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 1
+    models_dir = paths.data_dir / "models" / "spatial_mlp"
+    active_cfg = models_dir / "active_model.json"
+    active_model_file = "spatial_pose_mlp.json"
+    if active_cfg.is_file():
+        try:
+            active_model_file = json.loads(active_cfg.read_text("utf-8")).get("active_model_id", active_model_file)
+        except Exception:
+            pass
+    spatial_model_path = models_dir / active_model_file
+    if not spatial_model_path.is_file():
+        spatial_model_path = models_dir / "spatial_pose_mlp.json"
+
+    init_spatial_model: Optional[SpatialMlpModel] = None
+    if spatial_model_path.is_file():
+        try:
+            init_spatial_model = SpatialMlpModel.load(spatial_model_path)
+        except Exception:
+            init_spatial_model = None
+
     try:
         runtime = build(settings, source, windows=not args.no_windows_input and sys.platform == "win32",
                         tcn_model=args.tcn_model, tcn_store=args.tcn_store, tcn_mode=args.tcn_mode,
-                        binding_overrides=read_bindings(args.bindings))
+                        binding_overrides=read_bindings(args.bindings), policy_store=policy_store, shadow_model=preview)
     except (ModelError, OSError, ValueError) as error:
-        source.close()
-        print(error, file=sys.stderr)
-        return 1
+        if preview is None:
+            source.close()
+            print(error, file=sys.stderr)
+            return 1
+        runtime = build(settings, source, windows=not args.no_windows_input and sys.platform == "win32",
+                        binding_overrides=read_bindings(args.bindings), policy_store=policy_store)
+        runtime.model_status = "가져온 모델 읽기 실패 · 학습센터에서 복구 상태를 확인하세요"
+    runtime.pose_model = paths.app_dir / "models" / "pose_landmarker_lite.task"
     runtime.log_dir = paths.log_dir
+    runtime.spatial_model_path = spatial_model_path
     runtime.recordings_dir = paths.recordings_dir
     runtime.recent = tuple(load_recent_results(paths.log_dir))
     runtime.run_info = lambda: {"anchor": settings.get("pointer.anchor"), "version": info.label,
@@ -608,14 +904,29 @@ def main(argv=None) -> int:
     from manux.platform.tray import QtTray
     from manux.ui.bridge import run
     tc = TrainingCenterService(paths.config_dir, paths.data_dir, paths.recordings_dir, model_path=args.tcn_model,
+                               store_dir=args.tcn_store, policy_store=policy_store, on_policy=lambda: runtime.request(RuntimeRequest("tcn_policy")),
                                env_files=(Path(sys.executable).parent / ".env",) if paths.frozen else (),
                                specs=training_specs(), on_ready=lambda event: runtime.request(
-                                   RuntimeRequest("activate_model", event["store"])))
-    return run(runtime, settings, paths, tray=not args.no_tray, screenshot=args.screenshot,
+                                   RuntimeRequest("activate_model", event["store"])) if event.get("store") else
+                                   runtime.request(RuntimeRequest("preview_model", event["candidate"])) if event.get("candidate") else None)
+    tc.simulation_bindings = read_bindings(args.bindings)
+    tc.simulation_config = {"simulation_mode": args.tcn_mode,
+                            "simulation_model": str(args.tcn_model) if args.tcn_model else None}
+    studio = make_pose_studio(paths.data_dir, runtime.set_spatial_model)
+    from manux.perception.palm_axes import PalmAxesCalibration, valid_axes, palm_point
+    return run(runtime, settings, paths, tray=not args.no_tray, screenshot=args.screenshot, layout=args.ui,
                services={
+                   "palm_calibration": PalmAxesCalibration,
+                   "valid_palm_axes": valid_axes,
+                   "palm_point": palm_point,
                    "pointer_axes": pointer_axes,
                    "export_logs": lambda metrics: export_logs(paths, metrics, info.label),
                    "training_center": tc,
+                   "pose_studio": studio,
+                   "studio_categories": lambda: list(STUDIO_CATEGORIES),
+                   "studio_actions": lambda: list(STUDIO_ACTIONS),
+                   "studio_categories": lambda: list(STUDIO_CATEGORIES),
+                   "studio_system_action": normalize_system_action,
                },
                hotkeys=hotkeys.GlobalHotkeys({}), hotkey_defaults=hotkeys.DEFAULTS,
                normalize_combo=hotkeys.normalize, combo_label=hotkeys.label, make_tray=QtTray)

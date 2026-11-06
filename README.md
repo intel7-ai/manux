@@ -163,3 +163,6 @@ CI는 두 구성의 실제 설치파일 MB·MiB와 폴더 크기를 로그·`pac
 GitHub의 재귀 실행 방지 때문에 `GITHUB_TOKEN`으로 자동 push한 분리 브랜치에서는 새 push workflow가 자동 시작되지 않는다. 권한은 contents:write로 제한한다. 자동 검증은 원본 preview CI가 담당하며, 독립 workflow는 일반 push/PR 또는 해당 브랜치의 수동 실행으로 시험한다. 이 작업에서는 분리 시험용 임시 폴더를 push하지 않는다.
 
 D-009에 따라 v0.3 동등성 시험·golden fixture·생성기는 폐기했다. 이식 당시 S2·S4 확인으로 갈음하며 v0.5부터 현재 동작·계약을 기준으로 시험한다. 시험은 레거시 소스나 실제 사용자 녹화를 요구하지 않는다.
+
+
+스튜디오 통합 범위·충돌 우선순위·평가 수치의 의미는 [v0.5 통합 기록](docs/v05-integration.md)을 따릅니다. Pose Studio의 내부 확인 값은 실제 정확도가 아닙니다.

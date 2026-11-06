@@ -88,6 +88,15 @@ class Engine:
         self._claiming_sources.clear()
         self._pending_events.append("model:reloaded")
 
+    def pause_for_settings(self) -> None:
+        """Runtime thread: consume pending state commands, release input, then reset before retuning."""
+        self._drain(self._pending_events)
+        self._release("settings")
+        self._reset(self.features, "settings")
+        self._claiming_sources.clear()
+        self.state = EngineState(self.state.stage, False, self.state.busy)
+        self._sink_target = self.state.output
+
     def prepare_model_reload(self) -> None:
         """Release before potentially slow model IO; retain the current pipeline on load failure."""
         self._release("settings")
