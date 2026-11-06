@@ -2,7 +2,7 @@
 
 웹캠으로 Windows를 손짓으로 다루는 앱 MANUX. Qt/QML + Python 한 프로세스이고, MediaPipe 손 인식 위에 규칙 판정과 가벼운 TCN 모델을 같은 계약으로 얹는다.
 
-**현재 상태 (2026-11-05, preview `589cc9a`):** 포인터·핀치·모션, TCN 확인기·명시적 직접 판정, 개인 모델 검증/교체와 헤드리스 실행기가 병합됐습니다. 데스크톱·트래킹 측정·MANUX Preview 시험 설치본도 있습니다. 실제 PC 확인 뒤 정식 배포 채널을 전환하기 전까지 Releases는 `hand-mouse/`(v0.3)에서 빌드합니다. 자세한 상태와 미검증 항목은 [AGENTS.md](AGENTS.md#현재-상태)가 기준입니다.
+**현재 상태 (2026-11-06):** 포인터·핀치·모션, TCN 확인기·명시적 직접 판정, 개인 모델 검증/교체와 헤드리스 실행기가 병합됐습니다. 데스크톱·트래킹 측정·MANUX Preview 시험 설치본도 있습니다. 실제 PC 확인 뒤 정식 배포 채널을 전환하기 전까지 Releases는 `hand-mouse/`(v0.3)에서 빌드합니다. 자세한 상태와 미검증 항목은 [AGENTS.md](AGENTS.md#현재-상태)가 기준입니다.
 
 ## 먼저 읽을 것
 
@@ -30,7 +30,7 @@ uv run --locked --python 3.12 --extra ui --extra vision --extra train --extra hu
 - [학습 센터](docs/learning-center.md): 별명·train/eval 녹화, HF 연결/본인 업로드/팀 다운로드, 통합 재학습·독립 평가·검증 후 앱 적용. 설치본에는 별도 worker가 포함됩니다.
 - 아직 없는 것: 미리보기 위 손가락 번호 그리기, 사용자 정의 카탈로그·바인딩 편집 화면.
 
-학습 센터·별명별 녹화·HF 공유·별도 worker는 [PR #72](https://github.com/intel7-ai/manux/pull/72)에서 별도 검증 중입니다. 해당 PR의 사용법과 설치본을 preview 기본 구현과 구분합니다. 직접 TCN·특징 캐시·검증 후 개인 모델 설치/교체는 이미 [직접 TCN 안내](docs/direct-tcn.md)에 있습니다.
+학습 센터·별명별 녹화·HF 공유·별도 worker는 [#72](https://github.com/intel7-ai/manux/pull/72), 별명 입력·권한 표시는 [#75](https://github.com/intel7-ai/manux/pull/75), 기본 한 손 추적·앱 내 프레임 지연 표시는 [#76](https://github.com/intel7-ai/manux/pull/76)으로 연결합니다. 현재 앱의 [학습 센터 사용법](docs/learning-center.md)과 [커서 지연 측정 범위](docs/cursor-performance.md)를 참고하세요. 직접 TCN·특징 캐시·검증 후 개인 모델 설치/교체는 이미 [직접 TCN 안내](docs/direct-tcn.md)에 있습니다.
 
 ## 시험용 설치파일 (MANUX Preview)
 
