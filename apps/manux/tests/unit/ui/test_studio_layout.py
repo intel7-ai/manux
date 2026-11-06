@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 pytest.importorskip("PySide6")
-from PySide6.QtCore import QObject, QMetaObject, Qt, qInstallMessageHandler
+from PySide6.QtCore import QObject, QMetaObject, QPointF, Qt, qInstallMessageHandler
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
@@ -30,23 +30,51 @@ def visual_child(item, name):
             return found
 
 
-def test_idle_main_camera_paints_motion_ring_and_clears_it_when_hand_leaves(studio):
+def grab_item(item):
+    result = item.grabToImage()
+    assert result is not None, "visible QML item must support grabbing"
+    for _ in range(40):
+        QTest.qWait(25)
+        if not result.image().isNull():
+            return result.image()
+    raise AssertionError("QML canvas did not render")
+
+
+def test_idle_main_camera_renders_21_points_bones_and_clears_when_hand_leaves(studio):
     import numpy as np
     bridge, service, runtime, messages = studio
     bridge.use_index_pointer = False
+    bridge.timer.stop()  # this test supplies the latest camera frames explicitly
     assert bridge.paused and bridge.rec_mode == "off"
     raw = np.zeros((480, 640, 3), dtype=np.uint8)
-    landmarks = tuple((.2+.01*(i%5), .2+.02*(i//5), 0.) for i in range(21))
+    landmarks = tuple((.20+.12*(i%5), .25+.10*(i//5), 0.) for i in range(21))
     view = ViewFrame(None, image=raw, landmarks=landmarks,
-                     preview_anchor=(.5, .5), preview_moving=True, preview_guides=((12, "pinched"),))
+                     preview_anchor=(.85, .8), preview_moving=True, preview_guides=((12, "pinched"),))
     bridge.last_preview = 0
     bridge.apply_view(view)
-    assert bridge.provider.image.pixelColor(320, 240).name() == "#76e600"
-    assert bridge.provider.image.pixelColor(330, 240).name() != "#000000"
-    assert not raw.any()  # overlays never change camera/recording source data
+    QTest.qWait(120)
+    # Camera data stays raw; overlay rendering belongs to the live QML canvas.
+    assert bridge.provider.image.pixelColor(320, 240).name() == "#000000"
+    assert not raw.any()
+    canvases = bridge.window.findChildren(QQuickItem, "liveHandSkeletonCanvas")
+    canvas = next((c for c in canvases if c.isVisible() and c.width() > 0), None)
+    assert canvas is not None
+    image = grab_item(canvas)
+    w, h = image.width(), image.height()
+    assert not [m for m in messages if any(s in m for s in ("ReferenceError", "TypeError", "Error:", "Cannot assign", "Binding loop"))], messages
+    for x, y, _ in landmarks:
+        assert image.pixelColor(round(x*w), round(y*h)).alpha() > 0
+    # A bone midpoint and anchor ring must be drawn, too.
+    midpoint = tuple((landmarks[0][i]+landmarks[1][i])/2 for i in range(2))
+    assert image.pixelColor(round(midpoint[0]*w), round(midpoint[1]*h)).alpha() > 0
+    assert image.pixelColor(round(.85*w)+10, round(.8*h)).alpha() > 0
     bridge.last_preview = 0
     bridge.apply_view(ViewFrame(None, image=raw))
-    assert bridge.provider.image.pixelColor(320, 240).name() == "#000000"
+    QTest.qWait(100)
+    cleared = grab_item(canvas)
+    for x, y, _ in landmarks:
+        assert cleared.pixelColor(round(x*w), round(y*h)).alpha() == 0
+    assert cleared.pixelColor(round(.85*w)+10, round(.8*h)).alpha() == 0
     assert bridge.paused and bridge.rec_mode == "off"
 
 
@@ -221,3 +249,59 @@ def test_palm_calibration_saves_success_only_for_the_selected_hand(studio, monke
     bridge.control_hand = "Right"
     bridge._load_palm_axes()
     assert bridge._palm_axes == saved
+
+
+def test_small_window_keeps_control_and_tutorial_footer_inside_viewport(studio):
+    bridge, service, runtime, messages = studio
+    bridge.timer.stop()
+    bridge.window.resize(780, 560)
+    QTest.qWait(80)
+    toggle = visual_child(bridge.window.contentItem(), "mainControlToggle")
+    assert toggle is not None and toggle.isVisible()
+    edge = toggle.mapToScene(QPointF(toggle.width(), toggle.height()))
+    assert edge.x() <= bridge.window.width() and edge.y() <= bridge.window.height()
+    bridge.control_hand = "Right"
+    bridge.beginTutorial()
+    QTest.qWait(80)
+    page = bridge.window.findChild(QQuickItem, "onboardingPage")
+    advance = visual_child(bridge.window.contentItem(), "tutorialAdvance")
+    assert page is not None and page.isVisible() and advance is not None
+    bottom = advance.mapToScene(QPointF(advance.width(), advance.height()))
+    assert bottom.x() <= bridge.window.width() and bottom.y() <= bridge.window.height()
+    assert not advance.property("enabled")  # camera confirmation has not succeeded
+    assert not [m for m in messages if any(s in m for s in ("ReferenceError", "TypeError", "Error:", "Cannot assign", "Binding loop"))], messages
+
+
+def test_small_learning_center_can_scroll_to_all_six_tabs_and_player_controls(studio):
+    bridge, service, runtime, messages = studio
+    bridge.timer.stop()
+    bridge.window.resize(780, 560)
+    center = bridge.window.findChild(QObject, "studioDataManagement")
+    center.setProperty("pageIndex", 1)
+    QMetaObject.invokeMethod(center, "open")
+    QTest.qWait(100)
+    scroll = bridge.window.findChild(QQuickItem, "learningNavigationScroll")
+    flick = scroll.property("contentItem")
+    max_y = max(0., flick.property("contentHeight") - flick.height())
+    flick.setProperty("contentY", max_y)
+    QTest.qWait(60)
+    tab = visual_child(bridge.window.contentItem(), "studioTab_5")
+    assert tab is not None
+    top = tab.mapToScene(QPointF(0, 0)).y()
+    bottom = tab.mapToScene(QPointF(0, tab.height())).y()
+    viewport_top = scroll.mapToScene(QPointF(0, 0)).y()
+    assert viewport_top <= top and bottom <= viewport_top + scroll.height()
+    detail = bridge.window.findChild(QQuickItem, "recordingDetailScroll")
+    flick = detail.property("contentItem")
+    assert flick.property("contentHeight") > flick.height()
+    play = visual_child(bridge.window.contentItem(), "studioPlay")
+    # Scroll the actual content, then verify the playback button fits the viewport.
+    viewport_top = detail.mapToScene(QPointF(0, 0)).y()
+    play_top = play.mapToScene(QPointF(0, 0)).y()
+    target_y = flick.property("contentY") + play_top - viewport_top
+    flick.setProperty("contentY", max(0., min(target_y, flick.property("contentHeight")-flick.height())))
+    QTest.qWait(60)
+    play_top = play.mapToScene(QPointF(0, 0)).y()
+    play_bottom = play.mapToScene(QPointF(0, play.height())).y()
+    assert viewport_top <= play_top and play_bottom <= viewport_top + detail.height()
+    assert not [m for m in messages if any(s in m for s in ("ReferenceError", "TypeError", "Error:", "Cannot assign", "Binding loop"))], messages

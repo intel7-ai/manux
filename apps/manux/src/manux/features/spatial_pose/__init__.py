@@ -32,7 +32,7 @@ CLASS_TO_GESTURE: Mapping[str, str] = {
     "thumb_pinky": "pinch.thumb_pinky",
     "palm_side": "motion.palm_side",
     "thumbs_up": "motion.thumbs_up",
-    "v_sign": "pointer.v_sign",
+    "v_sign": "control.v_sign",
     "thumb_middle_ring": "pinch.thumb_middle_ring",
     "rock_sign": "spatial_pose.rock_sign",
 }
@@ -120,7 +120,8 @@ class SpatialPoseFeature(Feature):
         if self._mode != "direct":
             return ()
 
-        target_gesture = CLASS_TO_GESTURE.get(act)
+        # The timed control recognizer consumes V evidence; direct pose mode cannot bypass its hold.
+        target_gesture = None if act == "v_sign" else CLASS_TO_GESTURE.get(act)
         intents: List[Intent] = []
         if target_gesture == "spatial_pose.rock_sign" and conf >= self._trigger_confidence:
             if self._active_gesture != target_gesture:

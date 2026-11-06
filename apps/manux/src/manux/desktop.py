@@ -220,6 +220,30 @@ class DesktopRuntime:
         self._pose_failed = False
         self.pose_status = "팔·어깨 기록 꺼짐"
         self.sensitivity_result = (0, True, "")
+        self.advanced_result = (0, True, "")
+        self._control_model = None
+        from manux.output.windows.cursor import CursorMapper
+        from manux.output.windows.config import WindowsOutputConfig
+        from manux.platform.monitors import ScreenLayout
+        practice = self.engine.sinks.get(OutputTarget.PRACTICE)
+        if practice is not None:
+            practice.config = WindowsOutputConfig(**settings.section("cursor"))
+            practice.cursor = CursorMapper(ScreenLayout.single(1920, 1080), practice.config)
+        self._configure_cursor_sinks()
+
+    def _configure_cursor_sinks(self):
+        from dataclasses import replace
+        for target in (OutputTarget.WINDOWS, OutputTarget.PRACTICE):
+            sink = self.engine.sinks.get(target)
+            if sink is not None and hasattr(sink, "configure"):
+                sink.configure(replace(sink.config, **self.settings.section("cursor")))
+
+    def _sync_control_model(self):
+        model = self.spatial_feature.model if self.spatial_feature else None
+        # Pipeline reloads may construct a new control feature, even with the same model.
+        for feature in self.engine.features:
+            if feature.id == "control" and getattr(feature, "model", None) is not model:
+                feature.set_model(model)
 
     # ------------------------------------------------------------------ settings the UI changes
     def settings_for(self, fid: str) -> Mapping[str, object]:
@@ -479,6 +503,7 @@ class DesktopRuntime:
         self._drain_runtime_requests()
         self._tracking_requests()
         self.reload_model()
+        self._sync_control_model()
         if self._stop.is_set():
             return
         item = self.source.read(self.control_hand, self.use_crop)
@@ -493,9 +518,13 @@ class DesktopRuntime:
             return
         frame, image, hand, hands, detect_ms = item
         self._recording_step(frame.t, frame, hand)
-        sink = self.engine.sinks.get(OutputTarget.WINDOWS)
-        if sink is not None and hasattr(sink, "set_frame_aspect"):
-            sink.set_frame_aspect(frame.aspect)
+        for target in (OutputTarget.WINDOWS, OutputTarget.PRACTICE):
+            sink = self.engine.sinks.get(target)
+            if sink is not None and hasattr(sink, "set_frame_aspect"):
+                sink.set_frame_aspect(frame.aspect)
+            elif target is OutputTarget.PRACTICE and sink is not None:
+                from dataclasses import replace
+                sink.update_config(replace(sink.config, frame_aspect=frame.aspect))
         snap = self.engine.step(frame, hand)
         self._record_frame(frame.t, hand, snap, self._pose_step(image, frame.t))
         tracking = self._tracking_step(snap, hand, float(detect_ms))
@@ -506,7 +535,8 @@ class DesktopRuntime:
                              level < float(self.settings.get("camera.low_light_threshold")))
         elif image is None:
             self._metrics = (self.source.mode_text(), -1, False)
-        actions = tuple(a for a, _phase, _reason in snap.results)
+        actions = tuple(a for a, _phase, reason in snap.results if reason == "ok")
+        practice = self.engine.sinks.get(OutputTarget.PRACTICE)
         guides, anchor, moving = self.pinch_preview.step(
             hand if self.want_image and snap.mode == "pinch" else None, self.settings_for("pinch"))
         self._publish(ViewFrame(
@@ -520,6 +550,10 @@ class DesktopRuntime:
             rec=self._rec_view(frame.t), pose_status=self.pose_status,
             spatial_guard_enabled=bool(self.spatial_guard and self.spatial_guard.enabled),
             preview_guides=guides, preview_anchor=anchor, preview_moving=moving,
+            control_hand=hand.handedness if hand is not None else self.control_hand,
+            preview_gesture=snap.intents[0][0] if snap.intents else "",
+            practice_cursor=practice.cursor_position if snap.output is OutputTarget.PRACTICE else None,
+            practice_precision=bool(practice.precision) if snap.output is OutputTarget.PRACTICE else False,
             frame_age_ms=max(0.0, (time.perf_counter() - frame.t) * 1000.0)))
 
     def _pose_step(self, image, now):
@@ -573,6 +607,8 @@ class DesktopRuntime:
             command = self._runtime_requests.get_nowait()
             if command.kind == "sensitivity":
                 self._apply_sensitivity(command)
+            if command.kind == "advanced":
+                self._apply_advanced(command)
             if command.kind == "spatial_guard":
                 try:
                     self.engine.prepare_model_reload()
@@ -636,11 +672,32 @@ class DesktopRuntime:
             return
         for key, value in values.items():
             self.settings.set(key, value)
-        sink = self.engine.sinks.get(OutputTarget.WINDOWS)
-        if sink is not None and hasattr(sink, "configure"):
-            sink.configure(replace(sink.config, **self.settings.section("cursor")))
+        self._configure_cursor_sinks()
         self.pinch_preview.step(None, self.settings_for("pinch"))
         self.sensitivity_result = (revision, True, "저장·적용 완료 · 제어 시작을 누르면 새 감도로 동작합니다.")
+
+    def _apply_advanced(self, command):
+        from manux.settings.advanced import prepare
+        from manux.settings.store import save
+        revision = self.advanced_result[0] + 1
+        self.engine.pause_for_settings()
+        try:
+            values = prepare(self.settings, command.values)
+            candidate = Settings(self.settings.schema, self.settings.stored())
+            for key, value in values.items():
+                if not candidate.set(key, value):
+                    raise ValueError("설정 값을 저장할 수 없습니다.")
+            save(candidate, Path(command.path))
+        except (OSError, ValueError) as exc:
+            self.advanced_result = (revision, False, f"저장 실패 · 기존 설정 유지: {exc}")
+            return
+        for key, value in values.items():
+            self.settings.set(key, value)
+        self._configure_cursor_sinks()
+        self.engine.config.hand_lost_reset = self.settings.get("app.hand_lost_reset")
+        self.engine.arbiter.quiet = self.settings.get("motion.enter_quiet")
+        self.pinch_preview.step(None, self.settings_for("pinch"))
+        self.advanced_result = (revision, True, "저장·적용 완료 · 제어를 다시 켜세요.")
 
     def _model_modes(self, model):
         if not self.tcn_enabled:
@@ -882,14 +939,16 @@ def main(argv=None) -> int:
     try:
         runtime = build(settings, source, windows=not args.no_windows_input and sys.platform == "win32",
                         tcn_model=args.tcn_model, tcn_store=args.tcn_store, tcn_mode=args.tcn_mode,
-                        binding_overrides=read_bindings(args.bindings), policy_store=policy_store, shadow_model=preview)
+                        binding_overrides=read_bindings(args.bindings), policy_store=policy_store, shadow_model=preview,
+                        spatial_pose_model=init_spatial_model)
     except (ModelError, OSError, ValueError) as error:
         if preview is None:
             source.close()
             print(error, file=sys.stderr)
             return 1
         runtime = build(settings, source, windows=not args.no_windows_input and sys.platform == "win32",
-                        binding_overrides=read_bindings(args.bindings), policy_store=policy_store)
+                        binding_overrides=read_bindings(args.bindings), policy_store=policy_store,
+                        spatial_pose_model=init_spatial_model)
         runtime.model_status = "가져온 모델 읽기 실패 · 학습센터에서 복구 상태를 확인하세요"
     runtime.pose_model = paths.app_dir / "models" / "pose_landmarker_lite.task"
     runtime.log_dir = paths.log_dir

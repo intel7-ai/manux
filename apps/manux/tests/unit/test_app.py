@@ -3,6 +3,22 @@ from manux.core.contracts import FrameInfo, HandObservation, OutputTarget
 from manux.settings.store import Settings
 
 
+def test_direct_tcn_cannot_bypass_v_hold_control_contract():
+    from types import SimpleNamespace
+    import pytest
+    from manux.app import pipeline_parts, training_specs
+    from manux.ml.card import validate_card
+    card = validate_card(dict(classes=["none", "v_sign"], window=1, features=133,
+        feature_version="local3d-v1", threshold=.7, frames_in_a_row=1,
+        trained="synthetic", data=[], held_out_results=[], kind="base",
+        gestures={"v_sign": "control.v_sign"},
+        decisions={"v_sign": {"kind": "tap", "modes": ["pinch"], "point": "none"}}), "local3d-v1", 133)
+    model = SimpleNamespace(predictor=SimpleNamespace(classes=card.classes), card=card)
+    with pytest.raises(ValueError, match="V hold"):
+        pipeline_parts(model)
+    assert "control.v_sign" not in training_specs()
+
+
 def test_composition_routes_real_features_to_practice():
     engine = build_engine(Settings(schema()), "pinch")
     frame = FrameInfo(0, 1.0, 1280, 720, True)
