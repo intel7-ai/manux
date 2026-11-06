@@ -86,6 +86,49 @@ def test_worker_reads_without_alias_and_returns_resolved_env_repo(tmp_path, monk
     assert events[-1][1]["repo"] == "synthetic/env-repo"
 
 
+@pytest.mark.parametrize("status", [401, 403, 503])
+def test_status_keeps_successful_read_when_upload_permission_check_fails(tmp_path, monkeypatch, status):
+    monkeypatch.setattr(hub, "load_dotenv", lambda *args, **kwargs: {})
+    class AccessError(Exception):
+        response = SimpleNamespace(status_code=status)
+    class ReadOnlyRemote(Remote):
+        def check_upload_access(self):
+            raise AccessError("Authorization: hf_synthetic_secret_should_never_appear")
+    request = {"profile": "", "action": "status", "repo": "synthetic/data",
+               "recordings_dir": str(tmp_path), "job_id": "test", "cancel_path": str(tmp_path / "cancel")}
+    events = []
+    app_worker.run_hub(request, lambda event, **values: events.append((event, values)), client=ReadOnlyRemote())
+    result = events[-1][1]
+    assert events[-1][0] == "done" and result["read_access"] is True
+    assert result["upload_access"] is (False if status in (401, 403) else None)
+    assert "읽기 연결 성공" in result["stage"]
+    assert "hf_synthetic" not in json.dumps(events)
+
+
+def test_status_reports_verified_upload_access(tmp_path, monkeypatch):
+    monkeypatch.setattr(hub, "load_dotenv", lambda *args, **kwargs: {})
+    remote = Remote()
+    remote.check_upload_access = lambda: None
+    request = {"profile": "", "action": "status", "recordings_dir": str(tmp_path),
+               "job_id": "test", "cancel_path": str(tmp_path / "cancel")}
+    events = []
+    app_worker.run_hub(request, lambda event, **values: events.append((event, values)), client=remote)
+    assert events[-1][1]["upload_access"] is True
+
+
+def test_upload_rechecks_permission_before_sending_any_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(hub, "load_dotenv", lambda *args, **kwargs: {})
+    class ReadOnlyRemote(Remote):
+        def check_upload_access(self):
+            raise type("Denied", (Exception,), {"response": SimpleNamespace(status_code=403)})("secret")
+    remote = ReadOnlyRemote()
+    request = {"profile": "synthetic", "action": "upload", "recordings_dir": str(tmp_path),
+               "job_id": "test", "cancel_path": str(tmp_path / "cancel")}
+    with pytest.raises(app_worker.HubActionError, match="업로드 권한 없음"):
+        app_worker.run_hub(request, lambda *args, **kwargs: None, client=remote)
+    assert remote.files == {}
+
+
 def test_worker_loads_config_env_last_without_returning_credentials(tmp_path, monkeypatch):
     source, config = tmp_path / "source.env", tmp_path / "config.env"
     source.write_text("MANUX_HF_REPO=synthetic/source\nHF_TOKEN=hf_synthetic_source\n")

@@ -23,6 +23,7 @@ ApplicationWindow {
     readonly property color muted: "#526575"
     readonly property color mint: "#46E5BD"
     readonly property color line: "#DEE5EA"
+    readonly property bool learningDialogOpen: trainingCenter.visible || capturePlan.visible
     font.family: "Malgun Gothic"
 
     component TextLabel: Label {
@@ -298,17 +299,17 @@ ApplicationWindow {
         }
     }
 
-    Shortcut { sequence: "Return"; enabled: !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
-    Shortcut { sequence: "Enter"; enabled: !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
-    Shortcut { sequence: "Esc"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(27) }
-    Shortcut { sequence: "Space"; enabled: !dashboard.trackingActive && (!settingsDialog.visible); onActivated: dashboard.command(32) }
-    Shortcut { sequence: "Q"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(81) }
-    Shortcut { sequence: "O"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(111) }
-    Shortcut { sequence: "M"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(109) }
-    Shortcut { sequence: "N"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(110) }
-    Shortcut { sequence: "F"; enabled: !dashboard.trackingActive; onActivated: dashboard.markFailure() }
-    Shortcut { sequence: "C"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(99) }
-    Shortcut { sequence: "P"; enabled: !dashboard.trackingActive; onActivated: dashboard.command(112) }
+    Shortcut { sequence: "Return"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
+    Shortcut { sequence: "Enter"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
+    Shortcut { sequence: "Esc"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(27) }
+    Shortcut { sequence: "Space"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && (!settingsDialog.visible); onActivated: dashboard.command(32) }
+    Shortcut { sequence: "Q"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(81) }
+    Shortcut { sequence: "O"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(111) }
+    Shortcut { sequence: "M"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(109) }
+    Shortcut { sequence: "N"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(110) }
+    Shortcut { sequence: "F"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.markFailure() }
+    Shortcut { sequence: "C"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(99) }
+    Shortcut { sequence: "P"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(112) }
 
     Timer { interval: 700; running: dashboard.stage === "splash"; onTriggered: dashboard.finishSplash() }
 
