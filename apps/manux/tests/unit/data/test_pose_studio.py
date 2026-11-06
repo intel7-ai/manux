@@ -5,7 +5,13 @@ from pathlib import Path
 
 import numpy as np
 
-from manux.data.pose_studio import ACTION_IDS, PoseSnapshotStudio, STUDIO_ACTIONS, normalize_system_action
+from manux.data.pose_studio import (
+    ACTION_IDS,
+    PoseSnapshotStudio,
+    STUDIO_ACTIONS,
+    is_full_joints_tracked,
+    normalize_system_action,
+)
 from manux.desktop import make_pose_studio
 from manux.ml.spatial_mlp import STUDIO_CLASSES, SpatialMlpModel, train_spatial_mlp
 from manux.perception.spatial_features import SPATIAL_FEATURES, extract_spatial_features
@@ -127,3 +133,107 @@ def test_pose_snapshot_studio_stream_discrepancy_and_training(tmp_path: Path):
     assert studio.live_ai_action == "thumb_ring"
     assert studio.live_ai_confidence > 0.5
     assert normalize_system_action(None, ("mouse.right_click",)) == "thumb_ring"
+
+
+def test_is_full_joints_tracked():
+    hand = _synthetic_hand()
+    ok, reason = is_full_joints_tracked(hand)
+    assert ok is True
+    assert reason == "ok"
+
+    # None or fewer than 21 landmarks
+    assert is_full_joints_tracked(None)[0] is False
+    assert is_full_joints_tracked(hand[:15])[0] is False
+
+    # Out-of-bounds joint (e.g. index finger tip clipped at x = 1.05 or y = -0.02)
+    clipped = list(hand)
+    clipped[8] = (1.06, 0.28, -0.01)
+    ok_c, reason_c = is_full_joints_tracked(clipped)
+    assert ok_c is False
+    assert "clipped_edge_8" in reason_c
+
+    # Collapsed/tiny hand
+    collapsed = [(0.5, 0.5, 0.0)] * 21
+    ok_col, reason_col = is_full_joints_tracked(collapsed)
+    assert ok_col is False
+    assert reason_col == "collapsed_or_too_small"
+
+
+def test_pose_studio_require_full_joints_filtering(tmp_path: Path):
+    studio = make_pose_studio(tmp_path)
+    studio.stream_throttle_ms = 0.0
+    studio.set_ground_truth("thumb_middle")
+    studio.set_require_full_joints(True)
+    assert studio.require_full_joints is True
+
+    hand = _synthetic_hand()
+    clipped = list(hand)
+    clipped[4] = (-0.05, 0.50, -0.04)  # thumb tip out of frame
+
+    # 1. Single snapshot with clipped joint is rejected
+    res = studio.capture_snapshot(landmarks=clipped)
+    assert res["success"] is False
+    assert "clipped_edge_4" in res["reason"]
+    assert len(studio.samples) == 0
+
+    # 2. Continuous stream ignores clipped frame
+    studio.start_stream()
+    res_st = studio.observe_frame(clipped, None, "none", now_ms=100.0)
+    assert res_st is not None and res_st["success"] is False
+    assert "partial_joints" in res_st["reason"]
+    assert len(studio.samples) == 0
+
+    # 3. Full valid hand is captured
+    res_valid = studio.observe_frame(hand, None, "none", now_ms=160.0)
+    assert res_valid is not None and res_valid["success"] is True
+    assert len(studio.samples) == 1
+    studio.stop_stream()
+
+
+def test_pose_studio_multi_model_management(tmp_path: Path):
+    studio = make_pose_studio(tmp_path)
+    models = studio.list_models()
+    assert len(models) >= 1
+    assert studio.active_model_id == "spatial_pose_mlp.json"
+
+    # 1. Create a new model and verify it immediately appears in list_models() before training
+    created = studio.create_model("custom_fast_model")
+    assert created["success"] is True
+    assert created["id"] == "custom_fast_model.json"
+    assert studio.active_model_id == "custom_fast_model.json"
+    immediate_list = studio.list_models()
+    slot_entry = next(m for m in immediate_list if m["id"] == "custom_fast_model.json")
+    assert slot_entry["active"] is True
+    assert slot_entry["exists"] is False
+
+    # Collect 4 samples and train into custom_fast_model
+    hand = _synthetic_hand(12)
+    for i in range(4):
+        studio.capture_snapshot(ground_truth="thumb_middle", landmarks=hand, now_ms=100.0 + i * 50)
+    train_res = studio.train_now()
+    assert train_res["success"] is True
+
+    model_list = studio.list_models()
+    active_entry = next(m for m in model_list if m["id"] == "custom_fast_model.json")
+    assert active_entry["active"] is True
+    assert active_entry["exists"] is True
+    assert active_entry["total_samples"] == 4
+
+    # 2. Create another model and switch between them — cumulative count must reset to 0 for the new model!
+    studio.create_model("model_two")
+    assert studio.active_model_id == "model_two.json"
+    assert studio.summary()["savedTotal"] == 0
+    assert studio.summary()["total"] == 0
+
+    # Activate custom_fast_model again — its 4 saved samples are restored!
+    assert studio.activate_model("custom_fast_model.json") is True
+    assert studio.active_model_id == "custom_fast_model.json"
+    assert studio.model_summary["loaded"] is True
+    assert studio.summary()["savedTotal"] == 4
+    assert studio.summary()["savedByAction"]["thumb_middle"] == 4
+
+    # 3. Delete model
+    assert studio.delete_model("model_two.json") is True
+    assert not (tmp_path / "models" / "spatial_mlp" / "model_two.json").exists()
+
+

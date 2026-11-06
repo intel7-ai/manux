@@ -697,17 +697,16 @@ def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, t
 
 
 def make_pose_studio(data_dir: Path,
-                     on_model_updated: Optional[Callable[[SpatialMlpModel], None]] = None) -> PoseSnapshotStudio:
+                     on_model_updated: Optional[Callable[[Optional[SpatialMlpModel]], None]] = None) -> PoseSnapshotStudio:
     """Create a PoseSnapshotStudio wired to the 96-dim SpatialFeatureExtractor and 4-second SpatialMlpModel."""
     import numpy as np
 
     active_mlp: List[Optional[SpatialMlpModel]] = [None]
-    model_file = Path(data_dir) / "models" / "spatial_mlp" / "spatial_pose_mlp.json"
-    if model_file.is_file():
-        try:
-            active_mlp[0] = SpatialMlpModel.load(model_file)
-        except Exception:
-            active_mlp[0] = None
+
+    def update_model(model: Optional[SpatialMlpModel]) -> None:
+        active_mlp[0] = model
+        if on_model_updated is not None:
+            on_model_updated(model)
 
     model_stamp = [model_file.stat().st_mtime_ns if model_file.is_file() else None]
 
@@ -752,9 +751,7 @@ def make_pose_studio(data_dir: Path,
             feature_version=SPATIAL_FEATURE_VERSION,
         )
         model.save(out_path)
-        active_mlp[0] = model
-        if on_model_updated is not None:
-            on_model_updated(model)
+        update_model(model)
         return {
             "train_accuracy": metrics.train_accuracy,
             "test_accuracy": metrics.test_accuracy,
@@ -766,7 +763,16 @@ def make_pose_studio(data_dir: Path,
             "trained_at": metrics.trained_at,
         }
 
-    return PoseSnapshotStudio(data_dir, train_fn=train_fn, predict_fn=predict_fn)
+    studio = PoseSnapshotStudio(
+        data_dir,
+        train_fn=train_fn,
+        predict_fn=predict_fn,
+        load_model_fn=SpatialMlpModel.load,
+        on_model_updated=update_model,
+    )
+    if studio.active_model is not None:
+        active_mlp[0] = studio.active_model
+    return studio
 
 
 def default_hand_model(paths: AppPaths) -> Path:
@@ -813,7 +819,18 @@ def main(argv=None) -> int:
     except (OSError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 1
-    spatial_model_path = paths.data_dir / "models" / "spatial_mlp" / "spatial_pose_mlp.json"
+    models_dir = paths.data_dir / "models" / "spatial_mlp"
+    active_cfg = models_dir / "active_model.json"
+    active_model_file = "spatial_pose_mlp.json"
+    if active_cfg.is_file():
+        try:
+            active_model_file = json.loads(active_cfg.read_text("utf-8")).get("active_model_id", active_model_file)
+        except Exception:
+            pass
+    spatial_model_path = models_dir / active_model_file
+    if not spatial_model_path.is_file():
+        spatial_model_path = models_dir / "spatial_pose_mlp.json"
+
     init_spatial_model: Optional[SpatialMlpModel] = None
     if spatial_model_path.is_file():
         try:
@@ -865,6 +882,7 @@ def main(argv=None) -> int:
                    "export_logs": lambda metrics: export_logs(paths, metrics, info.label),
                    "training_center": tc,
                    "pose_studio": studio,
+                   "studio_categories": lambda: list(STUDIO_CATEGORIES),
                    "studio_actions": lambda: list(STUDIO_ACTIONS),
                    "studio_categories": lambda: list(STUDIO_CATEGORIES),
                    "studio_system_action": normalize_system_action,

@@ -154,8 +154,8 @@ _DEFAULT_STUDIO_ACTIONS = (
      "desc": "엄지 끝과 약지 끝을 맞대어 우클릭하는 자세"},
     {"id": "thumb_index", "category": "click", "key": "3", "icon": "📜", "label": "3. 스크롤 진입 (엄지+검지)", "short": "스크롤 (엄지+검지)",
      "desc": "엄지 끝과 검지 끝을 맞대어 상하 스크롤 모드로 진입하는 자세"},
-    {"id": "thumb_middle_ring", "category": "click", "key": "4", "icon": "🤞", "label": "4. 동시·휠클릭 (엄지+중지+약지)", "short": "동시클릭 (엄지+중지+약지)",
-     "desc": "엄지 끝에 중지와 약지를 동시에 맞대어 좌우 동시 클릭 및 휠 클릭하는 자세"},
+    {"id": "thumb_middle_ring", "category": "click", "key": "4", "icon": "🤞", "label": "4. 양쪽 클릭 (엄지+중지+약지)", "short": "양쪽 클릭 (엄지+중지+약지)",
+     "desc": "엄지 끝에 중지와 약지를 동시에 맞대어 좌클릭·우클릭을 독립적으로 함께 판정하는 자세"},
     # window
     {"id": "thumb_pinky", "category": "window", "key": "1", "icon": "🤙", "label": "1. 창 전환 (엄지+새끼)", "short": "창 전환 (엄지+새끼)",
      "desc": "엄지 끝과 새끼손가락 끝을 맞대어 창 전환(Alt+Tab) 창을 띄우는 자세"},
@@ -185,6 +185,9 @@ class _NullPoseStudio:
         self.capture_mode = "stream"
         self.is_streaming = False
         self.discrepancy_only = False
+        self.require_full_joints = True
+        self.full_joints_tracked = False
+        self.active_model_id = "spatial_pose_mlp.json"
         self.status_note = "숫자키(1~8)로 동작을 고르고 Space 또는 수집 버튼으로 프레임을 모으세요."
         self.hand_tracked = False
         self.live_system_action = "none"
@@ -268,7 +271,34 @@ class _NullPoseStudio:
     def save_dataset(self) -> Optional[Path]:
         return None
 
-    def train_now(self) -> Dict[str, Any]:
+    def set_require_full_joints(self, enabled: bool) -> bool:
+        self.require_full_joints = bool(enabled)
+        return self.require_full_joints
+
+    def list_models(self) -> List[Dict[str, Any]]:
+        return [{
+            "id": "spatial_pose_mlp.json",
+            "name": "기본 모델 (Default)",
+            "active": True,
+            "exists": False,
+            "test_accuracy": 0.0,
+            "train_accuracy": 0.0,
+            "total_samples": 0,
+            "trained_at": "미학습",
+            "file_size_kb": 0.0,
+        }]
+
+    def create_model(self, name: str) -> Dict[str, Any]:
+        return {"success": True, "id": f"{name}.json", "name": name}
+
+    def activate_model(self, model_id: str) -> bool:
+        self.active_model_id = model_id
+        return True
+
+    def delete_model(self, model_id: str) -> bool:
+        return True
+
+    def train_now(self, model_name: Optional[str] = None) -> Dict[str, Any]:
         return {"success": False, "reason": "not_enough_samples"}
 
 
@@ -545,6 +575,7 @@ class Bridge(QObject):
         self._studio_category = "guard"
         self._studio_actions = (self.services["studio_actions"]() if "studio_actions" in self.services
                                 else list(_DEFAULT_STUDIO_ACTIONS))
+        self._studio_category = "click"
         self._studio_sys_fn = self.services.get("studio_system_action")
         self._studio_summary_cache = self.pose_studio.summary()
         # hand choice / tutorial / calibration
@@ -1382,8 +1413,12 @@ class Bridge(QObject):
     @Property("QVariantList", notify=trainingChanged)
     def trainingRows(self):
         category = getattr(self, "training_filter", "전체")
-        return [{**r, "selected": r["key"] in self.training_selected} for r in self.training_rows
-                if category == "전체" or r["category"] == category]
+        return [
+            {**r, "selected": r["key"] in self.training_selected}
+            for r in self.training_rows
+            if r["category"] not in ("클릭·드래그", "창·모드")
+            and (category == "전체" or r["category"] == category)
+        ]
 
     @Property("QStringList", notify=trainingChanged)
     def selectedTrainingKeys(self):
@@ -1503,11 +1538,11 @@ class Bridge(QObject):
 
     @Property("QStringList", constant=True)
     def trainingCategories(self):
-        return list(self.tc.categories)
+        return [c for c in self.tc.categories if c not in ("클릭·드래그", "창·모드")]
 
     @Property(str, notify=trainingChanged)
     def trainingCatalog(self):
-        return f"전체 {self.tc.total_tasks}개 녹화 항목 · {len(self.trainingRows)}개 표시 · 미학습 동작도 녹화 가능"
+        return f"TCN 시계열 모션 {len(self.trainingRows)}개 표시 (클릭·창 제어는 포즈 스튜디오 전담)"
 
     @Slot(str)
     def setTrainingFilter(self, category):
@@ -1778,10 +1813,30 @@ class Bridge(QObject):
     def studioLiveMatch(self):
         return bool(self.pose_studio.is_live_match())
 
+    @Property(bool, notify=studioChanged)
+    def studioRequireFullJoints(self):
+        return bool(getattr(self.studio, "require_full_joints", True))
+
+    @Property(bool, notify=studioChanged)
+    def studioFullJointsTracked(self):
+        return bool(getattr(self.studio, "full_joints_tracked", False))
+
+    @Property(str, notify=studioChanged)
+    def studioActiveModelId(self):
+        return str(getattr(self.studio, "active_model_id", "spatial_pose_mlp.json"))
+
+    @Property("QVariantList", notify=studioChanged)
+    def studioModelList(self):
+        if hasattr(self.studio, "list_models"):
+            return self.studio.list_models()
+        return []
+
     @Property(str, notify=studioChanged)
     def studioCompareBadge(self):
         if not self.pose_studio.hand_tracked:
             return "카메라에 손을 보여주세요"
+        if getattr(self.studio, "require_full_joints", False) and not getattr(self.studio, "full_joints_tracked", True):
+            return "⚠️ 손가락 일부가 화면 밖으로 잘렸습니다 (전체 손을 보여주세요)"
         if self.pose_studio.is_live_match():
             return "✅ 판정 일치 (정상 인식 영역)"
         return "🚨 판정 불일치! (사각지대/오인식 구간 — 지금 수집하면 즉시 교정됩니다)"
@@ -1804,9 +1859,10 @@ class Bridge(QObject):
     @Property(str, notify=studioChanged)
     def studioModelText(self):
         ms = self.pose_studio.model_summary
+        name = ms.get("name") or getattr(self.studio, "active_model_id", "spatial_pose_mlp.json")
         if not ms.get("loaded"):
-            return "Spatial MLP 모델: 아직 학습 전 (표본을 모으고 [⚡ 4초 즉시 학습]을 누르세요)"
-        return (f"포즈 미리보기 · 프레임 참고 점수 {ms.get('test_accuracy', 0):.1f}% "
+            return f"Spatial MLP [{name}]: 아직 학습 전 (표본을 모으고 [⚡ 4초 즉시 학습]을 누르세요)"
+        return (f"Spatial MLP [{name}] 활성 · 검증 정확도 {ms.get('test_accuracy', 0):.1f}% "
                 f"(학습 {ms.get('train_accuracy', 0):.1f}%) · 표본 {ms.get('total_samples', 0)}개 · "
                 f"{ms.get('elapsed_ms', 0):.0f}ms 소요")
 
@@ -1832,13 +1888,43 @@ class Bridge(QObject):
 
     @Slot(int)
     def selectStudioActionByNumber(self, num):
-        rows = self.studioCategoryActions
-        if 1 <= num <= len(rows): self.setStudioGroundTruth(rows[num - 1]["id"])
+        cat_actions = self.studioCategoryActions
+        if 1 <= num <= len(cat_actions):
+            self.setStudioGroundTruth(cat_actions[num - 1]["id"])
+        elif 1 <= num <= len(self._studio_actions):
+            self.setStudioGroundTruth(self._studio_actions[num - 1]["id"])
 
     @Slot(bool)
     def setStudioDiscrepancyOnly(self, enabled):
         self.pose_studio.set_discrepancy_only(bool(enabled))
         self.studioChanged.emit()
+
+    @Slot(bool)
+    def setStudioRequireFullJoints(self, enabled):
+        if hasattr(self.studio, "set_require_full_joints"):
+            self.studio.set_require_full_joints(bool(enabled))
+            self.studioChanged.emit()
+
+    @Slot(str)
+    def createStudioModel(self, name):
+        if hasattr(self.studio, "create_model"):
+            self.studio.create_model(str(name))
+            self._studio_summary_cache = self.studio.summary()
+            self.studioChanged.emit()
+
+    @Slot(str)
+    def activateStudioModel(self, model_id):
+        if hasattr(self.studio, "activate_model"):
+            self.studio.activate_model(str(model_id))
+            self._studio_summary_cache = self.studio.summary()
+            self.studioChanged.emit()
+
+    @Slot(str)
+    def deleteStudioModel(self, model_id):
+        if hasattr(self.studio, "delete_model"):
+            self.studio.delete_model(str(model_id))
+            self._studio_summary_cache = self.studio.summary()
+            self.studioChanged.emit()
 
     @Slot()
     def triggerStudioCapture(self):
@@ -2257,6 +2343,8 @@ class Bridge(QObject):
             elif key == KEY_ESC and self.pose_studio.is_streaming:
                 self.pose_studio.stop_stream()
                 self.studioChanged.emit()
+            elif key in (9, 16777217):
+                self.nextStudioCategory()
             elif 49 <= key <= 57:  # keys '1'..'9' (supports 9th class: both click)
                 self.selectStudioActionByNumber(key - 48)
         elif self.stage_name == "main" and key == KEY_SPACE:
