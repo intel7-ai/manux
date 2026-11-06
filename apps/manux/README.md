@@ -105,6 +105,10 @@ uv run --locked --extra vision python tools/collect_mouse.py --profile tester01 
 
 ## TCN 학습과 평가 (S5)
 
+규칙·MLP·직접 TCN·거부권·혼합 후보를 같은 독립 녹화와 시도 지표로 비교하려면
+[판정기 비교 도구](docs/eval-judges.md)를 사용합니다. 33/96차원 특징과 동작당
+10/30/60초 학습량을 고를 수 있습니다. 실제 사용자 정확도는 아직 측정하지 않았습니다.
+
 녹화에는 `label.target`과 `label.gesture`를 사용합니다. 이전 3클래스 녹화는 기존
 이름을 읽습니다. 더블클릭처럼 같은 입력을 반복하는 과제는 기존 입력 클래스에 포함됩니다.
 중립 `none`과 학습할 동작이 하나 이상 필요합니다. 손의 세계 좌표가 있는 프레임이
