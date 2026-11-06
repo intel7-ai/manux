@@ -237,6 +237,9 @@ class Engine:
             try:
                 flt.observe(hand, ctx)
                 intents = list(flt.filter(intents, ctx))
+                notes = getattr(flt, "drain_events", None)     # optional: what the filter held back or dropped
+                if callable(notes):
+                    events.extend(str(note) for note in notes())
             except Exception as exc:
                 errors.append(FeatureError(flt.id, repr(exc)))
                 intents = []

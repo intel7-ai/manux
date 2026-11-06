@@ -18,7 +18,7 @@ from manux.data.recording import read, replay
 from manux.engine.commands import SetBusy, SetStage
 from manux.engine.pipeline import Engine, EngineConfig
 from manux.engine.snapshot import Snapshot
-from manux.features import motion, pinch, pointer, tcn_gate
+from manux.features import motion, pinch, pointer, pose, tcn_gate
 from manux.features.tcn import TcnFeature, SETTINGS as TCN_SETTINGS
 from manux.ml.card import ModelError
 from manux.ml.predictor import LoadedModel, load_model
@@ -47,15 +47,21 @@ def schema() -> Schema:
         settings.add(Setting(key, default, kind=_SETTING_TYPES[type(default)])
                      for key, default in module.SETTINGS.items() if default is not None)
     settings.add(Setting(key, value, kind="float") for key, value in TCN_SETTINGS.items())
+    settings.add(Setting(key, default, kind=_SETTING_TYPES[type(default)], minimum=pose.RANGES.get(key, (None, None))[0],
+                         maximum=pose.RANGES.get(key, (None, None))[1]) for key, default in pose.SETTINGS.items())
     return settings
 
 
 def build_engine(settings: Settings, mode: str = "pointer", filters: tuple[IntentFilter, ...] = (),
                  *, recording: bool = False, direct_model: LoadedModel | None = None,
-                 binding_overrides=None) -> Engine:
+                 binding_overrides=None, pose_assist: pose.PoseAssist | None = None) -> Engine:
     features, router, sources = pipeline_parts(direct_model, binding_overrides)
-    if direct_model is not None and filters:
+    if direct_model is not None and any(getattr(f, "id", None) == tcn_gate.ID for f in filters):
         raise ValueError("direct mode and confirmation filters cannot be used together")
+    if pose_assist is not None:
+        # the pose guard only drops intents (contracts section 6); it goes last, after any confirmation filter
+        features = [*features, pose_assist.feature]
+        filters = (*filters, pose_assist.guard)
     engine = Engine(features, filters, router,
                     {OutputTarget.NONE: NullSink(), OutputTarget.PRACTICE: PracticeSink()},
                     settings.section, EngineConfig(hand_lost_reset=settings.get("app.hand_lost_reset"),
@@ -85,6 +91,26 @@ def pipeline_parts(direct_model=None, binding_overrides=None):
     if problems:
         raise ValueError(f"invalid bindings: {problems}")
     return features, Router(bindings), sources
+
+
+def _load_pose_assist(settings: Settings, model: Path | None, session_factory=None) -> pose.PoseAssist | None:
+    """The pose assist when it is asked for and loads; otherwise None and the app runs without it.
+
+    Asked for = `--pose-model`, or `pose_assist.enabled` with `pose_assist.model` set. Off by default.
+    A model that does not load never stops the app (contracts section 10); the reason goes to stderr.
+    """
+    if model is None:
+        if not settings.get("pose_assist.enabled"):
+            return None
+        configured = settings.get("pose_assist.model")
+        if not configured:
+            print("pose assist: enabled but pose_assist.model is empty", file=sys.stderr)
+            return None
+        model = Path(configured)
+    loaded = pose.create_pose_assist(model, settings.section(pose.ID), session_factory)
+    if loaded.assist is None:
+        print(f"pose assist: {loaded.text}", file=sys.stderr)
+    return loaded.assist
 
 
 def read_bindings(path: Path | None):
@@ -160,6 +186,8 @@ def main() -> int:
     parser.add_argument("--tcn-model", type=Path, help="optional TCN .onnx file with its JSON card")
     parser.add_argument("--tcn-mode", choices=("gate", "direct"), default="gate")
     parser.add_argument("--tcn-store", type=Path, help="verified direct personal model store")
+    parser.add_argument("--pose-model", type=Path,
+                        help="optional pose-evidence .onnx (window 1, pose-angles-v1) with its JSON card; turns pose assist on")
     parser.add_argument("--bindings", type=Path, help="user gesture -> action bindings JSON")
     parser.add_argument("--config-dir", type=Path)
     parser.add_argument("--mode", choices=("pointer", "pinch"), default="pointer")
@@ -185,6 +213,7 @@ def main() -> int:
             print(f"TCN: {loaded.text}", file=sys.stderr)
         else:
             filters = (loaded.gate,)
+    pose_assist = _load_pose_assist(settings, args.pose_model)
 
     try:
         with ExitStack() as resources, ExitStack() as output:
@@ -193,7 +222,7 @@ def main() -> int:
                 direct = (load_active(args.tcn_store, FEATURE_VERSION, FEATURES) if args.tcn_store is not None
                           else load_model(args.tcn_model, FEATURE_VERSION, FEATURES))
             engine = build_engine(settings, args.mode, filters, direct_model=direct,
-                                  binding_overrides=read_bindings(args.bindings))
+                                  binding_overrides=read_bindings(args.bindings), pose_assist=pose_assist)
             output.callback(engine.shutdown)
             if args.replay is not None:
                 snapshots = replay_snapshots(engine, args.replay)
