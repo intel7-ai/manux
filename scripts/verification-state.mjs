@@ -17,7 +17,7 @@ export function repositoryState(root) {
   const names = [...new Set(paths.stdout.split('\0').filter(Boolean))].sort();
   for (const name of names) {
     if (/(?:^|\/)(?:node_modules|\.git|\.local|\.tools|\.npm-cache|test-results|worktrees|\.env(?:\.[^/]*)?)(?:\/|$)/i.test(name)) continue;
-    if (!/\.(?:md|json|js|mjs|cjs|html|css|svg|yml|yaml|ps1|cmd)$|^\.(?:gitignore|editorconfig|node-version|nvmrc)$/i.test(name)) continue;
+    if (!/\.(?:md|json|js|mjs|cjs|html|css|svg|yml|yaml|ps1|cmd|py|toml|lock)$|^\.(?:gitignore|rgignore|editorconfig|node-version)$/i.test(name)) continue;
     const filename = path.join(root, name);
     let digest;
     try {
