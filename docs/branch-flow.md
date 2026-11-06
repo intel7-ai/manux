@@ -16,6 +16,14 @@ production  ── 배포 기준: 설치본을 GitHub Release로 게시
 
 ## 규칙
 
+### 빠른 공동 시험: testing
+
+2026-11-06부터 `testing`은 최신 preview를 기반으로 작업 브랜치를 PR 병합해 소스로 시험하는 통합 브랜치다. `testing` 대상 PR은 네 workflow의 `branches-ignore`로 제외하고, push 자동 실행 대상에도 넣지 않는다. 이 브랜치에는 `MANUX required`를 필수로 설정하지 않는다. 수동 workflow 실행은 필요할 때 선택할 수 있다.
+
+`testing`에서 시험한 원본 작업 브랜치는 별도로 `preview` 대상 PR을 연다. `preview`와 `production`의 필수 검사·보호·배포 흐름은 유지한다. `testing` 전체를 preview나 production에 병합하지 않는다. 충돌 처리·uv 실행·데이터 수집 기준은 [시험 안내](testing.md)를 따른다.
+
+### preview와 production
+
 1. 새 작업 브랜치는 최신 `origin/preview`에서 만들고 PR 대상도 `preview`로 한다.
 2. `preview` PR은 **MANUX required**만 통과하면 작성자가 직접 병합할 수 있다. 다른 사람의 승인은 필요 없다.
 3. `preview`에 병합한 뒤 그 상태로 실제 앱을 시험한다. 시험한 내용과 결과(실물/합성 구분, 미실행 항목)를 PR이나 Jira 작업 기록에 남긴다.
