@@ -5,6 +5,7 @@
 | 작업 | 문서 |
 | --- | --- |
 | 실행·설치 | [앱 README](../apps/manux/README.md) |
+| testing 전체 사용 흐름·모델 공유 | [v0.4 통합 센터](../apps/manux/docs/testing-all-v04.md) |
 | 앱 수정 | [앱 지침](../apps/manux/AGENTS.md), [구조](../apps/manux/docs/architecture.md), 해당 절의 [계약](../apps/manux/docs/contracts.md) |
 | 정책 배경 | 관련 항목의 [결정 기록](../apps/manux/docs/decisions.md) |
 | 직접 TCN·모델 교체 | [직접 TCN](../apps/manux/docs/direct-tcn.md) |

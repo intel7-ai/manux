@@ -71,7 +71,7 @@ def test_studio_worker_playback_curation_and_small_window_actions(tmp_path):
         for width, height in ((780, 560), (1140, 720)):
             b.window.setWidth(width)
             b.window.setHeight(height)
-            for page in range(4):
+            for page in range(3):
                 popup.setProperty("pageIndex", page)
                 QTest.qWait(60)
                 action = b.window.findChild(QQuickItem, "recordSelection")

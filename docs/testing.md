@@ -1,5 +1,8 @@
 # testing: CI 대기 없는 공동 소스 시험
 
+현재 v0.4 통합본은 루트 `run_manux.bat`로 시작한다. 동작별 데이터 공유·모델 이름/선택/복원·
+포즈 표본·가속과 실제 카메라 확인 범위는 [통합 사용 흐름](../apps/manux/docs/testing-all-v04.md)을 따른다.
+
 `testing`은 최신 preview를 바탕으로 여러 작업을 PR 병합해 실제 PC에서 빠르게 시험하는 브랜치다. `testing` 대상 PR과 push에는 자동 CI·설치본 빌드·릴리스가 없다. 기존 `workflow_dispatch`가 있는 workflow는 필요할 때 수동 실행할 수 있다.
 
 ## 앱 받기와 실행

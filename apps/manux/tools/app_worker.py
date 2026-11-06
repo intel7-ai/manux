@@ -148,17 +148,19 @@ def run_hub(request, send=emit, client=None):
     preset = request.get("preset", "pinch")
     if preset not in ("pinch", "pointer", "trigger"):
         raise ValueError("녹화 방식을 확인하세요.")
-    if not getattr(sys, "frozen", False):
-        hub.load_dotenv()
-    hub.load_dotenv([Path(path) for path in request.get("env_files", ())], override=True)
-    repo = os.environ.get(hub.ENV_REPO) or request.get("repo") or hub.DEFAULT_REPO
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
-        raise ValueError("HF 저장소는 소유자/저장소 형식으로 입력하세요.")
-    client = client or hub.HfDatasetHub(repo, create_repo=False)
+    if not getattr(sys, "frozen", False): hub.load_dotenv()
+    hub.load_dotenv([Path(p) for p in request.get("env_files", ())], override=True)
+    if client is None:
+        client, repo, _provider = hub.configured_client(request)
+    else:
+        repo = os.environ.get(hub.ENV_REPO) or getattr(client, "repo_id", request.get("repo", hub.DEFAULT_REPO))
     root = Path(request["recordings_dir"])
     action = request["action"]
     check_cancel(request)
     send("progress", stage="팀 저장소 연결 중", progress=.1)
+    classes = request.get("classes", ())
+    if not isinstance(classes, (list, tuple)) or any(not re.fullmatch(r"[a-z][a-z0-9_]*", c) for c in classes):
+        raise ValueError("공유할 동작을 다시 선택하세요.")
     can_upload = None
     if action == "upload":
         if hasattr(client, "check_upload_access"):
@@ -173,10 +175,10 @@ def run_hub(request, send=emit, client=None):
             raise ValueError("내 별명의 완료된 녹화만 올릴 수 있습니다. 녹화 정보를 확인하세요.")
         if not valid:
             raise ValueError("내 별명으로 완료된 녹화가 없습니다.")
-        result = hub.push_to_hub(client, own)
+        result = hub.push_to_hub(client, own, classes=classes)
         message = f"업로드 완료 · 새 녹화 {result['new_recordings']}개"
     elif action == "download":
-        result = hub.pull_from_hub(client, root, presets=[preset])
+        result = hub.pull_from_hub(client, root, presets=[preset], classes=classes)
         message = f"팀 데이터 받기 완료 · {result['downloaded']}개"
     elif action == "status":
         result = hub.summarize_entries(client.read_manifest())
@@ -186,6 +188,36 @@ def run_hub(request, send=emit, client=None):
         raise ValueError("알 수 없는 허브 작업입니다.")
     send("done", stage=message, summary=result, repo=repo, read_access=True,
          upload_access=can_upload, job_id=request["job_id"])
+
+
+def run_pose_training(request, send=emit):
+    import numpy as np
+    from manux.data.pose_studio import ACTION_IDS, PoseSnapshotStudio
+    from manux.ml.spatial_mlp import train_spatial_mlp
+    from manux.perception.spatial_features import extract_spatial_features
+    from manux.data.studio import atomic_json
+    from model_library import add
+    studio = PoseSnapshotStudio(Path(request["data_dir"]))
+    xs, ys, weights = [], [], []
+    send("progress", stage="포즈 표본 준비 중", progress=.1, phase="loading")
+    for sample in studio.load_all_samples():
+        check_cancel(request)
+        label = sample.get("groundTruthAction")
+        if label not in ACTION_IDS: continue
+        features = extract_spatial_features(sample.get("rawLandmarks"))
+        if features is None: continue
+        xs.append(features); ys.append(ACTION_IDS.index(label))
+        weights.append(1.8 if sample.get("isFailureSample") else 1.)
+    if len(xs) < 2: raise ValueError("유효한 포즈 표본을 2개 이상 모으세요.")
+    send("progress", stage="포즈 MLP 학습 중 · 제어 모델은 유지", progress=.4, phase="training")
+    model, metrics = train_spatial_mlp(np.stack(xs), np.asarray(ys), np.asarray(weights), classes=ACTION_IDS)
+    check_cancel(request)
+    # Serialize atomically. This is a studio candidate, never the TCN active pointer.
+    path = studio.models_dir / "spatial_pose_mlp.json"
+    atomic_json(path, model.to_dict())
+    add(Path(request["data_dir"]) / "models/library", path, "포즈 MLP · " + metrics.trained_at)
+    send("done", stage="포즈 학습 완료 · 프레임 참고 점수이며 제어에는 자동 적용하지 않습니다",
+         job_id=request["job_id"], spatial_candidate=str(path))
 
 
 def run_import(request, send=emit):
@@ -231,6 +263,8 @@ def main(argv=None):
             raise ValueError("지원하지 않는 작업 요청입니다.")
         if request["kind"] == "train":
             run_training(request)
+        elif request["kind"] == "pose_train":
+            run_pose_training(request)
         elif request["kind"] == "import":
             run_import(request)
         elif request["kind"] == "validate_import":

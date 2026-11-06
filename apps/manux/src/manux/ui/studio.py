@@ -16,6 +16,7 @@ class StudioBridge(QObject):
         super().__init__(owner)
         self.owner, self.service = owner, owner.tc
         self.rows, self.versions, self.events, self.frames, self.diagnostics = [], [], [], [], []
+        self.models, self.remote_models = [], []
         self.current, self.simulation = {}, {}
         self.key, self.note, self.action = "", "녹화를 불러와 검수하세요.", ""
         self.index, self.generation = 0, 0
@@ -54,6 +55,23 @@ class StudioBridge(QObject):
 
     @Property("QVariantList", notify=changed)
     def modelVersions(self): return self.versions
+
+    @Property("QVariantList", notify=changed)
+    def localModels(self): return self.models
+
+    @Property("QVariantList", notify=changed)
+    def remoteModels(self): return self.remote_models
+
+    @Slot(str, str, str)
+    def modelAction(self, action, identifier="", name=""):
+        if action in ("remote", "upload", "download", "rename", "preview", "apply"):
+            self._run("model_" + action, identifier=identifier, name=name)
+
+    @Slot(str)
+    def poseDatasetAction(self, action):
+        if action in ("upload", "download"):
+            if action == "upload": self.owner.saveStudioDataset()
+            self._run("pose_" + action, classes=[self.owner.studioGroundTruth])
 
     @Property("QVariantList", notify=changed)
     def diagnosticRows(self): return self.diagnostics
@@ -209,6 +227,11 @@ class StudioBridge(QObject):
             elif self.key:
                 self.current, self.key, self.frames, self.events, self.index = {}, "", [], [], 0
         if "versions" in result: self.versions = result["versions"]
+        if "models" in result: self.models = result["models"]
+        if result.get("spatial_selected"):
+            self.owner.pose_studio.model_summary = self.owner.pose_studio._load_saved_model_summary()
+            self.owner.studioChanged.emit()
+        if "remote_models" in result: self.remote_models = result["remote_models"]
         if "diagnostics" in result: self.diagnostics = result["diagnostics"]
         if "frames" in result:
             self.frames, self.events, self.current = result["frames"], result["events"], result["recording"]
@@ -216,7 +239,7 @@ class StudioBridge(QObject):
         self.note = result.get("note", self.note)
         self.changed.emit()
         self.frameChanged.emit()
-        if self.action in ("select", "clean", "augment", "trash", "restore"):
+        if self.action in ("select", "clean", "augment", "trash", "restore", "model_apply", "model_preview"):
             self.owner.refreshTraining()
 
     def close(self):

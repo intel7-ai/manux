@@ -29,6 +29,7 @@ def history(store):
             validate_report(json.loads((path / "validation.json").read_text(encoding="utf-8")), card,
                             studio.digest(path / "model.onnx"), studio.digest(path / "model.json"))
             rows.append({"version": path.name, "trained": str(card.raw.get("trained", "")),
+                         "artifact_id": hashlib.sha256((studio.digest(path / "model.onnx") + studio.digest(path / "model.json")).encode()).hexdigest(),
                          "classes": list(card.gestures), "active": path.name == active, "valid": True})
         except (OSError, ValueError, TypeError, ModelError):
             rows.append({"version": path.name, "trained": "손상된 버전", "classes": [], "active": path.name == active, "valid": False})
@@ -107,10 +108,22 @@ def run(request, send, cancelled):
         raise ValueError("녹화가 변경되었습니다. 새로고침 후 다시 선택하세요.")
     send("progress", stage="녹화 검사 중" if action == "scan" else "처리 중", progress=.05)
     ready_store = None
+    candidate = None
     if action == "scan":
         result = {"recordings": studio.library(root, cancelled,
             lambda i, n: send("progress", stage=f"녹화 검사 {i}/{n}", progress=i / max(1, n))),
                   "versions": history(request["store"])}
+        if request.get("data_dir"):
+            from model_library import add, scan
+            library = Path(request["data_dir"]) / "models/library"
+            sources = [Path(request["store"]) / "versions" / row["version"] / "model.onnx"
+                       for row in result["versions"] if row["valid"]]
+            sources += [Path(request.get("model_path", "")), Path(request["data_dir"]) / "models/spatial_mlp/spatial_pose_mlp.json"]
+            for path in sources:
+                if path.is_file():
+                    try: add(library, path)
+                    except (ValueError, OSError): pass
+            result["models"] = scan(library)
     elif action in ("load", "simulate"):
         result = studio.playback(root, key) if action == "load" else simulate(request, root, key, cancelled)
     elif action == "select":
@@ -139,6 +152,67 @@ def run(request, send, cancelled):
                              Path(request["store"]), mode=mode, cache_dir=Path(request["cache_dir"]), cancelled=cancelled)
         ready_store = request["store"]
         result = {"versions": history(request["store"]), "note": "현재 평가를 통과해 저장 버전을 새 버전으로 설치했습니다."}
+    elif action in ("pose_upload", "pose_download"):
+        import hub, pose_hub
+        if not re.fullmatch(r"[a-z0-9_-]{1,32}", request.get("profile", "")) and action == "pose_upload":
+            raise ValueError("내 별명을 먼저 저장하세요.")
+        try:
+            client, repo, provider = hub.configured_client(request)
+            source = Path(request["data_dir"]) / "pose_snapshots"
+            if action == "pose_upload":
+                client.check_upload_access()
+                count = pose_hub.push(client, source, request["profile"], request.get("classes", ()), cancelled)
+            else:
+                count = pose_hub.pull(client, source, request.get("classes", ()), cancelled)
+        except Exception:
+            raise ValueError("포즈 공유 실패 · .env·권한·별명·데이터 형식·네트워크를 확인하세요.") from None
+        result = {"note": f"{provider} · 선택 포즈 데이터 {count}개 {'업로드' if action == 'pose_upload' else '다운로드'} · train/eval 구분 유지"}
+    elif action.startswith("model_"):
+        import model_library as models
+        library = Path(request["data_dir"]) / "models/library"
+        identifier = request.get("identifier", "")
+        if action in ("model_remote", "model_upload", "model_download"):
+            import hub
+            try:
+                client, repo, provider = hub.configured_client(request)
+                if action == "model_upload":
+                    client.check_upload_access()
+                    models.upload(client, library, identifier, request.get("name", ""))
+                elif action == "model_download":
+                    models.download(client, library, identifier)
+                remote = models.remote_rows(client)
+            except Exception:
+                raise ValueError("모델 공유 실패 · .env의 저장소·읽기/쓰기 권한·네트워크와 파일 해시를 확인하세요.") from None
+            result = {"models": models.scan(library), "remote_models": remote,
+                      "note": f"{provider} · {repo} · 원격 모델 {len(remote)}개 · 다운로드는 사용 모델을 바꾸지 않습니다."}
+        elif action == "model_rename":
+            models.rename(library, identifier, request.get("name", ""))
+            result = {"models": models.scan(library), "note": "모델 표시 이름을 저장했습니다."}
+        elif action in ("model_preview", "model_apply"):
+            row = models.local(library, identifier)
+            path = models.folder(library, identifier) / row["model_file"]
+            if row["format"] == "spatial":
+                from manux.data.studio import atomic_json
+                from manux.ml.spatial_mlp import SpatialMlpModel
+                destination = Path(request["data_dir"]) / "models/spatial_mlp/spatial_pose_mlp.json"
+                atomic_json(destination, SpatialMlpModel.load(path).to_dict())
+                result = {"models": models.scan(library), "spatial_selected": True, "note": "포즈 미리보기 모델 선택 · TCN 제어 모델과 보조 차단 설정은 유지했습니다."}
+            elif action == "model_preview":
+                candidate = str(path)
+                result = {"note": "TCN 모델 시험 선택 · 제어를 다시 켜면 강제 shadow로 비교합니다. 실제 입력에는 적용하지 않습니다."}
+            else:
+                from manux.data.training_center import recording_sets
+                from manux.ml.store import active_token
+                from promote_tcn import validate_and_install
+                _, evaluation = recording_sets(root, RecordingIdentity(request["profile"], request.get("preset", "pinch")))
+                if not evaluation: raise ValueError("현재 별명으로 별도 평가 녹화를 먼저 준비하세요.")
+                mode = request.get("preset", "pinch"); mode = "pointer" if mode == "trigger" else mode
+                validate_and_install(path, evaluation, Path(request["store"]), mode=mode,
+                                     cache_dir=Path(request["cache_dir"]), expected_active=active_token(Path(request["store"])), cancelled=cancelled)
+                ready_store = request["store"]
+                result = {"versions": history(request["store"]), "note": "전체 독립 평가를 통과해 선택한 모델을 새 버전으로 설치했습니다. 동작별 시험/적용을 선택하세요."}
+        else:
+            raise ValueError("알 수 없는 모델 작업입니다.")
     elif action == "diagnostics":
         packages = []
         for name in ("numpy", "PySide6", "mediapipe", "onnxruntime", "torch", "huggingface-hub"):
@@ -150,6 +224,11 @@ def run(request, send, cancelled):
     else:
         raise ValueError("알 수 없는 스튜디오 작업입니다.")
     if cancelled() and ready_store is None: raise ValueError("작업을 취소했습니다.")
+    if "versions" in result and request.get("data_dir"):
+        from model_library import scan
+        known = result.get("models") or scan(Path(request["data_dir"]) / "models/library")
+        names = {row["id"]:row["name"] for row in known}
+        for row in result["versions"]: row["name"] = names.get(row.get("artifact_id"), row["trained"])
     studio.atomic_json(Path(request["job_dir"]) / "result.json", result)
     send("done", stage=result.get("note", "완료"), action=action, job_id=request["job_id"],
-         **({"store": ready_store} if ready_store else {}))
+         **({"store": ready_store} if ready_store else {}), **({"candidate": candidate} if candidate else {}))

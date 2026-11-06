@@ -25,6 +25,7 @@ class ViewFrame:
     image: Any = None                          # BGR numpy frame for the preview, None while the window is hidden
     hands: Tuple[SeenHand, ...] = ()           # every hand tracking found
     landmarks: Optional[Tuple[Landmark, ...]] = None   # the control hand, image coordinates
+    world: Optional[Tuple[Landmark, ...]] = None       # the control hand, 3D world coordinates in metres
     mirrored: bool = True
     aspect: float = 0.5625                     # frame height / width
     camera_mode: str = ""                      # e.g. "1280×720 · 30fps"
@@ -41,3 +42,4 @@ class ViewFrame:
     rec: Optional[Mapping[str, Any]] = None    # dataset recording view (guided / free), None = off
     frame_age_ms: Optional[float] = None      # app capture timestamp -> runtime publish, not sensor/display latency
     pose_status: str = ""                    # optional recording-only Pose tracking status
+    spatial_guard_enabled: bool = False      # actual runtime state, never a UI prediction
