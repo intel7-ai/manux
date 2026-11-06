@@ -55,8 +55,22 @@ def test_korean_messages():
         plans.normalise(plan())
     bad = plans.preset()
     bad["conditions"][0]["hold"] = 11
-    with pytest.raises(ValueError, match="동작 시간: 0.5~10"):
+    with pytest.raises(ValueError, match="동작 시간: 0.2~10"):
         plans.normalise(bad)
+
+
+def test_quick_click_preserves_physical_groups_and_records_short_valid_attempts():
+    quick = plans.normalise(plans.preset("quick_click"))
+    rows = quick["conditions"]
+    assert len(rows) == 27 and len({plans.condition_key(r) for r in rows}) == 9
+    assert {r["hold"] for r in rows} == {.3, .5, .7}
+    assert all(r["rest"] >= 1 and r["prep"] >= 1 for r in rows)
+    g = GuidedSession(tasks_for("thumb_middle"), plan=plan(rows[0]), settle=.35)
+    g.advance(0)
+    assert g.label(.5)["target"] == "transition"
+    assert "편하게" in g.view(.5)["prompt"]
+    assert g.label(1.15)["target"] == "thumb_middle"
+    assert g.label(1.8)["target"] == "none"
 
 
 def test_each_gesture_keeps_its_own_plan_and_disabled_rows_are_skipped(tmp_path):

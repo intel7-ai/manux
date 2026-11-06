@@ -10,6 +10,7 @@ Popup {
     required property var controller
     property string profileDraft: ""
     signal recordingRequested()
+    signal progressRequested()
     readonly property bool idle: !controller.recActive && !controller.trainingRunning
                                  && !controller.hubRunning && controller.trainingBusy === ""
     anchors.centerIn: parent
@@ -162,7 +163,7 @@ Popup {
                             }
                             StudioButton {
                                 objectName: "trainSelection"
-                                text: "선택한 동작 포함 재학습"
+                                text: "선택한 동작만 학습"
                                 enabled: studio.idle && studio.controller.selectionCanTrain
                                 onClicked: studio.controller.trainTrainingSelection()
                             }
@@ -208,6 +209,21 @@ Popup {
                                         Copy { Layout.fillWidth: true; text: task.modelData.instruction; color: Theme.Studio.muted }
                                         Copy { Layout.fillWidth: true; text: task.modelData.data_text + " · " + task.modelData.score_text }
                                         Copy { Layout.fillWidth: true; text: task.modelData.advice; font.pixelSize: 12; color: Theme.Studio.muted }
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            StudioButton {
+                                                text: "이 동작 녹화"; enabled: studio.idle
+                                                onClicked: { if (studio.controller.focusRecord(task.modelData.key)) { studio.close(); studio.recordingRequested() } }
+                                            }
+                                            StudioSelect {
+                                                objectName: "tcnMode_" + task.modelData.key
+                                                Layout.fillWidth: true
+                                                model: ["규칙 사용", "TCN 시험", "TCN 적용"]
+                                                enabled: studio.idle && !!task.modelData.model_id
+                                                currentIndex: Math.max(0, ["rules", "shadow", "apply"].indexOf(task.modelData.tcn_mode || "rules"))
+                                                onActivated: studio.controller.setGestureTcnMode(task.modelData.key, ["rules", "shadow", "apply"][currentIndex], task.modelData.model_id)
+                                            }
+                                        }
                                     }
                                     Copy {
                                         Layout.preferredWidth: 76
@@ -218,7 +234,7 @@ Popup {
                                 }
                             }
                         }
-                        Copy { Layout.fillWidth: true; text: "재학습은 선택한 동작과 기존 클래스를 함께 학습합니다. 현재 직접 적용은 pinch의 tap/span 동작을 지원합니다."; color: Theme.Studio.muted }
+                        Copy { Layout.fillWidth: true; text: "선택하지 않은 분류기는 유지합니다. 기존 동작의 별도 평가 기록도 있어야 새 모델을 설치할 수 있습니다."; color: Theme.Studio.muted }
                     }
                 }
                 Panel {
@@ -251,7 +267,7 @@ Popup {
                         Copy { text: "04  학습과 적용"; font.pixelSize: 16; font.bold: true }
                         Copy { Layout.fillWidth: true; text: studio.controller.trainingData + " · " + studio.controller.trainingModel }
                         Copy { Layout.fillWidth: true; text: studio.controller.trainingStorage; color: studio.controller.trainingStorageWarn ? Theme.Studio.amber : Theme.Studio.muted }
-                        Copy { Layout.fillWidth: true; text: studio.controller.trainingBusy || studio.controller.trainingStage || "통합 학습 → 별도 eval 검증 → 통과 시 앱 적용" }
+                        Copy { Layout.fillWidth: true; text: studio.controller.trainingBusy || studio.controller.trainingStage || "선택 동작 학습 → 전체 eval 검증 → 통과 시 시험 모드" }
                         Rectangle {
                             Layout.fillWidth: true; height: 6; radius: 3; color: Theme.Studio.line
                             Rectangle { width: parent.width * Math.max(0, Math.min(1, studio.controller.trainingProgress)); height: parent.height; radius: 3; color: Theme.Studio.mintDark }
@@ -261,6 +277,7 @@ Popup {
                             Layout.fillWidth: true
                             spacing: 8
                             StudioButton { text: "학습 멈춤"; visible: studio.controller.trainingRunning; onClicked: studio.controller.stopTraining() }
+                            StudioButton { objectName: "openTrainingProgress"; text: "학습 진행 보기"; onClicked: { studio.close(); studio.progressRequested() } }
                             StudioButton { text: "새로고침"; enabled: studio.idle; onClicked: studio.controller.refreshTraining() }
                             StudioButton { text: "모델 내보내기"; enabled: studio.idle; onClicked: studio.controller.exportModel() }
                             StudioButton { text: "내보낸 폴더 열기"; onClicked: studio.controller.openExports() }

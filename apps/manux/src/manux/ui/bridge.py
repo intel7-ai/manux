@@ -306,6 +306,7 @@ class Bridge(QObject):
     hiddenToTray = Signal()
     trackingActiveChanged = Signal()
     trainingChanged = Signal()
+    trainingStarted = Signal()
 
     def __init__(self, runtime, settings: store.Settings, config_dir: Path, *,
                  services: Optional[Dict[str, Callable]] = None, hotkeys=None, hotkey_defaults=None,
@@ -379,6 +380,7 @@ class Bridge(QObject):
         self.training_busy = ""
         self.training_note = ""
         self._training_was_running = False
+        self._progress_visible = False
         self.training_timer = QTimer(self)
         self.training_timer.setInterval(400)
         self.training_timer.timeout.connect(self._training_tick)
@@ -839,8 +841,22 @@ class Bridge(QObject):
 
     @Slot()
     def closeTraining(self):
-        if not self.training_job.running and not self.tc.hub_job.running:
+        if not self.training_job.running and not self.tc.hub_job.running and not self._progress_visible:
             self.training_timer.stop()
+
+    @Slot(bool)
+    def showTrainingProgress(self, visible):
+        self._progress_visible = bool(visible)
+        if visible:
+            self._pause()
+            self.training_timer.start()
+            self.trainingChanged.emit()
+        else:
+            self.closeTraining()
+
+    @Property("QVariantMap", notify=trainingChanged)
+    def trainingProgressState(self):
+        return self.tc.progress() if hasattr(self.tc, "progress") else {}
 
     @Slot()
     def refreshTraining(self):
@@ -883,6 +899,7 @@ class Bridge(QObject):
             self._training_was_running = True
             self.training_timer.start()
             self.trainingChanged.emit()
+            self.trainingStarted.emit()
         else:
             err = self.training_job.snapshot().get("error")
             if err:
@@ -898,10 +915,11 @@ class Bridge(QObject):
             return
         self._pause()
         if self.training_job.start(gestures=[key]):
-            self.training_note = str(task.get("name", key)) + "을 포함해 통합 재학습합니다. 기존 동작도 유지합니다."
+            self.training_note = str(task.get("name", key)) + "만 학습합니다. 선택하지 않은 분류기는 유지합니다."
             self._training_was_running = True
             self.training_timer.start()
             self.trainingChanged.emit()
+            self.trainingStarted.emit()
         else:
             err = self.training_job.snapshot().get("error")
             if err:
@@ -911,6 +929,19 @@ class Bridge(QObject):
     @Slot()
     def stopTraining(self):
         self.training_job.stop()
+
+    @Slot(str, str, str)
+    def setGestureTcnMode(self, key, mode, model_id):
+        if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running:
+            return
+        self._pause()
+        try:
+            self.tc.set_policy(key, mode, model_id)
+            self.training_note = "동작별 TCN 설정을 저장했습니다. 제어를 다시 켜서 확인하세요."
+        except (ValueError, OSError) as error:
+            self.training_note = str(error)
+        self.refreshTraining()
+        self.trainingChanged.emit()
 
     @Slot()
     def exportModel(self):
@@ -979,7 +1010,7 @@ class Bridge(QObject):
             if s.get("error"):
                 self.training_note = str(s["error"])
             else:
-                self.training_note = "별도 평가를 통과해 모델을 설치했습니다. 앱 적용 상태는 메인 화면에서 확인하세요."
+                self.training_note = "별도 평가 통과 · 새 동작은 TCN 시험 모드입니다. 확인 후 동작별로 TCN 적용을 선택하세요."
                 self.stateChanged.emit()
             self.refreshTraining()
         self.trainingChanged.emit()
@@ -1052,8 +1083,9 @@ class Bridge(QObject):
         self._pause()
         if self.training_job.start(gestures=keys):
             self._training_was_running = True
-            self.training_note = f"선택한 {len(keys)}개 동작을 포함해 기존 모델과 통합 재학습합니다."
+            self.training_note = f"선택한 {len(keys)}개 동작만 학습합니다. 다른 분류기는 그대로 유지합니다."
             self.training_timer.start()
+            self.trainingStarted.emit()
         else:
             self.training_note = str(self.training_job.snapshot().get("error") or "학습을 시작하지 못했습니다.")
         self.trainingChanged.emit()

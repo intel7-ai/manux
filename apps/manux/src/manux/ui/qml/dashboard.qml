@@ -23,7 +23,7 @@ ApplicationWindow {
     readonly property color muted: "#526575"
     readonly property color mint: "#46E5BD"
     readonly property color line: "#DEE5EA"
-    readonly property bool learningDialogOpen: trainingCenter.visible || capturePlan.visible
+    readonly property bool learningDialogOpen: trainingCenter.visible || capturePlan.visible || trainingProgress.visible
     font.family: "Malgun Gothic"
 
     component TextLabel: Label {
@@ -1037,6 +1037,17 @@ ApplicationWindow {
         id: trainingCenter
         controller: dashboard
         onRecordingRequested: capturePlan.open()
+        onProgressRequested: trainingProgress.open()
+    }
+
+    TrainingProgressPage {
+        id: trainingProgress
+        controller: dashboard
+        onBackRequested: trainingCenter.open()
+    }
+    Connections {
+        target: dashboard
+        function onTrainingStarted() { trainingCenter.close(); trainingProgress.open() }
     }
 
     RecordingPlanDialog { id: capturePlan; editor: dashboard.recordingPlan }
