@@ -183,6 +183,9 @@ class _NullPoseStudio:
         self.capture_mode = "stream"
         self.is_streaming = False
         self.discrepancy_only = False
+        self.require_full_joints = True
+        self.full_joints_tracked = False
+        self.active_model_id = "spatial_pose_mlp.json"
         self.status_note = "숫자키(1~8)로 동작을 고르고 Space 또는 수집 버튼으로 프레임을 모으세요."
         self.hand_tracked = False
         self.live_system_action = "none"
@@ -266,7 +269,34 @@ class _NullPoseStudio:
     def save_dataset(self) -> Optional[Path]:
         return None
 
-    def train_now(self) -> Dict[str, Any]:
+    def set_require_full_joints(self, enabled: bool) -> bool:
+        self.require_full_joints = bool(enabled)
+        return self.require_full_joints
+
+    def list_models(self) -> List[Dict[str, Any]]:
+        return [{
+            "id": "spatial_pose_mlp.json",
+            "name": "기본 모델 (Default)",
+            "active": True,
+            "exists": False,
+            "test_accuracy": 0.0,
+            "train_accuracy": 0.0,
+            "total_samples": 0,
+            "trained_at": "미학습",
+            "file_size_kb": 0.0,
+        }]
+
+    def create_model(self, name: str) -> Dict[str, Any]:
+        return {"success": True, "id": f"{name}.json", "name": name}
+
+    def activate_model(self, model_id: str) -> bool:
+        self.active_model_id = model_id
+        return True
+
+    def delete_model(self, model_id: str) -> bool:
+        return True
+
+    def train_now(self, model_name: Optional[str] = None) -> Dict[str, Any]:
         return {"success": False, "reason": "not_enough_samples"}
 
 
@@ -1465,10 +1495,30 @@ class Bridge(QObject):
     def studioLiveMatch(self):
         return bool(self.studio.is_live_match())
 
+    @Property(bool, notify=studioChanged)
+    def studioRequireFullJoints(self):
+        return bool(getattr(self.studio, "require_full_joints", True))
+
+    @Property(bool, notify=studioChanged)
+    def studioFullJointsTracked(self):
+        return bool(getattr(self.studio, "full_joints_tracked", False))
+
+    @Property(str, notify=studioChanged)
+    def studioActiveModelId(self):
+        return str(getattr(self.studio, "active_model_id", "spatial_pose_mlp.json"))
+
+    @Property("QVariantList", notify=studioChanged)
+    def studioModelList(self):
+        if hasattr(self.studio, "list_models"):
+            return self.studio.list_models()
+        return []
+
     @Property(str, notify=studioChanged)
     def studioCompareBadge(self):
         if not self.studio.hand_tracked:
             return "카메라에 손을 보여주세요"
+        if getattr(self.studio, "require_full_joints", False) and not getattr(self.studio, "full_joints_tracked", True):
+            return "⚠️ 손가락 일부가 화면 밖으로 잘렸습니다 (전체 손을 보여주세요)"
         if self.studio.is_live_match():
             return "✅ 판정 일치 (정상 인식 영역)"
         return "🚨 판정 불일치! (사각지대/오인식 구간 — 지금 수집하면 즉시 교정됩니다)"
@@ -1491,9 +1541,10 @@ class Bridge(QObject):
     @Property(str, notify=studioChanged)
     def studioModelText(self):
         ms = self.studio.model_summary
+        name = ms.get("name") or getattr(self.studio, "active_model_id", "spatial_pose_mlp.json")
         if not ms.get("loaded"):
-            return "Spatial MLP 모델: 아직 학습 전 (표본을 모으고 [⚡ 4초 즉시 학습]을 누르세요)"
-        return (f"Spatial MLP 활성 · 검증 정확도 {ms.get('test_accuracy', 0):.1f}% "
+            return f"Spatial MLP [{name}]: 아직 학습 전 (표본을 모으고 [⚡ 4초 즉시 학습]을 누르세요)"
+        return (f"Spatial MLP [{name}] 활성 · 검증 정확도 {ms.get('test_accuracy', 0):.1f}% "
                 f"(학습 {ms.get('train_accuracy', 0):.1f}%) · 표본 {ms.get('total_samples', 0)}개 · "
                 f"{ms.get('elapsed_ms', 0):.0f}ms 소요")
 
@@ -1529,6 +1580,33 @@ class Bridge(QObject):
     def setStudioDiscrepancyOnly(self, enabled):
         self.studio.set_discrepancy_only(bool(enabled))
         self.studioChanged.emit()
+
+    @Slot(bool)
+    def setStudioRequireFullJoints(self, enabled):
+        if hasattr(self.studio, "set_require_full_joints"):
+            self.studio.set_require_full_joints(bool(enabled))
+            self.studioChanged.emit()
+
+    @Slot(str)
+    def createStudioModel(self, name):
+        if hasattr(self.studio, "create_model"):
+            self.studio.create_model(str(name))
+            self._studio_summary_cache = self.studio.summary()
+            self.studioChanged.emit()
+
+    @Slot(str)
+    def activateStudioModel(self, model_id):
+        if hasattr(self.studio, "activate_model"):
+            self.studio.activate_model(str(model_id))
+            self._studio_summary_cache = self.studio.summary()
+            self.studioChanged.emit()
+
+    @Slot(str)
+    def deleteStudioModel(self, model_id):
+        if hasattr(self.studio, "delete_model"):
+            self.studio.delete_model(str(model_id))
+            self._studio_summary_cache = self.studio.summary()
+            self.studioChanged.emit()
 
     @Slot()
     def triggerStudioCapture(self):

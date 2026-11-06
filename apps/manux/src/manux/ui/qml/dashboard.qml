@@ -304,22 +304,22 @@ ApplicationWindow {
     Shortcut { sequence: "Return"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
     Shortcut { sequence: "Enter"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
     Shortcut { sequence: "Esc"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(27) }
-    Shortcut { sequence: "Space"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && (!settingsDialog.visible); onActivated: dashboard.command(32) }
-    Shortcut { sequence: "Q"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(81) }
-    Shortcut { sequence: "O"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(111) }
-    Shortcut { sequence: "M"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(109) }
-    Shortcut { sequence: "N"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(110) }
-    Shortcut { sequence: "F"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.markFailure() }
-    Shortcut { sequence: "C"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(99) }
-    Shortcut { sequence: "P"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(112) }
-    Shortcut { sequence: "1"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(49) }
-    Shortcut { sequence: "2"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(50) }
-    Shortcut { sequence: "3"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(51) }
-    Shortcut { sequence: "4"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(52) }
-    Shortcut { sequence: "5"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(53) }
-    Shortcut { sequence: "6"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(54) }
-    Shortcut { sequence: "7"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(55) }
-    Shortcut { sequence: "8"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio"; onActivated: dashboard.command(56) }
+    Shortcut { sequence: "Space"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && (!settingsDialog.visible) && !newModelField.activeFocus; onActivated: dashboard.command(32) }
+    Shortcut { sequence: "Q"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(81) }
+    Shortcut { sequence: "O"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(111) }
+    Shortcut { sequence: "M"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(109) }
+    Shortcut { sequence: "N"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(110) }
+    Shortcut { sequence: "F"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.markFailure() }
+    Shortcut { sequence: "C"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(99) }
+    Shortcut { sequence: "P"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(112) }
+    Shortcut { sequence: "1"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(49) }
+    Shortcut { sequence: "2"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(50) }
+    Shortcut { sequence: "3"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(51) }
+    Shortcut { sequence: "4"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(52) }
+    Shortcut { sequence: "5"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(53) }
+    Shortcut { sequence: "6"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(54) }
+    Shortcut { sequence: "7"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(55) }
+    Shortcut { sequence: "8"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(56) }
 
     Timer { interval: 700; running: dashboard.stage === "splash"; onTriggered: dashboard.finishSplash() }
 
@@ -1098,25 +1098,52 @@ ApplicationWindow {
                                         }
                                     }
 
-                                    // Discrepancy-only toggle row
-                                    RowLayout {
+                                    // Collection Filters: Discrepancy-only & Full-joints-only
+                                    ColumnLayout {
                                         Layout.fillWidth: true
-                                        spacing: 8
-                                        CheckBox {
-                                            id: discrepancyCheck
-                                            checked: dashboard.studioDiscrepancyOnly
-                                            onToggled: dashboard.setStudioDiscrepancyOnly(checked)
-                                        }
-                                        TextLabel {
+                                        spacing: 6
+
+                                        RowLayout {
                                             Layout.fillWidth: true
-                                            text: "🚨 불일치(오인식 사각지대) 프레임만 자동 선별 수집 — 손을 이리저리 돌릴 때 틀리는 각도만 쏙쏙 골라 담습니다"
-                                            font.pixelSize: 12
-                                            font.bold: dashboard.studioDiscrepancyOnly
-                                            color: dashboard.studioDiscrepancyOnly ? "#B91C1C" : window.navy
-                                            wrapMode: Text.Wrap
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                onClicked: dashboard.setStudioDiscrepancyOnly(!dashboard.studioDiscrepancyOnly)
+                                            spacing: 8
+                                            CheckBox {
+                                                id: discrepancyCheck
+                                                checked: dashboard.studioDiscrepancyOnly
+                                                onToggled: dashboard.setStudioDiscrepancyOnly(checked)
+                                            }
+                                            TextLabel {
+                                                Layout.fillWidth: true
+                                                text: "🚨 불일치(오인식 사각지대) 프레임만 자동 선별 수집 — 손을 이리저리 돌릴 때 틀리는 각도만 쏙쏙 골라 담습니다"
+                                                font.pixelSize: 12
+                                                font.bold: dashboard.studioDiscrepancyOnly
+                                                color: dashboard.studioDiscrepancyOnly ? "#B91C1C" : window.navy
+                                                wrapMode: Text.Wrap
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    onClicked: dashboard.setStudioDiscrepancyOnly(!dashboard.studioDiscrepancyOnly)
+                                                }
+                                            }
+                                        }
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 8
+                                            CheckBox {
+                                                id: fullJointsCheck
+                                                checked: dashboard.studioRequireFullJoints
+                                                onToggled: dashboard.setStudioRequireFullJoints(checked)
+                                            }
+                                            TextLabel {
+                                                Layout.fillWidth: true
+                                                text: "✋ 21개 관절 완전 인식 시에만 수집 — 손가락이 화면 가장자리에 잘리거나 가려진 불량 프레임 저장을 방지합니다"
+                                                font.pixelSize: 12
+                                                font.bold: dashboard.studioRequireFullJoints
+                                                color: dashboard.studioRequireFullJoints ? "#065F46" : window.navy
+                                                wrapMode: Text.Wrap
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    onClicked: dashboard.setStudioRequireFullJoints(!dashboard.studioRequireFullJoints)
+                                                }
                                             }
                                         }
                                     }
@@ -1366,29 +1393,148 @@ ApplicationWindow {
                         }
                     }
 
-                    // Bottom Model Status Card
+                    // Bottom Model Management Center (Multiple Spatial MLP Models)
                     Rectangle {
                         Layout.fillWidth: true
-                        implicitHeight: modelInfoRow.implicitHeight + 24
+                        implicitHeight: modelManagerCol.implicitHeight + 24
                         radius: 12
-                        color: dashboard.studioModelLoaded ? "#F0FDF4" : "white"
-                        border.color: dashboard.studioModelLoaded ? "#86EFAC" : window.line
-                        RowLayout {
-                            id: modelInfoRow
+                        color: "white"
+                        border.color: window.line
+
+                        ColumnLayout {
+                            id: modelManagerCol
                             anchors.fill: parent
-                            anchors.margins: 12
+                            anchors.margins: 14
                             spacing: 12
-                            TextLabel {
+
+                            // Header Row
+                            RowLayout {
                                 Layout.fillWidth: true
-                                text: dashboard.studioModelText
-                                font.pixelSize: 13
-                                font.bold: true
-                                color: dashboard.studioModelLoaded ? "#065F46" : window.muted
-                                wrapMode: Text.Wrap
+                                spacing: 10
+                                TextLabel {
+                                    text: "🤖 Spatial MLP 모델 관리 (다중 모델)"
+                                    font.pixelSize: 15
+                                    font.bold: true
+                                    color: window.navy
+                                }
+                                Item { Layout.fillWidth: true }
+                                ActionButton {
+                                    text: "➕ 새 모델 추가"
+                                    accent: true
+                                    implicitHeight: 32
+                                    onClicked: {
+                                        newModelInputRow.visible = !newModelInputRow.visible
+                                        if (newModelInputRow.visible) {
+                                            newModelField.forceActiveFocus()
+                                        }
+                                    }
+                                }
+                                ActionButton {
+                                    text: "기존 학습 센터 (TCN)"
+                                    implicitHeight: 32
+                                    onClicked: trainingCenter.open()
+                                }
                             }
-                            ActionButton {
-                                text: "기존 학습 센터 (TCN)"
-                                onClicked: trainingCenter.open()
+
+                            // Inline New Model Input
+                            RowLayout {
+                                id: newModelInputRow
+                                visible: false
+                                Layout.fillWidth: true
+                                spacing: 8
+                                TextField {
+                                    id: newModelField
+                                    Layout.fillWidth: true
+                                    implicitHeight: 36
+                                    placeholderText: "새 모델 이름 입력 (비워두면 '새_모델_N'으로 자동 생성)"
+                                    onAccepted: {
+                                        dashboard.createStudioModel(newModelField.text.trim())
+                                        newModelField.text = ""
+                                        newModelInputRow.visible = false
+                                    }
+                                }
+                                ActionButton {
+                                    text: "생성 및 선택"
+                                    accent: true
+                                    implicitHeight: 36
+                                    onClicked: {
+                                        dashboard.createStudioModel(newModelField.text.trim())
+                                        newModelField.text = ""
+                                        newModelInputRow.visible = false
+                                    }
+                                }
+                                ActionButton {
+                                    text: "취소"
+                                    implicitHeight: 36
+                                    onClicked: newModelInputRow.visible = false
+                                }
+                            }
+
+                            // Model List Cards
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+                                Repeater {
+                                    model: dashboard.studioModelList
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        implicitHeight: 56
+                                        radius: 10
+                                        color: modelData.active ? "#F0FDF4" : "#F8FAFC"
+                                        border.color: modelData.active ? "#86EFAC" : window.line
+                                        border.width: modelData.active ? 2 : 1
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 12
+                                            spacing: 12
+
+                                            // Status Bullet
+                                            Rectangle {
+                                                implicitWidth: 10
+                                                implicitHeight: 10
+                                                radius: 5
+                                                color: modelData.active ? "#10B981" : "#94A3B8"
+                                            }
+
+                                            // Model Title & Details
+                                            ColumnLayout {
+                                                spacing: 2
+                                                TextLabel {
+                                                    text: modelData.name + (modelData.active ? (modelData.exists ? "  [✅ 현재 엔진 적용 중]" : "  [📌 현재 학습 대상 슬롯]") : "")
+                                                    font.pixelSize: 13
+                                                    font.bold: true
+                                                    color: modelData.active ? "#065F46" : window.navy
+                                                }
+                                                TextLabel {
+                                                    text: modelData.exists
+                                                        ? ("검증 정확도 " + modelData.test_accuracy.toFixed(1) + "% · 표본 " + modelData.total_samples + "개 · " + modelData.trained_at + " · " + modelData.file_size_kb + "KB")
+                                                        : "미학습 슬롯 — 상단에서 표본 수집 후 [⚡ 즉시 학습]을 누르면 이 모델로 저장됩니다"
+                                                    font.pixelSize: 11
+                                                    color: window.muted
+                                                }
+                                            }
+
+                                            Item { Layout.fillWidth: true }
+
+                                            // Action Buttons
+                                            ActionButton {
+                                                text: modelData.exists ? "적용" : "선택"
+                                                implicitHeight: 30
+                                                visible: !modelData.active
+                                                accent: true
+                                                onClicked: dashboard.activateStudioModel(modelData.id)
+                                            }
+                                            ActionButton {
+                                                text: "삭제"
+                                                implicitHeight: 30
+                                                visible: dashboard.studioModelList.length > 1 || modelData.exists
+                                                onClicked: dashboard.deleteStudioModel(modelData.id)
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

@@ -21,6 +21,8 @@ Ports the high-speed `PoseSnapshotStudio` workflow from `park` branch directly i
 from __future__ import annotations
 
 import json
+import math
+import re
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -207,6 +209,31 @@ def normalize_system_action(snapshot: Any, actions: Sequence[str] = ()) -> str:
     return "none"
 
 
+def is_full_joints_tracked(
+    landmarks: Optional[Sequence[Tuple[float, float, float]]],
+    world: Optional[Sequence[Tuple[float, float, float]]] = None,
+    *,
+    margin: float = 0.005,
+    min_span: float = 0.035,
+) -> Tuple[bool, str]:
+    """Check if all 21 hand landmarks are fully recognized, valid, and unclipped."""
+    if landmarks is None or len(landmarks) != 21:
+        return False, "no_hand"
+    for i, pt in enumerate(landmarks):
+        if not (math.isfinite(pt[0]) and math.isfinite(pt[1]) and math.isfinite(pt[2])):
+            return False, f"invalid_coord_{i}"
+        if pt[0] < -margin or pt[0] > 1.0 + margin or pt[1] < -margin or pt[1] > 1.0 + margin:
+            return False, f"clipped_edge_{i}"
+    span = math.hypot(landmarks[9][0] - landmarks[0][0], landmarks[9][1] - landmarks[0][1])
+    if span < min_span:
+        return False, "collapsed_or_too_small"
+    if world is not None and len(world) == 21:
+        for i, pt in enumerate(world):
+            if not (math.isfinite(pt[0]) and math.isfinite(pt[1]) and math.isfinite(pt[2])):
+                return False, f"invalid_world_{i}"
+    return True, "ok"
+
+
 class PoseSnapshotStudio:
     """Manages live posture snapshot/stream collection, dataset files, and discrepancy statistics."""
 
@@ -218,6 +245,8 @@ class PoseSnapshotStudio:
         stream_throttle_ms: float = 50.0,
         train_fn: Optional[Callable[[List[Dict[str, Any]], Path], Dict[str, Any]]] = None,
         predict_fn: Optional[Callable[[Any, Any], Optional[Dict[str, Any]]]] = None,
+        load_model_fn: Optional[Callable[[Path], Any]] = None,
+        on_model_updated: Optional[Callable[[Any], None]] = None,
     ) -> None:
         self.data_dir = Path(data_dir)
         self.snapshots_dir = self.data_dir / "pose_snapshots"
@@ -232,46 +261,269 @@ class PoseSnapshotStudio:
         self.capture_mode: str = "stream"  # Default to 'stream' as user loved continuous video frame collection!
         self.is_streaming: bool = False
         self.discrepancy_only: bool = False
+        self.require_full_joints: bool = True
         self.last_stream_time_ms: float = 0.0
         self.status_note: str = "숫자키(1~8)로 동작을 고르고 Space 또는 수집 버튼으로 프레임을 모으세요."
         self.last_capture_status: str = ""
 
+        self._load_model_fn = load_model_fn
         self._train_fn = train_fn
         self._predict_fn = predict_fn
+        self._on_model_updated = on_model_updated
 
         # Live frame state updated every frame from runtime/bridge
         self.hand_tracked: bool = False
+        self.full_joints_tracked: bool = False
+        self.joints_status_reason: str = "no_hand"
         self.live_landmarks: Optional[Sequence[Tuple[float, float, float]]] = None
         self.live_world: Optional[Sequence[Tuple[float, float, float]]] = None
         self.live_system_action: str = "none"
         self.live_ai_action: str = "none"
         self.live_ai_confidence: float = 0.0
-        self.model_summary: Dict[str, Any] = self._load_saved_model_summary()
+
+        # Multi-model management
+        self.active_model: Optional[Any] = None
+        self.active_model_id: str = self._resolve_initial_active_model()
+        self.model_summary: Dict[str, Any] = self._load_model_summary(self.active_model_id)
+        self._load_active_model_instance()
+
         self._saved_counts_cache: Optional[Dict[str, int]] = None
         self._saved_files_count: int = 0
         self._summary_cache: Optional[Dict[str, Any]] = None
         self._summary_cache_time: float = 0.0
         self.saved_dataset_counts(force=True)
 
-    def _load_saved_model_summary(self) -> Dict[str, Any]:
-        model_file = self.models_dir / "spatial_pose_mlp.json"
+    def _resolve_initial_active_model(self) -> str:
+        cfg = self.models_dir / "active_model.json"
+        if cfg.is_file():
+            try:
+                data = json.loads(cfg.read_text(encoding="utf-8"))
+                active_id = data.get("active_model_id")
+                if active_id and (self.models_dir / active_id).is_file():
+                    return str(active_id)
+            except Exception:
+                pass
+        if (self.models_dir / "spatial_pose_mlp.json").is_file():
+            return "spatial_pose_mlp.json"
+        existing = sorted(f.name for f in self.models_dir.glob("*.json") if f.name != "active_model.json")
+        if existing:
+            return existing[0]
+        return "spatial_pose_mlp.json"
+
+    def _save_active_model_config(self) -> None:
+        cfg = self.models_dir / "active_model.json"
+        try:
+            cfg.write_text(json.dumps({"active_model_id": self.active_model_id}, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _load_model_summary(self, model_id: str) -> Dict[str, Any]:
+        model_file = self.models_dir / model_id
+        default_name = "기본 모델 (Default)" if model_id == "spatial_pose_mlp.json" else Path(model_id).stem
         if model_file.is_file():
             try:
                 doc = json.loads(model_file.read_text(encoding="utf-8"))
                 meta = doc.get("metadata") or {}
+                is_trained = doc.get("schema") == "manux-spatial-mlp/1" and "weights" in doc
                 return {
-                    "loaded": True,
+                    "loaded": is_trained,
+                    "model_id": model_id,
+                    "name": meta.get("name") or default_name,
                     "path": str(model_file),
-                    "test_accuracy": meta.get("test_accuracy", 0.0),
-                    "train_accuracy": meta.get("train_accuracy", 0.0),
-                    "total_samples": meta.get("total_samples", 0),
-                    "elapsed_ms": meta.get("elapsed_ms", 0.0),
-                    "trained_at": meta.get("trained_at", ""),
+                    "test_accuracy": float(meta.get("test_accuracy", 0.0)),
+                    "train_accuracy": float(meta.get("train_accuracy", 0.0)),
+                    "total_samples": int(meta.get("total_samples", 0)),
+                    "elapsed_ms": float(meta.get("elapsed_ms", 0.0)),
+                    "trained_at": str(meta.get("trained_at", "")),
                     "per_class": meta.get("per_class", {}),
                 }
             except Exception:
                 pass
-        return {"loaded": False}
+        return {"loaded": False, "model_id": model_id, "name": default_name}
+
+    def _load_active_model_instance(self) -> None:
+        model_file = self.models_dir / self.active_model_id
+        if model_file.is_file() and self._load_model_fn is not None:
+            try:
+                doc = json.loads(model_file.read_text(encoding="utf-8"))
+                if doc.get("schema") == "manux-spatial-mlp/1" and "weights" in doc:
+                    self.active_model = self._load_model_fn(model_file)
+                    if self._on_model_updated is not None:
+                        self._on_model_updated(self.active_model)
+                else:
+                    self.active_model = None
+            except Exception:
+                self.active_model = None
+
+    def _load_saved_model_summary(self) -> Dict[str, Any]:
+        return self._load_model_summary(self.active_model_id)
+
+    # ------------------------------------------------------------------ configuration
+    def set_require_full_joints(self, enabled: bool) -> bool:
+        self.require_full_joints = bool(enabled)
+        self.status_note = (
+            "관절 완전 인식 필터 ON: 21개 관절이 카메라 화면에 완전히 들어왔을 때만 수집합니다 (잘림·가림 방지)."
+            if self.require_full_joints
+            else "전체 프레임 수집 모드: 손 일부가 잘리더라도 감지되면 수집합니다."
+        )
+        return self.require_full_joints
+
+    def list_models(self) -> List[Dict[str, Any]]:
+        self.models_dir.mkdir(parents=True, exist_ok=True)
+        res = []
+        files = sorted(self.models_dir.glob("*.json"))
+        has_default = any(f.name == "spatial_pose_mlp.json" for f in files)
+        if not has_default:
+            res.append({
+                "id": "spatial_pose_mlp.json",
+                "name": "기본 모델 (Default)",
+                "active": self.active_model_id == "spatial_pose_mlp.json",
+                "exists": False,
+                "test_accuracy": 0.0,
+                "train_accuracy": 0.0,
+                "total_samples": 0,
+                "trained_at": "미학습",
+                "file_size_kb": 0.0,
+            })
+        for f in files:
+            if f.name == "active_model.json":
+                continue
+            try:
+                doc = json.loads(f.read_text(encoding="utf-8"))
+                meta = doc.get("metadata") or {}
+                is_trained = doc.get("schema") == "manux-spatial-mlp/1" and "weights" in doc
+                is_active = (f.name == self.active_model_id)
+                name = meta.get("name") or (
+                    "기본 모델 (Default)" if f.name == "spatial_pose_mlp.json" else f.stem
+                )
+                res.append({
+                    "id": f.name,
+                    "name": name,
+                    "active": is_active,
+                    "exists": is_trained,
+                    "test_accuracy": float(meta.get("test_accuracy", 0.0)),
+                    "train_accuracy": float(meta.get("train_accuracy", 0.0)),
+                    "total_samples": int(meta.get("total_samples", 0)),
+                    "trained_at": str(meta.get("trained_at", "미학습" if not is_trained else "")),
+                    "file_size_kb": round(f.stat().st_size / 1024, 1) if is_trained else 0.0,
+                })
+            except Exception:
+                continue
+        return res
+
+    def create_model(self, name: str) -> Dict[str, Any]:
+        raw_name = (name or "").strip()
+        clean = re.sub(r"[^\w\-\uac00-\ud7a3]", "_", raw_name).strip("_")
+        self.models_dir.mkdir(parents=True, exist_ok=True)
+        if not clean:
+            existing_count = len([f for f in self.models_dir.glob("*.json") if f.name != "active_model.json"])
+            clean = f"새_모델_{existing_count + 1}"
+            raw_name = clean
+        filename = f"{clean}.json"
+        target_file = self.models_dir / filename
+        if not target_file.is_file():
+            slot_payload = {
+                "schema": "manux-spatial-mlp-slot/1",
+                "metadata": {
+                    "name": raw_name or clean,
+                    "trained_at": "미학습",
+                    "test_accuracy": 0.0,
+                    "train_accuracy": 0.0,
+                    "total_samples": 0,
+                },
+            }
+            target_file.write_text(json.dumps(slot_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.active_model_id = filename
+        self.active_model = None
+        self.samples.clear()
+        self.invalidate_saved_cache()
+        self.saved_dataset_counts(force=True)
+        if self._on_model_updated is not None:
+            self._on_model_updated(None)
+        self._save_active_model_config()
+        self.model_summary = self._load_model_summary(filename)
+        self.status_note = f"✨ 새 모델 슬롯 생성: [{raw_name or clean}] 선택됨 (누적 0개). [⚡ 즉시 학습]을 누르면 이 모델에 저장됩니다."
+        return {"success": True, "id": filename, "name": raw_name or clean}
+
+    def activate_model(self, model_id: str) -> bool:
+        model_file = self.models_dir / model_id
+        is_trained = False
+        if model_file.is_file():
+            try:
+                doc = json.loads(model_file.read_text(encoding="utf-8"))
+                is_trained = doc.get("schema") == "manux-spatial-mlp/1" and "weights" in doc
+            except Exception:
+                is_trained = False
+
+        if is_trained:
+            try:
+                model = self._load_model_fn(model_file) if self._load_model_fn is not None else None
+                self.active_model = model
+                self.active_model_id = model_id
+                self.samples.clear()
+                self.invalidate_saved_cache()
+                self.saved_dataset_counts(force=True)
+                self._save_active_model_config()
+                self.model_summary = self._load_model_summary(model_id)
+                if self._on_model_updated is not None:
+                    self._on_model_updated(model)
+                display_name = self.model_summary.get("name") or model_id
+                self.status_note = f"✅ [{display_name}] 모델이 활성화되어 실시간 제어 엔진에 즉시 적용되었습니다!"
+                return True
+            except Exception as exc:
+                self.status_note = f"❌ 모델 활성화 실패: {exc}"
+                return False
+        else:
+            if model_id != "spatial_pose_mlp.json" and not model_file.is_file():
+                self.status_note = f"⚠️ 모델 파일을 찾을 수 없습니다: {model_id}"
+                return False
+            self.active_model = None
+            self.active_model_id = model_id
+            self.samples.clear()
+            self.invalidate_saved_cache()
+            self.saved_dataset_counts(force=True)
+            self._save_active_model_config()
+            self.model_summary = self._load_model_summary(model_id)
+            if self._on_model_updated is not None:
+                self._on_model_updated(None)
+            display_name = self.model_summary.get("name") or Path(model_id).stem
+            self.status_note = f"📌 [{display_name}] 슬롯 선택됨 (미학습 상태 — 표본 수집 후 [⚡ 즉시 학습]을 누르세요)"
+            return True
+
+    def delete_model(self, model_id: str) -> bool:
+        model_file = self.models_dir / model_id
+        if model_file.is_file():
+            try:
+                model_file.unlink()
+            except Exception as exc:
+                self.status_note = f"❌ 모델 삭제 실패: {exc}"
+                return False
+        if self.snapshots_dir.is_dir():
+            for fpath in list(self.snapshots_dir.glob("*.json")):
+                try:
+                    doc = json.loads(fpath.read_text(encoding="utf-8"))
+                    doc_model = doc.get("modelId", "spatial_pose_mlp.json") if isinstance(doc, dict) else "spatial_pose_mlp.json"
+                    if doc_model == model_id:
+                        fpath.unlink()
+                except Exception:
+                    continue
+        was_active = (self.active_model_id == model_id)
+        if was_active:
+            self.active_model = None
+            self.samples.clear()
+            if self._on_model_updated is not None:
+                self._on_model_updated(None)
+            remaining = [f.name for f in sorted(self.models_dir.glob("*.json")) if f.name != "active_model.json"]
+            if remaining:
+                self.activate_model(remaining[0])
+            else:
+                self.active_model_id = "spatial_pose_mlp.json"
+                self._save_active_model_config()
+                self.model_summary = {"loaded": False}
+        self.invalidate_saved_cache()
+        self.saved_dataset_counts(force=True)
+        self.status_note = f"🗑️ [{model_id}] 모델이 삭제되었습니다."
+        return True
 
     # ------------------------------------------------------------------ configuration
     def set_capture_mode(self, mode: str) -> str:
@@ -337,6 +589,9 @@ class PoseSnapshotStudio:
         """Called on every incoming frame when Studio is active."""
         now_ms = time.perf_counter() * 1000.0 if now_ms is None else float(now_ms)
         self.hand_tracked = landmarks is not None and len(landmarks) == 21
+        self.full_joints_tracked, self.joints_status_reason = (
+            is_full_joints_tracked(landmarks, world) if self.hand_tracked else (False, "no_hand")
+        )
         self.live_landmarks = landmarks if self.hand_tracked else None
         self.live_world = world if (world is not None and len(world) == 21) else None
         self.live_system_action = system_action if system_action in ACTION_BY_ID else "none"
@@ -385,6 +640,11 @@ class PoseSnapshotStudio:
         if lm is None or len(lm) != 21:
             self.status_note = "⚠️ 손이 감지되지 않아 캡처하지 않았습니다. 카메라에 손을 보여주세요."
             return {"success": False, "reason": "no_hand_tracked"}
+        if self.require_full_joints:
+            ok, reason = is_full_joints_tracked(lm, wd)
+            if not ok:
+                self.status_note = "⚠️ 21개 관절이 완전히 인식되지 않아 캡처하지 않았습니다 (화면 경계 잘림·가림 방지)."
+                return {"success": False, "reason": reason}
         if gt not in ACTION_BY_ID:
             return {"success": False, "reason": "unknown_action"}
 
@@ -437,6 +697,8 @@ class PoseSnapshotStudio:
             return {"success": False, "reason": "throttled"}
         if not self.hand_tracked or self.live_landmarks is None:
             return {"success": False, "reason": "no_hand_tracked"}
+        if self.require_full_joints and not self.full_joints_tracked:
+            return {"success": False, "reason": f"partial_joints_{self.joints_status_reason}"}
 
         pred_action = self.effective_predicted_action()
         is_match = pred_action == self.selected_ground_truth
@@ -502,6 +764,13 @@ class PoseSnapshotStudio:
         self._summary_cache_time = now
         return res
 
+    def _doc_matches_active_model(self, doc: Any) -> bool:
+        target = self.active_model_id or "spatial_pose_mlp.json"
+        if isinstance(doc, dict):
+            doc_model = doc.get("modelId") or "spatial_pose_mlp.json"
+            return doc_model == target
+        return target == "spatial_pose_mlp.json"
+
     def saved_dataset_counts(self, force: bool = False) -> Dict[str, int]:
         if self._saved_counts_cache is not None and not force:
             return dict(self._saved_counts_cache)
@@ -509,9 +778,11 @@ class PoseSnapshotStudio:
         files = 0
         if self.snapshots_dir.is_dir():
             for fpath in sorted(self.snapshots_dir.glob("*.json")):
-                files += 1
                 try:
                     doc = json.loads(fpath.read_text(encoding="utf-8"))
+                    if not self._doc_matches_active_model(doc):
+                        continue
+                    files += 1
                     items = doc.get("samples") if isinstance(doc, dict) else (doc if isinstance(doc, list) else [])
                     for s in items or []:
                         gt = s.get("groundTruthAction") or s.get("action")
@@ -529,33 +800,40 @@ class PoseSnapshotStudio:
             return None
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
         stamp = int(time.time() * 1000)
-        filename = f"manux_pose_snapshots_preview_{stamp}.json"
+        model_id = self.active_model_id or "spatial_pose_mlp.json"
+        model_stem = Path(model_id).stem
+        filename = f"manux_pose_snapshots_{model_stem}_{stamp}.json"
         out_path = self.snapshots_dir / filename
         stat = self.summary()
+        saved_count = len(self.samples)
         payload = {
             "schema": "manux-pose-snapshots/2",
             "branch": "preview",
+            "modelId": model_id,
             "exportedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "totalSamples": len(self.samples),
+            "totalSamples": saved_count,
             "matches": stat["matches"],
             "discrepancies": stat["discrepancies"],
             "byAction": stat["byAction"],
-            "samples": self.samples,
+            "samples": list(self.samples),
         }
         out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.samples.clear()
         self.invalidate_saved_cache()
         self.saved_dataset_counts(force=True)
-        self.status_note = f"💾 데이터셋 저장 완료: {filename} ({len(self.samples)}개 표본)"
+        self.status_note = f"💾 [{model_stem}] 데이터셋 저장 완료: {filename} ({saved_count}개 표본 누적 반영)"
         return out_path
 
     def load_all_samples(self) -> List[Dict[str, Any]]:
-        """Combine all saved JSON datasets in `snapshots_dir` plus any unsaved in-memory samples."""
+        """Combine saved JSON datasets for the active model in `snapshots_dir` plus any unsaved in-memory samples."""
         combined: List[Dict[str, Any]] = []
         seen_ids = set()
         if self.snapshots_dir.is_dir():
             for fpath in sorted(self.snapshots_dir.glob("*.json")):
                 try:
                     doc = json.loads(fpath.read_text(encoding="utf-8"))
+                    if not self._doc_matches_active_model(doc):
+                        continue
                     items = doc.get("samples") if isinstance(doc, dict) else (doc if isinstance(doc, list) else [])
                     for s in items or []:
                         sid = s.get("sampleId")
@@ -575,10 +853,12 @@ class PoseSnapshotStudio:
             combined.append(s)
         return combined
 
-    def train_now(self) -> Dict[str, Any]:
-        """Save current buffer (if non-empty) and run the 4-second Spatial MLP trainer over all samples."""
+    def train_now(self, model_name: Optional[str] = None) -> Dict[str, Any]:
+        """Save current buffer (if non-empty) and run the Spatial MLP trainer into target model."""
         if self.is_streaming:
             self.stop_stream()
+        target_id = model_name or self.active_model_id or "spatial_pose_mlp.json"
+        self.active_model_id = target_id
         if self.samples:
             self.save_dataset()
         all_samples = self.load_all_samples()
@@ -588,15 +868,28 @@ class PoseSnapshotStudio:
         if self._train_fn is None:
             self.status_note = "⚠️ 학습 엔진이 연결되지 않았습니다."
             return {"success": False, "reason": "no_trainer"}
+
+        target_path = self.models_dir / target_id
         try:
-            res = self._train_fn(all_samples, self.models_dir / "spatial_pose_mlp.json")
+            res = self._train_fn(all_samples, target_path)
+            self.active_model_id = target_id
+            self._save_active_model_config()
+
+            if self._load_model_fn is not None and target_path.is_file():
+                self.active_model = self._load_model_fn(target_path)
+                if self._on_model_updated is not None:
+                    self._on_model_updated(self.active_model)
+
             self.model_summary = {
                 "loaded": True,
-                "path": str(self.models_dir / "spatial_pose_mlp.json"),
+                "model_id": target_id,
+                "name": target_path.stem,
+                "path": str(target_path),
                 **res,
             }
+            display_name = target_path.stem
             self.status_note = (
-                f"⚡ Spatial MLP 학습 완료! ({res.get('elapsed_ms', 0):.0f}ms 소요) · "
+                f"⚡ [{display_name}] Spatial MLP 학습 완료! ({res.get('elapsed_ms', 0):.0f}ms 소요) · "
                 f"표본 {res.get('total_samples', 0)}개 · 검증 정확도 {res.get('test_accuracy', 0):.1f}% "
                 f"(학습 {res.get('train_accuracy', 0):.1f}%)"
             )
