@@ -569,6 +569,8 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 - `ViewFrame.actions`에는 출력 결과가 `ok`인 동작만 포함한다. 거절/오류는 온보딩 성공으로 세지 않는다. 제어 전환 뒤 Bridge의 일시정지 표시는 Snapshot.control_on을 따른다.
 - `RuntimeRequest('advanced', config_dir, values)`는 bool/int/float/choice 설정 편집을 런타임 큐로 전달한다. 고급 설정은 알려진 실행 중 조절 가능한 키만 검증하며, 전체 검증·임시 저장 성공 후 메모리 설정과 연습/Windows 싱크를 갱신한다. 실패는 기존 설정 파일·실효값을 유지한다. 저장 중·실패·성공은 별도 revision 결과로 UI에 전달한다. 설정 변경 때 출력 해제·기능 reset·제어 끔을 먼저 적용한다. 프로필이 덮어쓴 값은 편집할 수 없다.
 
+- §12 보충: 최신 영상은 한 장만 유지한다. 연습에서 받아들인 tap/begin·모드 전환은 불변 `PracticeEvent(seq,t,actions,cursor,precision,motion_on,has_hand)`로 별도 최대128개 링에 보존해 `ViewFrame.practice_events`로 전달한다. UI는 seq를 한 번만 소비하고 당시 가상 커서 위치로 성공을 확인한다. 단계 reset/연습 재진입 때 링을 비우고 지속 `practice_epoch`를 증가시켜 이전 단계 이벤트가 다음 단계에 재사용되지 않는다. 영상 프레임을 큐에 쌓지 않는다. UI의 표시 상태가 늦더라도 설정 변경은 항상 SetControl(False)를 큐에 보낸다.
+
 ## 14. 휴대폰 연결 (`link`, v0.8)
 
 출처: Dan(한순중)의 `hand-mouse-gesture-overhaul@9da1f634e8c0afd9d3d6b32a56c83cddfb23d5f8`,

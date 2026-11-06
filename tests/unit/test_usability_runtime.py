@@ -86,3 +86,47 @@ def test_optional_v_model_reconnects_after_pipeline_replacement():
         assert replacement is not control and replacement.model is model
     finally:
         runtime.stop()
+
+
+def test_practice_click_survives_latest_frame_replacement_and_reset_clears_it():
+    from manux.actions.bindings import Binding
+    from manux.actions.router import Router
+    from manux.core.contracts import Activity, FrameInfo, HandObservation, Intent
+    from manux.engine.commands import ResetPractice
+    class Source:
+        fps = 60.
+        seq = 0
+        def read(self, *_):
+            frame = FrameInfo(self.seq, 1+self.seq/60, 640, 480, True)
+            self.seq += 1
+            hand = HandObservation(frame, ((.5, .5, 0.),)*21, "Right", .9)
+            return frame, None, hand, (), 0.
+        def mode_text(self): return "synthetic"
+        def close(self): pass
+    class Feature:
+        id, modes, gestures = "script", {"pinch"}, ("script.click", "script.move")
+        def step(self, hand, ctx):
+            if ctx.frame.seq == 0:
+                return (Intent(ctx.frame.t, self.id, "script.click", "tap"),)
+            return (Intent(ctx.frame.t, self.id, "script.move", "hold", point=(.7, .7)),)
+        def activity(self): return Activity()
+        def reset(self, reason): pass
+    runtime = build(Settings(schema()), Source(), windows=False)
+    runtime.engine.replace_pipeline([Feature()], [], Router({
+        "script.click": Binding("mouse.left_click"), "script.move": Binding("mouse.move")}), {})
+    try:
+        runtime.engine.commands.put(SetStage(Stage.TUTORIAL))
+        runtime.step()
+        runtime.step()  # The UI never reads the click frame.
+        _, view = runtime.latest()
+        assert view.actions == ("mouse.move",)
+        assert len(view.practice_events) == 1
+        event = view.practice_events[0]
+        assert event.actions == ("mouse.left_click",) and event.cursor == (960/1919, 540/1079)
+        epoch = view.practice_epoch
+        runtime.engine.commands.put(ResetPractice())
+        runtime.step()
+        _, reset = runtime.latest()
+        assert reset.practice_epoch == epoch + 1 and reset.practice_events == ()
+    finally:
+        runtime.stop()
