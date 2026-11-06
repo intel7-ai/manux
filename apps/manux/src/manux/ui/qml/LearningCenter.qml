@@ -47,6 +47,11 @@ Popup {
                 Copy { text: "학습 센터"; font.pixelSize: 24; font.bold: true }
                 Copy { Layout.fillWidth: true; text: "동작 선택 → 학습·평가 따로 녹화 → 팀 공유 → 검증 후 적용"; color: Theme.Studio.muted }
             }
+            StudioButton {
+                text: "⚡ 포즈 스튜디오 (MLP: 클릭·스크롤 0.2초 즉시 학습)"
+                primary: true
+                onClicked: { studio.close(); studio.controller.setPage("studio") }
+            }
             StudioButton { text: "닫기"; onClicked: studio.close() }
         }
         ScrollView {
@@ -123,8 +128,25 @@ Popup {
                         spacing: 10
                         RowLayout {
                             Layout.fillWidth: true
-                            Copy { text: "02  동작 선택"; font.pixelSize: 16; font.bold: true; Layout.fillWidth: true }
+                            Copy { text: "02  동작 선택 (시계열 모션 전용)"; font.pixelSize: 16; font.bold: true; Layout.fillWidth: true }
                             Copy { text: studio.controller.selectedTrainingKeys.length + "개 선택"; color: Theme.Studio.mintDark; font.bold: true }
+                        }
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: 36
+                            radius: 8
+                            color: Theme.Studio.mintWash
+                            border.color: Theme.Studio.mint
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                Copy {
+                                    text: "⚡ 마우스 클릭·드래그·창 제어 동작은 [포즈 스튜디오 (MLP)]로 완전히 이전되었습니다. 학습센터는 TCN 시계열 쓸기(Swipes) 동작만 관리합니다."
+                                    color: Theme.Studio.mintDark
+                                    font.bold: true
+                                    font.pixelSize: 12
+                                }
+                            }
                         }
                         RowLayout {
                             Layout.fillWidth: true

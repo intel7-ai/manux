@@ -138,6 +138,168 @@ class _NullTrainingService:
         raise FileNotFoundError("학습한 모델이 없어요. 먼저 학습하세요.")
 
 
+_DEFAULT_STUDIO_CATEGORIES = (
+    {"id": "click", "name": "마우스·클릭", "icon": "🖱️", "desc": "좌·우클릭, 스크롤, 동시클릭"},
+    {"id": "window", "name": "창·시스템 제어", "icon": "🪟", "desc": "창 전환, 바탕화면, 토글, 닫기"},
+    {"id": "guard", "name": "이동·방어 가드", "icon": "🛡️", "desc": "커서 이동, 휴식 자세, 헛클릭 방어"},
+)
+
+_DEFAULT_STUDIO_ACTIONS = (
+    # click
+    {"id": "thumb_middle", "category": "click", "key": "1", "icon": "👆", "label": "1. 좌클릭 (엄지+중지)", "short": "좌클릭 (엄지+중지)",
+     "desc": "엄지 끝과 중지 끝을 맞대어 좌클릭하는 자세"},
+    {"id": "thumb_ring", "category": "click", "key": "2", "icon": "💍", "label": "2. 우클릭 (엄지+약지)", "short": "우클릭 (엄지+약지)",
+     "desc": "엄지 끝과 약지 끝을 맞대어 우클릭하는 자세"},
+    {"id": "thumb_index", "category": "click", "key": "3", "icon": "📜", "label": "3. 스크롤 진입 (엄지+검지)", "short": "스크롤 (엄지+검지)",
+     "desc": "엄지 끝과 검지 끝을 맞대어 상하 스크롤 모드로 진입하는 자세"},
+    {"id": "thumb_middle_ring", "category": "click", "key": "4", "icon": "🤞", "label": "4. 양쪽 클릭 (엄지+중지+약지)", "short": "양쪽 클릭 (엄지+중지+약지)",
+     "desc": "엄지 끝에 중지와 약지를 동시에 맞대어 좌클릭·우클릭을 독립적으로 함께 판정하는 자세"},
+    # window
+    {"id": "thumb_pinky", "category": "window", "key": "1", "icon": "🤙", "label": "1. 창 전환 (엄지+새끼)", "short": "창 전환 (엄지+새끼)",
+     "desc": "엄지 끝과 새끼손가락 끝을 맞대어 창 전환(Alt+Tab) 창을 띄우는 자세"},
+    {"id": "palm_side", "category": "window", "key": "2", "icon": "🖐️", "label": "2. 바탕화면 (엄지 접고 손 가로)", "short": "바탕화면 (손가로)",
+     "desc": "엄지만 손바닥 안으로 접고 네 손가락을 펴 손을 가로로 세워 모든 창을 최소화하는 자세"},
+    {"id": "v_sign", "category": "window", "key": "3", "icon": "✌️", "label": "3. 제어 켜기·끄기 (V 손 모양)", "short": "제어 토글 (V자)",
+     "desc": "검지와 중지만 V자로 펴고 나머지는 접어 마우스 제어를 토글하는 자세"},
+    {"id": "rock_sign", "category": "window", "key": "4", "icon": "🤘", "label": "4. 창 닫기 (검지·새끼 펴기)", "short": "창 닫기 (Rock)",
+     "desc": "검지와 새끼만 펴고 중지·약지를 접어 현재 창을 닫는(Alt+F4) 자세"},
+    {"id": "thumbs_up", "category": "window", "key": "5", "icon": "👍", "label": "5. 모션 모드 (엄지 위로)", "short": "모션 모드 (엄지척)",
+     "desc": "네 손가락을 접고 엄지만 위로 세워 모션 제어 모드를 전환하는 자세"},
+    # guard
+    {"id": "none", "category": "guard", "key": "1", "icon": "✊", "label": "1. 이동·휴식 가드 (none)", "short": "이동·휴식",
+     "desc": "아무 동작 아님 · 반주먹이나 편 손으로 커서를 이동하거나 쉬는 자세 (헛클릭 방어)"},
+)
+
+
+class _NullPoseStudio:
+    """Fallback when `Bridge` is constructed in unit tests without `services['pose_studio']`."""
+
+    def __init__(self, config_dir: Path) -> None:
+        self.snapshots_dir = Path(config_dir) / "pose_snapshots"
+        self.models_dir = Path(config_dir) / "models" / "spatial_mlp"
+        self.max_samples = 1000
+        self.samples = []
+        self.selected_ground_truth = "none"
+        self.capture_mode = "stream"
+        self.is_streaming = False
+        self.discrepancy_only = False
+        self.require_full_joints = True
+        self.full_joints_tracked = False
+        self.active_model_id = "spatial_pose_mlp.json"
+        self.status_note = "숫자키(1~8)로 동작을 고르고 Space 또는 수집 버튼으로 프레임을 모으세요."
+        self.hand_tracked = False
+        self.live_system_action = "none"
+        self.live_ai_action = "none"
+        self.live_ai_confidence = 0.0
+        self.model_summary: Dict[str, Any] = {"loaded": False}
+
+    def set_capture_mode(self, mode: str) -> str:
+        self.capture_mode = mode
+        if mode == "snapshot":
+            self.is_streaming = False
+        return self.capture_mode
+
+    def set_ground_truth(self, action_id: str) -> bool:
+        self.selected_ground_truth = action_id
+        return True
+
+    def set_discrepancy_only(self, enabled: bool) -> bool:
+        self.discrepancy_only = bool(enabled)
+        return self.discrepancy_only
+
+    def start_stream(self) -> bool:
+        self.capture_mode = "stream"
+        self.is_streaming = True
+        return True
+
+    def stop_stream(self) -> bool:
+        self.is_streaming = False
+        return False
+
+    def toggle_stream_or_snapshot(self) -> Dict[str, Any]:
+        if self.capture_mode == "stream":
+            self.is_streaming = not self.is_streaming
+            return {"mode": "stream", "streaming": self.is_streaming}
+        return self.capture_snapshot()
+
+    def observe_frame(self, landmarks, world, system_action, now_ms=None):
+        self.hand_tracked = landmarks is not None and len(landmarks) == 21
+        self.live_system_action = system_action
+        return None
+
+    def effective_predicted_action(self) -> str:
+        return self.live_ai_action if self.model_summary.get("loaded") else self.live_system_action
+
+    def is_live_match(self) -> bool:
+        return self.hand_tracked and self.effective_predicted_action() == self.selected_ground_truth
+
+    def capture_snapshot(self, **kwargs) -> Dict[str, Any]:
+        if not self.hand_tracked:
+            return {"success": False, "reason": "no_hand_tracked"}
+        self.samples.append({"groundTruthAction": self.selected_ground_truth, "isMatch": True})
+        return {"success": True, "totalSamples": len(self.samples)}
+
+    def undo_last(self) -> bool:
+        if self.samples:
+            self.samples.pop()
+            return True
+        return False
+
+    def clear_samples(self) -> None:
+        self.is_streaming = False
+        self.samples.clear()
+
+    def summary(self) -> Dict[str, Any]:
+        by_act = {a["id"]: 0 for a in _DEFAULT_STUDIO_ACTIONS}
+        for s in self.samples:
+            gt = s.get("groundTruthAction", "none")
+            if gt in by_act:
+                by_act[gt] += 1
+        return {
+            "total": len(self.samples),
+            "maxSamples": self.max_samples,
+            "matches": sum(1 for s in self.samples if s.get("isMatch")),
+            "discrepancies": sum(1 for s in self.samples if not s.get("isMatch")),
+            "byAction": by_act,
+            "savedTotal": 0,
+            "savedByAction": dict(by_act),
+            "savedFiles": 0,
+        }
+
+    def save_dataset(self) -> Optional[Path]:
+        return None
+
+    def set_require_full_joints(self, enabled: bool) -> bool:
+        self.require_full_joints = bool(enabled)
+        return self.require_full_joints
+
+    def list_models(self) -> List[Dict[str, Any]]:
+        return [{
+            "id": "spatial_pose_mlp.json",
+            "name": "기본 모델 (Default)",
+            "active": True,
+            "exists": False,
+            "test_accuracy": 0.0,
+            "train_accuracy": 0.0,
+            "total_samples": 0,
+            "trained_at": "미학습",
+            "file_size_kb": 0.0,
+        }]
+
+    def create_model(self, name: str) -> Dict[str, Any]:
+        return {"success": True, "id": f"{name}.json", "name": name}
+
+    def activate_model(self, model_id: str) -> bool:
+        self.active_model_id = model_id
+        return True
+
+    def delete_model(self, model_id: str) -> bool:
+        return True
+
+    def train_now(self, model_name: Optional[str] = None) -> Dict[str, Any]:
+        return {"success": False, "reason": "not_enough_samples"}
+
+
 class RecordingPlanEditor(QObject):
     """Qt state for `RecordingPlanDialog.qml`; edits are drafts until saved or started."""
 
@@ -306,6 +468,7 @@ class Bridge(QObject):
     hiddenToTray = Signal()
     trackingActiveChanged = Signal()
     trainingChanged = Signal()
+    studioChanged = Signal()
 
     def __init__(self, runtime, settings: store.Settings, config_dir: Path, *,
                  services: Optional[Dict[str, Callable]] = None, hotkeys=None, hotkey_defaults=None,
@@ -382,6 +545,15 @@ class Bridge(QObject):
         self.training_timer = QTimer(self)
         self.training_timer.setInterval(400)
         self.training_timer.timeout.connect(self._training_tick)
+        # pose snapshot studio & spatial MLP
+        self.studio = self.services.get("pose_studio") or _NullPoseStudio(self.config_dir)
+        self._studio_categories = (self.services["studio_categories"]() if "studio_categories" in self.services
+                                  else list(_DEFAULT_STUDIO_CATEGORIES))
+        self._studio_actions = (self.services["studio_actions"]() if "studio_actions" in self.services
+                                else list(_DEFAULT_STUDIO_ACTIONS))
+        self._studio_category = "click"
+        self._studio_sys_fn = self.services.get("studio_system_action")
+        self._studio_summary_cache = self.studio.summary()
         # hand choice / tutorial / calibration
         self.choice = _HandChoice()
         self.candidate = ""
@@ -714,7 +886,14 @@ class Bridge(QObject):
 
     @Slot(str)
     def setPage(self, page):
-        if page in ("home", "profiles", "customize") and page != self.page:
+        if page in ("home", "studio", "profiles", "customize") and page != self.page:
+            if page == "studio":
+                self._pause()
+                self._studio_summary_cache = self.studio.summary()
+                self.studioChanged.emit()
+            elif self.page == "studio" and self.studio.is_streaming:
+                self.studio.stop_stream()
+                self.studioChanged.emit()
             self.page = page
             self.stateChanged.emit()
 
@@ -987,8 +1166,12 @@ class Bridge(QObject):
     @Property("QVariantList", notify=trainingChanged)
     def trainingRows(self):
         category = getattr(self, "training_filter", "전체")
-        return [{**r, "selected": r["key"] in self.training_selected} for r in self.training_rows
-                if category == "전체" or r["category"] == category]
+        return [
+            {**r, "selected": r["key"] in self.training_selected}
+            for r in self.training_rows
+            if r["category"] not in ("클릭·드래그", "창·모드")
+            and (category == "전체" or r["category"] == category)
+        ]
 
     @Property("QStringList", notify=trainingChanged)
     def selectedTrainingKeys(self):
@@ -1064,11 +1247,11 @@ class Bridge(QObject):
 
     @Property("QStringList", constant=True)
     def trainingCategories(self):
-        return list(self.tc.categories)
+        return [c for c in self.tc.categories if c not in ("클릭·드래그", "창·모드")]
 
     @Property(str, notify=trainingChanged)
     def trainingCatalog(self):
-        return f"전체 {self.tc.total_tasks}개 녹화 항목 · {len(self.trainingRows)}개 표시 · 미학습 동작도 녹화 가능"
+        return f"TCN 시계열 모션 {len(self.trainingRows)}개 표시 (클릭·창 제어는 포즈 스튜디오 전담)"
 
     @Slot(str)
     def setTrainingFilter(self, category):
@@ -1188,6 +1371,278 @@ class Bridge(QObject):
     @Property("QVariantList", notify=trainingChanged)
     def trainingLosses(self):
         return list(self.training_job.snapshot().get("losses", []))[-60:]
+
+    # ------------------------------------------------------------------ pose snapshot studio & spatial MLP
+    def _studio_label(self, action_id: str) -> str:
+        for item in self._studio_actions:
+            if item["id"] == action_id:
+                return item["short"]
+        return action_id
+
+    @Property("QVariantList", notify=studioChanged)
+    def studioCategories(self):
+        counts = self._studio_summary_cache.get("byAction", {})
+        saved = self._studio_summary_cache.get("savedByAction", {})
+        out = []
+        for cat in self._studio_categories:
+            cid = cat["id"]
+            cat_actions = [a for a in self._studio_actions if a.get("category") == cid]
+            total_samples = sum(counts.get(a["id"], 0) + saved.get(a["id"], 0) for a in cat_actions)
+            out.append({
+                **cat,
+                "selected": cid == self._studio_category,
+                "actionCount": len(cat_actions),
+                "totalCount": total_samples,
+            })
+        return out
+
+    @Property(str, notify=studioChanged)
+    def studioCategory(self):
+        return self._studio_category
+
+    @Property("QVariantList", notify=studioChanged)
+    def studioCategoryActions(self):
+        cat = self._studio_category
+        return [a for a in self.studioActions if a.get("category") == cat]
+
+    @Slot(str)
+    def setStudioCategory(self, cat_id):
+        if cat_id != self._studio_category and any(c["id"] == cat_id for c in self._studio_categories):
+            self._studio_category = cat_id
+            curr = self.studio.selected_ground_truth
+            cat_action_ids = [a["id"] for a in self._studio_actions if a.get("category") == cat_id]
+            if curr not in cat_action_ids and cat_action_ids:
+                self.setStudioGroundTruth(cat_action_ids[0])
+            self.studioChanged.emit()
+
+    @Slot()
+    def nextStudioCategory(self):
+        cat_ids = [c["id"] for c in self._studio_categories]
+        if not cat_ids:
+            return
+        idx = cat_ids.index(self._studio_category) if self._studio_category in cat_ids else 0
+        next_cat = cat_ids[(idx + 1) % len(cat_ids)]
+        self.setStudioCategory(next_cat)
+
+    @Property("QVariantList", notify=studioChanged)
+    def studioActions(self):
+        counts = self._studio_summary_cache.get("byAction", {})
+        saved = self._studio_summary_cache.get("savedByAction", {})
+        per_cls = (self.studio.model_summary.get("per_class") or {}) if self.studio.model_summary.get("loaded") else {}
+        out = []
+        for item in self._studio_actions:
+            aid = item["id"]
+            c_session = counts.get(aid, 0)
+            c_saved = saved.get(aid, 0)
+            acc = (per_cls.get(aid) or {}).get("accuracy")
+            out.append({
+                **item,
+                "selected": self.studio.selected_ground_truth == aid,
+                "sessionCount": c_session,
+                "savedCount": c_saved,
+                "totalCount": c_session + c_saved,
+                "accuracyText": f"{acc:.0f}%" if acc is not None else "",
+            })
+        return out
+
+    @Property(str, notify=studioChanged)
+    def studioGroundTruth(self):
+        return self.studio.selected_ground_truth
+
+    @Property(str, notify=studioChanged)
+    def studioGroundTruthLabel(self):
+        return self._studio_label(self.studio.selected_ground_truth)
+
+    @Property(str, notify=studioChanged)
+    def studioGroundTruthDesc(self):
+        for item in self._studio_actions:
+            if item["id"] == self.studio.selected_ground_truth:
+                return item["desc"]
+        return ""
+
+    @Property(str, notify=studioChanged)
+    def studioCaptureMode(self):
+        return self.studio.capture_mode
+
+    @Property(bool, notify=studioChanged)
+    def studioStreaming(self):
+        return bool(self.studio.is_streaming)
+
+    @Property(bool, notify=studioChanged)
+    def studioDiscrepancyOnly(self):
+        return bool(self.studio.discrepancy_only)
+
+    @Property(bool, notify=studioChanged)
+    def studioHandTracked(self):
+        return bool(self.studio.hand_tracked)
+
+    @Property(str, notify=studioChanged)
+    def studioSystemAction(self):
+        if not self.studio.hand_tracked:
+            return "손 대기 중"
+        return self._studio_label(self.studio.live_system_action)
+
+    @Property(str, notify=studioChanged)
+    def studioAiAction(self):
+        if not self.studio.model_summary.get("loaded"):
+            return "미학습 (수집 후 학습 클릭)"
+        if not self.studio.hand_tracked:
+            return "손 대기 중"
+        lbl = self._studio_label(self.studio.live_ai_action)
+        return f"{lbl} ({self.studio.live_ai_confidence * 100:.0f}%)"
+
+    @Property(bool, notify=studioChanged)
+    def studioLiveMatch(self):
+        return bool(self.studio.is_live_match())
+
+    @Property(bool, notify=studioChanged)
+    def studioRequireFullJoints(self):
+        return bool(getattr(self.studio, "require_full_joints", True))
+
+    @Property(bool, notify=studioChanged)
+    def studioFullJointsTracked(self):
+        return bool(getattr(self.studio, "full_joints_tracked", False))
+
+    @Property(str, notify=studioChanged)
+    def studioActiveModelId(self):
+        return str(getattr(self.studio, "active_model_id", "spatial_pose_mlp.json"))
+
+    @Property("QVariantList", notify=studioChanged)
+    def studioModelList(self):
+        if hasattr(self.studio, "list_models"):
+            return self.studio.list_models()
+        return []
+
+    @Property(str, notify=studioChanged)
+    def studioCompareBadge(self):
+        if not self.studio.hand_tracked:
+            return "카메라에 손을 보여주세요"
+        if getattr(self.studio, "require_full_joints", False) and not getattr(self.studio, "full_joints_tracked", True):
+            return "⚠️ 손가락 일부가 화면 밖으로 잘렸습니다 (전체 손을 보여주세요)"
+        if self.studio.is_live_match():
+            return "✅ 판정 일치 (정상 인식 영역)"
+        return "🚨 판정 불일치! (사각지대/오인식 구간 — 지금 수집하면 즉시 교정됩니다)"
+
+    @Property(int, notify=studioChanged)
+    def studioTotalSamples(self):
+        return int(self._studio_summary_cache.get("total", 0))
+
+    @Property(int, notify=studioChanged)
+    def studioMaxSamples(self):
+        return int(self._studio_summary_cache.get("maxSamples", 1000))
+
+    @Property(str, notify=studioChanged)
+    def studioSummaryText(self):
+        s = self._studio_summary_cache
+        return (f"현재 세션: {s.get('total', 0)}/{s.get('maxSamples', 1000)}개 "
+                f"(일치 {s.get('matches', 0)} · 불일치 {s.get('discrepancies', 0)})  |  "
+                f"누적 저장 파일: {s.get('savedFiles', 0)}개 (총 {s.get('savedTotal', 0) + s.get('total', 0)}표본)")
+
+    @Property(str, notify=studioChanged)
+    def studioModelText(self):
+        ms = self.studio.model_summary
+        name = ms.get("name") or getattr(self.studio, "active_model_id", "spatial_pose_mlp.json")
+        if not ms.get("loaded"):
+            return f"Spatial MLP [{name}]: 아직 학습 전 (표본을 모으고 [⚡ 4초 즉시 학습]을 누르세요)"
+        return (f"Spatial MLP [{name}] 활성 · 검증 정확도 {ms.get('test_accuracy', 0):.1f}% "
+                f"(학습 {ms.get('train_accuracy', 0):.1f}%) · 표본 {ms.get('total_samples', 0)}개 · "
+                f"{ms.get('elapsed_ms', 0):.0f}ms 소요")
+
+    @Property(bool, notify=studioChanged)
+    def studioModelLoaded(self):
+        return bool(self.studio.model_summary.get("loaded"))
+
+    @Property(str, notify=studioChanged)
+    def studioNote(self):
+        return str(self.studio.status_note)
+
+    @Slot(str)
+    def setStudioCaptureMode(self, mode):
+        if mode in ("snapshot", "stream"):
+            self.studio.set_capture_mode(mode)
+            self._studio_summary_cache = self.studio.summary()
+            self.studioChanged.emit()
+
+    @Slot(str)
+    def setStudioGroundTruth(self, action_id):
+        if self.studio.set_ground_truth(action_id):
+            self.studioChanged.emit()
+
+    @Slot(int)
+    def selectStudioActionByNumber(self, num):
+        cat_actions = self.studioCategoryActions
+        if 1 <= num <= len(cat_actions):
+            self.setStudioGroundTruth(cat_actions[num - 1]["id"])
+        elif 1 <= num <= len(self._studio_actions):
+            self.setStudioGroundTruth(self._studio_actions[num - 1]["id"])
+
+    @Slot(bool)
+    def setStudioDiscrepancyOnly(self, enabled):
+        self.studio.set_discrepancy_only(bool(enabled))
+        self.studioChanged.emit()
+
+    @Slot(bool)
+    def setStudioRequireFullJoints(self, enabled):
+        if hasattr(self.studio, "set_require_full_joints"):
+            self.studio.set_require_full_joints(bool(enabled))
+            self.studioChanged.emit()
+
+    @Slot(str)
+    def createStudioModel(self, name):
+        if hasattr(self.studio, "create_model"):
+            self.studio.create_model(str(name))
+            self._studio_summary_cache = self.studio.summary()
+            self.studioChanged.emit()
+
+    @Slot(str)
+    def activateStudioModel(self, model_id):
+        if hasattr(self.studio, "activate_model"):
+            self.studio.activate_model(str(model_id))
+            self._studio_summary_cache = self.studio.summary()
+            self.studioChanged.emit()
+
+    @Slot(str)
+    def deleteStudioModel(self, model_id):
+        if hasattr(self.studio, "delete_model"):
+            self.studio.delete_model(str(model_id))
+            self._studio_summary_cache = self.studio.summary()
+            self.studioChanged.emit()
+
+    @Slot()
+    def triggerStudioCapture(self):
+        self.studio.toggle_stream_or_snapshot()
+        self._studio_summary_cache = self.studio.summary()
+        self.studioChanged.emit()
+
+    @Slot()
+    def undoStudioSample(self):
+        self.studio.undo_last()
+        self._studio_summary_cache = self.studio.summary()
+        self.studioChanged.emit()
+
+    @Slot()
+    def clearStudioSamples(self):
+        self.studio.clear_samples()
+        self._studio_summary_cache = self.studio.summary()
+        self.studioChanged.emit()
+
+    @Slot()
+    def saveStudioDataset(self):
+        self.studio.save_dataset()
+        self._studio_summary_cache = self.studio.summary()
+        self.studioChanged.emit()
+
+    @Slot()
+    def trainStudioModel(self):
+        self.studio.train_now()
+        self._studio_summary_cache = self.studio.summary()
+        self.studioChanged.emit()
+
+    @Slot()
+    def openStudioSnapshotsFolder(self):
+        self.studio.snapshots_dir.mkdir(parents=True, exist_ok=True)
+        if hasattr(os, "startfile"):
+            os.startfile(str(self.studio.snapshots_dir))  # noqa: S606
 
     # ------------------------------------------------------------------ tracking test
     # The runtime thread owns the test (data/tracking_test.py); this only shows ViewFrame.tracking.
@@ -1533,6 +1988,16 @@ class Bridge(QObject):
             return
         if key == KEY_Q:
             self.closed = True
+        elif self.stage_name == "main" and self.page == "studio":
+            if key == KEY_SPACE:
+                self.triggerStudioCapture()
+            elif key == KEY_ESC and self.studio.is_streaming:
+                self.studio.stop_stream()
+                self.studioChanged.emit()
+            elif key in (9, 16777217):
+                self.nextStudioCategory()
+            elif 49 <= key <= 57:  # keys '1'..'9' (supports 9th class: both click)
+                self.selectStudioActionByNumber(key - 48)
         elif self.stage_name == "main" and key == KEY_SPACE:
             self.paused = not self.paused
             self._send(SetControl(not self.paused))
@@ -1684,6 +2149,25 @@ class Bridge(QObject):
             tip = view.landmarks[8]
             self.tip, self.tip_at = (tip[0], tip[1]), time.perf_counter()
             self.aspect = view.aspect
+        if self.page == "studio":
+            sys_act = (self._studio_sys_fn(snap, view.actions) if self._studio_sys_fn is not None
+                       else ("none" if not view.actions else view.actions[0]))
+            prev_samples_len = len(self.studio.samples)
+            prev_hand = self.studio.hand_tracked
+            res = self.studio.observe_frame(view.landmarks, view.world, sys_act)
+            now_samples_len = len(self.studio.samples)
+            now_hand = self.studio.hand_tracked
+
+            now_t = time.perf_counter()
+            captured = bool(res and res.get("success"))
+            hand_toggled = (now_hand != prev_hand)
+            if captured or now_samples_len != prev_samples_len or hand_toggled:
+                self._studio_summary_cache = self.studio.summary()
+                self._last_studio_emit = now_t
+                self.studioChanged.emit()
+            elif now_t - getattr(self, "_last_studio_emit", 0.0) >= 0.033:
+                self._last_studio_emit = now_t
+                self.studioChanged.emit()
         frame = (overlay_frame(view.landmarks, view.mirrored, view.actions)
                  if self.finger_overlay and view.landmarks is not None and not self.paused else None)
         if frame is not None or self.finger_frame is not None:
