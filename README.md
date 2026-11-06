@@ -28,6 +28,8 @@ npm run verify
 
 ## 작업 안내
 
+CI 설치본을 기다리지 않는 공동 소스 시험은 [testing 브랜치 안내](docs/testing.md)를 따릅니다. `testing` 대상 PR과 push는 자동 CI를 실행하지 않습니다.
+
 [개발 참여](CONTRIBUTING.md) · [브랜치 흐름](docs/branch-flow.md) · [필요한 문서 찾기](docs/README.md)
 
 팀 Discord의 `@1조봇(Manux)` 멘션 또는 `/ask`로 목표·문제·완료 조건을 보낼 수 있습니다. 공유 채널에 영상·계정·키를 올리지 않습니다. 팀 데이터 공유는 [허브 안내](apps/manux/docs/dataset-hub.md)를 따릅니다.
