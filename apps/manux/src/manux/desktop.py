@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from uuid import uuid4
 from typing import Any, Callable, Dict, Iterator, Mapping, Optional, Tuple
 
 from manux.actions.bindings import Binding
@@ -194,6 +195,8 @@ class DesktopRuntime:
         self._rec_marks_seen = 0
         self._rec_identity = RecordingIdentity("local")
         self._rec_identity_active = None
+        self._rec_session_id: Optional[str] = None
+        self._rec_session_id_active: Optional[str] = None
         self._runtime_requests = queue.SimpleQueue()
 
     # ------------------------------------------------------------------ settings the UI changes
@@ -284,6 +287,8 @@ class DesktopRuntime:
             focus = tuple(task.key for task in tasks_for(focus))
         with self._lock:
             self._rec_identity = identity
+            # One explicit start = one collection bundle, not one frame/set/file.
+            self._rec_session_id = str(uuid4()) if mode != "off" else None
             _, _, _, adv, _ = self._rec_want
             self._rec_want = (mode, focus, copy.deepcopy(dict(plan)) if plan is not None else None, adv, False)
 
@@ -305,10 +310,13 @@ class DesktopRuntime:
         with self._lock:
             mode, focus, plan, adv, paused = self._rec_want
             identity = self._rec_identity
-        if (mode, focus, identity) != (self._rec_mode, self._rec_focus, self._rec_identity_active):
+            session_id = self._rec_session_id
+        if (mode, focus, identity, session_id) != (
+                self._rec_mode, self._rec_focus, self._rec_identity_active, self._rec_session_id_active):
             self._stop_recording(now)
             self._rec_mode, self._rec_focus = mode, focus
             self._rec_identity_active = identity
+            self._rec_session_id_active = session_id
             if mode in ("guided", "free") and self.recordings_dir is not None:
                 try:
                     self.engine.commands.put(SetBusy("recording", True))
@@ -320,6 +328,7 @@ class DesktopRuntime:
                         "focus": focus,
                         "person": identity.profile, "profile": identity.profile,
                         "preset": identity.preset, "split": identity.split,
+                        "session_id": session_id,
                     }
                     if mode == "guided":
                         self._guided = GuidedSession(tasks_for(focus), plan=plan, settle=0.35)
