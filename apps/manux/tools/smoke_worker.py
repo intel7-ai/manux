@@ -86,6 +86,7 @@ def main(argv=None):
             studio_dir = root / ("studio-" + uuid4().hex)
             studio_dir.mkdir()
             payload = {**request, "kind": "studio", "action": action, "job_id": uuid4().hex,
+                       "data_dir": str(root / "data"),
                        "job_dir": str(studio_dir), "cancel_path": str(studio_dir / "cancel"), **values}
             studio_request = studio_dir / "request.json"
             studio_request.write_text(json.dumps(payload), encoding="utf-8")
@@ -101,6 +102,32 @@ def main(argv=None):
         old_version = json.loads(active_token(root / "store"))["version"]
         restored = studio_job("restore", version=old_version)
         assert len(restored["versions"]) == 2 and json.loads(active_token(root / "store"))["version"] != old_version
+        named = studio_job("scan")["models"][0]
+        renamed = studio_job("model_rename", identifier=named["id"], name="Synthetic desk v2")
+        assert renamed["models"][0]["name"] == "Synthetic desk v2"
+        token = active_token(root / "store")
+        studio_job("model_preview", identifier=named["id"])
+        assert active_token(root / "store") == token
+        candidate = root / "data/models/library" / named["id"] / "model.onnx"
+        runtime = desktop.build(Settings(schema()), SimpleNamespace(close=lambda: None), windows=False,
+                                tcn_store=root / "store", tcn_mode="direct")
+        runtime.request(RuntimeRequest("preview_model", str(candidate)))
+        runtime._drain_runtime_requests()
+        assert runtime.preview_only and runtime.current_model.path == candidate
+        applied = studio_job("model_apply", identifier=named["id"])
+        runtime.request(RuntimeRequest("activate_model", str(root / "store")))
+        runtime._drain_runtime_requests()
+        assert not runtime.preview_only and active_token(root / "store") != token
+        runtime.stop()
+        assert len(applied["versions"]) == 3
+        evaluation_file = root / "recordings/profile-synthetic/pinch/eval/test.jsonl.gz"
+        evaluation_file.rename(root / "evaluation.not-used")
+        before_failed_apply = active_token(root / "store")
+        try:
+            studio_job("model_apply", identifier=named["id"])
+            raise AssertionError("missing independent evaluation was accepted")
+        except RuntimeError:
+            assert active_token(root / "store") == before_failed_apply
         before = active_token(root / "store")
         (job / "cancel").touch()
         cancelled = subprocess.run([*command, "--request", str(path)], capture_output=True, timeout=60, env=env,
@@ -111,6 +138,8 @@ def main(argv=None):
                   "runtime_activation": True, "cancel_preserved_model": True}
         report["studio"] = {"recordings": len(library["recordings"]), "simulation": simulated["simulation"],
                             "restore_revalidated": True, "versions": len(restored["versions"])}
+        report["model_library"] = {"named_artifact": True, "preview_with_existing_active": True,
+                                   "independent_apply": True, "missing_eval_preserved_active": True}
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(json.dumps(report))

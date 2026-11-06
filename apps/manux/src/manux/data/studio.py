@@ -108,7 +108,9 @@ def inspect(root, key):
     if checksum != digest(path):
         raise ValueError("검사 중 녹화가 바뀌었습니다. 새로고침하세요.")
     times = [float(f.get("t", 0)) for f in rec.frames]
+    width, height, known = rec.frame_size()
     return {"key": key, "name": path.name, "sha256": checksum,
+            "frame_size": [width, height], "frame_aspect": height / width, "frame_size_known": known,
             "profile": str(rec.meta.get("person") or rec.meta.get("profile") or "미분류"),
             "split": rec.meta.get("split", "unclassified"), "preset": rec.meta.get("preset", "pinch"),
             "frames": len(rec.frames), "seconds": max(0., times[-1] - times[0]) if times else 0.,
@@ -274,6 +276,7 @@ def playback(root, key):
         frames.append({"t": t, "lm": lm.tolist() if lm is not None else [], "pose": pose, "pose_t": pose_t if pose else None,
                        "zone": zone, "label": f.get("label") or {}, "rule": f.get("rule") or {}, "interpolated": bool(f.get("interpolated"))})
     info = inspect(root, key)
+    info["hand_frames"] = sum(bool(f["lm"]) for f in frames)
     events = [{"t": float(e.get("t", 0)), "text": str(e.get("kind", "event"))} for e in rec.events]
     events.extend({"t": i["start_t"], "text": i["message"]} for i in info["quality"]["issues"])
     return {"frames": frames, "events": sorted(events, key=lambda e: e["t"]), "recording": info}

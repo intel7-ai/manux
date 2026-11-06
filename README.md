@@ -1,7 +1,7 @@
 # MANUX
 
-> `testing`에서는 Rasp-Jun 메인·선택 학습과 Dan의 녹화 검수·보정·재생·시뮬레이터를 v0.4에서 사용합니다.
-> 상단 **녹화·시뮬레이터** 또는 공용 **학습 센터**에서 엽니다. [현재 연결 범위](apps/manux/docs/dan-studio.md) · [소스 보존 기록](apps/manux/docs/testing-integration.md).
+> `testing`은 Rasp-Jun 메인·선택 학습, Dan 녹화 스튜디오, Park 포즈 표본, 이름 있는 모델·동작별 데이터 공유와 선택적 가속을 통합합니다.
+> 루트 **run_manux.bat**로 실행하고 **학습 센터**에서 시작하세요. [오늘 시험할 전체 흐름](apps/manux/docs/testing-all-v04.md) · [가속 실행](apps/manux/docs/hardware-acceleration.md).
 
 웹캠의 손동작으로 Windows를 제어하는 **Python + Qt/QML 앱**입니다. 개발 코드는 [apps/manux](apps/manux/README.md)에 있습니다.
 

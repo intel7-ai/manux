@@ -65,7 +65,7 @@ def build_engine(settings: Settings, mode: str = "pointer", filters: tuple[Inten
                  *, recording: bool = False, direct_model: LoadedModel | None = None,
                  binding_overrides=None, policies=None) -> Engine:
     features, router, sources = pipeline_parts(direct_model, binding_overrides, policies)
-    if direct_model is not None and filters:
+    if direct_model is not None and any(getattr(f, "id", "") != "spatial_pose_guard" for f in filters):
         raise ValueError("direct mode and confirmation filters cannot be used together")
     engine = Engine(features, filters, router,
                     {OutputTarget.NONE: NullSink(), OutputTarget.PRACTICE: PracticeSink()},

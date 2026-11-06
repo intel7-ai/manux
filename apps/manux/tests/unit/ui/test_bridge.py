@@ -150,7 +150,7 @@ def test_training_center_profile_eval_and_confirmed_upload(tmp_path, monkeypatch
     tc = TrainingCenterService(tmp_path / "config", tmp_path / "data", tmp_path / "recordings")
     b = Bridge(runtime, settings, tmp_path / "config", services={"training_center": tc})
     calls = []
-    monkeypatch.setattr(tc, "hub_action", lambda action: calls.append(action))
+    monkeypatch.setattr(tc, "hub_action", lambda action, classes=(): calls.append((action,list(classes))))
     try:
         b.control_hand = "Right"
         b.finishSplash()
@@ -177,7 +177,7 @@ def test_training_center_profile_eval_and_confirmed_upload(tmp_path, monkeypatch
         assert confirmation.property("visible") and calls == []
         assert QMetaObject.invokeMethod(confirmation, "accept")
         QTest.qWait(100)
-        assert calls == ["upload"]
+        assert calls == [("upload", [])]
     finally:
         b.close()
 

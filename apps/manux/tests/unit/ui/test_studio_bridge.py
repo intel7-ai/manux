@@ -9,6 +9,9 @@ pytest.importorskip("PySide6.QtQml")
 from PySide6.QtCore import QObject, QPointF, QMetaObject, Qt
 from PySide6.QtQuick import QQuickItem
 from PySide6.QtTest import QTest
+from PySide6.QtGui import QGuiApplication
+from manux.ui.studio import StudioBridge
+from types import SimpleNamespace
 from test_bridge import FakeRuntime
 from manux.app import schema, training_specs
 from manux.core.contracts import RecordingIdentity
@@ -33,6 +36,66 @@ def visual_child(item, name):
     for child in item.childItems():
         result = visual_child(child, name)
         if result is not None: return result
+
+
+@pytest.fixture
+def playback_clock():
+    app = QGuiApplication.instance() or QGuiApplication([])
+    owner = QObject()
+    owner.tc = SimpleNamespace(studio_job=None)
+    b = StudioBridge(owner)
+    now = [100.]
+    b._clock = lambda: now[0]
+    b.active = True
+    frames = [{"t": t, "lm": [[.5, .5, 0.]] * 21 if i in (1, 3) else []}
+              for i, t in enumerate((10., 10.033, 10.080, 10.110, 12.))]
+    b._apply(0, {"frames": frames, "events": [], "recording": {}})
+    yield b, now
+    b.close()
+
+
+def test_playback_uses_elapsed_time_instead_of_advancing_once_per_tick(playback_clock):
+    b, now = playback_clock
+    b.togglePlayback()
+    now[0] += .105  # a delayed UI tick must catch up to the right recorded frame
+    b._advance()
+    assert b.frameIndex == 2
+    now[0] += .2
+    b._advance()
+    assert b.frameIndex == 3  # preserve a real long gap, do not invent motion
+    now[0] += 2
+    b._advance()
+    assert b.frameIndex == 4 and not b.playing
+
+
+def test_playback_speed_changes_preserve_time_and_seek_pauses(playback_clock):
+    b, now = playback_clock
+    b.togglePlayback()
+    now[0] += .04
+    b.setPlaybackSpeed(2.)
+    now[0] += .03
+    b._advance()
+    assert b.frameIndex == 2
+    b.seekTime(10.11)
+    assert b.frameIndex == 3 and not b.playing
+    b.togglePlayback()
+    b.hide()
+    assert not b.playing
+    b.togglePlayback()
+    assert not b.playing  # hidden dialogs cannot start playback
+
+
+def test_hand_seek_does_not_fill_empty_frames_and_wraps(playback_clock):
+    b, now = playback_clock
+    assert b.handFrameCount == 2 and b.frame["lm"] == []
+    b.nextHand()
+    assert b.frameIndex == 1
+    b.nextHand()
+    assert b.frameIndex == 3
+    b.nextHand()
+    assert b.frameIndex == 1
+    b.seek(0)
+    assert b.frame["lm"] == []
 
 
 def test_studio_worker_playback_curation_and_small_window_actions(tmp_path):
@@ -71,13 +134,20 @@ def test_studio_worker_playback_curation_and_small_window_actions(tmp_path):
         for width, height in ((780, 560), (1140, 720)):
             b.window.setWidth(width)
             b.window.setHeight(height)
-            for page in range(4):
+            for page in range(3):
                 popup.setProperty("pageIndex", page)
                 QTest.qWait(60)
                 action = b.window.findChild(QQuickItem, "recordSelection")
                 point = action.mapToScene(QPointF(0, 0))
                 assert 0 <= point.y() and point.y()+action.height() <= b.window.height()
                 assert action.property("enabled")
+                if page in (1, 2):
+                    canvases = [c for c in b.window.findChildren(QQuickItem, "studioSkeleton") if c.isVisible()]
+                    assert len(canvases) == 1
+                    canvas = canvases[0]
+                    assert canvas.property("drawHeight") / canvas.property("drawWidth") == pytest.approx(b.studio.selected["frame_aspect"])
+                    assert canvas.property("drawWidth") <= canvas.width()
+                    assert canvas.property("drawHeight") <= canvas.height()
         before = b.studio.recordings
         b.studio.close()
         b.studio._apply(b.studio.generation, {"recordings": []})

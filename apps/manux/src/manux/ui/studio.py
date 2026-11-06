@@ -3,24 +3,34 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 import threading
+import time
 
-from PySide6.QtCore import QObject, Property, Signal, Slot, QTimer
+from PySide6.QtCore import QObject, Property, Signal, Slot, QTimer, Qt
 
 
 class StudioBridge(QObject):
     changed = Signal()
     frameChanged = Signal()
+    playbackChanged = Signal()
     resultReady = Signal(int, object)
 
     def __init__(self, owner):
         super().__init__(owner)
         self.owner, self.service = owner, owner.tc
         self.rows, self.versions, self.events, self.frames, self.diagnostics = [], [], [], [], []
+        self.models, self.remote_models = [], []
         self.current, self.simulation = {}, {}
         self.key, self.note, self.action = "", "녹화를 불러와 검수하세요.", ""
         self.index, self.generation = 0, 0
         self.pending, self.reading, self.closed = False, False, False
         self.active = False
+        self.timestamps, self.hand_indices = [], []
+        self.speed, self.play_origin, self.clock_origin = 1., 0., 0.
+        self._clock = time.monotonic
+        self.play_timer = QTimer(self)
+        self.play_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self.play_timer.setInterval(16)
+        self.play_timer.timeout.connect(self._advance)
         self.pose_note = "팔·어깨 기록은 기본 꺼짐 · 켜면 녹화 중 추가 처리"
         self.resultReady.connect(self._apply)
         self.timer = QTimer(self)
@@ -56,6 +66,30 @@ class StudioBridge(QObject):
     def modelVersions(self): return self.versions
 
     @Property("QVariantList", notify=changed)
+    def localModels(self): return self.models
+
+    @Property("QVariantList", notify=changed)
+    def remoteModels(self): return self.remote_models
+
+    @Slot(str, str, str)
+    def modelAction(self, action, identifier="", name=""):
+        if action in ("remote", "upload", "download", "rename", "preview", "apply"):
+            self._run("model_" + action, identifier=identifier, name=name)
+
+    @Slot()
+    def importModel(self):
+        if self.busy: return
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(None, "모델 파일 가져오기", "", "MANUX 모델 (*.onnx *.json)")
+        if path: self._run("model_import", source=path)
+
+    @Slot(str)
+    def poseDatasetAction(self, action):
+        if action in ("upload", "download"):
+            if action == "upload": self.owner.saveStudioDataset()
+            self._run("pose_" + action, classes=[self.owner.studioGroundTruth])
+
+    @Property("QVariantList", notify=changed)
     def diagnosticRows(self): return self.diagnostics
 
     @Property("QVariantMap", notify=changed)
@@ -79,6 +113,57 @@ class StudioBridge(QObject):
     @Property("QVariantMap", notify=frameChanged)
     def frame(self): return self.frames[self.index] if self.frames else {}
 
+    @Property(bool, notify=playbackChanged)
+    def playing(self): return self.play_timer.isActive()
+
+    @Property(float, notify=playbackChanged)
+    def playbackSpeed(self): return self.speed
+
+    @Property(int, notify=frameChanged)
+    def handFrameCount(self): return len(self.hand_indices)
+
+    @Slot()
+    def pause(self):
+        self.play_timer.stop()
+        self.playbackChanged.emit()
+
+    @Slot()
+    def togglePlayback(self):
+        if self.playing:
+            self._advance()
+            self.pause()
+        elif self.frames and self.active and not self.busy:
+            if self.index == len(self.frames) - 1: self.seek(0)
+            self.play_origin, self.clock_origin = self.frame["t"], self._clock()
+            self.play_timer.start()
+            self.playbackChanged.emit()
+
+    @Slot(float)
+    def setPlaybackSpeed(self, speed):
+        if speed not in (.5, 1., 2.): return
+        if self.playing:
+            now = self._clock()
+            self.play_origin += (now - self.clock_origin) * self.speed
+            self.clock_origin = now
+        self.speed = speed
+        self.playbackChanged.emit()
+
+    def _advance(self):
+        if not self.playing or not self.frames: return
+        t = self.play_origin + (self._clock() - self.clock_origin) * self.speed
+        index = max(0, min(len(self.frames) - 1, bisect_right(self.timestamps, t) - 1))
+        if index != self.index:
+            self.index = index
+            self.frameChanged.emit()
+        if t >= self.timestamps[-1]: self.pause()
+
+    @Slot()
+    def nextHand(self):
+        """Seek to the next measured hand, wrapping explicitly at the end."""
+        if not self.hand_indices: return
+        pos = bisect_right(self.hand_indices, self.index)
+        self.seek(self.hand_indices[pos] if pos < len(self.hand_indices) else self.hand_indices[0])
+
     @Property(float, notify=frameChanged)
     def frameDelay(self):
         if self.index + 1 >= len(self.frames): return 33.
@@ -86,12 +171,13 @@ class StudioBridge(QObject):
 
     @Slot(int)
     def seek(self, index):
+        self.pause()
         self.index = min(max(0, index), max(0, len(self.frames) - 1))
         self.frameChanged.emit()
 
     @Slot(float)
     def seekTime(self, t):
-        self.seek(bisect_left([f["t"] for f in self.frames], t))
+        self.seek(bisect_left(self.timestamps, t))
 
     @Slot()
     def nextEvent(self):
@@ -103,6 +189,7 @@ class StudioBridge(QObject):
     def _run(self, action, **values):
         if self.closed or self.busy:
             return False
+        self.pause()
         if self.owner.rec_mode != "off" or self.owner.training_job.running or self.service.hub_job.running:
             self.note = "녹화·학습·공유가 끝난 뒤 시작하세요."
             self.changed.emit()
@@ -138,7 +225,9 @@ class StudioBridge(QObject):
         self.refresh()
 
     @Slot()
-    def hide(self): self.active = False
+    def hide(self):
+        self.active = False
+        self.pause()
 
     @Slot(str)
     def selectRecording(self, key):
@@ -146,7 +235,9 @@ class StudioBridge(QObject):
         row = next((r for r in self.rows if r["key"] == key), None)
         if row is None: return
         self.key, self.current = key, row
+        self.pause()
         self.frames, self.events, self.simulation, self.index = [], [], {}, 0
+        self.timestamps, self.hand_indices = [], []
         self.changed.emit()
         self.frameChanged.emit()
         self._run("load", key=key)
@@ -209,17 +300,26 @@ class StudioBridge(QObject):
             elif self.key:
                 self.current, self.key, self.frames, self.events, self.index = {}, "", [], [], 0
         if "versions" in result: self.versions = result["versions"]
+        if "models" in result: self.models = result["models"]
+        if result.get("spatial_selected"):
+            self.owner.pose_studio.model_summary = self.owner.pose_studio._load_saved_model_summary()
+            self.owner.studioChanged.emit()
+        if "remote_models" in result: self.remote_models = result["remote_models"]
         if "diagnostics" in result: self.diagnostics = result["diagnostics"]
         if "frames" in result:
+            self.pause()
             self.frames, self.events, self.current = result["frames"], result["events"], result["recording"]
             self.simulation, self.index = result.get("simulation", {}), 0
+        self.timestamps = [f["t"] for f in self.frames]
+        self.hand_indices = [i for i, f in enumerate(self.frames) if len(f.get("lm", [])) == 21]
         self.note = result.get("note", self.note)
         self.changed.emit()
         self.frameChanged.emit()
-        if self.action in ("select", "clean", "augment", "trash", "restore"):
+        if self.action in ("select", "clean", "augment", "trash", "restore", "model_apply", "model_preview"):
             self.owner.refreshTraining()
 
     def close(self):
+        self.pause()
         self.closed = True
         self.generation += 1
         self.timer.stop()
