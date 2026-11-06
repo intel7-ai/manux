@@ -1,5 +1,7 @@
 # 필요한 문서 찾기
 
+2026-11-07 10:00 KST부터 MANUX 개발 기준은 [manux-preview](https://github.com/intel7-ai/manux/tree/manux-preview)이며 앱 폴더가 저장소 루트입니다.
+
 현재 작업에 필요한 문서만 읽습니다. 과거 계획 전체를 기본 맥락으로 가져오지 않습니다.
 
 | 작업 | 문서 |
