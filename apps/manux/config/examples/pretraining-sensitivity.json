@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "values": {
+    "pinch.click_threshold": 0.04,
+    "pinch.ring_click_threshold": 0.044,
+    "pinch.motion_thumb_up": 0.7,
+    "cursor.relative_gain_min": 1.35,
+    "cursor.relative_gain_max": 2.3
+  }
+}
