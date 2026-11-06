@@ -99,7 +99,7 @@ ColumnLayout {
     Copy { Layout.fillWidth: true; text: (Number(player.studio.frame.t || 0).toFixed(2)) + "초  ·  " + (player.studio.frameCount ? player.studio.frameIndex+1 : 0) + "/" + player.studio.frameCount + " 프레임  ·  " + ((player.studio.frame.label || {}).target || "—") + " / " + ((player.studio.frame.label || {}).phase || "—"); color: Theme.Studio.muted }
     Copy {
         Layout.fillWidth: true; visible: !!player.studio.simulationReport.counts
-        text: "규칙: " + (player.studio.frame.rules_intents || []).join(", ") + "\n모델: " + (player.studio.frame.model_intents || []).join(", ")
+        text: "규칙: " + (player.studio.frame.rules_intents || []).join(", ") + "\n현재 정책: " + (player.studio.frame.model_intents || []).join(", ") + "\nTCN 연습 적용: " + (player.studio.frame.preview_intents || []).join(", ")
     }
     Timer {
         interval: Math.max(1, player.studio.frameDelay/player.speed); repeat: true; running: player.playing && player.visible

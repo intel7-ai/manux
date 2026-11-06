@@ -8,6 +8,7 @@
 
 1. 시작할 때 `git status --short`, `git branch --show-current`, `git remote -v`를 확인한다. 다른 작업자의 변경·프로세스·worktree를 보존한다.
 2. 새 작업은 최신 `origin/preview`에서 작업별 브랜치를 만든다. 이름은 `<이슈>-<설명>` 또는 `<설명>`이며 도구 접두사를 붙이지 않는다. 진행 중 브랜치는 그대로 이어간다.
+   - 빠른 공동 시험은 `testing` 대상 PR로 통합한다(자동 CI 없음). 정식 변경은 원본 작업 브랜치의 `preview` PR로 전달한다. 충돌·실행·수집 기준은 [시험 안내](docs/testing.md)를 따른다.
 3. 목표·완료 기준·범위·실제 기준 SHA를 `.local/harness/<requestId>/task.json`에 기록한다. Jira가 없어도 진행한다. 시작 전에 열린 PR·원격 브랜치를 확인하고 작업 브랜치를 push해 중복 작업을 알린다. 요청 없는 담당 변경·이슈 완료는 하지 않는다.
 4. 작은 변경 후 앱 시험과 `npm ci --ignore-scripts`, `npm run verify`를 실행한다. Python 시험은 `apps/manux`에서 `uv run --locked --python 3.12 pytest -q`다. 실패를 숨기려고 검사를 지우거나 기대값만 바꾸지 않는다.
 5. 같은 폴더의 `result.json`에 실제 증거·한계를 기록하고 `npm run task:report -- TASK.json RESULT.json`으로 보고한다. 형식은 [하네스](docs/harness.md)를 필요할 때 참고한다.

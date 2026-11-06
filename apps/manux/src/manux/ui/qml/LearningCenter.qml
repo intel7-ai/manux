@@ -19,11 +19,12 @@ Popup {
                                  && controller.trainingBusy === "" && !library.busy
     readonly property var detail: controller.trainingRows.find(function(r) {return r.key===detailKey}) || controller.trainingRows[0] || ({})
     signal recordingRequested()
+    signal progressRequested()
     anchors.centerIn: parent
     width: Math.min(1240, parent.width-24); height: Math.min(900, parent.height-24)
     modal: true; focus: true; padding: Theme.Studio.pad; closePolicy: Popup.CloseOnEscape
-    onOpened: { profileDraft=controller.trainingProfile; controller.openTraining() }
-    onClosed: controller.closeTraining()
+    onOpened: { profileDraft=controller.trainingProfile; controller.openTraining();library.open() }
+    onClosed: {library.hide();controller.closeTraining()}
     background: Rectangle { radius: Theme.Studio.radius; color: Theme.Studio.surface; border.color: Theme.Studio.line }
     component Copy: Label {
         color: Theme.Studio.ink; font.family: Theme.Studio.font; font.pixelSize: Theme.Studio.body; wrapMode: Text.Wrap
@@ -39,6 +40,7 @@ Popup {
                 Copy { text: "내 동작을 모으고, 확인하고, 검증 후 적용하세요"; color: Theme.Studio.muted }
             }
             Item { Layout.fillWidth: true }
+            StudioButton { objectName: "openTrainingProgress"; text: "학습 진행"; primary: studio.controller.trainingRunning; onClicked: {studio.close();studio.progressRequested()} }
             StudioButton { text: "새로고침"; enabled: studio.idle; onClicked: {studio.controller.refreshTraining();studio.library.refresh()} }
             StudioButton { text: "닫기"; onClicked: studio.close() }
         }
@@ -96,6 +98,7 @@ Popup {
                         StudioButton { text: "모두 선택"; onClicked: tasks.model.forEach(function(r){studio.controller.setTrainingSelected(r.key,true)}) }
                         StudioButton { text: "해제"; onClicked: tasks.model.forEach(function(r){studio.controller.setTrainingSelected(r.key,false)}) }
                     }
+                    StudioButton { objectName: "selectRecordedTraining"; text: "녹화된 학습 지원 동작 선택"; enabled: studio.idle; onClicked: studio.controller.selectRecordedTraining() }
                     RowLayout {
                         Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 0; spacing: Theme.Studio.gap
                         ListView {
@@ -136,6 +139,17 @@ Popup {
                                     Copy { Layout.fillWidth: true; text: studio.detail.data_text || "" }
                                     Copy { Layout.fillWidth: true; text: studio.detail.score_text || "" }
                                     Copy { Layout.fillWidth: true; text: studio.detail.advice || ""; color: Theme.Studio.muted }
+                                    StudioButton { objectName: "focusRecord_"+(studio.detail.key || ""); text: "집중 녹화 설정"; enabled: studio.idle && !!studio.detail.key; onClicked: {if(studio.controller.focusRecord(studio.detail.key)){studio.close();studio.recordingRequested()}} }
+                                    StudioButton { objectName: "trainGesture_"+(studio.detail.key || ""); text: "이 동작만 학습"; enabled: studio.idle && studio.detail.can_train && studio.detail.reps>0; onClicked: studio.controller.trainSelectedGesture(studio.detail.key) }
+                                    Copy { Layout.fillWidth: true; text: "동작별 실행 방식"; visible: !!studio.detail.model_id; font.bold: true }
+                                    Flow {
+                                        Layout.fillWidth: true; spacing: 4; visible: !!studio.detail.model_id
+                                        Repeater {
+                                            model: [{mode:"rules",name:"규칙"},{mode:"shadow",name:"시험"},{mode:"apply",name:"적용"}]
+                                            StudioButton { required property var modelData; text: modelData.name; primary: studio.detail.tcn_mode===modelData.mode; enabled: studio.idle && !studio.detail.import_pending; onClicked: studio.controller.setGestureTcnMode(studio.detail.key,modelData.mode,studio.detail.model_id) }
+                                        }
+                                    }
+                                    Copy { Layout.fillWidth: true; visible: !!studio.detail.model_id; text: "새 분류기는 시험 상태로 시작합니다. 시험은 실제 입력에 사용하지 않으며 ‘적용’을 직접 선택해야 실행합니다."; color: Theme.Studio.muted }
                                     Copy { Layout.fillWidth: true; text: "체크한 항목이 녹화·학습 대상입니다. 분류를 바꿔도 선택은 유지됩니다."; color: Theme.Studio.muted }
                                 }
                             }
@@ -202,7 +216,7 @@ Popup {
                     }
                     StudioPlayer { Layout.fillWidth: true; Layout.preferredHeight: Math.max(300,studio.height*0.43); studio: studio.library }
                     Copy { Layout.fillWidth: true; text: studio.library.simulationReport.note || "실제 엔진의 중립 복귀·연속 확정·모드·바인딩을 재생합니다. Windows 입력은 보내지 않습니다."; color: Theme.Studio.muted }
-                    Copy { Layout.fillWidth: true; visible: !!studio.library.simulationReport.counts; text: "모델 · "+(studio.library.simulationReport.model || "")+"  |  규칙 이벤트 "+((studio.library.simulationReport.counts || {}).rules || 0)+" / 모델 이벤트 "+((studio.library.simulationReport.counts || {}).model || 0) }
+                    Copy { Layout.fillWidth: true; visible: !!studio.library.simulationReport.counts; text: "모델 · "+(studio.library.simulationReport.model || "")+"  |  규칙 "+((studio.library.simulationReport.counts || {}).rules || 0)+" / 현재 정책 "+((studio.library.simulationReport.counts || {}).model || 0)+" / TCN 연습 적용 "+((studio.library.simulationReport.counts || {}).preview || 0) }
                     ListView {
                         Layout.fillWidth: true; Layout.preferredHeight: 80; clip: true
                         model: studio.library.timeline; ScrollBar.vertical: ScrollBar {}
@@ -216,7 +230,7 @@ Popup {
                         width: modelPage.availableWidth; spacing: Theme.Studio.gap
                         Copy { text: "모델과 검증"; font.pixelSize: Theme.Studio.title; font.bold: true }
                         Copy { Layout.fillWidth: true; text: studio.controller.trainingModel+"\n"+studio.controller.trainingData }
-                        Copy { Layout.fillWidth: true; text: "선택 학습은 기존 클래스를 유지하는 통합 재학습입니다. 별도 eval을 통과한 후보만 적용합니다. 저장 버전 복원도 현재 평가를 다시 통과해야 합니다."; color: Theme.Studio.muted }
+                        Copy { Layout.fillWidth: true; text: "선택한 분류기만 학습하고 다른 분류기는 그대로 보존합니다. 기존 동작 전체의 별도 eval을 통과한 후보만 설치합니다. 새 분류기는 시험 상태로 시작하며 동작별 ‘적용’을 직접 선택합니다. 버전 복원도 현재 평가를 다시 통과해야 합니다."; color: Theme.Studio.muted }
                         Repeater {
                             model: studio.library.modelVersions
                             Panel {
@@ -267,11 +281,11 @@ Popup {
                     Layout.fillWidth: true
                     Copy { Layout.fillWidth: true; Layout.minimumWidth: 0; text: studio.controller.selectedTrainingKeys.length+"개 선택 · "+(studio.controller.selectedTrainingRows.map(function(r){return r.name}).join(", ") || "체크한 동작이 여기에 표시됩니다"); maximumLineCount: 2; elide: Text.ElideRight; color: Theme.Studio.mintDark; font.bold: true }
                     StudioButton { objectName: "recordSelection"; text: "선택 동작 녹화"; primary: true; enabled: studio.idle && studio.controller.selectedTrainingKeys.length>0; onClicked: {if(studio.controller.recordTrainingSelection()){studio.close();studio.recordingRequested()}} }
-                    StudioButton { objectName: "trainSelection"; text: "선택 동작 재학습"; enabled: studio.idle && studio.controller.selectionCanTrain; onClicked: studio.controller.trainTrainingSelection() }
+                    StudioButton { objectName: "trainSelection"; text: "선택 동작만 학습"; enabled: studio.idle && studio.controller.selectionCanTrain; onClicked: studio.controller.trainTrainingSelection() }
                     StudioButton { text: "중단"; visible: studio.controller.trainingRunning || studio.library.busy; onClicked: {studio.controller.stopTraining();studio.library.cancel()} }
                 }
                 Copy { objectName: "recordSelectionMessage"; Layout.fillWidth: true; text: studio.controller.trainingNote; visible: text!==""; color: Theme.Studio.mintDark }
-                Copy { Layout.fillWidth: true; visible: studio.controller.selectedTrainingKeys.length>0 && !studio.controller.selectionCanTrain; text: "재학습하려면 녹화 전용·공통 중립 항목의 체크를 해제하세요. 중립 데이터는 자동으로 함께 학습합니다."; font.pixelSize: Theme.Studio.small; color: Theme.Studio.muted }
+                Copy { Layout.fillWidth: true; visible: studio.controller.selectedTrainingKeys.length>0 && !studio.controller.selectionCanTrain; text: "학습 지원 동작을 하나 이상 선택하고 녹화 전용 항목의 체크를 해제하세요. 중립 데이터도 함께 학습합니다."; font.pixelSize: Theme.Studio.small; color: Theme.Studio.muted }
                 Copy { Layout.fillWidth: true; text: studio.library.busy ? studio.library.status : studio.controller.trainingRunning ? studio.controller.trainingStage : studio.library.status; color: Theme.Studio.muted; maximumLineCount: 2; elide: Text.ElideRight }
                 Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: Theme.Studio.line; visible: studio.controller.trainingRunning
                     Rectangle { width: parent.width*Math.max(0,Math.min(1,studio.controller.trainingProgress)); height: parent.height; radius: 2; color: Theme.Studio.mintDark } }

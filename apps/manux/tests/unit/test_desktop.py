@@ -185,3 +185,23 @@ def test_recording_start_failure_is_visible_and_can_retry(tmp_path, monkeypatch)
     runtime.set_recording('guided', focus='thumb_ring', profile='synthetic', split='eval')
     assert run_frames(runtime, 2)[-1].rec['mode'] == 'guided'
     runtime.stop()
+
+
+def test_studio_monitor_shortcut_is_blocked_during_recording_or_calibration(tmp_path, monkeypatch):
+    from manux.core.contracts import RuntimeRequest, OutputTarget
+    from manux.engine.commands import SetBusy
+    runtime, backend = windows_runtime(tmp_path, Settings(schema()))
+    calls = []
+    monkeypatch.setattr(runtime.engine.sinks[OutputTarget.WINDOWS], "next_monitor", lambda: calls.append("next"))
+    runtime.request(RuntimeRequest("next_monitor")); runtime._drain_runtime_requests()
+    assert calls == ["next"]
+    runtime.engine.commands.put(SetBusy("calibrating", True))
+    runtime.engine.frame_missing(1.)
+    runtime.request(RuntimeRequest("next_monitor")); runtime._drain_runtime_requests()
+    assert calls == ["next"]
+    runtime.engine.commands.put(SetBusy("calibrating", False))
+    runtime.engine.frame_missing(2.)
+    runtime.set_recording("guided", focus="thumb_ring")
+    runtime.request(RuntimeRequest("next_monitor")); runtime._drain_runtime_requests()
+    assert calls == ["next"]
+    runtime.stop()

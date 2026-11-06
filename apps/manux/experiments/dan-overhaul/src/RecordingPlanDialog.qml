@@ -1,0 +1,221 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+Dialog {
+    id: dialog
+    required property var editor
+    anchors.centerIn: parent
+    width: Math.min(980, parent.width - 32)
+    height: Math.min(680, parent.height - 32)
+    modal: true
+    focus: true
+    closePolicy: Popup.CloseOnEscape
+    padding: 20
+    palette.window: "#FFFFFF"
+    palette.windowText: "#112331"
+    palette.base: "#F4F6F8"
+    palette.text: "#112331"
+    palette.button: "#EDF3F5"
+    palette.buttonText: "#112331"
+    palette.highlight: "#46E5BD"
+    palette.highlightedText: "#112331"
+    palette.mid: "#DEE5EA"
+    palette.dark: "#526575"
+    background: Rectangle { radius: 16; color: "white"; border.color: "#DEE5EA" }
+
+    component Caption: Label { color: "#112331"; font.pixelSize: 13; wrapMode: Text.Wrap }
+    component Choice: ColumnLayout {
+        id: choice
+        property string field
+        property string label
+        Layout.fillWidth: true
+        spacing: 4
+        Caption { text: choice.label }
+        ComboBox {
+            Layout.fillWidth: true
+            model: dialog.editor.choices[choice.field] || []
+            currentIndex: Math.max(0, model.indexOf(dialog.editor.selected[choice.field]))
+            onActivated: dialog.editor.setField(choice.field, currentText)
+            Accessible.name: choice.label
+        }
+    }
+    component Seconds: ColumnLayout {
+        id: seconds
+        property string field
+        property string label
+        Layout.fillWidth: true
+        Caption { text: seconds.label }
+        SpinBox {
+            Layout.fillWidth: true
+            from: 5; to: 100; stepSize: 5; editable: true
+            value: Math.round(dialog.editor.selected[seconds.field] * 10)
+            textFromValue: function(value, locale) { return (value / 10).toLocaleString(locale, 'f', 1) }
+            valueFromText: function(text, locale) { return Math.round(Number.fromLocaleString(locale, text) * 10) }
+            onValueModified: dialog.editor.setField(seconds.field, value / 10)
+            Accessible.name: seconds.label
+        }
+    }
+    contentItem: ColumnLayout {
+        spacing: 12
+        RowLayout {
+            Layout.fillWidth: true
+            ColumnLayout {
+                Layout.fillWidth: true
+                Caption { text: dialog.editor.title; font.pixelSize: 21; font.bold: true; Layout.fillWidth: true }
+                Caption { text: "자세를 고르고 조건을 편집하세요. 동작마다 설정을 따로 저장합니다."; color: "#526575" }
+            }
+            Button { text: "닫기"; onClicked: dialog.close() }
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            Caption { text: "추천안"; font.bold: true }
+            Button { text: "기본 3자세"; onClicked: dialog.editor.usePreset("basic") }
+            Button { text: "다양한 조건 9자세"; onClicked: dialog.editor.usePreset("diverse") }
+            Button { text: "화면 위치 9곳"; onClicked: dialog.editor.usePreset("positions") }
+            Item { Layout.fillWidth: true }
+        }
+        Caption { text: dialog.editor.instruction; Layout.fillWidth: true; color: "#16846E" }
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 16
+            ColumnLayout {
+                Layout.preferredWidth: 235
+                Layout.minimumWidth: 235
+                Layout.maximumWidth: 235
+                Layout.fillHeight: true
+                Caption { text: "녹화 순서 · 체크한 자세만 진행"; font.bold: true }
+                ListView {
+                    id: poseList
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    spacing: 6
+                    model: dialog.editor.rows
+                    ScrollBar.vertical: ScrollBar {}
+                    delegate: Rectangle {
+                        required property var modelData
+                        required property int index
+                        width: poseList.width - 12
+                        height: 64
+                        radius: 8
+                        color: index === dialog.editor.selectedIndex ? "#DDF8EF" : "#F4F6F8"
+                        border.color: index === dialog.editor.selectedIndex ? "#16846E" : "#DEE5EA"
+                        RowLayout {
+                            anchors.fill: parent; anchors.margins: 6
+                            CheckBox {
+                                checked: modelData.enabled
+                                Accessible.name: modelData.name + " 녹화 포함"
+                                onClicked: { dialog.editor.select(index); dialog.editor.setField("enabled", checked) }
+                            }
+                            Button {
+                                Layout.fillWidth: true; Layout.fillHeight: true
+                                flat: true
+                                onClicked: dialog.editor.select(index)
+                                contentItem: ColumnLayout {
+                                    Caption { text: (index + 1) + ". " + modelData.name; font.bold: true; Layout.fillWidth: true; elide: Text.ElideRight; maximumLineCount: 1 }
+                                    Caption { text: modelData.coverage; color: "#526575"; font.pixelSize: 11 }
+                                }
+                                Accessible.name: modelData.name + " 편집"
+                            }
+                        }
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Button { Layout.fillWidth: true; implicitWidth: 0; text: "추가"; onClicked: dialog.editor.add(false) }
+                    Button { Layout.fillWidth: true; implicitWidth: 0; text: "복제"; onClicked: dialog.editor.add(true) }
+                    Button { Layout.fillWidth: true; implicitWidth: 0; text: "빼기"; onClicked: dialog.editor.remove() }
+                }
+            }
+            ScrollView {
+                id: formScroll
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: availableWidth
+                ScrollBar.vertical.policy: ScrollBar.AlwaysOn
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ColumnLayout {
+                    width: formScroll.availableWidth
+                    spacing: 12
+                    Caption { text: "자세 " + (dialog.editor.selectedIndex + 1) + " 설정"; font.bold: true; font.pixelSize: 17 }
+                    TextField {
+                        Layout.fillWidth: true
+                        text: dialog.editor.selected.name
+                        placeholderText: "예: 소파에 기대서 오른손을 왼쪽 위로"
+                        maximumLength: 80
+                        onEditingFinished: dialog.editor.setField("name", text)
+                        Accessible.name: "자세 이름"
+                    }
+                    GridLayout {
+                        Layout.fillWidth: true; columns: 2; columnSpacing: 12; rowSpacing: 10
+                        Choice { field: "orientation"; label: "손 방향" }
+                        Choice { field: "position"; label: "화면 위치 (미리보기 기준)" }
+                        Choice { field: "distance"; label: "카메라와 손 사이 거리" }
+                        Choice { field: "posture"; label: "몸 자세" }
+                        Choice { field: "camera"; label: "카메라 각도" }
+                        Choice { field: "lighting"; label: "조명" }
+                    }
+                    TextField {
+                        Layout.fillWidth: true
+                        text: dialog.editor.selected.notes
+                        placeholderText: "직접 지정한 거리·각도나 준비 사항 (선택)"
+                        maximumLength: 240
+                        onEditingFinished: dialog.editor.setField("notes", text)
+                        Accessible.name: "자세 준비 메모"
+                    }
+                    Caption { text: "이 자세의 녹화량과 속도"; font.bold: true }
+                    RowLayout {
+                        visible: !dialog.editor.neutral
+                        Caption { text: "반복 횟수" }
+                        SpinBox {
+                            from: 1; to: 100; editable: true
+                            value: dialog.editor.selected.reps
+                            onValueModified: dialog.editor.setField("reps", value)
+                            Accessible.name: "반복 횟수"
+                        }
+                        Caption { text: "회 · 동작을 유지하다가 쉬기 안내에 맞춰 풀어주세요."; Layout.fillWidth: true; color: "#526575" }
+                    }
+                    RowLayout {
+                        visible: !dialog.editor.neutral
+                        Layout.fillWidth: true
+                        Seconds { field: "prep"; label: "준비 (초)" }
+                        Seconds { field: "hold"; label: "동작 유지 (초)" }
+                        Seconds { field: "rest"; label: "쉬기 (초)" }
+                    }
+                    RowLayout {
+                        visible: dialog.editor.neutral || dialog.editor.allGestures
+                        Caption { text: "자유 이동 녹화" }
+                        SpinBox {
+                            from: 10; to: 900; stepSize: 10; editable: true
+                            value: dialog.editor.selected.free_seconds
+                            onValueModified: dialog.editor.setField("free_seconds", value)
+                            Accessible.name: "자유 이동 시간"
+                        }
+                        Caption { text: "초" }
+                    }
+                    Caption {
+                        Layout.fillWidth: true
+                        text: "방향·거리·자세는 직접 맞춰주세요. 녹화 화면에 조건과 위치 안내가 표시됩니다. 손의 3D 관절을 놓치면 타이머가 멈추고, 다시 잡히면 이어집니다."
+                        color: "#526575"; font.pixelSize: 12
+                    }
+                }
+            }
+        }
+        Rectangle { Layout.fillWidth: true; height: 1; color: "#DEE5EA" }
+        Caption { text: dialog.editor.summary; font.bold: true; Layout.fillWidth: true }
+        Caption { text: dialog.editor.message; visible: text !== ""; Layout.fillWidth: true; color: "#16846E"; font.pixelSize: 12 }
+        RowLayout {
+            Layout.fillWidth: true
+            Caption { text: "자세마다 준비 후 시작 · 녹화 중 PC 마우스 제어 꺼짐"; color: "#526575"; Layout.fillWidth: true }
+            Button { text: "설정 저장"; onClicked: dialog.editor.save() }
+            Button {
+                text: "이 설정으로 녹화"
+                highlighted: true
+                onClicked: { if (dialog.editor.start()) dialog.close() }
+            }
+        }
+    }
+}

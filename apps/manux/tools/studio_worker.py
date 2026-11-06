@@ -62,9 +62,17 @@ def simulate(request, root, key, cancelled):
     mode = request.get("preset", "pinch")
     if mode == "trigger": mode = "pointer"
     bindings = request.get("bindings")
+    policies = None
+    if model is not None:
+        from manux.settings.tcn_policy import GesturePolicies
+        policies = GesturePolicies(Path(request["policy_path"])).modes(model.card.raw) if request.get("policy_path") else None
+        if not request.get("global_tcn_enabled", True): policies = {g:"rules" for g in model.card.gestures.values()}
     engines = {"rules": build_engine(settings, mode, binding_overrides=bindings),
-               "model": build_engine(settings, mode, filters, direct_model=model, binding_overrides=bindings)}
-    events, counts, errors = [], {"rules": 0, "model": 0}, 0
+               "model": build_engine(settings, mode, filters, direct_model=model, binding_overrides=bindings, policies=policies)}
+    if model is not None:
+        engines["preview"] = build_engine(settings, mode, direct_model=model, binding_overrides=bindings,
+                                          policies={g:"apply" for g in model.card.gestures.values()})
+    events, counts, errors = [], {name:0 for name in engines}, 0
     try:
         for index, item in enumerate(replay(rec)):
             if index % 100 == 0 and cancelled():
@@ -87,7 +95,7 @@ def simulate(request, root, key, cancelled):
     result["events"] = sorted([*result["events"], *events], key=lambda e: e["t"])
     result["simulation"] = {"model": model.path.parent.name if model else "TCN 확인기" if filters else "없음 · 규칙 기준만 비교",
                             "counts": counts, "errors": errors,
-                            "note": "현재 엔진·중재기·기본 바인딩의 연습 출력. 모델의 중립 복귀·연속 확정을 적용합니다. 실제 OS 출력·정확도 측정이 아닙니다."}
+                            "note": "현재 정책과 TCN을 모두 적용한 연습 출력을 구분합니다. 엔진·중재기·바인딩·중립 복귀·연속 확정을 재생하며 Windows 입력은 보내지 않습니다."}
     return result
 
 

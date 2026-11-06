@@ -21,12 +21,16 @@ DEFAULT_BINDINGS = MappingProxyType({}) # action choices belong to the user's bi
 class TcnFeature:
     id = ID
 
-    def __init__(self, predictor: Predictor, card: ModelCard) -> None:
+    def __init__(self, predictor: Predictor, card: ModelCard, policies=None) -> None:
         if not card.decisions or set(card.decisions) != set(card.gestures) or "none" not in card.classes:
             raise ModelError("decisions")
         if tuple(predictor.classes) != card.classes:
             raise ModelError("shape", "predictor classes differ from the card")
         self.predictor, self.card = predictor, card
+        self.policies = {g: (policies or {}).get(g, "apply") for g in card.gestures.values()}
+        if any(mode not in ("rules", "shadow", "apply") for mode in self.policies.values()):
+            raise ValueError("invalid TCN policy")
+        self.authoritative = tuple(g for g, mode in self.policies.items() if mode == "apply")
         self.gestures = tuple(card.gestures.values())
         self.modes = frozenset(m for d in card.decisions.values() for m in d.modes)
         self.gesture_phases = {card.gestures[c]: d.phases for c, d in card.decisions.items()}
@@ -44,6 +48,7 @@ class TcnFeature:
         self._open = None
         self._engaged = False
         self._point = None
+        self.last_prediction = None
         self._release_t = -math.inf
 
     def activity(self) -> Activity:
@@ -67,7 +72,7 @@ class TcnFeature:
 
     def step(self, hand: Optional[HandObservation], ctx: FrameContext):
         now = ctx.frame.t
-        gap = float(ctx.settings.get("max_gap", 0.3))
+        gap = .25 if self.card.raw.get("training_pipeline") == "continuous-v2" else float(ctx.settings.get("max_gap", 0.3))
         if self._mode != ctx.mode or self._last_t is not None and (now <= self._last_t or now - self._last_t > gap):
             ends = self._end(now)
             self.reset("mode_change")
@@ -93,8 +98,10 @@ class TcnFeature:
             raise ValueError("invalid TCN probabilities")
         best = int(scores.argmax())
         name, confidence = self.card.classes[best], float(scores[best])
+        self.last_prediction = (name, confidence)
         decision = self.card.decisions.get(name)
         eligible = decision is not None and ctx.mode in decision.modes and confidence >= decision.threshold
+        eligible = eligible and self.policies[self.card.gestures[name]] == "apply"
         if self._engaged and not eligible:
             self._release_t = now
         self._engaged = bool(eligible)

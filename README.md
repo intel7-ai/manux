@@ -1,5 +1,8 @@
 # MANUX
 
+> `testing`에서는 Rasp-Jun 메인·선택 학습과 Dan의 녹화 검수·보정·재생·시뮬레이터를 v0.4에서 사용합니다.
+> 상단 **녹화·시뮬레이터** 또는 공용 **학습 센터**에서 엽니다. [현재 연결 범위](apps/manux/docs/dan-studio.md) · [소스 보존 기록](apps/manux/docs/testing-integration.md).
+
 웹캠의 손동작으로 Windows를 제어하는 **Python + Qt/QML 앱**입니다. 개발 코드는 [apps/manux](apps/manux/README.md)에 있습니다.
 
 ## 실행과 검사
@@ -27,6 +30,8 @@ npm run verify
 - 자동 시험은 실제 웹캠·Windows 입력·인식률을 보장하지 않습니다. 현재 구현의 기준은 [앱 지침](apps/manux/AGENTS.md#현재-상태)입니다.
 
 ## 작업 안내
+
+CI 설치본을 기다리지 않는 공동 소스 시험은 [testing 브랜치 안내](docs/testing.md)를 따릅니다. `testing` 대상 PR과 push는 자동 CI를 실행하지 않습니다.
 
 [개발 참여](CONTRIBUTING.md) · [브랜치 흐름](docs/branch-flow.md) · [필요한 문서 찾기](docs/README.md)
 

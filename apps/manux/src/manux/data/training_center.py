@@ -27,6 +27,8 @@ from manux.data.recording import read
 from manux.core.contracts import RecordingIdentity
 from manux.data.worker_job import WorkerJob
 from manux.data import studio
+from manux.data.training_progress import view as progress_view
+from manux.data.legacy_import import pending_model
 
 GOAL_REPS = 30            # repetitions per gesture worth aiming for (3 postures x 10)
 GOAL_POSTURES = 3
@@ -97,7 +99,7 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
         elif meta.get("mode") == "free" and lab.get("target") == NONE:
             free[(NONE, "use")] += float(seconds[i])
     for (task, ck, _, _), item in repetitions.items():
-        if item["do"] > 0 and (not item.get("new") or (item["do"] >= 0.25 and item["rest"])):
+        if item["do"] > 0 and (not item.get("new") or (item["do"] >= 0.15 and item["rest"])):
             reps[task][ck] += 1
     for task, by_condition in reps.items():
         coverage.setdefault(task, {})
@@ -260,8 +262,12 @@ def model_report(model: Path) -> Optional[Dict[str, Any]]:
                         "rules_misfires_per_min": baseline["tcn_misfires_per_minute"]}
             raw["per_gesture"] = pg
             raw["evaluation_source"] = "independent_eval"
+        if raw.get("import_pending") and not raw.get("evaluation_source"):
+            raw.update(per_gesture={}, per_task={}, held_out_results=[])
         info = _normalise_card_metrics(raw)
         info["mtime"] = model.stat().st_mtime
+        if raw.get("import_pending") and not raw.get("evaluation_source"):
+            info["mtime"] = raw.get("legacy_model_mtime", info["mtime"])
     else:
         info = {"classes": [NONE], "trained": "선택 학습 전용", "data": [], "per_gesture": {}, "mtime": 0.0}
     info["specialists"] = {}
@@ -392,7 +398,7 @@ def _atomic_text(path: Path, text: str):
 
 
 class TrainingJob(WorkerJob):
-    """Unified model training + separate validation + atomic installation in the worker."""
+    """Selected classifier training + full validation + atomic installation in the worker."""
 
     def __init__(self, rec_dir, model_path, *, tools_dir=None, cache_dir=None,
                  specs=None, identity=None, store_dir=None, on_done=None):
@@ -403,6 +409,20 @@ class TrainingJob(WorkerJob):
         self.cache_dir = Path(cache_dir) if cache_dir else model_path.parent / "features"
         self.store_dir = Path(store_dir) if store_dir else model_path.parent / "personal"
         self.specs, self.identity = specs or {}, identity
+
+    def import_legacy(self, source, data_dir, profile=""):
+        return self.start_request({"kind": "import", "source": str(source), "data_dir": str(data_dir),
+                                   "profile": profile, "task_names": ["이전 학습 작업 가져오기"]})
+
+    def validate_import(self, candidate):
+        try:
+            identity = self.identity() if self.identity else RecordingIdentity("local")
+            return self.start_request({"kind": "validate_import", "candidate": str(candidate),
+                "recordings_dir": str(self.rec_dir), "profile": identity.profile, "preset": identity.preset,
+                "mode": identity.preset, "store": str(self.store_dir), "cache_dir": str(self.cache_dir),
+                "task_names": ["가져온 모델 별도 평가"]})
+        except (ValueError, OSError) as error:
+            return self.fail(str(error))
 
     def start(self, epochs=20, gestures=None):
         try:
@@ -416,7 +436,9 @@ class TrainingJob(WorkerJob):
             return self.start_request({"kind": "train", "recordings_dir": str(self.rec_dir),
                 "profile": identity.profile, "preset": identity.preset, "mode": identity.preset if identity.preset != "trigger" else "pointer",
                 "store": str(self.store_dir), "cache_dir": str(self.cache_dir), "specs": self.specs,
-                "epochs": max(1, int(epochs)), "focus_labels": sorted({BY_KEY[k].label for k in gestures}) if gestures else []})
+                "previous_candidate": str(pending_model(self.store_dir.parents[1]) or ""),
+                "epochs": max(1, int(epochs)), "focus_labels": sorted({BY_KEY[k].label for k in gestures}) if gestures else [],
+                "task_names": [BY_KEY[k].name for k in gestures] if gestures else []})
         except (ValueError, OSError) as error:
             return self.fail(str(error))
 
@@ -484,8 +506,9 @@ class TrainingCenterService:
     """Service bundle injected into `ui.bridge.Bridge` by `desktop.py` so `ui` never imports `data`."""
 
     def __init__(self, config_dir: Path, data_dir: Path, recordings_dir: Path, *,
-                 model_path: Optional[Path] = None, specs=None, on_ready=None, env_files=(), store_dir=None) -> None:
+                 model_path: Optional[Path] = None, specs=None, on_ready=None, env_files=(), store_dir=None, policy_store=None, on_policy=None) -> None:
         self.config_dir = Path(config_dir)
+        self.policy_store, self.on_policy = policy_store, on_policy
         self.data_dir = Path(data_dir)
         self.recordings_dir = Path(recordings_dir)
         self.plans_path = plans.plans_file(self.config_dir)
@@ -518,6 +541,7 @@ class TrainingCenterService:
             return self.studio_job.fail("학습·공유 작업이 끝난 뒤 시작하세요.")
         return self.studio_job.start_request({"kind": "studio", "action": action,
             "recordings_dir": str(self.recordings_dir), "store": str(self.store_dir),
+            "policy_path": str(self.policy_store.path) if self.policy_store else None,
             "profile": self.profile, "preset": self.preset_name,
             "cache_dir": str(self.data_dir / "features"), **self.simulation_config, **values})
 
@@ -557,7 +581,19 @@ class TrainingCenterService:
                 return self.store_dir / "versions" / version / "model.onnx"
         except (OSError, ValueError, TypeError):
             pass
-        return self.model_path
+        return pending_model(self.data_dir) or self.model_path
+
+    def import_status(self):
+        try:
+            report = json.loads((self.data_dir / "imports" / "latest.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return ""
+        suffix = " · 모델은 시험 상태이며 별도 평가 후 적용할 수 있습니다." if not (self.store_dir / "active.json").exists() else " · 사용 중인 검증 모델은 유지했습니다."
+        warnings = " · " + " / ".join(report.get("warnings", [])) if report.get("warnings") else ""
+        return f"이전 작업 복구: 완료 녹화 {len(report['recordings'])}개 · 자세 계획 {len(report['plans'])}개" + suffix + warnings
+
+    def imported_candidate(self):
+        return pending_model(self.data_dir)
 
     def close(self):
         self.job.stop()
@@ -624,15 +660,35 @@ class TrainingCenterService:
         summary["coverage"] = dataset_summary(self.recordings_dir, profile=self.profile, split=self.split)["coverage"]
         report = model_report(self.current_model())
         rows = gesture_rows(summary, report)
+        policies = self.policy_store.describe(report or {}) if self.policy_store else {}
         mode = self.preset_name if self.preset_name != "trigger" else "pointer"
         for row in rows:
+            policy = policies.get(BY_KEY[row["key"]].gesture, {})
+            row.update(tcn_mode=policy.get("mode", "rules"), model_id=policy.get("model_id", ""))
+            row["import_pending"] = bool(report and report.get("import_pending") and not report.get("evaluation_source"))
+            if row["import_pending"] and row["model_id"]:
+                row["tcn_mode"] = "shadow"
+                row["advice"] = "이전 모델 복구 · 시험만 실행 · 별도 평가 녹화로 검증한 뒤 적용하세요."
             declaration = self.job.specs.get(BY_KEY[row["key"]].gesture, {})
-            if mode not in declaration.get("modes", []):
+            if mode not in declaration.get("modes", []) and "motion" not in declaration.get("modes", []):
                 row["can_train"] = False
                 if BY_KEY[row["key"]].label != NONE:
-                    row["advice"] = "녹화·공유 가능 · 이 모드의 직접 학습 적용은 아직 지원하지 않습니다."
+                    row["advice"] = "녹화·공유 가능 · 제어 전환·안전 동작 또는 연속 커서 이동은 기존 판정을 사용합니다."
         storage = storage_text(summary)
         return summary, report, rows, storage
 
     def export(self) -> Path:
         return export_package(self.current_model(), self.exports_dir)
+
+    def progress(self):
+        return progress_view(self.job.snapshot())
+
+    def set_policy(self, key, mode, expected_model_id):
+        if self.policy_store is None or key not in BY_KEY:
+            raise ValueError("동작별 모델 설정을 사용할 수 없습니다.")
+        report = model_report(self.current_model()) or {}
+        if report.get("import_pending") and not report.get("evaluation_source"):
+            raise ValueError("가져온 모델은 별도 평가를 통과한 뒤 적용할 수 있습니다.")
+        self.policy_store.set(report, BY_KEY[key].gesture, mode, expected_model_id)
+        if self.on_policy is not None:
+            self.on_policy()

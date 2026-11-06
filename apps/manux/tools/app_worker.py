@@ -41,6 +41,7 @@ def check_cancel(request):
 
 def run_training(request, send=emit):
     import train_tcn
+    from compose_tcn import compose
     from promote_tcn import validate_and_install
     from tcn_data import load, class_mapping, class_names
     from manux.ml.store import active_token, load_active
@@ -59,7 +60,7 @@ def run_training(request, send=emit):
     all_classes = class_names(segments)
     from manux.features.tcn_gate import LEGACY_GESTURES
     mode = request.get("mode", "pinch")
-    specs = {g: d for g, d in request["specs"].items() if mode in d["modes"]}
+    specs = {g: d for g, d in request["specs"].items() if mode in d["modes"] or "motion" in d["modes"]}
     mapping = class_mapping(segments, [c for c in all_classes if c == "none" or LEGACY_GESTURES.get(c) in specs or any(
         (f.get("label") or {}).get("target") == c and (f.get("label") or {}).get("gesture") in specs
         for s in segments for f in s.frames)])
@@ -69,22 +70,29 @@ def run_training(request, send=emit):
     focused = request.get("focus_labels", [request["focus_label"]] if request.get("focus_label") else [])
     if set(focused) - set(classes):
         raise ValueError("선택한 동작의 학습 녹화가 없습니다.")
+    selected = sorted(set(focused or classes[1:]))
+    if any(not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name == "none" for name in selected):
+        raise ValueError("학습할 동작 이름이 잘못되었습니다.")
     store = Path(request["store"])
     token = active_token(store)
+    current = None
     if token is not None:
         current = load_active(store, FEATURE_VERSION, FEATURES)
-        if not set(current.card.gestures) <= set(classes):
-            raise ValueError("기존 동작의 학습 데이터가 부족합니다. 팀 데이터를 받거나 다시 녹화하세요.")
+    elif request.get("previous_candidate"):
+        from manux.ml.predictor import load_model
+        current = load_model(Path(request["previous_candidate"]), FEATURE_VERSION, FEATURES)
+    retained = set(current.card.gestures) if current else set()
+    output_classes = {"none", *retained, *selected}
     evaluation = load(eval_paths, split="eval", cache_dir=cache)
     targets = {name for s in evaluation for name in s.labels()}
-    if not set(classes) <= targets:
-        missing = ", ".join(sorted(set(classes) - targets))
+    if not output_classes <= targets:
+        missing = ", ".join(sorted(output_classes - targets))
         raise ValueError(f"평가 녹화가 부족한 동작: {missing}. 별도 시도로 녹화하세요.")
     folder = Path(request["job_dir"])
     candidate = folder / "candidate.onnx"
-    declarations = folder / "decisions.json"
-    declarations.write_text(json.dumps({c: specs[mapping[c]] for c in classes if c != "none"}), encoding="utf-8")
-    send("progress", stage="통합 모델 학습 중 · 기존 동작 함께 유지", progress=.1)
+    send("progress", stage="선택 동작 학습 준비 · 다른 분류기 유지", phase="loading", progress=.1, steps=len(selected),
+         train_files=len(train_paths), eval_files=len(eval_paths), conditions=len({s.condition for s in segments}),
+         frames=sum(len(s.frames) for s in segments))
     # The training CLI prints its legacy report; only explicit progress events leave this worker.
     class EventOutput:
         buffer = ""
@@ -98,22 +106,33 @@ def run_training(request, send=emit):
                     continue
                 if isinstance(row, dict) and row.get("event") == "epoch":
                     check_cancel(request)
-                    send("progress", stage="통합 모델 학습 중", progress=.1 + .6 * row["epoch"] / row["epochs"],
-                         epoch=row["epoch"], epochs=row["epochs"], loss=row["loss"])
+                    send("progress", stage=f"선택 동작 학습 중 · {label}", phase="training",
+                         progress=.1 + .6 * (step - 1 + row["epoch"] / row["epochs"]) / len(selected),
+                         step=step, steps=len(selected), epoch=row["epoch"], epochs=row["epochs"], loss=row["loss"])
             return len(text)
         def flush(self): pass
-    with redirect_stdout(EventOutput()):
-        train_tcn.main([*[str(p) for p in train_paths], "--output", str(candidate), "--classes", *classes,
-                        "--decisions", str(declarations), "--cache-dir", str(cache),
-                        "--epochs", str(request.get("epochs", 20)), "--events", "--skip-folds"])
+    replacements = []
+    for step, label in enumerate(selected, 1):
+        check_cancel(request)
+        trained = folder / f"component-{label}.onnx"
+        declarations = folder / f"decisions-{label}.json"
+        declarations.write_text(json.dumps({label: specs[mapping[label]]}), encoding="utf-8")
+        with redirect_stdout(EventOutput()):
+            train_tcn.main([*[str(p) for p in train_paths], "--output", str(trained), "--classes", "none", label,
+                            "--decisions", str(declarations), "--cache-dir", str(cache), "--negative-other-classes",
+                            "--epochs", str(request.get("epochs", 20)), "--events", "--skip-folds"])
+        replacements.append(trained)
     check_cancel(request)
     if active_token(store) != token:
         raise ValueError("학습 중 사용 모델이 바뀌었습니다. 다시 평가해 주세요.")
-    send("progress", stage="별도 평가 녹화로 검증 중", progress=.8)
+    send("progress", stage="선택 분류기 결합 중 · 기존 가중치 유지", phase="saving", progress=.75)
+    compose(current.path if current else None, replacements, candidate)
+    check_cancel(request)
+    send("progress", stage="모든 동작의 별도 평가 녹화로 검증 중", phase="evaluating", progress=.8)
     installed, report = validate_and_install(candidate, eval_paths, store, mode=request.get("mode", "pinch"),
-                                             cache_dir=cache, cancelled=lambda: Path(request["cancel_path"]).exists())
-    send("done", stage="검증 통과 · 모델 적용 요청 완료", store=str(store),
-         classes=len(classes) - 1, metrics=report["candidate"], job_id=request["job_id"])
+                                             cache_dir=cache, cancelled=lambda: Path(request["cancel_path"]).exists(), expected_active=token)
+    send("done", stage="검증 통과 · 선택한 동작의 새 모델은 시험 모드", store=str(store),
+         classes=len(output_classes) - 1, trained_labels=selected, metrics=report["candidate"], job_id=request["job_id"])
 
 
 def run_hub(request, send=emit, client=None):
@@ -164,6 +183,33 @@ def run_hub(request, send=emit, client=None):
          upload_access=can_upload, job_id=request["job_id"])
 
 
+def run_import(request, send=emit):
+    from import_training import restore
+    send("progress", stage="이전 녹화·설정·선택 모델을 로컬로 가져오는 중", phase="loading", progress=.1)
+    report = restore(Path(request["source"]), Path(request["data_dir"]), request.get("profile", ""),
+                     cancelled=lambda: Path(request["cancel_path"]).exists())
+    send("done", stage=f"이전 작업 복구 · 녹화 {len(report['recordings'])}개 · 모델은 별도 평가 전 시험 상태",
+         candidate=str(Path(request["data_dir"]) / report["candidate"]) if report["candidate"] else "",
+         profile=report["profile"], job_id=request["job_id"])
+
+
+def run_validate_import(request, send=emit):
+    from promote_tcn import validate_and_install
+    from manux.data.training_center import recording_sets
+    from manux.ml.store import active_token
+    identity = RecordingIdentity(request["profile"], request.get("preset", "pinch"))
+    _, paths = recording_sets(Path(request["recordings_dir"]), identity)
+    if not paths:
+        raise ValueError("가져온 녹화는 학습용입니다. 별도 평가용(eval) 시도를 새로 녹화한 뒤 검증하세요.")
+    send("progress", stage="가져온 모델을 별도 평가 녹화로 검증 중", phase="evaluating", progress=.2)
+    store = Path(request["store"])
+    _, report = validate_and_install(Path(request["candidate"]), paths, store, mode=request.get("mode", "pinch"),
+                                    cache_dir=Path(request["cache_dir"]), expected_active=active_token(store),
+                                    cancelled=lambda: Path(request["cancel_path"]).exists())
+    send("done", stage="가져온 모델 검증 통과 · 동작별 시험/적용 선택 가능", store=str(store),
+         metrics=report["candidate"], job_id=request["job_id"])
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--request", type=Path)
@@ -180,6 +226,10 @@ def main(argv=None):
             raise ValueError("지원하지 않는 작업 요청입니다.")
         if request["kind"] == "train":
             run_training(request)
+        elif request["kind"] == "import":
+            run_import(request)
+        elif request["kind"] == "validate_import":
+            run_validate_import(request)
         elif request["kind"] == "hub":
             try:
                 run_hub(request)

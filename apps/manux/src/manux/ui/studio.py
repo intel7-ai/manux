@@ -114,6 +114,7 @@ class StudioBridge(QObject):
             return False
         self.owner._pause()
         values["settings"] = {key: self.owner.settings.get(key) for key in self.owner.settings.schema.keys()}
+        values["global_tcn_enabled"] = getattr(self.owner, "_tcn_enabled", True)
         if hasattr(self.service, "simulation_bindings"):
             values["bindings"] = self.service.simulation_bindings
         if self.key and action in ("load", "simulate", "select", "trash", "clean", "augment"):
@@ -130,6 +131,14 @@ class StudioBridge(QObject):
 
     @Slot()
     def refresh(self): self._run("scan")
+
+    @Slot()
+    def open(self):
+        self.active = True
+        self.refresh()
+
+    @Slot()
+    def hide(self): self.active = False
 
     @Slot(str)
     def selectRecording(self, key):

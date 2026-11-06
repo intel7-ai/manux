@@ -1,0 +1,722 @@
+{
+  "upstream": "codex/rasp-jun-training-center",
+  "commit": "f1a7a23a4462c77f5bf3790a140e4b8bc72d7ca6",
+  "purpose": "Standalone training-center experiment; not imported or packaged by MANUX v0.4.",
+  "excluded": [
+    "recordings/",
+    "field-logs/",
+    "models/",
+    "tests/fixtures/",
+    "config/profiles/",
+    "CLAUDE.md",
+    "docs/jira-20261104-pm.md",
+    "docs/jira-20261104.md",
+    "credentials and local runtime state"
+  ],
+  "files": [
+    {
+      "path": ".gitignore",
+      "upstream_blob": "fbf40fb49f987adac4e73487d8a1453d992c9739",
+      "sha256": "c3dbc567548739ceede7ad2aaec0352b7a282a577f88efe738870ffb317a9de9"
+    },
+    {
+      "path": ".python-version",
+      "upstream_blob": "e4fba2183587225f216eeada4c78dfab6b2e65f5",
+      "sha256": "7b55f8e67b5623c4bef3fa691288da9437d79d3aba156de48d481db32ac7d16d"
+    },
+    {
+      "path": "MANUX TCN 실행.cmd",
+      "upstream_blob": "30cd540008c74390caf245a2721a06ed74114c3c",
+      "sha256": "65738a2bedac1684c481210cf489c07477886c7b69c71e67f0d87a4034b88fa5"
+    },
+    {
+      "path": "README.md",
+      "upstream_blob": "567ec28689160ec86e548db5a18fab649384bc92",
+      "sha256": "fa0018d0290323e23d30850b37c6ebf685d7cdc544a0d8a3ce6a64bcc57fd83e",
+      "snapshot_sha256": "b80bb25f26c8fafd84def7c91884be1a39b5e32ec36544e3179e18ac916ef38f",
+      "normalization": "trailing whitespace and extra blank lines at EOF only"
+    },
+    {
+      "path": "TCN-START.md",
+      "upstream_blob": "6847411dced4c48e5ace4701bf4f10509aaac8b7",
+      "sha256": "b228c50dfff608a62c821e7e7abace5a99079f24d5e27ef5c9ba60ca2cd02809"
+    },
+    {
+      "path": "config/gestures.json",
+      "upstream_blob": "7cab568182acc4e12eb52ec042f9a51f9e4b8b7d",
+      "sha256": "d19a4559c558c4dc526a16ec5620efa585e085266598a3d390241b22e3294249"
+    },
+    {
+      "path": "docs/browse-cursor.md",
+      "upstream_blob": "3fbf3547e6a8fd95d90c1b414d7af483eeceb1aa",
+      "sha256": "74a107fe2812ffc224ce6db22fd7bacd35075b3d25bb077a7f8c4928b535ad64"
+    },
+    {
+      "path": "docs/close-sign.md",
+      "upstream_blob": "66f215f6758e91f769a05e5da309aac93fa22437",
+      "sha256": "338bd88f92e12e9660824773319f577d353cf349bcc9e4e0a544ccb84e098bfe"
+    },
+    {
+      "path": "docs/elbow-pivot.md",
+      "upstream_blob": "98668cbd10b8c9d4e82022883365da4a2f9331ef",
+      "sha256": "ffaddc1a85002f68a0d899ffd1d885c2e032d409268b1f761858e6d76ee51dbc"
+    },
+    {
+      "path": "docs/engine-contract.md",
+      "upstream_blob": "f0d4521e449c805d3525e66533c7095f6d6b5c10",
+      "sha256": "fa8fd745b5588f16552e2ed5039880ecc97d1c9f0ada72465b246a7d41d64187"
+    },
+    {
+      "path": "docs/hand-shape-speed.md",
+      "upstream_blob": "92665750ecf195aaa1cbe791e075c810cdeee81b",
+      "sha256": "5779e64a1dc7de981fe349b429f53f40d2640137d9a81017feeb5c958906543f"
+    },
+    {
+      "path": "docs/motion-mode.md",
+      "upstream_blob": "45e7955553a1961779b0cbece015849284b57a1e",
+      "sha256": "7f3e829c1498165624408d47e6d7b1d53a9d376d2492eaf67b3ed4e0000b0234"
+    },
+    {
+      "path": "docs/palm-axes.md",
+      "upstream_blob": "4f7130011650c5252ccba82b3e8eae31cb0f9258",
+      "sha256": "49b246cab8ae3b4079639a41e81bbb56255593942a7d4a6e3bd26d1358bec1a1"
+    },
+    {
+      "path": "docs/path-smoothing.md",
+      "upstream_blob": "52d7a1d3b1a60773aaeea7f6656b109e7c439592",
+      "sha256": "afc9e3492a276f96e6201a4c90ee1fa38cd6e02fe0ed2fa87e5f4c90b6545640"
+    },
+    {
+      "path": "docs/recording.md",
+      "upstream_blob": "c049d72e41e8f18a0c9589a03913bf0fbeff47df",
+      "sha256": "c8efbe07cd2936a216dcde5b43d1bd282d81ac5873c8c2affb8bc4df86ab2dbc"
+    },
+    {
+      "path": "docs/selective-training.md",
+      "upstream_blob": "36f81a31b28653b5343315c482f3ebc64b572c1d",
+      "sha256": "547998e5d5b40eea1dcef9cdcc6d45ae82ae262939bd98ccfdbd218edf04e69e"
+    },
+    {
+      "path": "docs/toggle-sign.md",
+      "upstream_blob": "8c18ae2b1e5b5e1a845803c98370679b3d0822b1",
+      "sha256": "ea362721e49e7eb7749815c8d81f523ac7832f93523e05e540b8cac23bb3b136"
+    },
+    {
+      "path": "docs/training-studio.md",
+      "upstream_blob": "4ece9604073877749276c84a626655f917b81b5f",
+      "sha256": "1a73924eaab4ad9bcff2ac29aeef809dbc4e747a85dcd7a86d28ab86d8522f4c"
+    },
+    {
+      "path": "main.py",
+      "upstream_blob": "d7a41759a74650c29cf68e9227dd0647fd85b28f",
+      "sha256": "bb22614bccad0272f99fc4ec5668ada226331fbf66ff0edd56cb2c7457bf9c3e"
+    },
+    {
+      "path": "pyproject.toml",
+      "upstream_blob": "ac48800c202e22afe9b0de0be75720a665293b70",
+      "sha256": "25732147c33d7048357237b1421c787b86c8c0c4db7b300f47cc990f0fe504b6"
+    },
+    {
+      "path": "run.bat",
+      "upstream_blob": "9a923e5c68378063e8a0ac058ba77068b96b1b42",
+      "sha256": "b1952a213a3123be5bc2aeacf652bf934e97dbede92305644298ce6729329df1"
+    },
+    {
+      "path": "run_admin.bat",
+      "upstream_blob": "420739ca0ab9062900520a2ac5031ab805a47064",
+      "sha256": "0a867bdf52482c6cc127331a7ad25c2201d4f907da33182cb88e2f51715ba968"
+    },
+    {
+      "path": "scripts/calibrate.py",
+      "upstream_blob": "540edb97cb512ce838e44e208a423751cbe53d8d",
+      "sha256": "862f90b531c20313da41d882cde19f87a39d9406e38c6136fe1b26ded0ebe197"
+    },
+    {
+      "path": "scripts/export_model.py",
+      "upstream_blob": "6cae59ce060d57cf30af38ec0e6271fa1958fc18",
+      "sha256": "82fcccb647a35f4816d33c3e3fb91b6cf69c1d3c4fd8df76585890da51cb2d70"
+    },
+    {
+      "path": "scripts/loop_smoke.py",
+      "upstream_blob": "a6ee3777b12c8d915f70abcfe131e5291de0a4fe",
+      "sha256": "a63e54b4cf6ad5557a4a4c4dce306aa9bed6fd6b89d18affc4a717ec0f9101c0"
+    },
+    {
+      "path": "scripts/profile.py",
+      "upstream_blob": "5c685055389f98d379756a2f9548a9744abd5a01",
+      "sha256": "67a01aa5be3b148e70ca7f4fee4a394a6c3130aa2bae89ae6d25efcc46c25f84"
+    },
+    {
+      "path": "scripts/train_selected.py",
+      "upstream_blob": "f67561d3ecf55318dc40c953cc5878d0f71f86d1",
+      "sha256": "8caea9f766a5576678a67fff762c2a35201111e0581a8231d1f685f0c6406e4e"
+    },
+    {
+      "path": "scripts/train_tcn.py",
+      "upstream_blob": "7b77434371ec5d265a744f151d3f7a9375df33fc",
+      "sha256": "6892fe3ffe7cc29eb2e40f8b35ca792c655a0e57b249f30147e3c5fed584f756"
+    },
+    {
+      "path": "scripts/training_report.py",
+      "upstream_blob": "0f6b67eab876601ee02641ed574c27861faec419",
+      "sha256": "f029d3c6447b6fea1be720dfc65deb6fe48ea8de22b3726bed501072604d0a30"
+    },
+    {
+      "path": "scripts/windows_smoke.py",
+      "upstream_blob": "b4e883724c8add433a62b8f90eda201997474845",
+      "sha256": "638b0ca8f7ff3959837cdd85136fb8f378025c534435bcbab30446565837c364"
+    },
+    {
+      "path": "setup-tcn.cmd",
+      "upstream_blob": "c03922a572e2fbbfb4c45817a01f209bddb28819",
+      "sha256": "edf03663ac75638a353c20ebf7bd60079743cfa0c58958f2088aff5ee210b32a"
+    },
+    {
+      "path": "solution.md",
+      "upstream_blob": "4814d0a179a377eb108f16321bb15cf110905fb8",
+      "sha256": "76170789ec1a60ce24a114bb72527c48f9c42e6b514dc9d37e73967f4c1d37c1",
+      "snapshot_sha256": "7bd861ec800f2322d8b5f3a3e19dc3ad6a2f10a10af69aa7aaf1c846716fff02",
+      "normalization": "trailing whitespace and extra blank lines at EOF only"
+    },
+    {
+      "path": "src/RecordingPlanDialog.qml",
+      "upstream_blob": "62569b4a1eb0ea38b6b2b6e4a863c6a4e6048486",
+      "sha256": "62d14caa41803df24cc75f0919431da857b5a3f534c4a12192341de0a06f0922"
+    },
+    {
+      "path": "src/TrainingProgressPage.qml",
+      "upstream_blob": "cae73f08e8e1753d869ba0b31ae4e3ff3f9fd45a",
+      "sha256": "0f94e472263db4a1ff39e2341c40de6139e777a2df3b17f39fce8dd42af716ac"
+    },
+    {
+      "path": "src/__init__.py",
+      "upstream_blob": "fe076e96b6e2d4f16f765003bc99af24be4bc487",
+      "sha256": "fa9e615915728ae04d738c69eb66fb8e5b85f125bb3ce9113e1db9087433a2a0"
+    },
+    {
+      "path": "src/assets/manux.svg",
+      "upstream_blob": "ab06880b27457b3ce6216ff38bcb6d66863b825e",
+      "sha256": "79998e452675d70540e21e68a4f5e506975649486e033c042178d04fb4daa46a"
+    },
+    {
+      "path": "src/calibration.py",
+      "upstream_blob": "44d35f037c5883eec5bcbf85b3d8d171002ada20",
+      "sha256": "111dbc97af116635597a7adb6cc325a70419411de29f8d3c18247df9d2eb3148"
+    },
+    {
+      "path": "src/camera.py",
+      "upstream_blob": "e1c12cceeab189bb3859111513462986575b8ac6",
+      "sha256": "18784e7316f843727630e8f967f2765cb2437565502d330d8e783d0b0ffa76b8"
+    },
+    {
+      "path": "src/capture_dataset.py",
+      "upstream_blob": "818cc8129f02f32ab9ca23c9272d6575076cef95",
+      "sha256": "e85ccc1ed2f3c2387a6219ab85281d5e627828dec315d43f7a462026f2ba34fa"
+    },
+    {
+      "path": "src/capture_rules.py",
+      "upstream_blob": "f86c2eb8aa7f75612761acd49acb86ee12988120",
+      "sha256": "1c9ed05e7934ab7be7e49550fe99882609ff7c94f4f065e3969899c0866abb21"
+    },
+    {
+      "path": "src/close_sign.py",
+      "upstream_blob": "e44230a29e860884677c0a9eaa30de2b229a52c2",
+      "sha256": "cf09cfbcb65fc6491c00a30669372b147e72e545c3297fd80138a86264b21204"
+    },
+    {
+      "path": "src/cursor_interp.py",
+      "upstream_blob": "60be6abc3bc2821c5e171f98c157f2a7aefd7482",
+      "sha256": "6f80989b6931457b00ed8d48e187912a7b3363dba753a92a50ceed827ea50a9a"
+    },
+    {
+      "path": "src/dashboard.py",
+      "upstream_blob": "40e79ff65b887f257ca1084389520037c8eb989e",
+      "sha256": "4d9c44df3b77a9b73c69991cdd6443ebb5626c4decf1f50540db0a5855b64fe0"
+    },
+    {
+      "path": "src/dashboard.qml",
+      "upstream_blob": "17834a876aef50f2583a852d0b8309f22daaeafe",
+      "sha256": "2815ed2ab4530573de24c5581bc6b6cb7eb215d66d6e176e6401a2b2037aa389"
+    },
+    {
+      "path": "src/elbow_pivot.py",
+      "upstream_blob": "175e43d27d2346cf254372fb908904eafa8fe2bc",
+      "sha256": "0dc17e160edd4774ec66da5349ceddece04a4909e82e1772fc2bc10589a96032"
+    },
+    {
+      "path": "src/failure_log.py",
+      "upstream_blob": "021c101246ec8421b7f3e92343b758cc316dcaa1",
+      "sha256": "85245f95f496ca6497a56144e7cee0c4a96ac4fd9ede8505d6e5cfa8dd82caaf"
+    },
+    {
+      "path": "src/filters.py",
+      "upstream_blob": "c750b88fabbad9f1566fad6887141f9a0badb3a5",
+      "sha256": "06f115cb0f21accefdc786a524356d877fc2c648802cce7e033121fe8b828d31"
+    },
+    {
+      "path": "src/gesture_catalog.py",
+      "upstream_blob": "bb9f0617584b9e17662b04c41c5ef5678f6eeb93",
+      "sha256": "3e7339bcfec753b8a91b499de597dd684a27d08ca673e68a605a029a18f5e7a5"
+    },
+    {
+      "path": "src/gesture_engine.py",
+      "upstream_blob": "52801928426b55f02149b72dd1cfed69b040c4ad",
+      "sha256": "e05d164f22781cf0ba856c7a85be9eb3558f0008dd157a177d84141093f31c2e"
+    },
+    {
+      "path": "src/gesture_gate.py",
+      "upstream_blob": "e3e73ea99fdee77c1f0dc4c5096e7f93b54e3802",
+      "sha256": "0b63de48d0bba5a180f2aa24f6d8f298f70ff281d9435e2617b6b9cc3df81086"
+    },
+    {
+      "path": "src/gesture_models.py",
+      "upstream_blob": "834048841f4457e6fac39135fd419be01dde10ef",
+      "sha256": "a5d36da28964cfac7bb489eae9d10c43ccbf52a8705d7e56d51f3ae3aaa60fab"
+    },
+    {
+      "path": "src/guided_recording.py",
+      "upstream_blob": "9277b20758503c851b586ee6703759cdb5a67363",
+      "sha256": "8e73e22877a861a9405c9efef1344c4610a6995ba794cfa393e01c3fb05da260"
+    },
+    {
+      "path": "src/hand_crop.py",
+      "upstream_blob": "81138cea2a1211ca2e30331cc618ab5ae7cc1cae",
+      "sha256": "40b4b947978e4eb3efb3942bca78e3662e1dae861632215b8be34c96d7c3905b"
+    },
+    {
+      "path": "src/hand_mouse/__init__.py",
+      "upstream_blob": "d5963b37c8a3a77c70dd78094989e4faedc6da59",
+      "sha256": "48be7491f1a639aa3b6db9cf291dff24c91df3a544691a83a105ccf6f31e5807"
+    },
+    {
+      "path": "src/hand_mouse/gesture_engine.py",
+      "upstream_blob": "6040ad60593bc734bba3409413999132a3be1cd1",
+      "sha256": "6123f0d152e2dd9be1a27714aa81120c5e6cbec8cd3a8cadbe1ba022175bb1c9"
+    },
+    {
+      "path": "src/hand_mouse/mouse_controller.py",
+      "upstream_blob": "3fb87455ccf318ea582db6e92c83df576b9d639d",
+      "sha256": "42c1551cd53b578a8e5286737627d3430a95290651d84fed114a1889ba578a00"
+    },
+    {
+      "path": "src/hand_selection.py",
+      "upstream_blob": "b957f2e2ff2edb4bb63153d282ca92a5bb8e2710",
+      "sha256": "904e5c4960f90692a372abb3cbd64a55a7a379a324d12e429030817c5b04394b"
+    },
+    {
+      "path": "src/hand_tracker.py",
+      "upstream_blob": "8833867796922205519ccd481f615c8ea720c22c",
+      "sha256": "84a61a1770882695fcdac9857f3dd7fb517f3c24922a519223220636b7180259"
+    },
+    {
+      "path": "src/hotkeys.py",
+      "upstream_blob": "cf01022a9b58ce602b12f76f70725f8ca8811a6a",
+      "sha256": "2c2c60e211fb14d647a5fa66738c019e35dd65581828ac5e63c03a8ed930590c"
+    },
+    {
+      "path": "src/motion_mode.py",
+      "upstream_blob": "6c68ee835beb68ead503afc87a92efcb30560bda",
+      "sha256": "8babfb453dec4fab1e64f9c869d4b647a6c76a7a562f1caaabbe94bbd6b5be05"
+    },
+    {
+      "path": "src/mouse_controller.py",
+      "upstream_blob": "fb7839ee5e634e8775c63d9bb4af6a76c9bbfa3c",
+      "sha256": "dc97b749a02c42fb1413bb7c83bf870e007c6365792fc8beab545c6ca8febff6"
+    },
+    {
+      "path": "src/overlay.py",
+      "upstream_blob": "eb45f8425e93bca2549db8621ab128719045e653",
+      "sha256": "f46a04799d3383c2a87e00569a71ff0b22226405fac01bcfcb9cd94aac548dae"
+    },
+    {
+      "path": "src/palm_axes.py",
+      "upstream_blob": "afae94feac6a658967a13e7035a912c6abd4c753",
+      "sha256": "a0d9b3dce013d2a6cf6b3151a436a5562e59d846c782636b05c94f4cfe6862aa"
+    },
+    {
+      "path": "src/path_smoother.py",
+      "upstream_blob": "b7568071703543f6949e21ba1fbdc6728240e227",
+      "sha256": "e274e54e3f11e64b13695e1574f442cef3f284905aa3c21282c0a2131838a456"
+    },
+    {
+      "path": "src/perf_log.py",
+      "upstream_blob": "edb79b23cbc9e7ce6251d9a39f51d3575466edfb",
+      "sha256": "6aaa9ec79a473715be53b14e1fed4f591a9df31edbe7df1ce46265be7975d65a"
+    },
+    {
+      "path": "src/phone_web_bridge.py",
+      "upstream_blob": "cd34d8254b2048beb61a30d812593105bad9a9e2",
+      "sha256": "7040f28ba7dc8546475d1c294566fa2391d61a8e4af96666aca53a616d759c56"
+    },
+    {
+      "path": "src/pipeline.py",
+      "upstream_blob": "f68fc4e5da2a53e4483defeaceaa4128a88155d5",
+      "sha256": "8edfba3c45e313aa08b1ff16966a534f9b191939edec9a9806c915a215580bef"
+    },
+    {
+      "path": "src/pointer_engine.py",
+      "upstream_blob": "f165c02ad6b1d8b45e7a00a454262df3a8aac92f",
+      "sha256": "79e5f89b678dc51407a81f1fdf855e5388c409faabd1dc79e0aa60e677145093"
+    },
+    {
+      "path": "src/pointer_workspace.py",
+      "upstream_blob": "f6ae3d3948a3758db2a0664645bd41351039ab31",
+      "sha256": "6829e679dc7531a252bfa31418fd3e4b0b69facda0575bbae5c467ea02ac275c"
+    },
+    {
+      "path": "src/pose_tracker.py",
+      "upstream_blob": "ac944b14f87c93e96831bec82d0f01f46ebe6558",
+      "sha256": "26f1ee1d6e7d383d7aaa78dd224efb17ba4ca3095f43df68612326b0850bee0f"
+    },
+    {
+      "path": "src/profiles.py",
+      "upstream_blob": "a428cf491f80aeb892c91795a03000d668902092",
+      "sha256": "55968f43c50f3de0d76a0901f2823b5bd7aa59f729e28bb7f332edd24aa35afd"
+    },
+    {
+      "path": "src/qt_dashboard.py",
+      "upstream_blob": "01d8fee1d4c08f9c70318b6cf0b651c268b51c9f",
+      "sha256": "9919a06c9ceb495e5e7d70271bc5f6618b8fb073b7188949f3a66222e01a089c"
+    },
+    {
+      "path": "src/qt_runtime.py",
+      "upstream_blob": "7d8051919bd04d03325d5553b17829cbd7a70c2a",
+      "sha256": "38917caa8413d7175445f09b244d313d0335025a0c0ee27725cadb88ce5fc1c4"
+    },
+    {
+      "path": "src/qt_tray.py",
+      "upstream_blob": "5609e1e2fa07fa5e1584ee7cef7be682c4732315",
+      "sha256": "dec341374cb12524defded264ec737a1e95a6995c27d949e735c29146d493e2d"
+    },
+    {
+      "path": "src/recorder.py",
+      "upstream_blob": "ff8ce29411df6a21825182f81dc9bbb0508e5035",
+      "sha256": "d6b102c9204e7ff46b4c71b19a0ca1cc453228ec882527513ef1e76002cd0909"
+    },
+    {
+      "path": "src/recording_plan.py",
+      "upstream_blob": "841d8216109927aec8903b539eb9382221493200",
+      "sha256": "ab1a69a465a178cb8876c0340fc6364b1f4b3692f35d606265488b14b3affe70"
+    },
+    {
+      "path": "src/recording_plan_editor.py",
+      "upstream_blob": "cf07021604c7d337b4160f5008b93668cc4737c3",
+      "sha256": "ab6dbc580dcab0cd46d7fccf2983786fd6c174d1139deb884c1513902dbbf94b"
+    },
+    {
+      "path": "src/screens.py",
+      "upstream_blob": "4e59ee631ab616688e1dc44beecfee207e2abee2",
+      "sha256": "6091b8e487e1a500fff228e658f90a6035e1507eb5274c56e4a1dc46b2a4397f"
+    },
+    {
+      "path": "src/scroll_target.py",
+      "upstream_blob": "04c261de4145d5574c4e9e2b563c1fce5cfad284",
+      "sha256": "735745176e40345b4e5b84e3775a2bfa48db3925fb552f9120e4db7cf722fc03"
+    },
+    {
+      "path": "src/settings_panel.py",
+      "upstream_blob": "8c70c8f7d953ed1ed436466b357feca506bd3536",
+      "sha256": "61a20c8692240431fdcf4ee5f9a29daf865fedc6d232fb1a11330c1debf3ce36"
+    },
+    {
+      "path": "src/status.py",
+      "upstream_blob": "46378fbaa4e1c6a48918e03850af11dab882938f",
+      "sha256": "f7bf3a9a463e3652cd6d1fca959e77aef6457bda8b47dbae82d4f27c378772ec"
+    },
+    {
+      "path": "src/tcn_augmentation.py",
+      "upstream_blob": "da4f850439a9905303ab9efb2bb3152ea09c3c3d",
+      "sha256": "2c262372d831ca0ebfd07051710ad88fd40f39e4e5efece35bc0ffcd7e4753a9"
+    },
+    {
+      "path": "src/tcn_evaluation.py",
+      "upstream_blob": "fd7e37a8038036399c517861701a7fe916382784",
+      "sha256": "4dac64f97e13bc175e6cf89fdf5d26c0a056761e83c2eabcfc42578f4c1ee082"
+    },
+    {
+      "path": "src/tcn_features.py",
+      "upstream_blob": "7cd8ec9138406ac1b6ab10ab2af307b0002de6b4",
+      "sha256": "46c91c41bda3b3b38210e55e028bf07b6bfbe214ce570b0da810347742667eec"
+    },
+    {
+      "path": "src/tcn_models.py",
+      "upstream_blob": "cb34d88564d21e7bfd1851f8068b5dd92317e80a",
+      "sha256": "e3a87eaba988d626dae95983f3d0911ea3076fbd107be74763fcd63540fd6578"
+    },
+    {
+      "path": "src/tcn_policy.py",
+      "upstream_blob": "c1bf1ba4327dd864d309e82e20f335bd8c07951d",
+      "sha256": "afc3a78e5465e520739fcc84944de1e8fbe3446212d21c689b19b665c9ef8d6c"
+    },
+    {
+      "path": "src/tcn_validation.py",
+      "upstream_blob": "08a77f2f7e4eb96a0e381718a2ef5da4c18418c1",
+      "sha256": "da496ff81d63ae539b0064b49a4e2c44da7454ac050d01eae31150d37f81881e"
+    },
+    {
+      "path": "src/toggle_sign.py",
+      "upstream_blob": "a96aba8684b42efd030f69cbcec1e161b1a91a1e",
+      "sha256": "30455718ee2aaca5f0e57610d44c8483c44bb1a8f7d117eea6a6488752127884"
+    },
+    {
+      "path": "src/tracking_test.py",
+      "upstream_blob": "c9712553ecf309512aff19f5bb498fd6cdf132e8",
+      "sha256": "44071d84c2ddaf57be8104a489c182341ddc369d511bc7c34c45d209e8e70732"
+    },
+    {
+      "path": "src/training_center.py",
+      "upstream_blob": "b83d2c80615de8004d6224da9d443abb9c574200",
+      "sha256": "38ce88b7476e3a66ee6222ed42169cd523d3e125d192bd4bc60a6ba6137a9a3b"
+    },
+    {
+      "path": "src/training_progress.py",
+      "upstream_blob": "107962f052d735949344857f7973a6d778c3b9ae",
+      "sha256": "c37817c4960ca4d1540e599417456b2534dd330e9da8230b2de11e1786763148"
+    },
+    {
+      "path": "src/tray.py",
+      "upstream_blob": "c256215204a93ea0894de925843ee5a8afffddb4",
+      "sha256": "b5fabcd1de923efb667b6f9e79cdf91becde06455f15fc1d1a0485a81454813b"
+    },
+    {
+      "path": "src/ui_magnet.py",
+      "upstream_blob": "622baedf7d54570dd450684a965f9d24372383de",
+      "sha256": "74d3fb4533a355856e7cad49b68c94c092d89f8b3620d49c6599cda50e5da686"
+    },
+    {
+      "path": "src/win_perf.py",
+      "upstream_blob": "f739eb54e03a7f03a8bd68ce31538fea6c92ec46",
+      "sha256": "7a34faa0d8e0bcd09d797aa50e939c12f932ac0233e88b30d4ea5a8e9e657e6f"
+    },
+    {
+      "path": "src/window_probe.py",
+      "upstream_blob": "844e5cf8daf040871c1632e25e8a94e022a398e7",
+      "sha256": "c976d4cb7be405824044803c8c49eddc41620d4c0d4a2d6e284bfb723ede2bb5"
+    },
+    {
+      "path": "studio.bat",
+      "upstream_blob": "d2bd9058bb285fffae0b9119ef8137f2dd5061c8",
+      "sha256": "c986b7ca47ea6e6022eeb41187b62527325db2839bf34d7cbf3730896109c7f1"
+    },
+    {
+      "path": "studio.py",
+      "upstream_blob": "0314c075d488ec5d33cc96af74f11843b46afd44",
+      "sha256": "4b1ab98f3c2af0974656d9f2da46370e6817f843602f7babc55025f2a0c1201f"
+    },
+    {
+      "path": "tcn_app.py",
+      "upstream_blob": "feb34e9789d6c94c910cbd3dc0d1b4e9f950623b",
+      "sha256": "603617d85c79f37ecd494f94acb5a7622c334c91d59caa715657ed35dc08a42f"
+    },
+    {
+      "path": "tests/conftest.py",
+      "upstream_blob": "c3544b1b3bec648ce6a7f33b1963cc5e75bbde63",
+      "sha256": "eef6e55a000888b262312ccd9038034b0d11b325388afa8cbb3dbf018fe1fbf6"
+    },
+    {
+      "path": "tests/test_calibration.py",
+      "upstream_blob": "88169d8e7f82aaad5155b7c348e222f6aad3ed36",
+      "sha256": "a1cd7cbfbab0b7a0e4b3532eb001f52cb43cc88b41a7701659dafe2e08b507e1"
+    },
+    {
+      "path": "tests/test_camera_and_tracker.py",
+      "upstream_blob": "ae1411ad68771763de2bc23f40c4f65ee30f223e",
+      "sha256": "5ff8912942ea3f443bea57bc471e3fa227502e6dab8e7d6841036224d27939ef"
+    },
+    {
+      "path": "tests/test_close_sign.py",
+      "upstream_blob": "4163013558037a995f44dafa4d481f58951de377",
+      "sha256": "e3b2edad7ee63f4e56c65b3b4db7380aa9fb3d0e9e7a9518971fa07d68fd7211"
+    },
+    {
+      "path": "tests/test_cursor_interp.py",
+      "upstream_blob": "5656ff50280c633823a559dfd2fd0fb8b455e150",
+      "sha256": "fe963ec4ec4a2d409a5bf016c70d11948d53a94364b537335694bd86dc82cbcd"
+    },
+    {
+      "path": "tests/test_elbow_pivot.py",
+      "upstream_blob": "a2df05ef9448f83aa6acd6b4a250c65e45c237ac",
+      "sha256": "6300748b7c14fd89be4e5e7bd1a5389b6ff783d971946b953fcefe1e17949bfc"
+    },
+    {
+      "path": "tests/test_expanded_training.py",
+      "upstream_blob": "8a3acef5620467c99c13128d27270bd28defaf35",
+      "sha256": "8217cf5ddfa1bb071b168048977507bf6d2a615d897d84640cdb36971d609da5"
+    },
+    {
+      "path": "tests/test_filters.py",
+      "upstream_blob": "d6b252a35072e63b4f5ecba7c08ec83372358ec9",
+      "sha256": "03c37d13f77e5eb6d542c89c8e7517cd1882434e89dce34295897e5587f25d27"
+    },
+    {
+      "path": "tests/test_gesture_gate.py",
+      "upstream_blob": "b0de3e5b30199d1ba3c34d2ef4fd9e5f35ec8d71",
+      "sha256": "8e2ef0dde82b87c2a2eb89d90dadf67383031a349f17db11bc5f0587623d3bbb"
+    },
+    {
+      "path": "tests/test_gesture_mouse.py",
+      "upstream_blob": "2a0828d822492eb2d7c49479e0ea111b3949ad6d",
+      "sha256": "8fa6b27de1ce27c5d526a9ae449326cedba6b1d3704ecf82f33d5f4d97587d67",
+      "snapshot_sha256": "0849917f1914b19591dc5c202b04d6178b070afe63666ca78cfc2bd3231863e5",
+      "normalization": "trailing whitespace and extra blank lines at EOF only"
+    },
+    {
+      "path": "tests/test_hand_crop_failures.py",
+      "upstream_blob": "141e1e040b93a0e7004f369a5c42abf6999f2175",
+      "sha256": "0a6deff5fd9c135580bdfd628cddb5dfc39cdeab58cb90b4bf49e030eddafee5"
+    },
+    {
+      "path": "tests/test_hand_selection.py",
+      "upstream_blob": "bddf6ba106bd23eee83b271d305501c97c85d913",
+      "sha256": "735a15e6f00a7352c43b68f1201bde73d59ae08c54443b9e1ee5953aaa79e062"
+    },
+    {
+      "path": "tests/test_motion_mode.py",
+      "upstream_blob": "d5c1ab08a51606f698b47851ad9734aeee998ad0",
+      "sha256": "68f4c03c43abc6e7dde9960c5429920dcc6c159cea92d0c78d54ff60ab787971",
+      "snapshot_sha256": "fe3d1a572753079a418c05af5ad68d47c9f0a45452c844492bc6392eb8a08167",
+      "normalization": "trailing whitespace and extra blank lines at EOF only"
+    },
+    {
+      "path": "tests/test_palm_axes.py",
+      "upstream_blob": "c6b2a284ceee40ed7a4032831e40204e455c9ce9",
+      "sha256": "e228a390613dff8e484abc2de4e9cf393b38083cbb18f1301163ffdd2b56d6d0"
+    },
+    {
+      "path": "tests/test_path_smoother.py",
+      "upstream_blob": "057540ecc251fc34b0303e7ecbeb155319002220",
+      "sha256": "3407388a19d0760fe5b6eff700fec9a732c2d9448c7700b32fe2200b608a2224"
+    },
+    {
+      "path": "tests/test_phone_web_bridge.py",
+      "upstream_blob": "71a3c34a096d4ec7a369cf14468270891ea9ba12",
+      "sha256": "f6181f55bbc8d7311c737ce6d10819df5fd97e99ef6c8d5c5351d624b506a971",
+      "snapshot_sha256": "34198d676535808a074fe07b8ab4f338a499b68f237a0be94dca1f34945a5b67",
+      "normalization": "trailing whitespace and extra blank lines at EOF only"
+    },
+    {
+      "path": "tests/test_pipeline_tray.py",
+      "upstream_blob": "6fb991729a82cc884cba5aca94d4c103dfe1215a",
+      "sha256": "a2b177a80da6e273eee202c6d2b9b551846c396e3fafa2aa9ab809a5226950f7"
+    },
+    {
+      "path": "tests/test_pointer_engine.py",
+      "upstream_blob": "988f8c5b8cb875cb763149534bf8d92c69ae8cd1",
+      "sha256": "26ffd583b7df030402495fd8940032049c6aacb88f7070612ef1f28daa8e346c"
+    },
+    {
+      "path": "tests/test_pointer_workspace.py",
+      "upstream_blob": "be68ebd24d8666dc82caade81ddebbe4a1f183b1",
+      "sha256": "b17bac24a78b24267fb672e6ca5b20a2f30bec848d9623cc543fb73b47f059ed"
+    },
+    {
+      "path": "tests/test_pose_tracker.py",
+      "upstream_blob": "7c1e734adff80102b904409cd0995970570c8a5b",
+      "sha256": "0a8d38049fe4a46f7856f0b719cca6db90a82ca0ce52c2b7ed12f4e04fd3e1b3"
+    },
+    {
+      "path": "tests/test_profiles.py",
+      "upstream_blob": "e7e1d1a30d1885efc7e58d3c41c841cfcbaa6b5b",
+      "sha256": "4f3d57b6b0e8403aad3afbb11cd41dcf53e4d86b67b889c02f7d6a10449f2845"
+    },
+    {
+      "path": "tests/test_qt_runtime.py",
+      "upstream_blob": "e2a3364fe94542c3627844261d4dff0ebbaeac6e",
+      "sha256": "8bc236b1263b8334bcac43d8377116c41fe545c874ad334bc862a19254db8e22",
+      "snapshot_sha256": "9dd44e7b495d4424c0f3a73d32702dd71f6394facc0e50e527571d6fca6aa3d5",
+      "normalization": "trailing whitespace and extra blank lines at EOF only"
+    },
+    {
+      "path": "tests/test_recording.py",
+      "upstream_blob": "ea65b1d8f8755ab463b20384f5e5f0e6f20fa5c7",
+      "sha256": "5e8590b9b236f7cce953a5414f3f67009448fec994213a66832745ddc35ab8c2"
+    },
+    {
+      "path": "tests/test_recording_plan.py",
+      "upstream_blob": "d55ba2521d452b04f7d8dd1544c5bea998751c22",
+      "sha256": "1176c6fecab5e091e15ff184d9819f8cda94cbc8e1dc75f28f106c2f96f145a3"
+    },
+    {
+      "path": "tests/test_screens.py",
+      "upstream_blob": "7f23a9a8b2caa2c666cb21fb4c19173a450b4f76",
+      "sha256": "c52b9955e905d31c37fe32e7089092c4b3fca1171136fa04cbe5a48e98e978e0"
+    },
+    {
+      "path": "tests/test_scroll_target.py",
+      "upstream_blob": "75e0eab287c09fe16d554a689e93267dcaa6cc90",
+      "sha256": "4980e0f118e83a194fc37c4716c19bcc681cee1542b226a0a4e2b1434357eff3"
+    },
+    {
+      "path": "tests/test_selected_training.py",
+      "upstream_blob": "d57ffb6f32ea1cf3e71654bafbab54d0617cbfe5",
+      "sha256": "0fb99aee7017e7142325748b5d1bd5a615328c56d6182ddd1b9372fef9b1ec08"
+    },
+    {
+      "path": "tests/test_selective_training.py",
+      "upstream_blob": "18031b9577606ab173a19fc613b100e0617854ae",
+      "sha256": "8fd4fd5b8d4fb8b9904be753ad853918026f24e30f5892221cf68c086572cab4"
+    },
+    {
+      "path": "tests/test_settings_panel.py",
+      "upstream_blob": "7aae6d41d5e8a5cb6858d44c5a5199a5b16a2bed",
+      "sha256": "0bc34236bd6607d3918c6fc816231a39c4f2e08fdf8ddee39361a0bff975e822",
+      "snapshot_sha256": "63b1a8447eaa1bd8efd7bc7f8e0aad50e1599467a9cc75017a646b2660c47c39",
+      "normalization": "trailing whitespace and extra blank lines at EOF only"
+    },
+    {
+      "path": "tests/test_tcn_app.py",
+      "upstream_blob": "520b2b956f0bf7c967cfc0619e27f80aa80888bd",
+      "sha256": "0b33a94c43f79b6aa99d2c3097e33bbb0e64090e6581fb3273ed467a1afe8bad"
+    },
+    {
+      "path": "tests/test_tcn_evaluation.py",
+      "upstream_blob": "1e0917a45e8e4be26d49dcac46e67b83ed472a3b",
+      "sha256": "d94aeb002ca839b0409c04b71eff680a40cef8f015727970992f30f50836e80f"
+    },
+    {
+      "path": "tests/test_tcn_features.py",
+      "upstream_blob": "a61a0547e8db1c91697333ed9a0a490fedee227a",
+      "sha256": "1bb3634735458cca0835c7867450b6f2b5ea90f03aa85e61ded08bc28a311a2e"
+    },
+    {
+      "path": "tests/test_tcn_robustness.py",
+      "upstream_blob": "b180c21a2e952f318569075cb2a1e3365b86eb6c",
+      "sha256": "fe501fd6e1d71a0d948518ec136505ccecd7bdea2932c42e8e989e12228f8031"
+    },
+    {
+      "path": "tests/test_toggle_sign.py",
+      "upstream_blob": "83b0e516cb760c5e7fcbe08c46085c3ca06ec09a",
+      "sha256": "2ca34a9f784e52c5793e0fc1bc0e3eb282b97f9e07c94b535e9e7f6fd9fc996c"
+    },
+    {
+      "path": "tests/test_tracking_test.py",
+      "upstream_blob": "1158a7bf9e00f0fb9633583fde1f3cd8121abe49",
+      "sha256": "4ea2f942e2d2590c38b136a53113eb8c0ad90f53ddfa8faa2c91f6c40758355d"
+    },
+    {
+      "path": "tests/test_training_center.py",
+      "upstream_blob": "f854b4d3b0627a67a7e9779fc3584a3484b53df0",
+      "sha256": "63cfc3ad56083167bef1cab0c96030fdd37a6704bec4d1e5635a7c52d65ce98a"
+    },
+    {
+      "path": "tests/test_training_progress.py",
+      "upstream_blob": "a2764fc85c1ca4895e503295dba41afc58480740",
+      "sha256": "5638507e54c299c2cffbf374f3393c20dd998648904fc378e350bb9b2919149e"
+    },
+    {
+      "path": "tests/test_ui_magnet.py",
+      "upstream_blob": "134aab8948e089e69cf780ea13f6bafe5aaedc27",
+      "sha256": "0c9238cd96c9efa62ef94f6b0e67fd34e86a74a1c6f4a302a792d2353b399314"
+    },
+    {
+      "path": "tests/test_unicode_models.py",
+      "upstream_blob": "1f3acb53ebe728242242979b341691a5531de515",
+      "sha256": "3364d92a257a86aa481fc868577e5b64e9ef9ea7b95e0429dafa09df9a1d7fa3"
+    },
+    {
+      "path": "uv.lock",
+      "upstream_blob": "2b8774665fc1c9f7535cb3c5c7a89a5ad1debb8b",
+      "sha256": "6e3c5ef670b4ea3bddd970948769ade216cebe877b32744278582f932e5550bb"
+    }
+  ]
+}

@@ -1,0 +1,834 @@
+{
+  "upstream": "hand-mouse-gesture-overhaul",
+  "commit": "b3c3025e44bcd824d9f5a60a6e4c1a29ee625790",
+  "purpose": "Isolated source for testing and future v0.4 feature port; not imported or shipped by the MANUX app.",
+  "excluded": [
+    "recordings/",
+    "field-logs/",
+    "models/",
+    "tests/fixtures/",
+    "credentials and local profiles"
+  ],
+  "files": [
+    {
+      "path": ".gitignore",
+      "upstream_blob": "483a3642ecd2663282be2f13694de5bfc3b16a03",
+      "upstream_sha256": "8efcee152589b34a2416873eb57b63000a34d14f29a4b9de42e94b2dd951ed9f",
+      "snapshot_sha256_lf": "8efcee152589b34a2416873eb57b63000a34d14f29a4b9de42e94b2dd951ed9f"
+    },
+    {
+      "path": ".python-version",
+      "upstream_blob": "e4fba2183587225f216eeada4c78dfab6b2e65f5",
+      "upstream_sha256": "7b55f8e67b5623c4bef3fa691288da9437d79d3aba156de48d481db32ac7d16d",
+      "snapshot_sha256_lf": "7b55f8e67b5623c4bef3fa691288da9437d79d3aba156de48d481db32ac7d16d"
+    },
+    {
+      "path": "MANUX TCN 실행.cmd",
+      "upstream_blob": "30cd540008c74390caf245a2721a06ed74114c3c",
+      "upstream_sha256": "65738a2bedac1684c481210cf489c07477886c7b69c71e67f0d87a4034b88fa5",
+      "snapshot_sha256_lf": "65738a2bedac1684c481210cf489c07477886c7b69c71e67f0d87a4034b88fa5"
+    },
+    {
+      "path": "README.md",
+      "upstream_blob": "ebcae66a2304ce90900e6a4cf6ba1986ac3d0207",
+      "upstream_sha256": "fc6ef6e4ef4b81644f8fd289dec631a0cf65687df394c0b13baaf5e93fd1becd",
+      "snapshot_sha256_lf": "ebe461b24e6234716d73584cc69e0745007bb4f673b066b67ee991bb9eca443e"
+    },
+    {
+      "path": "TCN-START.md",
+      "upstream_blob": "b03e2ca25c2ee68c330a473eafaf53cbbfcacd2f",
+      "upstream_sha256": "73c2a732dbf07cf46fb6b1e63635ee39939d74799d6fa95c158f1c2006705314",
+      "snapshot_sha256_lf": "73c2a732dbf07cf46fb6b1e63635ee39939d74799d6fa95c158f1c2006705314"
+    },
+    {
+      "path": "config/gestures.json",
+      "upstream_blob": "c6632e8f3c70b2eaf963014e99550c128265a8a1",
+      "upstream_sha256": "b5b9d6c2a88bfaca4149512db9333a6ff0317f50a7f302e32310aee1977e4c27",
+      "snapshot_sha256_lf": "b5b9d6c2a88bfaca4149512db9333a6ff0317f50a7f302e32310aee1977e4c27"
+    },
+    {
+      "path": "docs/browse-cursor.md",
+      "upstream_blob": "3fbf3547e6a8fd95d90c1b414d7af483eeceb1aa",
+      "upstream_sha256": "74a107fe2812ffc224ce6db22fd7bacd35075b3d25bb077a7f8c4928b535ad64",
+      "snapshot_sha256_lf": "74a107fe2812ffc224ce6db22fd7bacd35075b3d25bb077a7f8c4928b535ad64"
+    },
+    {
+      "path": "docs/close-sign.md",
+      "upstream_blob": "66f215f6758e91f769a05e5da309aac93fa22437",
+      "upstream_sha256": "338bd88f92e12e9660824773319f577d353cf349bcc9e4e0a544ccb84e098bfe",
+      "snapshot_sha256_lf": "338bd88f92e12e9660824773319f577d353cf349bcc9e4e0a544ccb84e098bfe"
+    },
+    {
+      "path": "docs/dataset-hub.md",
+      "upstream_blob": "c3881348db40eb16b9db4cf2eae71a385093fec5",
+      "upstream_sha256": "f3dc5f28e4a4bd04e140af2c5c44ce94e2206b6115043cbe07ed098668b772ce",
+      "snapshot_sha256_lf": "f3dc5f28e4a4bd04e140af2c5c44ce94e2206b6115043cbe07ed098668b772ce"
+    },
+    {
+      "path": "docs/elbow-pivot.md",
+      "upstream_blob": "98668cbd10b8c9d4e82022883365da4a2f9331ef",
+      "upstream_sha256": "ffaddc1a85002f68a0d899ffd1d885c2e032d409268b1f761858e6d76ee51dbc",
+      "snapshot_sha256_lf": "ffaddc1a85002f68a0d899ffd1d885c2e032d409268b1f761858e6d76ee51dbc"
+    },
+    {
+      "path": "docs/engine-contract.md",
+      "upstream_blob": "f0d4521e449c805d3525e66533c7095f6d6b5c10",
+      "upstream_sha256": "fa8fd745b5588f16552e2ed5039880ecc97d1c9f0ada72465b246a7d41d64187",
+      "snapshot_sha256_lf": "fa8fd745b5588f16552e2ed5039880ecc97d1c9f0ada72465b246a7d41d64187"
+    },
+    {
+      "path": "docs/hand-shape-speed.md",
+      "upstream_blob": "92665750ecf195aaa1cbe791e075c810cdeee81b",
+      "upstream_sha256": "5779e64a1dc7de981fe349b429f53f40d2640137d9a81017feeb5c958906543f",
+      "snapshot_sha256_lf": "5779e64a1dc7de981fe349b429f53f40d2640137d9a81017feeb5c958906543f"
+    },
+    {
+      "path": "docs/motion-mode.md",
+      "upstream_blob": "45e7955553a1961779b0cbece015849284b57a1e",
+      "upstream_sha256": "7f3e829c1498165624408d47e6d7b1d53a9d376d2492eaf67b3ed4e0000b0234",
+      "snapshot_sha256_lf": "7f3e829c1498165624408d47e6d7b1d53a9d376d2492eaf67b3ed4e0000b0234"
+    },
+    {
+      "path": "docs/palm-axes.md",
+      "upstream_blob": "4f7130011650c5252ccba82b3e8eae31cb0f9258",
+      "upstream_sha256": "49b246cab8ae3b4079639a41e81bbb56255593942a7d4a6e3bd26d1358bec1a1",
+      "snapshot_sha256_lf": "49b246cab8ae3b4079639a41e81bbb56255593942a7d4a6e3bd26d1358bec1a1"
+    },
+    {
+      "path": "docs/path-smoothing.md",
+      "upstream_blob": "52d7a1d3b1a60773aaeea7f6656b109e7c439592",
+      "upstream_sha256": "afc9e3492a276f96e6201a4c90ee1fa38cd6e02fe0ed2fa87e5f4c90b6545640",
+      "snapshot_sha256_lf": "afc9e3492a276f96e6201a4c90ee1fa38cd6e02fe0ed2fa87e5f4c90b6545640"
+    },
+    {
+      "path": "docs/recording.md",
+      "upstream_blob": "1f0e0d4b7258db94490bcec275b06e30f68ede9e",
+      "upstream_sha256": "58f9241e54a8e6c726b8cb8cfb36392303bd63bd47d723b8bb2ff52961104d5e",
+      "snapshot_sha256_lf": "58f9241e54a8e6c726b8cb8cfb36392303bd63bd47d723b8bb2ff52961104d5e"
+    },
+    {
+      "path": "docs/selective-training.md",
+      "upstream_blob": "625cebefa1510fc95b496ecc543f4db001062f1a",
+      "upstream_sha256": "d90b6ac4d223b4c202a7266740b1222b6b1b79f4075f6bb51c526dd73f9b21ca",
+      "snapshot_sha256_lf": "d90b6ac4d223b4c202a7266740b1222b6b1b79f4075f6bb51c526dd73f9b21ca"
+    },
+    {
+      "path": "docs/toggle-sign.md",
+      "upstream_blob": "8c18ae2b1e5b5e1a845803c98370679b3d0822b1",
+      "upstream_sha256": "ea362721e49e7eb7749815c8d81f523ac7832f93523e05e540b8cac23bb3b136",
+      "snapshot_sha256_lf": "ea362721e49e7eb7749815c8d81f523ac7832f93523e05e540b8cac23bb3b136"
+    },
+    {
+      "path": "docs/training-studio.md",
+      "upstream_blob": "5b837e22d3b36926bace0545ee77f9f87fb810a3",
+      "upstream_sha256": "fd53eacfd840428c85698e822c7b0d654c11a4a046cb5149f40a43bfa4f68a2d",
+      "snapshot_sha256_lf": "fd53eacfd840428c85698e822c7b0d654c11a4a046cb5149f40a43bfa4f68a2d"
+    },
+    {
+      "path": "main.py",
+      "upstream_blob": "c072362cc00f4147e4d155108fbbe41c9876f6d2",
+      "upstream_sha256": "7d314dca19e4d0ad0db993d97bba05c53bdd18310d16369445715c0d79a0c49d",
+      "snapshot_sha256_lf": "7d314dca19e4d0ad0db993d97bba05c53bdd18310d16369445715c0d79a0c49d"
+    },
+    {
+      "path": "per-gesture-tcn-briefing.md",
+      "upstream_blob": "dc740d429ed31419e2530e0d356429532b622062",
+      "upstream_sha256": "d370347dee1089fd28cac9ae1459ace7bcb741521b155c6a526a50712929ce7a",
+      "snapshot_sha256_lf": "57038de18e8faa9795d6ccf635731ef9888e6e3cb4997617749e2d67dce046ed"
+    },
+    {
+      "path": "pyproject.toml",
+      "upstream_blob": "ac48800c202e22afe9b0de0be75720a665293b70",
+      "upstream_sha256": "25732147c33d7048357237b1421c787b86c8c0c4db7b300f47cc990f0fe504b6",
+      "snapshot_sha256_lf": "25732147c33d7048357237b1421c787b86c8c0c4db7b300f47cc990f0fe504b6"
+    },
+    {
+      "path": "run.bat",
+      "upstream_blob": "9a923e5c68378063e8a0ac058ba77068b96b1b42",
+      "upstream_sha256": "b1952a213a3123be5bc2aeacf652bf934e97dbede92305644298ce6729329df1",
+      "snapshot_sha256_lf": "b1952a213a3123be5bc2aeacf652bf934e97dbede92305644298ce6729329df1"
+    },
+    {
+      "path": "run_admin.bat",
+      "upstream_blob": "420739ca0ab9062900520a2ac5031ab805a47064",
+      "upstream_sha256": "0a867bdf52482c6cc127331a7ad25c2201d4f907da33182cb88e2f51715ba968",
+      "snapshot_sha256_lf": "0a867bdf52482c6cc127331a7ad25c2201d4f907da33182cb88e2f51715ba968"
+    },
+    {
+      "path": "scripts/calibrate.py",
+      "upstream_blob": "540edb97cb512ce838e44e208a423751cbe53d8d",
+      "upstream_sha256": "862f90b531c20313da41d882cde19f87a39d9406e38c6136fe1b26ded0ebe197",
+      "snapshot_sha256_lf": "862f90b531c20313da41d882cde19f87a39d9406e38c6136fe1b26ded0ebe197"
+    },
+    {
+      "path": "scripts/export_model.py",
+      "upstream_blob": "6cae59ce060d57cf30af38ec0e6271fa1958fc18",
+      "upstream_sha256": "82fcccb647a35f4816d33c3e3fb91b6cf69c1d3c4fd8df76585890da51cb2d70",
+      "snapshot_sha256_lf": "82fcccb647a35f4816d33c3e3fb91b6cf69c1d3c4fd8df76585890da51cb2d70"
+    },
+    {
+      "path": "scripts/loop_smoke.py",
+      "upstream_blob": "a6ee3777b12c8d915f70abcfe131e5291de0a4fe",
+      "upstream_sha256": "a63e54b4cf6ad5557a4a4c4dce306aa9bed6fd6b89d18affc4a717ec0f9101c0",
+      "snapshot_sha256_lf": "a63e54b4cf6ad5557a4a4c4dce306aa9bed6fd6b89d18affc4a717ec0f9101c0"
+    },
+    {
+      "path": "scripts/profile.py",
+      "upstream_blob": "5c685055389f98d379756a2f9548a9744abd5a01",
+      "upstream_sha256": "67a01aa5be3b148e70ca7f4fee4a394a6c3130aa2bae89ae6d25efcc46c25f84",
+      "snapshot_sha256_lf": "67a01aa5be3b148e70ca7f4fee4a394a6c3130aa2bae89ae6d25efcc46c25f84"
+    },
+    {
+      "path": "scripts/train_selected.py",
+      "upstream_blob": "133049e94514476b7a4c8e43f7c5495e36490407",
+      "upstream_sha256": "40773ec5405f4523fbb4e5ac83e2c8e41992d46849b7c8a254237adef8393543",
+      "snapshot_sha256_lf": "40773ec5405f4523fbb4e5ac83e2c8e41992d46849b7c8a254237adef8393543"
+    },
+    {
+      "path": "scripts/train_tcn.py",
+      "upstream_blob": "4e67554e5080ad7a7e5a18b0edc39d7a97358dd0",
+      "upstream_sha256": "f060169f4d37d46e99d519a17248420c70e8bfb8de0a5fd98a61a291a752db8a",
+      "snapshot_sha256_lf": "f060169f4d37d46e99d519a17248420c70e8bfb8de0a5fd98a61a291a752db8a"
+    },
+    {
+      "path": "scripts/training_report.py",
+      "upstream_blob": "0f6b67eab876601ee02641ed574c27861faec419",
+      "upstream_sha256": "f029d3c6447b6fea1be720dfc65deb6fe48ea8de22b3726bed501072604d0a30",
+      "snapshot_sha256_lf": "f029d3c6447b6fea1be720dfc65deb6fe48ea8de22b3726bed501072604d0a30"
+    },
+    {
+      "path": "scripts/windows_smoke.py",
+      "upstream_blob": "b4e883724c8add433a62b8f90eda201997474845",
+      "upstream_sha256": "638b0ca8f7ff3959837cdd85136fb8f378025c534435bcbab30446565837c364",
+      "snapshot_sha256_lf": "638b0ca8f7ff3959837cdd85136fb8f378025c534435bcbab30446565837c364"
+    },
+    {
+      "path": "setup-tcn.cmd",
+      "upstream_blob": "c03922a572e2fbbfb4c45817a01f209bddb28819",
+      "upstream_sha256": "edf03663ac75638a353c20ebf7bd60079743cfa0c58958f2088aff5ee210b32a",
+      "snapshot_sha256_lf": "edf03663ac75638a353c20ebf7bd60079743cfa0c58958f2088aff5ee210b32a"
+    },
+    {
+      "path": "solution.md",
+      "upstream_blob": "4814d0a179a377eb108f16321bb15cf110905fb8",
+      "upstream_sha256": "76170789ec1a60ce24a114bb72527c48f9c42e6b514dc9d37e73967f4c1d37c1",
+      "snapshot_sha256_lf": "7bd861ec800f2322d8b5f3a3e19dc3ad6a2f10a10af69aa7aaf1c846716fff02"
+    },
+    {
+      "path": "src/RecordingPlanDialog.qml",
+      "upstream_blob": "b6e4d717a870614de6fbef3b582f9e89e2d993b8",
+      "upstream_sha256": "8c59661fd3c0ad1d527e2a7742bfc13749d350a5a692ec1e75e07bc6d725b67e",
+      "snapshot_sha256_lf": "8c59661fd3c0ad1d527e2a7742bfc13749d350a5a692ec1e75e07bc6d725b67e"
+    },
+    {
+      "path": "src/__init__.py",
+      "upstream_blob": "fe076e96b6e2d4f16f765003bc99af24be4bc487",
+      "upstream_sha256": "fa9e615915728ae04d738c69eb66fb8e5b85f125bb3ce9113e1db9087433a2a0",
+      "snapshot_sha256_lf": "fa9e615915728ae04d738c69eb66fb8e5b85f125bb3ce9113e1db9087433a2a0"
+    },
+    {
+      "path": "src/assets/manux.svg",
+      "upstream_blob": "ab06880b27457b3ce6216ff38bcb6d66863b825e",
+      "upstream_sha256": "79998e452675d70540e21e68a4f5e506975649486e033c042178d04fb4daa46a",
+      "snapshot_sha256_lf": "79998e452675d70540e21e68a4f5e506975649486e033c042178d04fb4daa46a"
+    },
+    {
+      "path": "src/calibration.py",
+      "upstream_blob": "44d35f037c5883eec5bcbf85b3d8d171002ada20",
+      "upstream_sha256": "111dbc97af116635597a7adb6cc325a70419411de29f8d3c18247df9d2eb3148",
+      "snapshot_sha256_lf": "111dbc97af116635597a7adb6cc325a70419411de29f8d3c18247df9d2eb3148"
+    },
+    {
+      "path": "src/camera.py",
+      "upstream_blob": "0f41bc49c87afb1379fec790ba4f473aeaf5778d",
+      "upstream_sha256": "3af768aaaf8ab1b71e432c5291a75a9b60f8f04eff16f64b68608aaa87a80ead",
+      "snapshot_sha256_lf": "3af768aaaf8ab1b71e432c5291a75a9b60f8f04eff16f64b68608aaa87a80ead"
+    },
+    {
+      "path": "src/capture_dataset.py",
+      "upstream_blob": "2176a6f8bc1560e1a46ff1da3cbd248097a83092",
+      "upstream_sha256": "f13deed3f3c1b61a1adcfc7f7f9174db230f33c38aa187bfcd0d8f5d41e4639f",
+      "snapshot_sha256_lf": "f13deed3f3c1b61a1adcfc7f7f9174db230f33c38aa187bfcd0d8f5d41e4639f"
+    },
+    {
+      "path": "src/capture_rules.py",
+      "upstream_blob": "f86c2eb8aa7f75612761acd49acb86ee12988120",
+      "upstream_sha256": "1c9ed05e7934ab7be7e49550fe99882609ff7c94f4f065e3969899c0866abb21",
+      "snapshot_sha256_lf": "1c9ed05e7934ab7be7e49550fe99882609ff7c94f4f065e3969899c0866abb21"
+    },
+    {
+      "path": "src/close_sign.py",
+      "upstream_blob": "e44230a29e860884677c0a9eaa30de2b229a52c2",
+      "upstream_sha256": "cf09cfbcb65fc6491c00a30669372b147e72e545c3297fd80138a86264b21204",
+      "snapshot_sha256_lf": "cf09cfbcb65fc6491c00a30669372b147e72e545c3297fd80138a86264b21204"
+    },
+    {
+      "path": "src/cursor_interp.py",
+      "upstream_blob": "60be6abc3bc2821c5e171f98c157f2a7aefd7482",
+      "upstream_sha256": "6f80989b6931457b00ed8d48e187912a7b3363dba753a92a50ceed827ea50a9a",
+      "snapshot_sha256_lf": "6f80989b6931457b00ed8d48e187912a7b3363dba753a92a50ceed827ea50a9a"
+    },
+    {
+      "path": "src/dashboard.py",
+      "upstream_blob": "40e79ff65b887f257ca1084389520037c8eb989e",
+      "upstream_sha256": "4d9c44df3b77a9b73c69991cdd6443ebb5626c4decf1f50540db0a5855b64fe0",
+      "snapshot_sha256_lf": "4d9c44df3b77a9b73c69991cdd6443ebb5626c4decf1f50540db0a5855b64fe0"
+    },
+    {
+      "path": "src/dashboard.qml",
+      "upstream_blob": "64db83bd1316bd43b718a730d472485025dd2090",
+      "upstream_sha256": "c48de48021e112f6a06abc2808d4cb49cb860611536ea22fd8a7e50da1c3ec3d",
+      "snapshot_sha256_lf": "c48de48021e112f6a06abc2808d4cb49cb860611536ea22fd8a7e50da1c3ec3d"
+    },
+    {
+      "path": "src/data_quality.py",
+      "upstream_blob": "eb446fc591eec0ef83bdc244069f28368ecafda7",
+      "upstream_sha256": "dab2b08ecfb2bcf2d02aab0ca5cb7c62aebafd3076126297d71b00494a51de1d",
+      "snapshot_sha256_lf": "dab2b08ecfb2bcf2d02aab0ca5cb7c62aebafd3076126297d71b00494a51de1d"
+    },
+    {
+      "path": "src/elbow_pivot.py",
+      "upstream_blob": "175e43d27d2346cf254372fb908904eafa8fe2bc",
+      "upstream_sha256": "0dc17e160edd4774ec66da5349ceddece04a4909e82e1772fc2bc10589a96032",
+      "snapshot_sha256_lf": "0dc17e160edd4774ec66da5349ceddece04a4909e82e1772fc2bc10589a96032"
+    },
+    {
+      "path": "src/failure_log.py",
+      "upstream_blob": "021c101246ec8421b7f3e92343b758cc316dcaa1",
+      "upstream_sha256": "85245f95f496ca6497a56144e7cee0c4a96ac4fd9ede8505d6e5cfa8dd82caaf",
+      "snapshot_sha256_lf": "85245f95f496ca6497a56144e7cee0c4a96ac4fd9ede8505d6e5cfa8dd82caaf"
+    },
+    {
+      "path": "src/filters.py",
+      "upstream_blob": "c750b88fabbad9f1566fad6887141f9a0badb3a5",
+      "upstream_sha256": "06f115cb0f21accefdc786a524356d877fc2c648802cce7e033121fe8b828d31",
+      "snapshot_sha256_lf": "06f115cb0f21accefdc786a524356d877fc2c648802cce7e033121fe8b828d31"
+    },
+    {
+      "path": "src/gesture_catalog.py",
+      "upstream_blob": "bb9f0617584b9e17662b04c41c5ef5678f6eeb93",
+      "upstream_sha256": "3e7339bcfec753b8a91b499de597dd684a27d08ca673e68a605a029a18f5e7a5",
+      "snapshot_sha256_lf": "3e7339bcfec753b8a91b499de597dd684a27d08ca673e68a605a029a18f5e7a5"
+    },
+    {
+      "path": "src/gesture_engine.py",
+      "upstream_blob": "108ef944b1e8683b3ae3d22fed5e3b3c475bda0f",
+      "upstream_sha256": "6f9e13cc5e24611375d5e8404a889a1630626528253d16eda8bd34be9d6498b6",
+      "snapshot_sha256_lf": "6f9e13cc5e24611375d5e8404a889a1630626528253d16eda8bd34be9d6498b6"
+    },
+    {
+      "path": "src/gesture_gate.py",
+      "upstream_blob": "7edf3c24b000e55ae6035d0e53d85a32f7ee29c7",
+      "upstream_sha256": "58cfa3ebf4c8df388d3a0b497eabbda56d88504949921a2837de576f2268bfdd",
+      "snapshot_sha256_lf": "58cfa3ebf4c8df388d3a0b497eabbda56d88504949921a2837de576f2268bfdd"
+    },
+    {
+      "path": "src/gesture_models.py",
+      "upstream_blob": "1e0f62078d479b2f576063510064ceaccfcec6c9",
+      "upstream_sha256": "1a926b84e95cf01ffb6bd2bc2150e1d6276aabbff6b7eb98e20d5797938bf8ac",
+      "snapshot_sha256_lf": "1a926b84e95cf01ffb6bd2bc2150e1d6276aabbff6b7eb98e20d5797938bf8ac"
+    },
+    {
+      "path": "src/guided_recording.py",
+      "upstream_blob": "c0c1b736bcb801cac6cf5a506964c3c1f84b3428",
+      "upstream_sha256": "37ffca69ed21af34f10899d5af1a6e803d33dcf7afb147243744b15a8e3a9bbe",
+      "snapshot_sha256_lf": "37ffca69ed21af34f10899d5af1a6e803d33dcf7afb147243744b15a8e3a9bbe"
+    },
+    {
+      "path": "src/hand_crop.py",
+      "upstream_blob": "81138cea2a1211ca2e30331cc618ab5ae7cc1cae",
+      "upstream_sha256": "40b4b947978e4eb3efb3942bca78e3662e1dae861632215b8be34c96d7c3905b",
+      "snapshot_sha256_lf": "40b4b947978e4eb3efb3942bca78e3662e1dae861632215b8be34c96d7c3905b"
+    },
+    {
+      "path": "src/hand_mouse/__init__.py",
+      "upstream_blob": "d5963b37c8a3a77c70dd78094989e4faedc6da59",
+      "upstream_sha256": "48be7491f1a639aa3b6db9cf291dff24c91df3a544691a83a105ccf6f31e5807",
+      "snapshot_sha256_lf": "48be7491f1a639aa3b6db9cf291dff24c91df3a544691a83a105ccf6f31e5807"
+    },
+    {
+      "path": "src/hand_mouse/gesture_engine.py",
+      "upstream_blob": "6040ad60593bc734bba3409413999132a3be1cd1",
+      "upstream_sha256": "6123f0d152e2dd9be1a27714aa81120c5e6cbec8cd3a8cadbe1ba022175bb1c9",
+      "snapshot_sha256_lf": "6123f0d152e2dd9be1a27714aa81120c5e6cbec8cd3a8cadbe1ba022175bb1c9"
+    },
+    {
+      "path": "src/hand_mouse/mouse_controller.py",
+      "upstream_blob": "3fb87455ccf318ea582db6e92c83df576b9d639d",
+      "upstream_sha256": "42c1551cd53b578a8e5286737627d3430a95290651d84fed114a1889ba578a00",
+      "snapshot_sha256_lf": "42c1551cd53b578a8e5286737627d3430a95290651d84fed114a1889ba578a00"
+    },
+    {
+      "path": "src/hand_selection.py",
+      "upstream_blob": "b957f2e2ff2edb4bb63153d282ca92a5bb8e2710",
+      "upstream_sha256": "904e5c4960f90692a372abb3cbd64a55a7a379a324d12e429030817c5b04394b",
+      "snapshot_sha256_lf": "904e5c4960f90692a372abb3cbd64a55a7a379a324d12e429030817c5b04394b"
+    },
+    {
+      "path": "src/hand_tracker.py",
+      "upstream_blob": "8833867796922205519ccd481f615c8ea720c22c",
+      "upstream_sha256": "84a61a1770882695fcdac9857f3dd7fb517f3c24922a519223220636b7180259",
+      "snapshot_sha256_lf": "84a61a1770882695fcdac9857f3dd7fb517f3c24922a519223220636b7180259"
+    },
+    {
+      "path": "src/hotkeys.py",
+      "upstream_blob": "cf01022a9b58ce602b12f76f70725f8ca8811a6a",
+      "upstream_sha256": "2c2c60e211fb14d647a5fa66738c019e35dd65581828ac5e63c03a8ed930590c",
+      "snapshot_sha256_lf": "2c2c60e211fb14d647a5fa66738c019e35dd65581828ac5e63c03a8ed930590c"
+    },
+    {
+      "path": "src/motion_mode.py",
+      "upstream_blob": "6c68ee835beb68ead503afc87a92efcb30560bda",
+      "upstream_sha256": "8babfb453dec4fab1e64f9c869d4b647a6c76a7a562f1caaabbe94bbd6b5be05",
+      "snapshot_sha256_lf": "8babfb453dec4fab1e64f9c869d4b647a6c76a7a562f1caaabbe94bbd6b5be05"
+    },
+    {
+      "path": "src/mouse_controller.py",
+      "upstream_blob": "fb7839ee5e634e8775c63d9bb4af6a76c9bbfa3c",
+      "upstream_sha256": "dc97b749a02c42fb1413bb7c83bf870e007c6365792fc8beab545c6ca8febff6",
+      "snapshot_sha256_lf": "dc97b749a02c42fb1413bb7c83bf870e007c6365792fc8beab545c6ca8febff6"
+    },
+    {
+      "path": "src/offline_augment.py",
+      "upstream_blob": "be535db5bce8d04ff54817bf375e093e31c1e9d8",
+      "upstream_sha256": "e0d26d276b61fff4843fdfc83e86cf6dd8f2acb74866a577a2760a1d79e018dc",
+      "snapshot_sha256_lf": "e0d26d276b61fff4843fdfc83e86cf6dd8f2acb74866a577a2760a1d79e018dc"
+    },
+    {
+      "path": "src/overlay.py",
+      "upstream_blob": "eb45f8425e93bca2549db8621ab128719045e653",
+      "upstream_sha256": "f46a04799d3383c2a87e00569a71ff0b22226405fac01bcfcb9cd94aac548dae",
+      "snapshot_sha256_lf": "f46a04799d3383c2a87e00569a71ff0b22226405fac01bcfcb9cd94aac548dae"
+    },
+    {
+      "path": "src/palm_axes.py",
+      "upstream_blob": "afae94feac6a658967a13e7035a912c6abd4c753",
+      "upstream_sha256": "a0d9b3dce013d2a6cf6b3151a436a5562e59d846c782636b05c94f4cfe6862aa",
+      "snapshot_sha256_lf": "a0d9b3dce013d2a6cf6b3151a436a5562e59d846c782636b05c94f4cfe6862aa"
+    },
+    {
+      "path": "src/path_smoother.py",
+      "upstream_blob": "b7568071703543f6949e21ba1fbdc6728240e227",
+      "upstream_sha256": "e274e54e3f11e64b13695e1574f442cef3f284905aa3c21282c0a2131838a456",
+      "snapshot_sha256_lf": "e274e54e3f11e64b13695e1574f442cef3f284905aa3c21282c0a2131838a456"
+    },
+    {
+      "path": "src/perf_log.py",
+      "upstream_blob": "edb79b23cbc9e7ce6251d9a39f51d3575466edfb",
+      "upstream_sha256": "6aaa9ec79a473715be53b14e1fed4f591a9df31edbe7df1ce46265be7975d65a",
+      "snapshot_sha256_lf": "6aaa9ec79a473715be53b14e1fed4f591a9df31edbe7df1ce46265be7975d65a"
+    },
+    {
+      "path": "src/phone_web_bridge.py",
+      "upstream_blob": "cd34d8254b2048beb61a30d812593105bad9a9e2",
+      "upstream_sha256": "7040f28ba7dc8546475d1c294566fa2391d61a8e4af96666aca53a616d759c56",
+      "snapshot_sha256_lf": "7040f28ba7dc8546475d1c294566fa2391d61a8e4af96666aca53a616d759c56"
+    },
+    {
+      "path": "src/pipeline.py",
+      "upstream_blob": "f68fc4e5da2a53e4483defeaceaa4128a88155d5",
+      "upstream_sha256": "8edfba3c45e313aa08b1ff16966a534f9b191939edec9a9806c915a215580bef",
+      "snapshot_sha256_lf": "8edfba3c45e313aa08b1ff16966a534f9b191939edec9a9806c915a215580bef"
+    },
+    {
+      "path": "src/pointer_engine.py",
+      "upstream_blob": "f165c02ad6b1d8b45e7a00a454262df3a8aac92f",
+      "upstream_sha256": "79e5f89b678dc51407a81f1fdf855e5388c409faabd1dc79e0aa60e677145093",
+      "snapshot_sha256_lf": "79e5f89b678dc51407a81f1fdf855e5388c409faabd1dc79e0aa60e677145093"
+    },
+    {
+      "path": "src/pointer_workspace.py",
+      "upstream_blob": "f6ae3d3948a3758db2a0664645bd41351039ab31",
+      "upstream_sha256": "6829e679dc7531a252bfa31418fd3e4b0b69facda0575bbae5c467ea02ac275c",
+      "snapshot_sha256_lf": "6829e679dc7531a252bfa31418fd3e4b0b69facda0575bbae5c467ea02ac275c"
+    },
+    {
+      "path": "src/pose_tracker.py",
+      "upstream_blob": "ac944b14f87c93e96831bec82d0f01f46ebe6558",
+      "upstream_sha256": "26f1ee1d6e7d383d7aaa78dd224efb17ba4ca3095f43df68612326b0850bee0f",
+      "snapshot_sha256_lf": "26f1ee1d6e7d383d7aaa78dd224efb17ba4ca3095f43df68612326b0850bee0f"
+    },
+    {
+      "path": "src/profiles.py",
+      "upstream_blob": "a428cf491f80aeb892c91795a03000d668902092",
+      "upstream_sha256": "55968f43c50f3de0d76a0901f2823b5bd7aa59f729e28bb7f332edd24aa35afd",
+      "snapshot_sha256_lf": "55968f43c50f3de0d76a0901f2823b5bd7aa59f729e28bb7f332edd24aa35afd"
+    },
+    {
+      "path": "src/qt_dashboard.py",
+      "upstream_blob": "34f6eee079315a48dfb6f580267727164345de13",
+      "upstream_sha256": "d7ac58f6638334f8d32b7196fe01e73544a01691443ef38c82f0527b7324f92f",
+      "snapshot_sha256_lf": "d7ac58f6638334f8d32b7196fe01e73544a01691443ef38c82f0527b7324f92f"
+    },
+    {
+      "path": "src/qt_runtime.py",
+      "upstream_blob": "56c9e18af8ad2289889d178c01922556fefe5cb1",
+      "upstream_sha256": "17f57c6f2e4625807be20f114c9559ec337cb424702457b8e277ebc867ff45bf",
+      "snapshot_sha256_lf": "17f57c6f2e4625807be20f114c9559ec337cb424702457b8e277ebc867ff45bf"
+    },
+    {
+      "path": "src/qt_tray.py",
+      "upstream_blob": "5609e1e2fa07fa5e1584ee7cef7be682c4732315",
+      "upstream_sha256": "dec341374cb12524defded264ec737a1e95a6995c27d949e735c29146d493e2d",
+      "snapshot_sha256_lf": "dec341374cb12524defded264ec737a1e95a6995c27d949e735c29146d493e2d"
+    },
+    {
+      "path": "src/recorder.py",
+      "upstream_blob": "08440576df772468e2b4f8f9146c528025ce65f1",
+      "upstream_sha256": "e44a476992062f68d6c706ed2c7bc381debf6223abea0848e89ea1c0e5f07434",
+      "snapshot_sha256_lf": "e44a476992062f68d6c706ed2c7bc381debf6223abea0848e89ea1c0e5f07434"
+    },
+    {
+      "path": "src/recording_plan.py",
+      "upstream_blob": "5b83eeb2a454cd17d291c2cc450575c69ba66c7b",
+      "upstream_sha256": "2bf26330c82b6e3c11358078ad70bd7b50789bc0277b34c26a2e785e76445cfd",
+      "snapshot_sha256_lf": "2bf26330c82b6e3c11358078ad70bd7b50789bc0277b34c26a2e785e76445cfd"
+    },
+    {
+      "path": "src/recording_plan_editor.py",
+      "upstream_blob": "e090e350471dea12ed658f31bbfa20cca7f7c9ce",
+      "upstream_sha256": "0cd94fb5cc995ac56697a4370e98222a083ff2fb0d0263e4393deb2117884626",
+      "snapshot_sha256_lf": "0cd94fb5cc995ac56697a4370e98222a083ff2fb0d0263e4393deb2117884626"
+    },
+    {
+      "path": "src/screens.py",
+      "upstream_blob": "4e59ee631ab616688e1dc44beecfee207e2abee2",
+      "upstream_sha256": "6091b8e487e1a500fff228e658f90a6035e1507eb5274c56e4a1dc46b2a4397f",
+      "snapshot_sha256_lf": "6091b8e487e1a500fff228e658f90a6035e1507eb5274c56e4a1dc46b2a4397f"
+    },
+    {
+      "path": "src/scroll_target.py",
+      "upstream_blob": "04c261de4145d5574c4e9e2b563c1fce5cfad284",
+      "upstream_sha256": "735745176e40345b4e5b84e3775a2bfa48db3925fb552f9120e4db7cf722fc03",
+      "snapshot_sha256_lf": "735745176e40345b4e5b84e3775a2bfa48db3925fb552f9120e4db7cf722fc03"
+    },
+    {
+      "path": "src/settings_panel.py",
+      "upstream_blob": "8c70c8f7d953ed1ed436466b357feca506bd3536",
+      "upstream_sha256": "61a20c8692240431fdcf4ee5f9a29daf865fedc6d232fb1a11330c1debf3ce36",
+      "snapshot_sha256_lf": "61a20c8692240431fdcf4ee5f9a29daf865fedc6d232fb1a11330c1debf3ce36"
+    },
+    {
+      "path": "src/status.py",
+      "upstream_blob": "46378fbaa4e1c6a48918e03850af11dab882938f",
+      "upstream_sha256": "f7bf3a9a463e3652cd6d1fca959e77aef6457bda8b47dbae82d4f27c378772ec",
+      "snapshot_sha256_lf": "f7bf3a9a463e3652cd6d1fca959e77aef6457bda8b47dbae82d4f27c378772ec"
+    },
+    {
+      "path": "src/tcn_features.py",
+      "upstream_blob": "5b45b98489ef21c15cb761e90aae742b96c84162",
+      "upstream_sha256": "6d8c915b1058cc8cb04c45347e81699e4a7519e81a15c24768dd09d263f6b8da",
+      "snapshot_sha256_lf": "6d8c915b1058cc8cb04c45347e81699e4a7519e81a15c24768dd09d263f6b8da"
+    },
+    {
+      "path": "src/toggle_sign.py",
+      "upstream_blob": "a96aba8684b42efd030f69cbcec1e161b1a91a1e",
+      "upstream_sha256": "30455718ee2aaca5f0e57610d44c8483c44bb1a8f7d117eea6a6488752127884",
+      "snapshot_sha256_lf": "30455718ee2aaca5f0e57610d44c8483c44bb1a8f7d117eea6a6488752127884"
+    },
+    {
+      "path": "src/tracking_test.py",
+      "upstream_blob": "c9712553ecf309512aff19f5bb498fd6cdf132e8",
+      "upstream_sha256": "44071d84c2ddaf57be8104a489c182341ddc369d511bc7c34c45d209e8e70732",
+      "snapshot_sha256_lf": "44071d84c2ddaf57be8104a489c182341ddc369d511bc7c34c45d209e8e70732"
+    },
+    {
+      "path": "src/training_center.py",
+      "upstream_blob": "8e28e46df9a1c46ec5e0047ea175e620bf9b7a63",
+      "upstream_sha256": "284e63ab2ae6f55f55908a66f3f8f00a8fc00564a59b71e2ed61fc7b3db71749",
+      "snapshot_sha256_lf": "09b980e05c75981a3b26d55b7f78587f81722fe692dc1fa4a16fda89e5959c1c"
+    },
+    {
+      "path": "src/tray.py",
+      "upstream_blob": "c256215204a93ea0894de925843ee5a8afffddb4",
+      "upstream_sha256": "b5fabcd1de923efb667b6f9e79cdf91becde06455f15fc1d1a0485a81454813b",
+      "snapshot_sha256_lf": "b5fabcd1de923efb667b6f9e79cdf91becde06455f15fc1d1a0485a81454813b"
+    },
+    {
+      "path": "src/ui_magnet.py",
+      "upstream_blob": "622baedf7d54570dd450684a965f9d24372383de",
+      "upstream_sha256": "74d3fb4533a355856e7cad49b68c94c092d89f8b3620d49c6599cda50e5da686",
+      "snapshot_sha256_lf": "74d3fb4533a355856e7cad49b68c94c092d89f8b3620d49c6599cda50e5da686"
+    },
+    {
+      "path": "src/win_perf.py",
+      "upstream_blob": "f739eb54e03a7f03a8bd68ce31538fea6c92ec46",
+      "upstream_sha256": "7a34faa0d8e0bcd09d797aa50e939c12f932ac0233e88b30d4ea5a8e9e657e6f",
+      "snapshot_sha256_lf": "7a34faa0d8e0bcd09d797aa50e939c12f932ac0233e88b30d4ea5a8e9e657e6f"
+    },
+    {
+      "path": "src/window_probe.py",
+      "upstream_blob": "844e5cf8daf040871c1632e25e8a94e022a398e7",
+      "upstream_sha256": "c976d4cb7be405824044803c8c49eddc41620d4c0d4a2d6e284bfb723ede2bb5",
+      "snapshot_sha256_lf": "c976d4cb7be405824044803c8c49eddc41620d4c0d4a2d6e284bfb723ede2bb5"
+    },
+    {
+      "path": "studio.bat",
+      "upstream_blob": "d2bd9058bb285fffae0b9119ef8137f2dd5061c8",
+      "upstream_sha256": "c986b7ca47ea6e6022eeb41187b62527325db2839bf34d7cbf3730896109c7f1",
+      "snapshot_sha256_lf": "c986b7ca47ea6e6022eeb41187b62527325db2839bf34d7cbf3730896109c7f1"
+    },
+    {
+      "path": "studio.py",
+      "upstream_blob": "59841a364a5006e3b3eea52ada97a8c1eac02f41",
+      "upstream_sha256": "ab6823f61e13725f3f2dc17daeac0f6f2566947b6b8bddea30f88bb0282bf4f3",
+      "snapshot_sha256_lf": "ab6823f61e13725f3f2dc17daeac0f6f2566947b6b8bddea30f88bb0282bf4f3"
+    },
+    {
+      "path": "tcn_app.py",
+      "upstream_blob": "59d2cb7066ece296652c0dd0938c7ad9bc1a4421",
+      "upstream_sha256": "a17e07b27699df4573fac86efa61f9d752e80e3e0726f21ce2e5014cd3ac805f",
+      "snapshot_sha256_lf": "a17e07b27699df4573fac86efa61f9d752e80e3e0726f21ce2e5014cd3ac805f"
+    },
+    {
+      "path": "tests/conftest.py",
+      "upstream_blob": "c3544b1b3bec648ce6a7f33b1963cc5e75bbde63",
+      "upstream_sha256": "eef6e55a000888b262312ccd9038034b0d11b325388afa8cbb3dbf018fe1fbf6",
+      "snapshot_sha256_lf": "eef6e55a000888b262312ccd9038034b0d11b325388afa8cbb3dbf018fe1fbf6"
+    },
+    {
+      "path": "tests/test_calibration.py",
+      "upstream_blob": "88169d8e7f82aaad5155b7c348e222f6aad3ed36",
+      "upstream_sha256": "a1cd7cbfbab0b7a0e4b3532eb001f52cb43cc88b41a7701659dafe2e08b507e1",
+      "snapshot_sha256_lf": "a1cd7cbfbab0b7a0e4b3532eb001f52cb43cc88b41a7701659dafe2e08b507e1"
+    },
+    {
+      "path": "tests/test_camera_and_tracker.py",
+      "upstream_blob": "ae1411ad68771763de2bc23f40c4f65ee30f223e",
+      "upstream_sha256": "5ff8912942ea3f443bea57bc471e3fa227502e6dab8e7d6841036224d27939ef",
+      "snapshot_sha256_lf": "5ff8912942ea3f443bea57bc471e3fa227502e6dab8e7d6841036224d27939ef"
+    },
+    {
+      "path": "tests/test_close_sign.py",
+      "upstream_blob": "4163013558037a995f44dafa4d481f58951de377",
+      "upstream_sha256": "e3b2edad7ee63f4e56c65b3b4db7380aa9fb3d0e9e7a9518971fa07d68fd7211",
+      "snapshot_sha256_lf": "e3b2edad7ee63f4e56c65b3b4db7380aa9fb3d0e9e7a9518971fa07d68fd7211"
+    },
+    {
+      "path": "tests/test_cursor_interp.py",
+      "upstream_blob": "5656ff50280c633823a559dfd2fd0fb8b455e150",
+      "upstream_sha256": "fe963ec4ec4a2d409a5bf016c70d11948d53a94364b537335694bd86dc82cbcd",
+      "snapshot_sha256_lf": "fe963ec4ec4a2d409a5bf016c70d11948d53a94364b537335694bd86dc82cbcd"
+    },
+    {
+      "path": "tests/test_data_quality_and_augment.py",
+      "upstream_blob": "4cf15518440ef036ebf655df04e33debf1a1506f",
+      "upstream_sha256": "fba54eed9e7378bf988660adb974f14b744ef4d48ea296f35e4d578fbde20c4c",
+      "snapshot_sha256_lf": "fba54eed9e7378bf988660adb974f14b744ef4d48ea296f35e4d578fbde20c4c"
+    },
+    {
+      "path": "tests/test_elbow_pivot.py",
+      "upstream_blob": "a2df05ef9448f83aa6acd6b4a250c65e45c237ac",
+      "upstream_sha256": "6300748b7c14fd89be4e5e7bd1a5389b6ff783d971946b953fcefe1e17949bfc",
+      "snapshot_sha256_lf": "6300748b7c14fd89be4e5e7bd1a5389b6ff783d971946b953fcefe1e17949bfc"
+    },
+    {
+      "path": "tests/test_expanded_training.py",
+      "upstream_blob": "f607afd78a8b9116937527dc1406c419ae0fccc4",
+      "upstream_sha256": "3cf4dca43674a1f3845723352a2971ebbeb3dd7e98168937989bae86d6514763",
+      "snapshot_sha256_lf": "3cf4dca43674a1f3845723352a2971ebbeb3dd7e98168937989bae86d6514763"
+    },
+    {
+      "path": "tests/test_filters.py",
+      "upstream_blob": "d6b252a35072e63b4f5ecba7c08ec83372358ec9",
+      "upstream_sha256": "03c37d13f77e5eb6d542c89c8e7517cd1882434e89dce34295897e5587f25d27",
+      "snapshot_sha256_lf": "03c37d13f77e5eb6d542c89c8e7517cd1882434e89dce34295897e5587f25d27"
+    },
+    {
+      "path": "tests/test_gesture_gate.py",
+      "upstream_blob": "b61ce6ea37ebf73ac41496feb6e74ab292f53da3",
+      "upstream_sha256": "e0a0532b63bcedeeaa58d7dcfbe5c830219f0adfd939d0a1075985fdf328578e",
+      "snapshot_sha256_lf": "e0a0532b63bcedeeaa58d7dcfbe5c830219f0adfd939d0a1075985fdf328578e"
+    },
+    {
+      "path": "tests/test_gesture_mouse.py",
+      "upstream_blob": "2a0828d822492eb2d7c49479e0ea111b3949ad6d",
+      "upstream_sha256": "8fa6b27de1ce27c5d526a9ae449326cedba6b1d3704ecf82f33d5f4d97587d67",
+      "snapshot_sha256_lf": "0849917f1914b19591dc5c202b04d6178b070afe63666ca78cfc2bd3231863e5"
+    },
+    {
+      "path": "tests/test_hand_crop_failures.py",
+      "upstream_blob": "141e1e040b93a0e7004f369a5c42abf6999f2175",
+      "upstream_sha256": "0a6deff5fd9c135580bdfd628cddb5dfc39cdeab58cb90b4bf49e030eddafee5",
+      "snapshot_sha256_lf": "0a6deff5fd9c135580bdfd628cddb5dfc39cdeab58cb90b4bf49e030eddafee5"
+    },
+    {
+      "path": "tests/test_hand_selection.py",
+      "upstream_blob": "bddf6ba106bd23eee83b271d305501c97c85d913",
+      "upstream_sha256": "735a15e6f00a7352c43b68f1201bde73d59ae08c54443b9e1ee5953aaa79e062",
+      "snapshot_sha256_lf": "735a15e6f00a7352c43b68f1201bde73d59ae08c54443b9e1ee5953aaa79e062"
+    },
+    {
+      "path": "tests/test_hub.py",
+      "upstream_blob": "e4928615d5d96d5fb5c96bd500f50019457fd6be",
+      "upstream_sha256": "a0e12e49c35ebed2a17fd9765fea5f5280ce36fcb14028dc14543a87521b3bb2",
+      "snapshot_sha256_lf": "a0e12e49c35ebed2a17fd9765fea5f5280ce36fcb14028dc14543a87521b3bb2"
+    },
+    {
+      "path": "tests/test_motion_mode.py",
+      "upstream_blob": "d5c1ab08a51606f698b47851ad9734aeee998ad0",
+      "upstream_sha256": "68f4c03c43abc6e7dde9960c5429920dcc6c159cea92d0c78d54ff60ab787971",
+      "snapshot_sha256_lf": "fe3d1a572753079a418c05af5ad68d47c9f0a45452c844492bc6392eb8a08167"
+    },
+    {
+      "path": "tests/test_palm_axes.py",
+      "upstream_blob": "c6b2a284ceee40ed7a4032831e40204e455c9ce9",
+      "upstream_sha256": "e228a390613dff8e484abc2de4e9cf393b38083cbb18f1301163ffdd2b56d6d0",
+      "snapshot_sha256_lf": "e228a390613dff8e484abc2de4e9cf393b38083cbb18f1301163ffdd2b56d6d0"
+    },
+    {
+      "path": "tests/test_path_smoother.py",
+      "upstream_blob": "057540ecc251fc34b0303e7ecbeb155319002220",
+      "upstream_sha256": "3407388a19d0760fe5b6eff700fec9a732c2d9448c7700b32fe2200b608a2224",
+      "snapshot_sha256_lf": "3407388a19d0760fe5b6eff700fec9a732c2d9448c7700b32fe2200b608a2224"
+    },
+    {
+      "path": "tests/test_phone_web_bridge.py",
+      "upstream_blob": "71a3c34a096d4ec7a369cf14468270891ea9ba12",
+      "upstream_sha256": "f6181f55bbc8d7311c737ce6d10819df5fd97e99ef6c8d5c5351d624b506a971",
+      "snapshot_sha256_lf": "34198d676535808a074fe07b8ab4f338a499b68f237a0be94dca1f34945a5b67"
+    },
+    {
+      "path": "tests/test_pipeline_tray.py",
+      "upstream_blob": "6fb991729a82cc884cba5aca94d4c103dfe1215a",
+      "upstream_sha256": "a2b177a80da6e273eee202c6d2b9b551846c396e3fafa2aa9ab809a5226950f7",
+      "snapshot_sha256_lf": "a2b177a80da6e273eee202c6d2b9b551846c396e3fafa2aa9ab809a5226950f7"
+    },
+    {
+      "path": "tests/test_pointer_engine.py",
+      "upstream_blob": "988f8c5b8cb875cb763149534bf8d92c69ae8cd1",
+      "upstream_sha256": "26ffd583b7df030402495fd8940032049c6aacb88f7070612ef1f28daa8e346c",
+      "snapshot_sha256_lf": "26ffd583b7df030402495fd8940032049c6aacb88f7070612ef1f28daa8e346c"
+    },
+    {
+      "path": "tests/test_pointer_workspace.py",
+      "upstream_blob": "be68ebd24d8666dc82caade81ddebbe4a1f183b1",
+      "upstream_sha256": "b17bac24a78b24267fb672e6ca5b20a2f30bec848d9623cc543fb73b47f059ed",
+      "snapshot_sha256_lf": "b17bac24a78b24267fb672e6ca5b20a2f30bec848d9623cc543fb73b47f059ed"
+    },
+    {
+      "path": "tests/test_pose_tracker.py",
+      "upstream_blob": "7c1e734adff80102b904409cd0995970570c8a5b",
+      "upstream_sha256": "0a8d38049fe4a46f7856f0b719cca6db90a82ca0ce52c2b7ed12f4e04fd3e1b3",
+      "snapshot_sha256_lf": "0a8d38049fe4a46f7856f0b719cca6db90a82ca0ce52c2b7ed12f4e04fd3e1b3"
+    },
+    {
+      "path": "tests/test_profiles.py",
+      "upstream_blob": "e7e1d1a30d1885efc7e58d3c41c841cfcbaa6b5b",
+      "upstream_sha256": "4f3d57b6b0e8403aad3afbb11cd41dcf53e4d86b67b889c02f7d6a10449f2845",
+      "snapshot_sha256_lf": "4f3d57b6b0e8403aad3afbb11cd41dcf53e4d86b67b889c02f7d6a10449f2845"
+    },
+    {
+      "path": "tests/test_qt_runtime.py",
+      "upstream_blob": "e2a3364fe94542c3627844261d4dff0ebbaeac6e",
+      "upstream_sha256": "8bc236b1263b8334bcac43d8377116c41fe545c874ad334bc862a19254db8e22",
+      "snapshot_sha256_lf": "9dd44e7b495d4424c0f3a73d32702dd71f6394facc0e50e527571d6fca6aa3d5"
+    },
+    {
+      "path": "tests/test_recording.py",
+      "upstream_blob": "ea65b1d8f8755ab463b20384f5e5f0e6f20fa5c7",
+      "upstream_sha256": "5e8590b9b236f7cce953a5414f3f67009448fec994213a66832745ddc35ab8c2",
+      "snapshot_sha256_lf": "5e8590b9b236f7cce953a5414f3f67009448fec994213a66832745ddc35ab8c2"
+    },
+    {
+      "path": "tests/test_recording_plan.py",
+      "upstream_blob": "f4ad12b78a178e4b068216931ff6c6eba4868b76",
+      "upstream_sha256": "a9c2b36e3dc511391fc78ec521f22d6b6aa1e354fc002743dc66c6bf820ed1c7",
+      "snapshot_sha256_lf": "a9c2b36e3dc511391fc78ec521f22d6b6aa1e354fc002743dc66c6bf820ed1c7"
+    },
+    {
+      "path": "tests/test_screens.py",
+      "upstream_blob": "7f23a9a8b2caa2c666cb21fb4c19173a450b4f76",
+      "upstream_sha256": "c52b9955e905d31c37fe32e7089092c4b3fca1171136fa04cbe5a48e98e978e0",
+      "snapshot_sha256_lf": "c52b9955e905d31c37fe32e7089092c4b3fca1171136fa04cbe5a48e98e978e0"
+    },
+    {
+      "path": "tests/test_scroll_target.py",
+      "upstream_blob": "75e0eab287c09fe16d554a689e93267dcaa6cc90",
+      "upstream_sha256": "4980e0f118e83a194fc37c4716c19bcc681cee1542b226a0a4e2b1434357eff3",
+      "snapshot_sha256_lf": "4980e0f118e83a194fc37c4716c19bcc681cee1542b226a0a4e2b1434357eff3"
+    },
+    {
+      "path": "tests/test_selected_training.py",
+      "upstream_blob": "4b59f092bafc74f1537d9b74318d85d32d98faca",
+      "upstream_sha256": "0503bf65cd967397d7e6789c19141bab8bc8cbddba2c80d718c1e92f6c23dc48",
+      "snapshot_sha256_lf": "0503bf65cd967397d7e6789c19141bab8bc8cbddba2c80d718c1e92f6c23dc48"
+    },
+    {
+      "path": "tests/test_settings_panel.py",
+      "upstream_blob": "7aae6d41d5e8a5cb6858d44c5a5199a5b16a2bed",
+      "upstream_sha256": "0bc34236bd6607d3918c6fc816231a39c4f2e08fdf8ddee39361a0bff975e822",
+      "snapshot_sha256_lf": "63b1a8447eaa1bd8efd7bc7f8e0aad50e1599467a9cc75017a646b2660c47c39"
+    },
+    {
+      "path": "tests/test_tcn_app.py",
+      "upstream_blob": "1de556d07c774ac363a471a61d455b462c31249e",
+      "upstream_sha256": "080b55ca26f6aaa05dd0e1ff0ecbecd75f49a8ee66d19c6926832b702a1e4438",
+      "snapshot_sha256_lf": "080b55ca26f6aaa05dd0e1ff0ecbecd75f49a8ee66d19c6926832b702a1e4438"
+    },
+    {
+      "path": "tests/test_tcn_features.py",
+      "upstream_blob": "a61a0547e8db1c91697333ed9a0a490fedee227a",
+      "upstream_sha256": "1bb3634735458cca0835c7867450b6f2b5ea90f03aa85e61ded08bc28a311a2e",
+      "snapshot_sha256_lf": "1bb3634735458cca0835c7867450b6f2b5ea90f03aa85e61ded08bc28a311a2e"
+    },
+    {
+      "path": "tests/test_toggle_sign.py",
+      "upstream_blob": "83b0e516cb760c5e7fcbe08c46085c3ca06ec09a",
+      "upstream_sha256": "2ca34a9f784e52c5793e0fc1bc0e3eb282b97f9e07c94b535e9e7f6fd9fc996c",
+      "snapshot_sha256_lf": "2ca34a9f784e52c5793e0fc1bc0e3eb282b97f9e07c94b535e9e7f6fd9fc996c"
+    },
+    {
+      "path": "tests/test_tracking_test.py",
+      "upstream_blob": "1158a7bf9e00f0fb9633583fde1f3cd8121abe49",
+      "upstream_sha256": "4ea2f942e2d2590c38b136a53113eb8c0ad90f53ddfa8faa2c91f6c40758355d",
+      "snapshot_sha256_lf": "4ea2f942e2d2590c38b136a53113eb8c0ad90f53ddfa8faa2c91f6c40758355d"
+    },
+    {
+      "path": "tests/test_training_center.py",
+      "upstream_blob": "681895a6791f78065c790b3febf49297569958be",
+      "upstream_sha256": "460e26aa2671cc3a34fe89c9375a23eff743f478c25d57dfe923bea8fb418812",
+      "snapshot_sha256_lf": "cc03f2eb183b10b4e1050cc2c9f2172f887ea15e2451f78de6409506116d461c"
+    },
+    {
+      "path": "tests/test_ui_magnet.py",
+      "upstream_blob": "134aab8948e089e69cf780ea13f6bafe5aaedc27",
+      "upstream_sha256": "0c9238cd96c9efa62ef94f6b0e67fd34e86a74a1c6f4a302a792d2353b399314",
+      "snapshot_sha256_lf": "0c9238cd96c9efa62ef94f6b0e67fd34e86a74a1c6f4a302a792d2353b399314"
+    },
+    {
+      "path": "tests/test_unicode_models.py",
+      "upstream_blob": "1f3acb53ebe728242242979b341691a5531de515",
+      "upstream_sha256": "3364d92a257a86aa481fc868577e5b64e9ef9ea7b95e0429dafa09df9a1d7fa3",
+      "snapshot_sha256_lf": "3364d92a257a86aa481fc868577e5b64e9ef9ea7b95e0429dafa09df9a1d7fa3"
+    },
+    {
+      "path": "tools/hub.py",
+      "upstream_blob": "b9175c9944b2a937f76c95023016d07abe685c1f",
+      "upstream_sha256": "ed91ebe039eca06d7f133a6f8664fc56b6504bcb78dac1b1b29fcfbed0388ed6",
+      "snapshot_sha256_lf": "ed91ebe039eca06d7f133a6f8664fc56b6504bcb78dac1b1b29fcfbed0388ed6"
+    },
+    {
+      "path": "uv.lock",
+      "upstream_blob": "2b8774665fc1c9f7535cb3c5c7a89a5ad1debb8b",
+      "upstream_sha256": "6e3c5ef670b4ea3bddd970948769ade216cebe877b32744278582f932e5550bb",
+      "snapshot_sha256_lf": "6e3c5ef670b4ea3bddd970948769ade216cebe877b32744278582f932e5550bb"
+    }
+  ],
+  "normalization": {
+    "hash_line_endings": "LF",
+    "formatting_only": "Markdown trailing whitespace and Python EOF blank lines trimmed",
+    "files": [
+      "README.md",
+      "per-gesture-tcn-briefing.md",
+      "solution.md",
+      "src/training_center.py",
+      "tests/test_gesture_mouse.py",
+      "tests/test_motion_mode.py",
+      "tests/test_phone_web_bridge.py",
+      "tests/test_qt_runtime.py",
+      "tests/test_settings_panel.py",
+      "tests/test_training_center.py"
+    ]
+  }
+}

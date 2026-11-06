@@ -10,21 +10,22 @@ import sys
 import tempfile
 
 
-def recording(path, split):
+def recording(path, split, target="thumb_ring"):
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = [{"type": "meta", "schema": "hand-mouse-recording/1", "mode": "guided",
              "person": "synthetic", "preset": "pinch", "split": split,
              "camera": {"mode": [640, 480, 30], "mirror": False}}]
-    labels = (["none"] * 40 + ["thumb_ring"] * 40) * 4 + ["none"] * 40
+    labels = (["none"] * 40 + [target] * 40) * 4 + ["none"] * 40
     for i, label in enumerate(labels):
         world = [[j % 5 * .01, j // 5 * .01, j % 2 * .001] for j in range(21)]
         world[0], world[9], world[5], world[17] = [0., 0., 0.], [0., .1, 0.], [-.04, .08, 0.], [.04, .08, 0.]
         world[8] = [-.04, .08, 0.]
-        world[4] = [-.04, .08, 0.] if label == "thumb_ring" else [.15, .08, 0.]
+        world[4] = ([-.04, .08, 0.] if label == "thumb_ring" else
+                    [.15, .25, 0.] if label == "thumb_middle" else [.15, .08, 0.])
         rows.append({"type": "frame", "t": i / 30, "world": world,
                      "lm": [[.4 + j * .005, .6 - j * .005, 0.] for j in range(21)],
                      "hand": ["Right", .95], "label": {"target": label,
-                         "gesture": "pinch.thumb_ring" if label != "none" else None},
+                         "gesture": "pinch." + label if label != "none" else None},
                      "rule": {"action": "none"}})
     rows.append({"type": "end", "frames": len(labels)})
     with gzip.open(path, "wt", encoding="utf-8") as stream:
@@ -95,7 +96,7 @@ def main(argv=None):
         library = studio_job("scan")
         trial = next(row for row in library["recordings"] if row["split"] == "eval")
         simulated = studio_job("simulate", key=trial["key"])
-        assert simulated["simulation"]["counts"]["model"] > 0
+        assert simulated["simulation"]["counts"].get("preview", simulated["simulation"]["counts"]["model"]) > 0
         assert simulated["simulation"]["errors"] == 0
         old_version = json.loads(active_token(root / "store"))["version"]
         restored = studio_job("restore", version=old_version)

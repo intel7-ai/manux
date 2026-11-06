@@ -40,11 +40,13 @@ Not ported: Record & Fling (thumb+index `grab`, off by default in v0.3). The Alt
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from manux.core.contracts import Activity, FrameContext, HandObservation, Intent
 from manux.features.pinch.engine import PinchCore, PinchFrame
 from manux.features.pinch.settings import DEFAULTS, SETTINGS, V03_KEYS, resolve
+from manux.perception.palm_axes import corrected_point
 
 __all__ = ["ID", "GESTURES", "GESTURE_PHASES", "DEFAULT_BINDINGS", "SETTINGS", "V03_KEYS", "PinchFeature",
            "IntentMapper"]
@@ -161,6 +163,9 @@ class PinchFeature:
             self.last_frame = None
             return []
         frame = self.core.step(t, hand.landmarks, settings)
+        if frame.action in ("move_cursor", "drag_hold"):
+            frame = replace(frame, cursor_point=corrected_point(frame.cursor_point, ctx.frame.aspect,
+                                                              ctx.settings.get("palm_axes")))
         self.last_frame = frame
         return self.mapper.map(t, frame)
 

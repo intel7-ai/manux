@@ -1,0 +1,37 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.pytest_cache/
+
+# Local self-signed TLS certificates
+models/certs/
+*.pem
+
+# Performance logs
+logs/
+
+# Personal calibration profiles (a profile name can be a person's name) and the active choice
+config/profiles/
+config/active_profile.txt
+config/calibration.json
+config/gestures.json.bak-*
+
+# Training center: per-recording summary cache and exported model packages
+recordings/*.summary.json
+exports/
+models/gestures/
+recordings/*.part
+.local/
+config/tcn-ui.ini
+config/recording-plans.json
+config/recording-plans.tmp
+models/selected/
+models/gesture_tcn.selected.json
+models/gesture_tcn.selected.json.*.tmp

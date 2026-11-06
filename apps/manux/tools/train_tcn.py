@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 from hashlib import file_digest, sha256
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,17 +23,19 @@ from manux.data.recording import read
 from manux.ml.card import CLASS_RE, validate_card
 from manux.perception.local3d import FEATURES, FEATURE_VERSION
 from manux.settings.paths import resolve
-from tcn_data import AXES, class_mapping, class_names, evaluate, groups, load, samples
+from tcn_data import AXES, class_mapping, class_names, evaluate, groups, load
+from training_inputs import sample_data
 
 WINDOW = 15
 AUGMENT = True
 
 
-def train(segments, classes, epochs, *, progress=None):
+def train(segments, classes, epochs, *, progress=None, other_as_none=False):
     import torch
     from torch import nn
 
-    x, y = samples(segments, classes, WINDOW)
+    torch.set_num_threads(min(4, os.cpu_count() or 1))
+    x, y, sampling = sample_data(segments, classes, WINDOW, other_as_none=other_as_none)
     counts = np.bincount(y, minlength=len(classes))
     if not counts.all():
         missing = [name for name, count in zip(classes, counts) if not count]
@@ -53,41 +56,29 @@ def train(segments, classes, epochs, *, progress=None):
         def forward(self, inputs):
             return self.head(self.body(inputs.transpose(1, 2))[:, :, -1])
 
-    def augment(batch):
-        """Dan's augmentation: small 3D rotation of the hand-frame joints, size and jitter (other seats/angles)."""
-        import math
-        b = batch.shape[0]
-        ang = (torch.rand(b, 3) - 0.5) * math.radians(30)
-        cx, cy, cz = torch.cos(ang).unbind(1)
-        sx, sy, sz = torch.sin(ang).unbind(1)
-        one, zero = torch.ones(b), torch.zeros(b)
-        rx = torch.stack([one, zero, zero, zero, cx, -sx, zero, sx, cx], 1).view(b, 3, 3)
-        ry = torch.stack([cy, zero, sy, zero, one, zero, -sy, zero, cy], 1).view(b, 3, 3)
-        rz = torch.stack([cz, -sz, zero, sz, cz, zero, zero, zero, one], 1).view(b, 3, 3)
-        r = rz @ ry @ rx
-        batch = batch.clone()
-        for lo in (0, 63):
-            pts = batch[:, :, lo:lo + 63].reshape(b, batch.shape[1], 21, 3)
-            batch[:, :, lo:lo + 63] = torch.einsum("btjk,blk->btjl", pts, r).reshape(b, batch.shape[1], 63)
-        scale = 1.0 + (torch.rand(b, 1, 1) - 0.5) * 0.2
-        batch[:, :, :130] = batch[:, :, :130] * scale
-        batch[:, :, :130] += torch.randn_like(batch[:, :, :130]) * 0.01
-        return batch
+    from tcn_augmentation import augment
 
     torch.manual_seed(0)
     model = TCN()
-    weights = torch.tensor(counts ** -0.5, dtype=torch.float32)
-    loss_fn = nn.CrossEntropyLoss(weight=weights / weights.mean())
+    loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     inputs, labels = torch.from_numpy(x), torch.from_numpy(y)
+    weights = torch.from_numpy(sampling)
     for _ in range(epochs):
-        for batch in torch.randperm(len(inputs)).split(256):
+        total_loss, total_seen = 0., 0
+        for batch in torch.multinomial(weights, min(len(inputs), 16384), replacement=True).split(256):
             optimizer.zero_grad()
             loss = loss_fn(model(augment(inputs[batch]) if AUGMENT else inputs[batch]), labels[batch])
             loss.backward()
             optimizer.step()
+            total_loss += float(loss.detach()) * len(batch)
+            total_seen += len(batch)
         if progress is not None:
-            progress(_ + 1, epochs, float(loss.detach()))
+            progress(_ + 1, epochs, total_loss / total_seen)
+    predicted = predict(model.eval(), x).argmax(1)
+    model.fit_rates = {name: float((predicted[y == i] == i).mean()) for i, name in enumerate(classes)}
+    if min(model.fit_rates.values()) < .5:
+        raise ValueError("후보 모델이 한 클래스로 치우쳤습니다. 이전 모델을 유지합니다. 녹화 라벨과 다양한 중립 자료를 확인하세요.")
     return model.eval()
 
 
@@ -112,7 +103,8 @@ def main(argv=None) -> None:
     parser.add_argument("--frames-in-a-row", type=int, default=3)
     parser.add_argument("--decisions", type=Path, help="class -> direct intent specification JSON (no actions)")
     parser.add_argument("--cache-dir", type=Path, default=resolve().data_dir / "features")
-    parser.add_argument("--no-augment", action="store_true", help="train without Dan's rotation/size/jitter augmentation")
+    parser.add_argument("--no-augment", action="store_true", help="disable coherent hand-depth, joint and causal-speed augmentation")
+    parser.add_argument("--negative-other-classes", action="store_true", help="treat other recorded gestures as hard negatives")
     parser.add_argument("--events", action="store_true", help="emit progress events for the app worker")
     parser.add_argument("--skip-folds", action="store_true", help="app worker uses a separate eval set instead")
     args = parser.parse_args(argv)
@@ -164,16 +156,16 @@ def main(argv=None) -> None:
             for key, test in held_out.items():
                 fit = [s for other, rows in held_out.items() if other != key for s in rows]
                 try:
-                    fold = train(fit, classes, args.epochs)
+                    fold = train(fit, classes, args.epochs, other_as_none=args.negative_other_classes)
                 except ValueError as error:
                     results.append({"axis": axis, "group": key, "status": "insufficient_data", "reason": str(error)})
                     continue
                 metrics = evaluate(test, classes, mapping, lambda x: predict(fold, x),
-                                   WINDOW, args.threshold, args.frames_in_a_row)
+                                   WINDOW, args.threshold, args.frames_in_a_row, continuous=True)
                 results.append({"axis": axis, "group": key, "status": "evaluated", **metrics})
         progress = (lambda epoch, epochs, loss: print(json.dumps({"event": "epoch", "epoch": epoch,
                      "epochs": epochs, "loss": loss}), flush=True)) if args.events else None
-        model = train(segments, classes, args.epochs, progress=progress)
+        model = train(segments, classes, args.epochs, progress=progress, other_as_none=args.negative_other_classes)
         import torch
 
         if any(sha256(path.read_bytes()).hexdigest() != digest for path, digest in recording_hashes.items()):
@@ -183,9 +175,15 @@ def main(argv=None) -> None:
                           input_names=["features"], output_names=["logits"], opset_version=17, dynamo=False)
         with args.output.open("rb") as file:
             card["model_sha256"] = file_digest(file, "sha256").hexdigest()
+        from compose_tcn import component_id
+        card.update(training_pipeline="continuous-v2", fit_accuracy=model.fit_rates,
+                    class_model_ids={name: component_id(card["model_sha256"], classes) for name in classes if name != "none"},
+                    class_default_modes={name: "shadow" for name in classes if name != "none"})
         args.output.with_suffix(".json").write_text(json.dumps(card, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(results, indent=2))
     except (ValueError, OSError, ImportError) as error:
+        if args.events:
+            raise
         parser.exit(1, f"{error}\n")
 
 
