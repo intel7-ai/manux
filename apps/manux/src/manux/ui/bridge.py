@@ -1848,7 +1848,7 @@ class Bridge(QObject):
             elif key == KEY_ESC and self.studio.is_streaming:
                 self.studio.stop_stream()
                 self.studioChanged.emit()
-            elif 49 <= key <= 56:  # keys '1'..'8'
+            elif 49 <= key <= 57:  # keys '1'..'9' (supports 9th class: both click)
                 self.selectStudioActionByNumber(key - 48)
         elif self.stage_name == "main" and key == KEY_SPACE:
             self.paused = not self.paused

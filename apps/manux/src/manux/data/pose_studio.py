@@ -91,6 +91,14 @@ STUDIO_ACTIONS: Tuple[Dict[str, str], ...] = (
         "short": "제어 토글 (V자)",
         "desc": "검지와 중지만 V자로 펴고 나머지는 접어 마우스 제어를 토글하는 자세",
     },
+    {
+        "id": "thumb_middle_ring",
+        "key": "9",
+        "icon": "🤞",
+        "label": "9. 좌우 동시 클릭 (엄지+중지+약지)",
+        "short": "동시 클릭 (엄지+중지+약지)",
+        "desc": "엄지 끝에 중지와 약지를 동시에 맞대어 좌클릭과 우클릭을 함께 누르거나 휠 클릭하는 자세",
+    },
 )
 
 ACTION_IDS: Tuple[str, ...] = tuple(a["id"] for a in STUDIO_ACTIONS)
@@ -121,6 +129,9 @@ GESTURE_TO_STUDIO_CLASS: Dict[str, str] = {
     "mouse.scroll": "thumb_index",
     "window.task_switcher": "thumb_pinky",
     "window.show_desktop": "palm_side",
+    "pinch.thumb_middle_ring": "thumb_middle_ring",
+    "mouse.middle_click": "thumb_middle_ring",
+    "mouse.both_click": "thumb_middle_ring",
 }
 
 

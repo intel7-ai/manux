@@ -34,11 +34,13 @@ ApplicationWindow {
         id: button
         property bool accent: false
         implicitHeight: 40
-        leftPadding: 16
-        rightPadding: 16
+        leftPadding: 10
+        rightPadding: 10
         contentItem: TextLabel {
             text: button.text
             font.bold: true
+            font.pixelSize: 12
+            elide: Text.ElideRight
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }
@@ -1143,8 +1145,8 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     accent: true
                                     text: dashboard.studioCaptureMode === "stream"
-                                        ? (dashboard.studioStreaming ? "⏹️ 연속 수집 정지 (Space)" : "🎥 연속 프레임 수집 시작 (Space)")
-                                        : "📸 현재 자세 1프레임 스냅샷 캡처 (Space)"
+                                        ? (dashboard.studioStreaming ? "⏹️ 수집 정지 (Space)" : "▶️ 연속 수집 시작 (Space)")
+                                        : "📸 1프레임 캡처 (Space)"
                                     onClicked: dashboard.triggerStudioCapture()
                                 }
                                 ActionButton {
@@ -1164,7 +1166,7 @@ ApplicationWindow {
                                 }
                                 ActionButton {
                                     accent: true
-                                    text: "⚡ Spatial MLP 즉시 학습 (4초)"
+                                    text: "⚡ 즉시 학습 (0.2초)"
                                     onClicked: dashboard.trainStudioModel()
                                 }
                             }
@@ -1194,7 +1196,7 @@ ApplicationWindow {
                     RowLayout {
                         Layout.fillWidth: true
                         TextLabel {
-                            text: "수집할 정답 동작 선택 (단축키 1 ~ 8)"
+                            text: "수집할 정답 동작 선택 (단축키 1 ~ 9)"
                             font.pixelSize: 16
                             font.bold: true
                         }

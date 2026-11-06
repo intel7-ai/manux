@@ -24,6 +24,7 @@ STUDIO_CLASSES: Tuple[str, ...] = (
     "palm_side",
     "thumbs_up",
     "v_sign",
+    "thumb_middle_ring",
 )
 
 
