@@ -105,6 +105,7 @@ def capture(cv2, camera, tracker, engine, hand_side, sets, args, folder, setting
     """Record `sets` = [(plan condition index, task), ...] one take at a time."""
     index, take, start = 0, None, False
     message = ""
+    shown_stage = None
     last_frame = perf_counter()
     try:
         cv2.namedWindow(TITLE, cv2.WINDOW_NORMAL)
@@ -128,6 +129,7 @@ def capture(cv2, camera, tracker, engine, hand_side, sets, args, folder, setting
                     mode = camera.actual_mode()
                     meta = {
                         "person": args.profile, "preset": args.preset, "split": args.split,
+                        "session_id": args.session_id,
                         "control_hand": hand_side,
                         "camera": {"mode": [frame.width, frame.height, mode[2] if mode else camera.fps],
                                    "mirror": frame.mirrored, "rotation": frame.rotation},
@@ -136,6 +138,7 @@ def capture(cv2, camera, tracker, engine, hand_side, sets, args, folder, setting
                                        for owner in ("pinch", "pointer", "motion", "tracking")},
                     }
                     take = Take(task, plan, cond, folder, meta, frame.t)
+                    shown_stage = None
                     engine.commands.put(RequestMode("motion" if task.direction else None))
                     start, message = False, ""
                 snapshot = engine.step(frame, hand)
@@ -153,10 +156,20 @@ def capture(cv2, camera, tracker, engine, hand_side, sets, args, folder, setting
                 else:
                     take.add(frame, hand, snapshot.intents)
                     label = take.session.label(frame.t)
-                    progress = take.session.view(frame.t)["progress"]
+                    view = take.session.view(frame.t)
+                    progress = view["progress"]
                     phase = label["phase"]
+                    stage = (phase, label["rep"])
+                    if stage != shown_stage:
+                        shown_stage = stage
+                        repetition = f" {label['rep']}/{take.session.reps}" if label["rep"] else ""
+                        print(f"[{index + 1}/{len(sets)} {task.key}] {view['prompt']}{repetition}", flush=True)
                     prompt = {"prep": "GET READY", "rest": "REST - relax your hand", "free": "GO", "do": "GO",
                               "paused": "PAUSED - show your hand (timer stopped)"}[phase]
+                    if phase == "free":
+                        action = {"none": "move freely, no gesture", "open_move": "move with an open hand",
+                                  "fist_move": "move with a half fist", "pointer_move": "move with index extended"}
+                        prompt = f"GO - {action[task.key]} ({take.session.set_length(task):g}s)"
                     if label["rep"]:
                         prompt += f"  {label['rep']}/{take.session.reps}"
                 status = ("Hand tracked" if hand is not None and hand.world is not None
@@ -194,6 +207,7 @@ def parse_args(argv=None):
     parser.add_argument("--condition", nargs="+",
                         help="only these plan conditions (names or 1-based numbers); default: every enabled one")
     parser.add_argument("--split", choices=("train", "eval"), default="train")
+    parser.add_argument("--session-id", help="shared anonymous session ID; defaults to a new UUID4 per run")
     parser.add_argument("--reps", type=int, help="override the plan's repetitions per set (1-30)")
     parser.add_argument("--free-seconds", type=int, help="override the plan's seconds per free task (10-900)")
     parser.add_argument("--source", help="camera index or stream URL (defaults to configured camera)")
@@ -264,6 +278,8 @@ def main(argv=None):
         parser.error("--profile requires an anonymous alias of 1-32 letters, digits, _ or -")
     sets = [(cond, task) for cond in conditions for task in tasks]
 
+    args.session_id = args.session_id or str(uuid4())
+    print(f"Session ID: {args.session_id}", flush=True)
     args.profile = args.profile.lower()
     folder = paths.recordings_dir / f"profile-{args.profile}" / args.preset / args.split
     settings = load(schema(), paths.config_dir)
