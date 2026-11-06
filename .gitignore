@@ -16,3 +16,9 @@ tests/fixtures/*.jpg
 Thumbs.db
 .claude/worktrees/
 dist/
+
+# Local worktrees and Python environments are never shared source.
+.worktrees/
+.venv/
+__pycache__/
+*.pyc

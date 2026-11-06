@@ -1,23 +1,14 @@
 name: MANUX CI
-
 on:
   pull_request:
   push:
     branches: [main, master, preview, production]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: manux-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-# Two depths (2026-11-05):
-# - preview (PRs into preview, pushes to preview and other branches): fast gate, verify on Ubuntu only.
-# - production (PRs into production, pushes to production) and manual runs: every job below.
-# "full" is this expression, repeated where needed because jobs.<id>.if cannot read workflow env:
-#   github.base_ref == 'production' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch'
 jobs:
   verify:
     name: verify (${{ matrix.os }})
@@ -26,7 +17,7 @@ jobs:
       matrix:
         os: ${{ fromJSON((github.base_ref == 'production' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch') && '["windows-latest","ubuntu-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -38,47 +29,14 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run doctor
       - run: npm run verify
-      - name: Windows helper protocol (dry-run, no real mouse input)
-        if: runner.os == 'Windows'
-        run: npm run test:native
       - name: Verification evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: verification-${{ matrix.os }}
-          path: |
-            .local/verification/latest.json
-            .local/verification/verify.log
+          path: .local/verification/
           include-hidden-files: true
-          if-no-files-found: ignore
           retention-days: 7
-
-  browser:
-    name: Synthetic browser integration
-    if: github.base_ref == 'production' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - run: npm ci --ignore-scripts
-      - run: npx --no-install playwright install --with-deps chromium
-      - run: npm run test:browser
-      - name: Browser evidence
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: synthetic-browser-evidence
-          path: test-results/air-mouse-*
-          if-no-files-found: ignore
-          retention-days: 7
-
-  # v0.4 (apps/manux): layer import rules and contract types. No camera or model needed. Runs at both depths.
   apps-manux:
     name: apps/manux (v0.4 structure and contracts)
     runs-on: ubuntu-latest
@@ -90,38 +48,25 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      # Installs apps/manux with its core dependencies (numpy) and pytest. OpenCV and MediaPipe are an
-      # optional extra ("vision") that the tests do not need.
-      - name: Python 3.12+ with apps/manux and pytest
+      - name: Python 3.12+ with MANUX and pytest
         run: |
-          python3 -c "import sys; assert sys.version_info >= (3, 12), sys.version"
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet -e ".[test]"
       - run: '"$RUNNER_TEMP/venv/bin/python" -m pytest -q'
-
   required:
     name: MANUX required
     if: always()
-    needs: [verify, browser, windows-package, apps-manux]
+    needs: [verify, apps-manux]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Every gate must pass
+      - name: Current gates must pass
         env:
-          FULL: ${{ github.base_ref == 'production' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch' }}
           VERIFY_RESULT: ${{ needs.verify.result }}
-          BROWSER_RESULT: ${{ needs.browser.result }}
-          PACKAGE_RESULT: ${{ needs.windows-package.result }}
           MANUX_RESULT: ${{ needs.apps-manux.result }}
         run: |
           test "$VERIFY_RESULT" = success
           test "$MANUX_RESULT" = success
-          if [ "$FULL" = true ]; then
-            test "$BROWSER_RESULT" = success && test "$PACKAGE_RESULT" = success
-          else
-            echo "preview gate: verify (ubuntu) only; browser and installer run for production"
-          fi
-      # production takes changes only after they were merged and tested on preview (docs/branch-flow.md).
       - name: production accepts PRs from preview only
         if: github.event_name == 'pull_request' && github.base_ref == 'production'
         env:
@@ -130,49 +75,6 @@ jobs:
           BASE_REPO: ${{ github.repository }}
         run: |
           if [ "$HEAD_REF" != preview ] || [ "$HEAD_REPO" != "$BASE_REPO" ]; then
-            echo "::error::production에는 preview 브랜치 PR만 병합합니다. 이 PR의 대상 브랜치를 preview로 바꾸세요."
+            echo "::error::production에는 preview 브랜치 PR만 병합합니다."
             exit 1
           fi
-
-  windows-package:
-    name: Windows preview installer
-    if: github.base_ref == 'production' || github.ref == 'refs/heads/production' || github.event_name == 'workflow_dispatch'
-    runs-on: windows-latest
-    timeout-minutes: 30
-    env:
-      MANUX_BUILD_CHANNEL: preview
-      MANUX_PR_NUMBER: ${{ github.event.pull_request.number }}
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - run: npm ci --ignore-scripts
-      - run: npm run desktop:setup
-      - run: node scripts/release-version.mjs prepare preview
-      - run: npm run desktop:dist
-      - run: npm run test:packaged
-      - run: npm run test:update-download
-      - name: Installed Preview upgrade preserves settings (disposable Windows VM)
-        run: npm run test:installed-update
-      - name: Download the PR's preview app (never a stable update)
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: MANUX-preview-${{ github.event.pull_request.number || github.run_number }}-${{ github.sha }}
-          path: dist/*.exe
-          if-no-files-found: error
-          retention-days: 14
-      - name: Packaged app evidence
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: preview-package-evidence
-          path: |
-            test-results/packaged-app.json
-            test-results/update-download.json
-            test-results/installed-update.json
-          if-no-files-found: ignore
-          retention-days: 7

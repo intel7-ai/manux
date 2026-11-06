@@ -46,7 +46,7 @@
     "changedFiles": {
       "type": "array",
       "minItems": 0,
-      "maxItems": 60,
+      "maxItems": 256,
       "items": {
         "type": "string",
         "minLength": 1,
