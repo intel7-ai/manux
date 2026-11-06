@@ -140,7 +140,7 @@ Popup {
                                     Copy { Layout.fillWidth: true; text: studio.detail.score_text || "" }
                                     Copy { Layout.fillWidth: true; text: studio.detail.advice || ""; color: Theme.Studio.muted }
                                     StudioButton { objectName: "focusRecord_"+(studio.detail.key || ""); text: "집중 녹화 설정"; enabled: studio.idle && !!studio.detail.key; onClicked: {if(studio.controller.focusRecord(studio.detail.key)){studio.close();studio.recordingRequested()}} }
-                                    StudioButton { objectName: "trainGesture_"+(studio.detail.key || ""); text: "이 동작만 학습"; enabled: studio.idle && studio.detail.can_train && studio.detail.reps>0; onClicked: studio.controller.trainSelectedGesture(studio.detail.key) }
+                                    StudioButton { objectName: "trainGesture_"+(studio.detail.key || ""); text: "이 동작만 학습"; enabled: studio.idle && !!studio.detail.can_train && Number(studio.detail.reps || 0)>0; onClicked: studio.controller.trainSelectedGesture(studio.detail.key) }
                                     Copy { Layout.fillWidth: true; text: "동작별 실행 방식"; visible: !!studio.detail.model_id; font.bold: true }
                                     Flow {
                                         Layout.fillWidth: true; spacing: 4; visible: !!studio.detail.model_id
