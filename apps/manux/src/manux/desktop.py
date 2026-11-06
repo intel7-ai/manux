@@ -33,6 +33,7 @@ from manux.data.legacy_import import pending_model
 from manux.engine.commands import RequestMode, SetBusy, SetControl
 from manux.engine.pipeline import Engine
 from manux.features import tcn_gate
+from manux.features.pinch.preview import PinchPreview
 from manux.ml.card import ModelError
 from manux.ml.predictor import load_model
 from manux.ml.store import active_token, load_active
@@ -162,6 +163,7 @@ class DesktopRuntime:
         self.control_hand = settings.get("tracking.control_hand")
         self.use_crop = bool(settings.get("tracking.hand_crop"))
         self.want_image = True
+        self.pinch_preview = PinchPreview()
         self._overrides: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._latest = ViewFrame(None)
@@ -483,6 +485,8 @@ class DesktopRuntime:
         elif image is None:
             self._metrics = (self.source.mode_text(), -1, False)
         actions = tuple(a for a, _phase, _reason in snap.results)
+        guides, anchor, moving = self.pinch_preview.step(
+            hand if self.want_image and snap.mode == "pinch" else None, self.settings_for("pinch"))
         self._publish(ViewFrame(
             snapshot=snap, image=image if self.want_image else None, hands=hands,
             landmarks=hand.landmarks if hand is not None else None, mirrored=frame.mirrored, aspect=frame.aspect,
@@ -490,6 +494,7 @@ class DesktopRuntime:
             fps=float(self.source.fps), detect_ms=float(detect_ms), actions=actions,
             model_status=self._model_view_status(), tracking=tracking, recent=self.recent,
             rec=self._rec_view(frame.t), pose_status=self.pose_status,
+            preview_guides=guides, preview_anchor=anchor, preview_moving=moving,
             frame_age_ms=max(0.0, (time.perf_counter() - frame.t) * 1000.0)))
 
     def _pose_step(self, image, now):

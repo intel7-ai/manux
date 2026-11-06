@@ -5,6 +5,10 @@
 - `--ui studio`는 Rasp-Jun 원본 QML의 메인·학습센터·자세 설정·진행 페이지를 사용한다.
   선택은 로컬 `ui.ini`에 보존한다. `--ui standard`로 팀 공용 화면을 선택할 수 있다.
   두 화면 모두 같은 v0.4 런타임·녹화·학습 서비스를 사용한다.
+- 원본 studio의 메인 카메라에는 손 관절·손바닥 기준 링·핀치 표시를 제어 시작 전에도 그린다.
+  런타임의 독립된 표시용 PinchCore가 ViewFrame의 preview_guides/anchor/moving을 공급하며
+  입력을 만드는 feature·TCN 정책·OS 출력 상태를 변경하지 않는다. UI는 같은 프레임의 복사본에만
+  그린다. 제어 꺼짐과 녹화 중 Windows 입력 차단은 그대로 유지한다.
 - `RuntimeRequest`의 `preview_model`은 미검증 후보를 강제 shadow로 로드한다.
   `tcn_toggle`의 `on`/`off`는 프레임 경계에서 출력·판정 상태를 해제하고 전역 TCN을
   켜거나 끈다. 동작별 저장 정책은 덮어쓰지 않으며 모델 교체 뒤에도 전역 선택을 유지한다.

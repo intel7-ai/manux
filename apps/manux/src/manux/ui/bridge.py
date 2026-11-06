@@ -4,7 +4,7 @@
 same properties and slots under the same names (context property `dashboard`). Differences:
 - it renders `ViewFrame`s from the desktop runtime and sends `UiCommand`s; it never decides gestures,
 - settings go through `settings.store.Settings` (v0.4 keys) and are saved to the user data folder,
-- not ported yet, shown as such: v0.3's frame drawings.
+- the original studio camera retains its hand skeleton, palm ring and pinch guide drawings.
 
 Only `run()` creates Qt objects for the whole app; the runtime thread never touches them.
 """
@@ -30,6 +30,7 @@ from manux.engine.commands import Mark, RequestMode, SetBaseMode, SetBusy, SetCo
 from manux.settings import profiles, store
 from manux.ui import cards as guide
 from manux.ui.finger import overlay_frame
+from manux.ui.hand_preview import draw_hand_preview
 from manux.ui.tutorial import Tutorial
 from manux.ui.view import ViewFrame
 from manux.ui.studio import StudioBridge
@@ -2044,6 +2045,8 @@ class Bridge(QObject):
             image = image[::step, ::step].copy()
             h, w = image.shape[:2]
         self.provider.image = QImage(image.data, w, h, image.strides[0], QImage.Format_BGR888).copy()
+        if self.layout == "studio" and self.stage_name == "main" and not self.use_index_pointer:
+            self.provider.image = draw_hand_preview(self.provider.image, view)
         self.sequence += 1
         self.previewChanged.emit()
 
