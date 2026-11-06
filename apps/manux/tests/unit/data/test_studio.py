@@ -146,3 +146,20 @@ def test_new_worker_returns_completed_job_owned_result_file(source):
     result = json.loads((folder / "result.json").read_text(encoding="utf-8"))
     assert result["frames"][1]["lm"] == read(path).frames[1]["lm"]
     assert events[-1]["job_id"] == "f"*32 and "frames" not in events[-1]
+
+
+@pytest.mark.parametrize("size", [(1280, 720), (640, 480), (720, 1280)])
+def test_playback_preserves_recorded_geometry_and_missing_hand(source, size):
+    root, key, path = source
+    def change(rows):
+        rows[0]["camera"] = {"mode": [*size, 30]}
+        rows[1].pop("lm", None)
+    rewrite(path, change)
+    before = path.read_bytes()
+    result = studio.playback(root, key)
+    assert result["recording"]["frame_aspect"] == size[1] / size[0]
+    assert result["recording"]["frame_size"] == list(size)
+    assert result["recording"]["hand_frames"] == len(result["frames"]) - 1
+    assert result["frames"][0]["lm"] == []
+    assert result["frames"][1]["lm"] == read(path).frames[1]["lm"]
+    assert path.read_bytes() == before
