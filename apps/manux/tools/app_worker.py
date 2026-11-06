@@ -188,6 +188,9 @@ def main(argv=None):
             except Exception:
                 # Never echo HTTP headers, auth tokens or remote exception bodies.
                 raise ValueError("허브 작업 실패 · 저장소 주소, 읽기/쓰기 권한, 토큰과 네트워크를 확인하세요.") from None
+        elif request["kind"] == "studio":
+            from studio_worker import run
+            run(request, emit, lambda: Path(request["cancel_path"]).exists())
         else:
             raise ValueError("알 수 없는 작업입니다.")
         return 0

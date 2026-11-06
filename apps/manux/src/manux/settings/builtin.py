@@ -26,6 +26,8 @@ CAMERA = (
 )
 
 TRACKING = (
+    Setting("tracking.pose_enabled", False, kind="bool", doc="record optional shoulder/elbow/wrist landmarks; extra processing only during capture"),
+    Setting("tracking.pose_every_n_frames", 5, kind="int", minimum=1, maximum=30),
     Setting("tracking.num_hands", 1, kind="int", minimum=1, maximum=2,
             doc="maximum detected hands; one avoids searching continuously for a second hand"),
     Setting("tracking.min_detection_confidence", 0.6, minimum=0.05, maximum=0.95),

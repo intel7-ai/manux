@@ -26,6 +26,7 @@ from manux.data.recorder import public_source
 from manux.data.recording import read
 from manux.core.contracts import RecordingIdentity
 from manux.data.worker_job import WorkerJob
+from manux.data import studio
 
 GOAL_REPS = 30            # repetitions per gesture worth aiming for (3 postures x 10)
 GOAL_POSTURES = 3
@@ -62,7 +63,7 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
     if cache.exists():
         try:
             data = json.loads(cache.read_text(encoding="utf-8"))
-            if data.get("summary_version") == 4 and data.get("size") == stat.st_size and data.get("mtime") == int(stat.st_mtime):
+            if data.get("summary_version") == 5 and data.get("size") == stat.st_size and data.get("mtime") == int(stat.st_mtime):
                 return data
         except Exception:
             pass
@@ -105,7 +106,7 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
         coverage.setdefault(task, {})[ck] = {"reps": 0, "seconds": value}
     pc, cam_note = public_source(meta)
     data = {
-        "summary_version": 4,
+        "summary_version": 5,
         "file": path.name,
         "size": stat.st_size,
         "mtime": int(stat.st_mtime),
@@ -120,6 +121,7 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
         "reps": {k: dict(v) for k, v in reps.items()},
         "free_minutes": {task: sum(v for (t, _), v in free.items() if t == task) / 60.0 for task in NAMES if is_free(task)},
         "coverage": coverage,
+        "derived": bool(meta.get("lineage")),
         "valid_frames": valid_frames,
         "seconds": float(seconds.sum()),
         "marks": sum(1 for e in events if e.get("kind") == "mark"),
@@ -133,7 +135,7 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
 
 def dataset_summary(rec_dir: Path, *, profile=None, split=None) -> Dict[str, Any]:
     rec_dir = Path(rec_dir)
-    files = sorted(rec_dir.rglob("*.jsonl.gz")) if rec_dir.is_dir() else []
+    files = [p for p in sorted(rec_dir.rglob("*.jsonl.gz")) if not any(part.startswith(".") for part in p.relative_to(rec_dir).parts)] if rec_dir.is_dir() else []
     per: Dict[str, Dict[str, Any]] = {k: {"reps": 0, "postures": {}, "minutes": 0.0} for k in NAMES}
     out_files = []
     coverage: Dict[str, Dict[str, Dict[str, Any]]] = {k: {} for k in NAMES}
@@ -146,6 +148,8 @@ def dataset_summary(rec_dir: Path, *, profile=None, split=None) -> Dict[str, Any
         if (profile is not None and s.get("profile") != profile) or (split is not None and s.get("split") != split):
             continue
         out_files.append(s)
+        if s.get("derived"):
+            continue  # synthetic copies do not add independent capture progress
         for task, conditions in s.get("coverage", {}).items():
             target = coverage.setdefault(task, {})
             for key, values in conditions.items():
@@ -352,6 +356,8 @@ def recording_sets(folder: Path, identity: RecordingIdentity):
     """Team train data and the current user's separate eval trials, one preset, no duplicates."""
     train, evaluation, seen = [], [], set()
     for path in sorted(Path(folder).rglob("*.jsonl.gz")):
+        if any(p.startswith(".") for p in path.relative_to(folder).parts):
+            continue
         try:
             rec = read(path)
             if not rec.complete or rec.bad_lines or rec.meta.get("preset", "pinch") != identity.preset:
@@ -363,11 +369,11 @@ def recording_sets(folder: Path, identity: RecordingIdentity):
             split = rec.meta.get("split")
             if split == "train":
                 train.append(path)
-            elif split == "eval" and str(rec.meta.get("person") or rec.meta.get("profile") or "").lower() == identity.profile.lower():
+            elif split == "eval" and not rec.meta.get("lineage") and str(rec.meta.get("person") or rec.meta.get("profile") or "").lower() == identity.profile.lower():
                 evaluation.append(path)
         except (OSError, ValueError, TypeError):
             continue
-    return train, evaluation
+    return studio.training_paths(folder, train), evaluation
 
 
 def _atomic_text(path: Path, text: str):
@@ -400,6 +406,8 @@ class TrainingJob(WorkerJob):
 
     def start(self, epochs=20, gestures=None):
         try:
+            if getattr(self, "blocked", lambda: False)():
+                raise ValueError("스튜디오·공유 작업이 끝난 뒤 학습을 시작하세요.")
             identity = self.identity() if self.identity else RecordingIdentity("local")
             if not self.specs:
                 raise ValueError("학습 가능한 동작 구성이 없습니다.")
@@ -476,14 +484,15 @@ class TrainingCenterService:
     """Service bundle injected into `ui.bridge.Bridge` by `desktop.py` so `ui` never imports `data`."""
 
     def __init__(self, config_dir: Path, data_dir: Path, recordings_dir: Path, *,
-                 model_path: Optional[Path] = None, specs=None, on_ready=None, env_files=()) -> None:
+                 model_path: Optional[Path] = None, specs=None, on_ready=None, env_files=(), store_dir=None) -> None:
         self.config_dir = Path(config_dir)
         self.data_dir = Path(data_dir)
         self.recordings_dir = Path(recordings_dir)
         self.plans_path = plans.plans_file(self.config_dir)
         self.model_path = Path(model_path) if model_path is not None else self.data_dir / "models" / "gesture_tcn.onnx"
         self.exports_dir = self.data_dir / "exports"
-        self.store_dir = self.data_dir / "models" / "personal"
+        self.store_dir = Path(store_dir) if store_dir is not None else self.data_dir / "models" / "personal"
+        self.simulation_config = {}
         self.profile = ""
         self.split = "train"
         self.preset_name = "pinch"
@@ -500,6 +509,24 @@ class TrainingCenterService:
         self.job = TrainingJob(self.recordings_dir, self.model_path, cache_dir=self.data_dir / "features",
                                specs=specs, identity=self.identity, store_dir=self.store_dir, on_done=on_ready)
         self.hub_job = WorkerJob(self.data_dir / "hub-jobs")
+        self.studio_job = WorkerJob(self.data_dir / "studio-jobs", on_done=lambda event: (
+            on_ready(event) if on_ready is not None and event.get("store") else None))
+        self.job.blocked = lambda: self.studio_job.running or self.hub_job.running
+
+    def studio_request(self, action, **values):
+        if self.job.running or self.hub_job.running:
+            return self.studio_job.fail("학습·공유 작업이 끝난 뒤 시작하세요.")
+        return self.studio_job.start_request({"kind": "studio", "action": action,
+            "recordings_dir": str(self.recordings_dir), "store": str(self.store_dir),
+            "profile": self.profile, "preset": self.preset_name,
+            "cache_dir": str(self.data_dir / "features"), **self.simulation_config, **values})
+
+    def studio_result(self):
+        state = self.studio_job.snapshot()
+        job_id = state.get("result", {}).get("job_id", "")
+        if not re.fullmatch(r"[0-9a-f]{32}", job_id):
+            raise ValueError("완료된 작업 결과가 없습니다.")
+        return json.loads((self.studio_job.jobs_dir / job_id / "result.json").read_text(encoding="utf-8"))
 
     def identity(self) -> RecordingIdentity:
         return RecordingIdentity(self.profile, self.preset_name, self.split)
@@ -514,8 +541,8 @@ class TrainingCenterService:
             if action not in ("status", "download", "upload"):
                 raise ValueError("알 수 없는 허브 작업입니다.")
             profile = self.identity().profile if action == "upload" else ""
-            if self.job.running:
-                raise ValueError("학습이 끝난 뒤 허브 작업을 시작하세요.")
+            if self.job.running or self.studio_job.running:
+                raise ValueError("학습·스튜디오 작업이 끝난 뒤 허브 작업을 시작하세요.")
             return self.hub_job.start_request({"kind": "hub", "action": action, "profile": profile,
                 "preset": self.preset_name, "repo": self.repo, "config_dir": str(self.config_dir),
                 "env_files": [str(path) for path in self.env_files], "recordings_dir": str(self.recordings_dir)})
@@ -535,6 +562,7 @@ class TrainingCenterService:
     def close(self):
         self.job.stop()
         self.hub_job.stop()
+        self.studio_job.stop()
 
     # catalog & capture_plan helpers for RecordingPlanEditor and Bridge
     categories = CATEGORIES

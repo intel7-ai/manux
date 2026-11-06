@@ -115,7 +115,7 @@ class WorkerJob:
             self.state["stage"] = "중단 요청 중"
             proc = self.proc
             kind = self.state.get("kind")
-        if kind == "train":
+        if kind in ("train", "studio"):
             return  # checked at epoch/validation/install boundaries; never kill inside atomic installation
         if os.name == "nt":
             subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
