@@ -68,6 +68,22 @@ def test_replacing_one_component_preserves_other_weights_threshold_and_choice(tm
     assert load_model(second, "local3d-v1", 133).card.classes == ("none", "left", "right")
 
 
+@pytest.mark.parametrize("logits", [((4., 0.),), ((4., 0.), (0., 5.)), ((-3., 2.), (6., -1.), (1., 1.))])
+def test_neutral_reduction_preserves_normalized_component_scores(tmp_path, logits):
+    paths, scores = [], []
+    for index, values in enumerate(logits):
+        path = tmp_path / f"component-{index}.onnx"
+        component(path, f"gesture_{index}", logits=values)
+        paths.append(path)
+        probabilities = np.exp(np.asarray(values) - max(values))
+        scores.append(probabilities / probabilities.sum())
+    output = tmp_path / "combined.onnx"
+    compose(None, paths, output)
+    expected = np.array([min(row[0] for row in scores), *(row[1] for row in scores)])
+    actual = load_model(output, "local3d-v1", 133).predictor(np.zeros((15, 133), np.float32))
+    np.testing.assert_allclose(actual, expected / expected.sum(), rtol=1e-6, atol=1e-7)
+
+
 def test_tampered_component_is_rejected_before_composing(tmp_path):
     source = tmp_path / "input.onnx"
     component(source, "left")

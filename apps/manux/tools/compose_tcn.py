@@ -105,7 +105,10 @@ def compose(previous, replacements, output):
         nodes.append(h.make_node("Softmax", [component["output"]], ["prob_" + identifier], axis=1))
         tensors.append(nh.from_array(np.array([component["classes"].index("none")], np.int64), "neutral_idx_" + identifier))
         nodes.append(h.make_node("Gather", ["prob_" + identifier, "neutral_idx_" + identifier], ["neutral_" + identifier], axis=1))
-    nodes.append(h.make_node("Min", ["neutral_" + identifier for identifier in used], ["score_none"]))
+    # Dynamic pairwise Minimum fails in the local Intel NPU compiler. Reduction
+    # preserves the same minimum across component-neutral probabilities.
+    nodes.append(h.make_node("Concat", ["neutral_" + identifier for identifier in used], ["neutral_scores"], axis=1))
+    nodes.append(h.make_node("ReduceMin", ["neutral_scores"], ["score_none"], axes=[1], keepdims=1))
     scores = ["score_none"]
     for name in classes[1:]:
         identifier = routes[name]
