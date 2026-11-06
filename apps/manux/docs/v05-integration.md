@@ -20,4 +20,6 @@ rock_sign 클래스는 spatial_pose.rock_sign 동작으로 바꾸었다. window.
 
 검증은 pytest 전체·tests/architecture·Qt 화면 시험·저장소 밖 subtree clone pytest·python -m manux --self-check로 구분한다. 설치본 크기는 PR의 실제 CI package-size.json 측정값을 따른다. 합성 시험/자가 진단은 실제 웹캠·Windows 사용성이나 인식률 검증이 아니다.
 
+통합 CI에서 Trainer 번들의 창 검사가 한 번 90초 제한을 넘겼다. 원인 확인을 위해 screenshot 검사에만 60초 후 스레드 스택을 기록하고 CI가 격리된 임시 앱 데이터 폴더의 로그를 수집한다. 검사 제한 시간·성공 기준은 유지한다. 실제 재실행 결과와 재현 여부는 PR에 기록한다.
+
 이 통합 PR이 preview에 병합되면 #82·#91·testing의 기능 통합을 대체한다. 해당 PR을 닫는 것은 사람이 수행한다. production 발행은 별도 preview → production PR 이후다.

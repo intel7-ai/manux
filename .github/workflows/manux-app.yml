@@ -94,6 +94,8 @@ jobs:
           if (Test-Path $out) { Get-Content $out } else { throw "no self-check result" }
           if ($p.ExitCode -ne 0) { throw "MANUX.exe --self-check exited $($p.ExitCode)" }
       - name: Built app opens its window (no webcam on the runner, no Windows input)
+        env:
+          MANUX_DATA_DIR: ${{ runner.temp }}/manux-ui-state
         run: |
           $shot = "$env:RUNNER_TEMP/window.png"
           $p = Start-Process build/dist/MANUX/MANUX.exe -ArgumentList '--no-windows-input', '--no-tray', '--screenshot', "`"$shot`"" -WindowStyle Hidden -PassThru
@@ -126,6 +128,7 @@ jobs:
           path: |
             ${{ runner.temp }}/*-check.json
             ${{ runner.temp }}/window.png
+            ${{ runner.temp }}/manux-ui-state/logs/app_latest.log
             apps/manux/build/package-size.json
           if-no-files-found: ignore
           retention-days: 14
