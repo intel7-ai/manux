@@ -141,7 +141,7 @@ Popup {
                                 anchors.fill: parent
                                 anchors.margins: 8
                                 Copy {
-                                    text: "💡 마우스 클릭·스크롤·창 전환은 0ms 즉시 반응을 위해 [⚡ 포즈 스튜디오 (MLP)]에서 전담 학습됩니다. 학습센터는 시계열 쓸기 궤적(Swipes)을 학습합니다."
+                                    text: "⚡ 마우스 클릭·드래그·창 제어 동작은 [포즈 스튜디오 (MLP)]로 완전히 이전되었습니다. 학습센터는 TCN 시계열 쓸기(Swipes) 동작만 관리합니다."
                                     color: Theme.Studio.mintDark
                                     font.bold: true
                                     font.pixelSize: 12

@@ -1136,8 +1136,12 @@ class Bridge(QObject):
     @Property("QVariantList", notify=trainingChanged)
     def trainingRows(self):
         category = getattr(self, "training_filter", "전체")
-        return [{**r, "selected": r["key"] in self.training_selected} for r in self.training_rows
-                if category == "전체" or r["category"] == category]
+        return [
+            {**r, "selected": r["key"] in self.training_selected}
+            for r in self.training_rows
+            if r["category"] not in ("클릭·드래그", "창·모드")
+            and (category == "전체" or r["category"] == category)
+        ]
 
     @Property("QStringList", notify=trainingChanged)
     def selectedTrainingKeys(self):
@@ -1213,11 +1217,11 @@ class Bridge(QObject):
 
     @Property("QStringList", constant=True)
     def trainingCategories(self):
-        return list(self.tc.categories)
+        return [c for c in self.tc.categories if c not in ("클릭·드래그", "창·모드")]
 
     @Property(str, notify=trainingChanged)
     def trainingCatalog(self):
-        return f"전체 {self.tc.total_tasks}개 녹화 항목 · {len(self.trainingRows)}개 표시 · 미학습 동작도 녹화 가능"
+        return f"TCN 시계열 모션 {len(self.trainingRows)}개 표시 (클릭·창 제어는 포즈 스튜디오 전담)"
 
     @Slot(str)
     def setTrainingFilter(self, category):
