@@ -17,6 +17,7 @@ from manux.perception.local3d import FEATURES, FEATURE_VERSION
 from manux.settings.paths import resolve
 from tcn_data import LEGACY_RULES, load
 from manux.data.rule_replay import rule_action
+from manux.data.catalog import BY_KEY
 
 
 def measure(segments, mapping, model=None, mode="pinch", known_labels=None):
@@ -32,7 +33,9 @@ def measure(segments, mapping, model=None, mode="pinch", known_labels=None):
             rec = Recording(Path("evaluation"), {"frame_aspect": segment.aspect, "camera": {"mirror": False}},
                             frames=segment.frames)
             for i, item in enumerate(replay(rec)):
-                ctx = FrameContext(item.frame, Stage.TUTORIAL, OutputTarget.PRACTICE, mode)
+                task = BY_KEY.get((segment.frames[i].get("label") or {}).get("task"))
+                frame_mode = "motion" if task is not None and task.direction else mode
+                ctx = FrameContext(item.frame, Stage.TUTORIAL, OutputTarget.PRACTICE, frame_mode)
                 for intent in feature.step(item.hand, ctx):
                     if intent.phase in ("tap", "begin"):
                         events[i] = by_gesture.get(intent.gesture)
@@ -64,8 +67,10 @@ def measure(segments, mapping, model=None, mode="pinch", known_labels=None):
 
 
 def validate_and_install(candidate_path, recordings, store, *, mode="pinch", cache_dir=None, loader=load_model,
-                         cancelled=None):
+                         cancelled=None, expected_active=...):
     token = active_token(store)
+    if expected_active is not ... and token != expected_active:
+        raise ValueError("학습 중 사용 모델이 바뀌었습니다. 다시 평가해 주세요.")
     current = load_active(store, FEATURE_VERSION, FEATURES) if token is not None else None
     before_model = sha256(Path(candidate_path).read_bytes()).hexdigest()
     before_card = sha256(card_path(Path(candidate_path)).read_bytes()).hexdigest()

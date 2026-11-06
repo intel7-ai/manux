@@ -26,6 +26,7 @@ from manux.data.recorder import public_source
 from manux.data.recording import read
 from manux.core.contracts import RecordingIdentity
 from manux.data.worker_job import WorkerJob
+from manux.data.training_progress import view as progress_view
 
 GOAL_REPS = 30            # repetitions per gesture worth aiming for (3 postures x 10)
 GOAL_POSTURES = 3
@@ -62,7 +63,7 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
     if cache.exists():
         try:
             data = json.loads(cache.read_text(encoding="utf-8"))
-            if data.get("summary_version") == 4 and data.get("size") == stat.st_size and data.get("mtime") == int(stat.st_mtime):
+            if data.get("summary_version") == 5 and data.get("size") == stat.st_size and data.get("mtime") == int(stat.st_mtime):
                 return data
         except Exception:
             pass
@@ -96,7 +97,7 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
         elif meta.get("mode") == "free" and lab.get("target") == NONE:
             free[(NONE, "use")] += float(seconds[i])
     for (task, ck, _, _), item in repetitions.items():
-        if item["do"] > 0 and (not item.get("new") or (item["do"] >= 0.25 and item["rest"])):
+        if item["do"] > 0 and (not item.get("new") or (item["do"] >= 0.15 and item["rest"])):
             reps[task][ck] += 1
     for task, by_condition in reps.items():
         coverage.setdefault(task, {})
@@ -105,7 +106,7 @@ def _summarise_file(path: Path) -> Dict[str, Any]:
         coverage.setdefault(task, {})[ck] = {"reps": 0, "seconds": value}
     pc, cam_note = public_source(meta)
     data = {
-        "summary_version": 4,
+        "summary_version": 5,
         "file": path.name,
         "size": stat.st_size,
         "mtime": int(stat.st_mtime),
@@ -386,7 +387,7 @@ def _atomic_text(path: Path, text: str):
 
 
 class TrainingJob(WorkerJob):
-    """Unified model training + separate validation + atomic installation in the worker."""
+    """Selected classifier training + full validation + atomic installation in the worker."""
 
     def __init__(self, rec_dir, model_path, *, tools_dir=None, cache_dir=None,
                  specs=None, identity=None, store_dir=None, on_done=None):
@@ -408,7 +409,8 @@ class TrainingJob(WorkerJob):
             return self.start_request({"kind": "train", "recordings_dir": str(self.rec_dir),
                 "profile": identity.profile, "preset": identity.preset, "mode": identity.preset if identity.preset != "trigger" else "pointer",
                 "store": str(self.store_dir), "cache_dir": str(self.cache_dir), "specs": self.specs,
-                "epochs": max(1, int(epochs)), "focus_labels": sorted({BY_KEY[k].label for k in gestures}) if gestures else []})
+                "epochs": max(1, int(epochs)), "focus_labels": sorted({BY_KEY[k].label for k in gestures}) if gestures else [],
+                "task_names": [BY_KEY[k].name for k in gestures] if gestures else []})
         except (ValueError, OSError) as error:
             return self.fail(str(error))
 
@@ -476,8 +478,9 @@ class TrainingCenterService:
     """Service bundle injected into `ui.bridge.Bridge` by `desktop.py` so `ui` never imports `data`."""
 
     def __init__(self, config_dir: Path, data_dir: Path, recordings_dir: Path, *,
-                 model_path: Optional[Path] = None, specs=None, on_ready=None, env_files=()) -> None:
+                 model_path: Optional[Path] = None, specs=None, on_ready=None, env_files=(), policy_store=None, on_policy=None) -> None:
         self.config_dir = Path(config_dir)
+        self.policy_store, self.on_policy = policy_store, on_policy
         self.data_dir = Path(data_dir)
         self.recordings_dir = Path(recordings_dir)
         self.plans_path = plans.plans_file(self.config_dir)
@@ -596,15 +599,28 @@ class TrainingCenterService:
         summary["coverage"] = dataset_summary(self.recordings_dir, profile=self.profile, split=self.split)["coverage"]
         report = model_report(self.current_model())
         rows = gesture_rows(summary, report)
+        policies = self.policy_store.describe(report or {}) if self.policy_store else {}
         mode = self.preset_name if self.preset_name != "trigger" else "pointer"
         for row in rows:
+            policy = policies.get(BY_KEY[row["key"]].gesture, {})
+            row.update(tcn_mode=policy.get("mode", "rules"), model_id=policy.get("model_id", ""))
             declaration = self.job.specs.get(BY_KEY[row["key"]].gesture, {})
-            if mode not in declaration.get("modes", []):
+            if mode not in declaration.get("modes", []) and "motion" not in declaration.get("modes", []):
                 row["can_train"] = False
                 if BY_KEY[row["key"]].label != NONE:
-                    row["advice"] = "녹화·공유 가능 · 이 모드의 직접 학습 적용은 아직 지원하지 않습니다."
+                    row["advice"] = "녹화·공유 가능 · 제어 전환·안전 동작 또는 연속 커서 이동은 기존 판정을 사용합니다."
         storage = storage_text(summary)
         return summary, report, rows, storage
 
     def export(self) -> Path:
         return export_package(self.current_model(), self.exports_dir)
+
+    def progress(self):
+        return progress_view(self.job.snapshot())
+
+    def set_policy(self, key, mode, expected_model_id):
+        if self.policy_store is None or key not in BY_KEY:
+            raise ValueError("동작별 모델 설정을 사용할 수 없습니다.")
+        self.policy_store.set(model_report(self.current_model()) or {}, BY_KEY[key].gesture, mode, expected_model_id)
+        if self.on_policy is not None:
+            self.on_policy()

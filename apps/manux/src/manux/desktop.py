@@ -23,7 +23,7 @@ from manux.actions.bindings import Binding
 from manux.app import _FEATURES, _camera_config, build_engine, schema, pipeline_parts, read_bindings, training_specs
 from manux.capture.camera import LatestFrameCamera, brightness
 from manux.core.contracts import FrameInfo, HandObservation, OutputTarget, RecordingIdentity, RuntimeRequest
-from manux.data.catalog import tasks_for
+from manux.data.catalog import BY_KEY, tasks_for
 from manux.data.guided import GuidedSession
 from manux.data.recorder import SessionRecorder
 from manux.data.recording import read, replay
@@ -38,6 +38,7 @@ from manux.ml.store import active_token, load_active
 from manux.perception.local3d import FEATURES, FEATURE_VERSION
 from manux.settings.paths import AppPaths, resolve
 from manux.settings.store import Settings, load
+from manux.settings.tcn_policy import GesturePolicies
 from manux.ui.view import SeenHand, ViewFrame
 
 POINTER_MOVE = "pointer.move"
@@ -153,7 +154,7 @@ class DesktopRuntime:
     """Runs the input -> engine loop on its own thread and keeps the newest ViewFrame."""
 
     def __init__(self, engine: Engine, source, settings: Settings, *, model_store=None, model_token=None,
-                 model_status="") -> None:
+                 model_status="", policy_store=None, current_model=None) -> None:
         self.engine = engine
         self.source = source
         self.settings = settings
@@ -173,6 +174,8 @@ class DesktopRuntime:
         self._attempted_model_token = model_token
         self._next_model_check = 0.
         self.model_status = model_status
+        self.policy_store = policy_store
+        self.current_model = current_model
         engine.settings_for = self.settings_for
         # tracking test (S6): owned by this thread; the UI asks with start/close and reads ViewFrame.tracking
         self.log_dir: Optional[Path] = None
@@ -469,8 +472,19 @@ class DesktopRuntime:
             landmarks=hand.landmarks if hand is not None else None, mirrored=frame.mirrored, aspect=frame.aspect,
             camera_mode=self._metrics[0], brightness=self._metrics[1], low_light=self._metrics[2],
             fps=float(self.source.fps), detect_ms=float(detect_ms), actions=actions,
-            model_status=self.model_status, tracking=tracking, recent=self.recent,
+            model_status=self._model_view_status(), tracking=tracking, recent=self.recent,
             rec=self._rec_view(frame.t), frame_age_ms=max(0.0, (time.perf_counter() - frame.t) * 1000.0)))
+
+    def _model_view_status(self):
+        for feature in self.engine.features:
+            prediction = getattr(feature, "last_prediction", None) if feature.id == "tcn" else None
+            if prediction is not None:
+                name, confidence = prediction
+                gesture = feature.card.gestures.get(name)
+                mode = {"rules": "규칙", "shadow": "시험", "apply": "적용"}.get(feature.policies.get(gesture), "중립")
+                title = BY_KEY[name].name if name in BY_KEY else name
+                return f"{self.model_status} · TCN {mode} 예측: {title} {confidence:.0%}"
+        return self.model_status
 
     def request(self, command: RuntimeRequest):
         if self._stop.is_set():
@@ -481,6 +495,11 @@ class DesktopRuntime:
     def _drain_runtime_requests(self):
         while not self._runtime_requests.empty():
             command = self._runtime_requests.get_nowait()
+            if command.kind == "tcn_policy" and self.current_model is not None and self.policy_store is not None:
+                parts = pipeline_parts(self.current_model, self.engine.router.bindings,
+                                       self.policy_store.modes(self.current_model.card.raw))
+                self.engine.replace_pipeline(parts[0], (), parts[1], parts[2])
+                self.model_status = "TCN 동작별 설정 갱신됨 · 제어를 다시 켜세요"
             if command.kind == "activate_model":
                 previous = self.model_store, self._model_token, self._attempted_model_token
                 self.model_store = Path(command.path)
@@ -502,12 +521,14 @@ class DesktopRuntime:
             self._attempted_model_token = token
             self.engine.prepare_model_reload()
             model = load_active(self.model_store, FEATURE_VERSION, FEATURES)
-            parts = pipeline_parts(model, self.engine.router.bindings)
+            parts = pipeline_parts(model, self.engine.router.bindings,
+                                   self.policy_store.modes(model.card.raw) if self.policy_store else None)
             if self._stop.is_set() or active_token(self.model_store) != token:
                 return False                   # a newer installation superseded this load
             self.engine.replace_pipeline(parts[0], (), parts[1], parts[2])
             self._model_token = token
-            self.model_status = "TCN 직접 판정 · 모델 갱신됨"
+            self.current_model = model
+            self.model_status = "TCN 모델 갱신됨 · 학습센터에서 동작별 시험/적용 확인"
             return True
         except (ModelError, OSError, ValueError) as error:
             self.model_status = f"모델 갱신 실패 · 기존 모델 유지 ({getattr(error, 'text', '정보 확인 필요')})"
@@ -515,7 +536,7 @@ class DesktopRuntime:
 
 
 def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, tcn_store=None,
-          tcn_mode="gate", binding_overrides=None) -> DesktopRuntime:
+          tcn_mode="gate", binding_overrides=None, policy_store=None) -> DesktopRuntime:
     if tcn_store is not None and (tcn_model is not None or tcn_mode != "direct"):
         raise ValueError("a model store requires direct mode and cannot be combined with a model path")
     if tcn_mode == "direct" and tcn_model is None and tcn_store is None:
@@ -536,12 +557,14 @@ def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, t
         gate = tcn_gate.create_gate(Path(tcn_model), settings.section("tcn_gate"), eligible=eligible)
         filters = (gate.gate,) if gate.gate is not None else ()
         status = "TCN 확인기" if filters else f"TCN 확인기 꺼짐 · {gate.text}"
-    engine = build_engine(settings, "pinch", filters, direct_model=direct, binding_overrides=binding_overrides)
+    engine = build_engine(settings, "pinch", filters, direct_model=direct, binding_overrides=binding_overrides,
+                          policies=policy_store.modes(direct.card.raw) if policy_store and direct else None)
     if windows:
         from manux.output.windows import Win32Backend, WindowsOutputSink
         from manux.platform.monitors import ScreenLayout
         engine.sinks[OutputTarget.WINDOWS] = WindowsOutputSink(Win32Backend(), ScreenLayout.detect())
-    return DesktopRuntime(engine, source, settings, model_store=tcn_store, model_token=token, model_status=status)
+    return DesktopRuntime(engine, source, settings, model_store=tcn_store, model_token=token, model_status=status,
+                          policy_store=policy_store, current_model=direct)
 
 
 def default_hand_model(paths: AppPaths) -> Path:
@@ -571,6 +594,7 @@ def main(argv=None) -> int:
     updater = Updater(info, paths.frozen)
     updater.start()
     settings = load(schema(), paths.config_dir)
+    policy_store = GesturePolicies(paths.config_dir / "tcn-policies.json")
     default_store = paths.data_dir / "models" / "personal"
     if args.tcn_model is None and args.tcn_store is None and (default_store / "active.json").is_file():
         args.tcn_store, args.tcn_mode = default_store, "direct"
@@ -583,7 +607,7 @@ def main(argv=None) -> int:
     try:
         runtime = build(settings, source, windows=not args.no_windows_input and sys.platform == "win32",
                         tcn_model=args.tcn_model, tcn_store=args.tcn_store, tcn_mode=args.tcn_mode,
-                        binding_overrides=read_bindings(args.bindings))
+                        binding_overrides=read_bindings(args.bindings), policy_store=policy_store)
     except (ModelError, OSError, ValueError) as error:
         source.close()
         print(error, file=sys.stderr)
@@ -599,6 +623,7 @@ def main(argv=None) -> int:
     from manux.platform.tray import QtTray
     from manux.ui.bridge import run
     tc = TrainingCenterService(paths.config_dir, paths.data_dir, paths.recordings_dir, model_path=args.tcn_model,
+                               policy_store=policy_store, on_policy=lambda: runtime.request(RuntimeRequest("tcn_policy")),
                                env_files=(Path(sys.executable).parent / ".env",) if paths.frozen else (),
                                specs=training_specs(), on_ready=lambda event: runtime.request(
                                    RuntimeRequest("activate_model", event["store"])))

@@ -52,8 +52,8 @@ def schema() -> Schema:
 
 def build_engine(settings: Settings, mode: str = "pointer", filters: tuple[IntentFilter, ...] = (),
                  *, recording: bool = False, direct_model: LoadedModel | None = None,
-                 binding_overrides=None) -> Engine:
-    features, router, sources = pipeline_parts(direct_model, binding_overrides)
+                 binding_overrides=None, policies=None) -> Engine:
+    features, router, sources = pipeline_parts(direct_model, binding_overrides, policies)
     if direct_model is not None and filters:
         raise ValueError("direct mode and confirmation filters cannot be used together")
     engine = Engine(features, filters, router,
@@ -67,7 +67,7 @@ def build_engine(settings: Settings, mode: str = "pointer", filters: tuple[Inten
     return engine
 
 
-def pipeline_parts(direct_model=None, binding_overrides=None):
+def pipeline_parts(direct_model=None, binding_overrides=None, policies=None):
     """Assemble recognizers and checked bindings; no stage or output side effects."""
     defaults = {}
     phases = {}
@@ -77,10 +77,11 @@ def pipeline_parts(direct_model=None, binding_overrides=None):
     features = [factory() for _, factory in _FEATURES]
     sources = {}
     if direct_model is not None:
-        direct = TcnFeature(direct_model.predictor, direct_model.card)
+        direct = TcnFeature(direct_model.predictor, direct_model.card, policies)
         phases.update(direct.gesture_phases)
-        sources = {g: direct.id for g in direct.gestures}
-        features.append(direct)
+        sources = {g: direct.id for g in direct.authoritative}
+        if any(mode != "rules" for mode in direct.policies.values()):
+            features.append(direct)
     bindings, problems = resolve_bindings(defaults, binding_overrides, gesture_phases=phases)
     if problems:
         raise ValueError(f"invalid bindings: {problems}")
