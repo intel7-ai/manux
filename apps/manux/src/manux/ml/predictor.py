@@ -72,19 +72,13 @@ class LoadedModel:
     predictor: Predictor
 
 
-def _onnx_session(path: Path) -> Any:
-    try:
-        import onnxruntime as ort
-    except ImportError as exc:
-        raise ModelError("runtime_missing", "pip install onnxruntime") from exc
-    try:
-        return ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
-    except Exception as exc:  # onnxruntime raises its own exception types for broken files
-        raise ModelError("unreadable", f"{path.name}: {type(exc).__name__}") from exc
+def _onnx_session(path: Path, device=None) -> Any:
+    from manux.ml.backends import session
+    return session(path, device)
 
 
 def load_model(path: Path, feature_version: str, features: Optional[int] = None,
-               session_factory: Optional[Callable[[Path], Any]] = None) -> LoadedModel:
+               session_factory: Optional[Callable[[Path], Any]] = None, *, device=None) -> LoadedModel:
     """Card + ONNX checked and ready, or ModelError (nothing is half-loaded).
 
     `feature_version` / `features` are what the caller computes (e.g. `perception.local3d`); `ml`
@@ -97,7 +91,7 @@ def load_model(path: Path, feature_version: str, features: Optional[int] = None,
     expected = card.raw.get("model_sha256")
     if expected is not None and sha256(path.read_bytes()).hexdigest() != expected:
         raise ModelError("checksum", path.name)
-    session = (session_factory or _onnx_session)(path)
+    session = session_factory(path) if session_factory else _onnx_session(path, device)
     try:
         predictor = OnnxPredictor(session, card)
     except ModelError:

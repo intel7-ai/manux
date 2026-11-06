@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import ".." as Current
+import "../theme" as Theme
 
 ApplicationWindow {
     id: window
@@ -37,7 +38,7 @@ ApplicationWindow {
     readonly property color muted: "#526575"
     readonly property color mint: "#46E5BD"
     readonly property color line: "#DEE5EA"
-    font.family: "Malgun Gothic"
+    font.family: Theme.Studio.font
 
     component TextLabel: Label {
         color: window.navy
@@ -257,7 +258,7 @@ ApplicationWindow {
                 TextLabel { text: dashboard.appName; font.pixelSize: 26; font.bold: true }
                 TextLabel { text: "INPUT STUDIO"; font.pixelSize: 11; font.letterSpacing: 1.4; color: window.muted }
                 Item { Layout.fillWidth: true }
-                ActionButton { text: "학습 센터"; onClicked: trainingCenter.open() }
+                ActionButton { objectName: "openLearningCenter"; text: "학습 센터"; onClicked: {dataCenter.pageIndex=0;dataCenter.open()} }
                 ActionButton { objectName: "openDataStudio"; text: "녹화·시뮬레이터"; onClicked: {dataCenter.pageIndex=1;dataCenter.open()} }
                 ActionButton {
                     text: dashboard.chosenHand ? dashboard.chosenHand + " · 다시 설정" : "사용할 손 설정"
@@ -990,7 +991,7 @@ ApplicationWindow {
 
     RecordingPlanDialog { id: capturePlan; objectName: "recordingPlanDialog"; editor: dashboard.recordingPlan }
 
-    // Secondary v0.4 data tools; the original studio remains the primary UI.
+    // Shared primary learning center: same recording, model and sharing UI in both layouts.
     Current.LearningCenter {
         id: dataCenter
         objectName: "studioDataManagement"
@@ -1041,7 +1042,7 @@ ApplicationWindow {
                     text: "MANUX · " + dashboard.receptionText
                     color: "#F5F7F8"
                     font.pixelSize: 13
-                    font.family: "Malgun Gothic"
+                    font.family: Theme.Studio.font
                 }
             }
         }
@@ -1085,7 +1086,7 @@ ApplicationWindow {
                     color: dashboard.motionBadgeOn ? "#112331" : "#F5F7F8"
                     font.pixelSize: 16
                     font.bold: true
-                    font.family: "Malgun Gothic"
+                    font.family: Theme.Studio.font
                 }
             }
         }

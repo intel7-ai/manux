@@ -258,11 +258,11 @@ def merge_manifest(existing: Iterable[Mapping[str, Any]],
     """Deduplicate manifest entries by `sha256` (or `path`), sorted by `path`."""
     by_sha: Dict[str, Dict[str, Any]] = {}
     for row in existing:
-        sha = str(row.get("sha256") or "")
+        sha = str(row.get("model_id") or row.get("sha256") or "")
         if sha:
             by_sha[sha] = dict(row)
     for row in added:
-        sha = str(row.get("sha256") or "")
+        sha = str(row.get("model_id") or row.get("sha256") or "")
         if sha:
             by_sha[sha] = dict(row)
     return sorted(by_sha.values(), key=lambda r: (str(r.get("path", "")), str(r.get("sha256", ""))))
@@ -330,12 +330,14 @@ def summarize_entries(entries: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
 
 
 def push_to_hub(hub: RemoteHub, recordings_dir: Path, *,
-                models: Sequence[Path] = (), dry_run: bool = False) -> Dict[str, Any]:
+                models: Sequence[Path] = (), dry_run: bool = False, classes: Sequence[str] = ()) -> Dict[str, Any]:
     """Validate local recordings (and optional models) and upload only new files to the Hub."""
     valid_recs, errors = scan_local_recordings(recordings_dir)
     if errors:
         raise HubError("refusing to push due to invalid recording(s):\n  " + "\n  ".join(errors))
     valid_models = [validate_model_pair(m) for m in models]
+    if classes:
+        valid_recs = [r for r in valid_recs if filter_manifest([r.entry], classes=classes)]
 
     remote_entries = hub.read_manifest()
     remote_shas = {str(r.get("sha256")) for r in remote_entries if r.get("sha256")}
@@ -521,6 +523,22 @@ class HfDatasetHub:
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(cached, dest)
         return dest
+
+
+def configured_client(request=None):
+    """Worker-only configuration. Credentials never enter UI state or job requests."""
+    request = request or {}
+    if not getattr(__import__("sys"), "frozen", False): load_dotenv()
+    load_dotenv([Path(p) for p in request.get("env_files", ())], override=True)
+    provider = os.environ.get("MANUX_HUB_PROVIDER", "huggingface").lower()
+    if provider == "github":
+        from github_hub import GitHubDatasetHub
+        repo = os.environ.get("MANUX_GH_REPO", "")
+        return GitHubDatasetHub(repo, branch=os.environ.get("MANUX_GH_BRANCH", "main")), repo, provider
+    if provider != "huggingface": raise HubError("MANUX_HUB_PROVIDER는 huggingface 또는 github입니다.")
+    repo = os.environ.get(ENV_REPO) or request.get("repo") or DEFAULT_REPO
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo): raise HubError("허브 저장소 주소를 확인하세요.")
+    return HfDatasetHub(repo, create_repo=False), repo, provider
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:

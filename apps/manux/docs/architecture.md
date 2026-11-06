@@ -80,9 +80,15 @@ apps/manux/
 | `cv2`, `mediapipe` | `capture`, `tracking` |
 | `pyautogui`, `ctypes`, `uiautomation`, `win32*` | `output`, `platform` |
 | `onnxruntime` | `ml` |
+| `openvino` (선택 의존성) | `ml` (실제 GPU/NPU 실행 장치 확인) |
 | `torch` | `tools/`만 (앱 프로세스에는 없음. 설치본의 별도 MANUXWorker에 포함) |
 
 ## 5. 기능 모듈
+
+testing의 `spatial_pose`는 별도 96차원 영상 관절 특징·NumPy MLP와 기본 꺼짐의 거부권이다.
+포즈 수집은 data, 특징은 perception, 모델은 ml, 학습·공유는 tools/worker에 둔다.
+같은 패키지의 증거 생성과 guard만 상태를 공유하며 TCN의 가중치·특징·의도 출처를 바꾸지 않는다.
+공통 모델 보관함·HF/GitHub 네트워크도 worker가 담당하고 UI는 결과를 표시한다.
 
 기능은 `src/manux/features/<id>/`에 하나씩 둔다. 각 기능은 [계약 §5](contracts.md#5-기능-모듈-feature)의 `Feature`를 구현하고 다음을 함께 가진다.
 

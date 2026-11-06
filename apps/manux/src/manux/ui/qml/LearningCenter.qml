@@ -23,7 +23,8 @@ Popup {
     anchors.centerIn: parent
     width: Math.min(1240, parent.width-24); height: Math.min(900, parent.height-24)
     modal: true; focus: true; padding: Theme.Studio.pad; closePolicy: Popup.CloseOnEscape
-    onOpened: { profileDraft=controller.trainingProfile; controller.openTraining();library.open() }
+    onPageIndexChanged: {if(controller)controller.setPoseStudioVisible(opened && pageIndex===5)}
+    onOpened: {controller.setPoseStudioVisible(pageIndex===5); profileDraft=controller.trainingProfile; controller.openTraining();library.open() }
     onClosed: {library.hide();controller.closeTraining()}
     background: Rectangle { radius: Theme.Studio.radius; color: Theme.Studio.surface; border.color: Theme.Studio.line }
     component Copy: Label {
@@ -33,7 +34,7 @@ Popup {
     contentItem: ColumnLayout {
         spacing: Theme.Studio.gap
         RowLayout {
-            Layout.fillWidth: true
+            Layout.fillWidth: true; Layout.minimumHeight: implicitHeight
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 2
                 Copy { text: "학습 센터"; font.pixelSize: Theme.Studio.title; font.bold: true }
@@ -45,7 +46,7 @@ Popup {
             StudioButton { text: "닫기"; onClicked: studio.close() }
         }
         Panel {
-            Layout.fillWidth: true; implicitHeight: identityRow.implicitHeight + Theme.Studio.gap*2
+            Layout.fillWidth: true; implicitHeight: identityRow.implicitHeight + Theme.Studio.gap*2; Layout.minimumHeight:implicitHeight
             RowLayout {
                 id: identityRow
                 anchors { fill: parent; margins: Theme.Studio.gap }
@@ -65,11 +66,11 @@ Popup {
             }
         }
         RowLayout {
-            Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 0; spacing: Theme.Studio.gap
+            Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 0; Layout.preferredHeight: 0; spacing: Theme.Studio.gap; clip:true
             ColumnLayout {
                 Layout.preferredWidth: Theme.Studio.navWidth; Layout.minimumWidth: studio.width<900 ? 84 : Theme.Studio.navWidth; Layout.maximumWidth: Theme.Studio.navWidth; Layout.fillHeight: true; Layout.minimumHeight: 0; spacing: 6
                 Repeater {
-                    model: ["동작", "녹화", "시뮬레이터", "모델·공유"]
+                    model: ["동작", "녹화", "시뮬레이터", "모델", "데이터 공유", "포즈 표본"]
                     StudioButton {
                         required property string modelData; required property int index
                         objectName: "studioTab_" + index
@@ -224,59 +225,16 @@ Popup {
                     }
                     }
                 }
-                ScrollView {
-                    id: modelPage; Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 0; contentWidth: availableWidth; clip: true
-                    ColumnLayout {
-                        width: modelPage.availableWidth; spacing: Theme.Studio.gap
-                        Copy { text: "모델과 검증"; font.pixelSize: Theme.Studio.title; font.bold: true }
-                        Copy { Layout.fillWidth: true; text: studio.controller.trainingModel+"\n"+studio.controller.trainingData }
-                        Copy { Layout.fillWidth: true; text: "선택한 분류기만 학습하고 다른 분류기는 그대로 보존합니다. 기존 동작 전체의 별도 eval을 통과한 후보만 설치합니다. 새 분류기는 시험 상태로 시작하며 동작별 ‘적용’을 직접 선택합니다. 버전 복원도 현재 평가를 다시 통과해야 합니다."; color: Theme.Studio.muted }
-                        Repeater {
-                            model: studio.library.modelVersions
-                            Panel {
-                                id: version; required property var modelData
-                                Layout.fillWidth: true; implicitHeight: verBody.implicitHeight+24
-                                RowLayout {
-                                    id: verBody; anchors {left:parent.left;right:parent.right;top:parent.top;margins:12}
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        Copy { Layout.fillWidth: true; text: (version.modelData.active ? "사용 중 · " : "저장 버전 · ")+version.modelData.trained; font.bold: true }
-                                        Copy { Layout.fillWidth: true; text: version.modelData.version.slice(0,8)+" · "+version.modelData.classes.join(", "); color: Theme.Studio.muted }
-                                    }
-                                    StudioButton { text: "검증 후 복원"; enabled: studio.idle && version.modelData.valid && !version.modelData.active; onClicked: {studio.confirmAction="restore";studio.confirmVersion=version.modelData.version;confirmation.open()} }
-                                }
-                            }
-                        }
-                        Flow {
-                            Layout.fillWidth: true; spacing: 8
-                            StudioButton { text: "모델 내보내기"; enabled: studio.idle; onClicked: studio.controller.exportModel() }
-                            StudioButton { text: "내보낸 폴더 열기"; onClicked: studio.controller.openExports() }
-                            StudioButton { text: "구성 진단"; enabled: studio.idle; onClicked: studio.library.diagnose() }
-                        }
-                        Repeater { model: studio.library.diagnosticRows; Copy { required property var modelData; text: modelData.name+" · "+modelData.value } }
-                        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.Studio.line }
-                        Copy { text: "팀 데이터 공유"; font.pixelSize: Theme.Studio.title; font.bold: true }
-                        Copy { Layout.fillWidth: true; text: studio.controller.hubRepo; font.bold: true }
-                        Copy { Layout.fillWidth: true; text: ".env의 HF 설정으로 연결합니다. 내 별명의 완료된 원본 관절 기록만 공유하며 영상·보정·증강본은 보내지 않습니다."; color: Theme.Studio.muted }
-                        Flow {
-                            Layout.fillWidth: true; spacing: 8
-                            StudioButton { text: "연결 확인"; enabled: studio.idle; onClicked: studio.controller.runHub("status") }
-                            StudioButton { text: "팀 데이터 받기"; enabled: studio.idle; onClicked: studio.controller.runHub("download") }
-                            StudioButton { objectName: "uploadRecordings"; text: "내 녹화 업로드"; enabled: studio.idle && studio.controller.hubCanUpload && studio.controller.trainingProfile!==""; onClicked: {studio.confirmAction="upload";confirmation.open()} }
-                        }
-                        Copy { Layout.fillWidth: true; text: studio.controller.hubStatus; color: Theme.Studio.mintDark }
-                        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.Studio.line }
-                        Copy { text: "녹화 시각화 옵션"; font.bold: true }
-                        StudioButton { text: studio.library.poseEnabled ? "팔·어깨 기록 켜짐" : "팔·어깨 기록 켜기"; primary: studio.library.poseEnabled; enabled: studio.idle; onClicked: studio.library.togglePose() }
-                        Copy { Layout.fillWidth: true; text: studio.library.poseStatus+"\n손 추적 외에 5프레임마다 추가 처리합니다. TCN 학습 특징에는 사용하지 않습니다."; color: Theme.Studio.muted }
-                    }
-                }
+                ModelLibrary { Layout.fillWidth:true;Layout.fillHeight:true;Layout.minimumHeight:0;controller:studio.controller;library:studio.library }
+                DatasetSharing { Layout.fillWidth:true;Layout.fillHeight:true;Layout.minimumHeight:0;controller:studio.controller;library:studio.library }
+                PoseSnapshots { Layout.fillWidth:true;Layout.fillHeight:true;Layout.minimumHeight:0;controller:studio.controller }
+
             }
         }
         Panel {
-            Layout.fillWidth: true; implicitHeight: footer.implicitHeight+Theme.Studio.gap*2
+            Layout.fillWidth: true; visible:studio.pageIndex<3; implicitHeight: footer.implicitHeight+Theme.Studio.gap*2
             ColumnLayout {
-                id: footer; anchors {left:parent.left;right:parent.right;top:parent.top;margins:Theme.Studio.gap} spacing: 6
+                id: footer; visible:studio.pageIndex<3; anchors {left:parent.left;right:parent.right;top:parent.top;margins:Theme.Studio.gap} spacing: 6
                 RowLayout {
                     Layout.fillWidth: true
                     Copy { Layout.fillWidth: true; Layout.minimumWidth: 0; text: studio.controller.selectedTrainingKeys.length+"개 선택 · "+(studio.controller.selectedTrainingRows.map(function(r){return r.name}).join(", ") || "체크한 동작이 여기에 표시됩니다"); maximumLineCount: 2; elide: Text.ElideRight; color: Theme.Studio.mintDark; font.bold: true }
@@ -293,7 +251,7 @@ Popup {
         }
     }
     Popup {
-        id: confirmation; objectName: "uploadConfirm"
+        id: confirmation; objectName: "studioActionConfirm"
         function accept() {
             close()
             if(studio.confirmAction==="upload")studio.controller.runHub("upload")

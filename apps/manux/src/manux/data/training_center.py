@@ -436,6 +436,7 @@ class TrainingJob(WorkerJob):
             return self.start_request({"kind": "train", "recordings_dir": str(self.rec_dir),
                 "profile": identity.profile, "preset": identity.preset, "mode": identity.preset if identity.preset != "trigger" else "pointer",
                 "store": str(self.store_dir), "cache_dir": str(self.cache_dir), "specs": self.specs,
+                "device": os.environ.get("MANUX_TRAIN_DEVICE", "auto"),
                 "previous_candidate": str(pending_model(self.store_dir.parents[1]) or ""),
                 "epochs": max(1, int(epochs)), "focus_labels": sorted({BY_KEY[k].label for k in gestures}) if gestures else [],
                 "task_names": [BY_KEY[k].name for k in gestures] if gestures else []})
@@ -533,13 +534,15 @@ class TrainingCenterService:
                                specs=specs, identity=self.identity, store_dir=self.store_dir, on_done=on_ready)
         self.hub_job = WorkerJob(self.data_dir / "hub-jobs")
         self.studio_job = WorkerJob(self.data_dir / "studio-jobs", on_done=lambda event: (
-            on_ready(event) if on_ready is not None and event.get("store") else None))
+            on_ready(event) if on_ready is not None and (event.get("store") or event.get("candidate")) else None))
         self.job.blocked = lambda: self.studio_job.running or self.hub_job.running
 
     def studio_request(self, action, **values):
         if self.job.running or self.hub_job.running:
             return self.studio_job.fail("학습·공유 작업이 끝난 뒤 시작하세요.")
         return self.studio_job.start_request({"kind": "studio", "action": action,
+            "data_dir": str(self.data_dir), "model_path": str(self.current_model()),
+            "env_files": [str(path) for path in self.env_files], "repo": self.repo,
             "recordings_dir": str(self.recordings_dir), "store": str(self.store_dir),
             "policy_path": str(self.policy_store.path) if self.policy_store else None,
             "profile": self.profile, "preset": self.preset_name,
@@ -560,7 +563,7 @@ class TrainingCenterService:
         _atomic_text(self.preferences_path, json.dumps({"profile": identity.profile}))
         self.profile = identity.profile
 
-    def hub_action(self, action: str):
+    def hub_action(self, action: str, classes=()):
         try:
             if action not in ("status", "download", "upload"):
                 raise ValueError("알 수 없는 허브 작업입니다.")
@@ -568,10 +571,16 @@ class TrainingCenterService:
             if self.job.running or self.studio_job.running:
                 raise ValueError("학습·스튜디오 작업이 끝난 뒤 허브 작업을 시작하세요.")
             return self.hub_job.start_request({"kind": "hub", "action": action, "profile": profile,
+                "classes": list(classes),
                 "preset": self.preset_name, "repo": self.repo, "config_dir": str(self.config_dir),
                 "env_files": [str(path) for path in self.env_files], "recordings_dir": str(self.recordings_dir)})
         except (ValueError, OSError) as error:
             return self.hub_job.fail(str(error))
+
+    def pose_train(self):
+        if self.studio_job.running or self.hub_job.running:
+            return self.job.fail("검수·공유가 끝난 뒤 학습하세요.")
+        return self.job.start_request({"kind": "pose_train", "data_dir": str(self.data_dir)})
 
     def current_model(self):
         try:

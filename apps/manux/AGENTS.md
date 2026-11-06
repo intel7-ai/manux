@@ -7,8 +7,11 @@
 - 처음 앱 구조를 다루면 [구조](docs/architecture.md)의 계층·프레임 흐름을 읽는다.
 - 변경 전 [계약](docs/contracts.md)의 공통 규칙과 **해당 계층 절**, [타입](src/manux/core/contracts.py), 관련 [결정](docs/decisions.md)을 확인한다. 제안을 확정된 정책으로 설명하지 않는다.
 - 직접 TCN/모델 교체는 [직접 TCN](docs/direct-tcn.md), 데이터 수집·공유는 [허브](docs/dataset-hub.md)를 추가로 읽는다. 요청과 무관한 과거 계획·모든 문서를 일괄 읽지 않는다.
+- 학습 장치·추론 공급자 변경은 [하드웨어 가속](docs/hardware-acceleration.md)을 읽고 요청한 장치와 실제 실행 장치를 구분해 검증한다.
 
 ## 현재 상태
+
+testing의 최신 통합 범위·소스 SHA·실제 카메라 시험·남은 검증은 [통합 사용 흐름](docs/testing-all-v04.md)을 따른다.
 
 기준: 2026-11-06 preview 통합 대상 #72·#75·#76의 구현. 실제 원격 병합 상태는 PR에서 확인한다.
 

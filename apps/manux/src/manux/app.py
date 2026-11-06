@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from contextlib import ExitStack, contextmanager
 from dataclasses import asdict
@@ -42,6 +43,16 @@ _FEATURES = (
 _SETTING_TYPES = {bool: "bool", int: "int", float: "float", str: "str"}
 
 
+def configure_acceleration(args, settings):
+    from manux.ml.backends import DEVICES
+    for attribute, variable, setting, choices in (
+        ("train_device", "MANUX_TRAIN_DEVICE", "app.training_device", ("auto","cpu","cuda","xpu")),
+        ("inference_device", "MANUX_INFERENCE_DEVICE", "app.inference_device", DEVICES)):
+        value = getattr(args, attribute, None) or os.environ.get(variable) or settings.get(setting)
+        if value not in choices: raise ValueError(f"invalid {attribute}: choose from {', '.join(choices)}")
+        os.environ[variable] = value
+
+
 def schema() -> Schema:
     settings = Schema(ALL + CURSOR_SETTINGS)
     for module in [*(module for module, _ in _FEATURES), tcn_gate]:
@@ -55,7 +66,7 @@ def build_engine(settings: Settings, mode: str = "pointer", filters: tuple[Inten
                  *, recording: bool = False, direct_model: LoadedModel | None = None,
                  binding_overrides=None, policies=None) -> Engine:
     features, router, sources = pipeline_parts(direct_model, binding_overrides, policies)
-    if direct_model is not None and filters:
+    if direct_model is not None and any(getattr(f, "id", "") != "spatial_pose_guard" for f in filters):
         raise ValueError("direct mode and confirmation filters cannot be used together")
     engine = Engine(features, filters, router,
                     {OutputTarget.NONE: NullSink(), OutputTarget.PRACTICE: PracticeSink()},
@@ -167,11 +178,13 @@ def main() -> int:
     parser.add_argument("--mode", choices=("pointer", "pinch"), default="pointer")
     parser.add_argument("--control-hand", choices=("Left", "Right"))
     parser.add_argument("--max-frames", type=int)
+    parser.add_argument("--inference-device", choices=("auto","cpu","cuda","openvino-cpu","openvino-gpu","openvino-npu"))
     args = parser.parse_args()
     if args.max_frames is not None and args.max_frames < 1:
         parser.error("--max-frames must be positive")
     paths = resolve()
     settings = load(schema(), args.config_dir or paths.config_dir)
+    configure_acceleration(args, settings)
     for warning in settings.warnings:
         print(warning, file=sys.stderr)
     filters = ()
