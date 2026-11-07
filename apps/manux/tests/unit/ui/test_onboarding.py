@@ -4,8 +4,8 @@ from manux.ui.tutorial import ATTEMPT_SECONDS, MAX_FAILURES, TARGETS, Tutorial, 
 
 def test_onboarding_orders_daily_tasks_and_keeps_motion_optional():
     steps = onboarding_steps(cards.cards(False))
-    assert [c['key'] for c in steps] == ['camera', 'sensitivity', 'click', 'scroll', 'control', 'motion']
-    assert steps[-1]['optional']
+    assert [c['key'] for c in steps] == ['camera', 'sensitivity', 'click', 'scroll', 'control', 'desktop', 'motion']
+    assert steps[-2]['optional'] and steps[-1]['optional']
     assert cards.find(cards.cards(False), 'desktop') is not None
 
 
@@ -34,7 +34,8 @@ def test_targets_require_gesture_click_at_all_three_practice_cursor_positions():
 
 
 def test_control_practice_requires_two_distinct_v_events():
-    t = Tutorial([onboarding_steps(cards.cards(False))[-2]])
+    control = cards.find(onboarding_steps(cards.cards(False)), "control")
+    t = Tutorial([control])
     assert not t.observe(['control.toggle'], False, 1.)
     assert t.progress == .5
     assert not t.observe(['control.toggle'], False, 2.)
@@ -84,3 +85,14 @@ def test_palm_targets_also_require_one_engine_confirmed_precision_move():
     assert not t.done[0] and t.progress == .9 and '정밀' in t.help_text
     assert t.observe(['mouse.move'], False, 8., point=TARGETS[-1], precision=True)
     assert t.done[0]
+
+
+def test_desktop_and_motion_practice_require_their_accepted_actions():
+    desktop, motion = onboarding_steps(cards.cards(False))[-2:]
+    t = Tutorial([desktop, motion])
+    assert t.observe(["window.show_desktop"], False, 1.)
+    t.next()
+    assert not t.observe([], True, 2.)
+    assert not t.observe(["nav.back"], False, 3.)
+    t.observe([], True, 4.)
+    assert t.observe(["nav.back"], True, 5.)

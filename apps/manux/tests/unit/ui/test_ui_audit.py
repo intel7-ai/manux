@@ -190,3 +190,48 @@ def test_v_cannot_enable_control_inside_capture_or_settings_dialogs(
             frame, HandObservation(frame, tuple(points), "Right", 0.99)
         )
     assert not snap.busy and snap.control_on
+
+
+def test_studio_tracker_and_branded_tray_notice(studio):
+    from manux.platform.tray import QtTray
+
+    bridge, _, _, messages = studio
+    tracker = bridge.window.findChild(QObject, "fingerTracker")
+    assert tracker is not None and not tracker.isVisible()
+    bridge.setFingerOverlay(True)
+    assert tracker.isVisible()
+    bridge.setFingerOverlay(False)
+    assert not tracker.isVisible()
+    assert bridge.application.applicationDisplayName() == "MANUX"
+    assert not bridge.application.windowIcon().isNull()
+    assert not bridge.window.icon().isNull()
+
+    tray = QtTray(bridge)
+    try:
+        assert not tray.tray.icon().isNull()
+        tray._hidden()
+        assert tray.notice.text().startswith("MANUX")
+        assert tray.notice.isVisible() and tray.notice_timer.interval() == 2500
+        tray.notice_timer.timeout.emit()
+        assert not tray.notice.isVisible()
+        assert not [message for message in messages if "ReferenceError" in message]
+    finally:
+        tray.hide()
+
+
+def test_control_badge_follows_engine_transitions_and_expires_without_frames(studio):
+    from manux.core.contracts import FrameInfo
+    from manux.engine.commands import SetControl
+    from manux.ui.view import ViewFrame
+
+    bridge, _, runtime, _ = studio
+    bridge.timer.stop()
+    for index, (enabled, label) in enumerate(((True, "제어 켜짐"), (False, "제어 꺼짐"))):
+        runtime.engine.commands.put(SetControl(enabled))
+        snap = runtime.engine.step(FrameInfo(index, index + 1., 640, 480, True), None)
+        bridge.apply_view(ViewFrame(snap))
+        assert bridge.motionBadgeVisible and bridge.motionBadgeText == label
+    bridge._control_notice_until = 0.
+    bridge._seq = runtime.latest()[0]
+    bridge.poll()
+    assert not bridge.motionBadgeVisible

@@ -26,7 +26,8 @@ def test_targets_use_retained_click_position_even_after_cursor_has_moved(bridge,
 
 def test_old_step_events_are_not_reused_and_each_v_event_is_consumed_once(bridge, monkeypatch):
     b, _ = bridge
-    b.tutorial = Tutorial([onboarding_steps(cards(False))[-2]])
+    control = next(step for step in onboarding_steps(cards(False)) if step["key"] == "control")
+    b.tutorial = Tutorial([control])
     b._practice_min_epoch = 2
     monkeypatch.setattr("manux.ui.bridge.time.perf_counter", lambda: 10.3)
     event = PracticeEvent(1, 10., ("control.toggle",), (.5,.5), False, False, True)

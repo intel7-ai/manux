@@ -36,9 +36,14 @@ def onboarding_steps(cards: Sequence[Card]) -> list[Card]:
     result.append({"key": "control", "title": "V로 제어 켜기와 끄기",
                    "how": "검지·중지만 펴고 나머지는 접어 V를 0.7초 유지하세요. 손을 풀고 1.5초 뒤 한 번 더 해보세요. 연습에서는 실제 입력 상태를 바꾸지 않습니다.",
                    "actions": ("control.toggle",)})
+    if "desktop" in by_key:
+        desktop = dict(by_key["desktop"])
+        desktop.update(title="선택: 바탕화면 보기", optional=True)
+        result.append(desktop)
     if "motion" in by_key:
         motion = dict(by_key["motion"])
-        motion.update(title="선택: 모션 모드", how=str(motion["how"])+" 자주 쓰지 않으면 건너뛰어도 됩니다.", optional=True)
+        motion.update(title="선택: 모션 모드", how=str(motion["how"]) + " 모드가 켜지면 손을 펴서 한 번 쓸어 보세요.",
+                      actions=("nav.back", "nav.forward", "tab.prev", "tab.next"), optional=True)
         result.append(motion)
     return result
 
@@ -135,6 +140,8 @@ class Tutorial:
             if "control.toggle" in rising:
                 self._control_count += 1
             hit = self._control_count >= 2
+        elif self.step_key == "motion" and MOTION not in wanted:
+            hit = motion_on and bool(rising & wanted)
         elif MOTION in wanted:
             hit = motion_on
         elif self.step_key == "move":

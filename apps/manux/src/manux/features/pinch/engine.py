@@ -328,7 +328,8 @@ class PinchCore:
             rel_thr = release_threshold + (float(c["scroll_release_margin"]) if scrolling else 0.0)
             joint_limit = rel_thr * float(c["pinch_hold_joint_ratio"])
             joints = [d for d in (_d2(thumb, pts[INDEX_DIP]), _d2(pts[THUMB_IP], index)) if d <= joint_limit]
-            d_hold = min([d_index] + joints)
+            # A nearby joint can still look pinched after the tips separate.
+            d_hold = d_index if scrolling else min([d_index] + joints)
             self.last_hold = (round(d_hold, 4), round(rel_thr, 4), round(d_index, 4))
             if d_hold > rel_thr:
                 self._close_since = None
