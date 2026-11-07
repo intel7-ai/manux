@@ -74,6 +74,8 @@ class StudioBridge(QObject):
     @Slot(str, str, str)
     def modelAction(self, action, identifier="", name=""):
         if action in ("remote", "upload", "download", "rename", "preview", "apply"):
+            if action == "preview" and not self.owner.saveStudioDataset():
+                return
             self._run("model_" + action, identifier=identifier, name=name)
 
     @Slot()
@@ -86,7 +88,8 @@ class StudioBridge(QObject):
     @Slot(str)
     def poseDatasetAction(self, action):
         if action in ("upload", "download"):
-            if action == "upload": self.owner.saveStudioDataset()
+            if action == "upload" and not self.owner.saveStudioDataset():
+                return
             self._run("pose_" + action, classes=[self.owner.studioGroundTruth])
 
     @Property("QVariantList", notify=changed)
@@ -302,7 +305,7 @@ class StudioBridge(QObject):
         if "versions" in result: self.versions = result["versions"]
         if "models" in result: self.models = result["models"]
         if result.get("spatial_selected"):
-            self.owner.pose_studio.model_summary = self.owner.pose_studio._load_saved_model_summary()
+            self.owner.pose_studio.activate_model("spatial_pose_mlp.json")
             self.owner.studioChanged.emit()
         if "remote_models" in result: self.remote_models = result["remote_models"]
         if "diagnostics" in result: self.diagnostics = result["diagnostics"]

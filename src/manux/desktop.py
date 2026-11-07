@@ -621,7 +621,10 @@ class DesktopRuntime:
             model = self._spatial_updates.get_nowait()
             if self.spatial_feature is not None:
                 self.engine.prepare_model_reload()
+                self.spatial_model_path = None
                 self.spatial_feature.set_model(model)
+                if model is None:
+                    self.spatial_guard.enabled = False
                 self.spatial_guard.reset("settings")
         while not self._runtime_requests.empty():
             command = self._runtime_requests.get_nowait()
@@ -632,7 +635,9 @@ class DesktopRuntime:
             if command.kind == "spatial_guard":
                 try:
                     self.engine.prepare_model_reload()
-                    model = (SpatialMlpModel.load(self.spatial_model_path) if self.spatial_model_path else self.spatial_feature.model) if command.path == "on" else None
+                    model = self.spatial_feature.model
+                    if command.path == "on" and model is None and self.spatial_model_path:
+                        model = SpatialMlpModel.load(self.spatial_model_path)
                     if command.path == "on" and model is None: raise ValueError("no pose model")
                     self.spatial_feature.set_model(model)
                     self.spatial_guard.enabled = command.path == "on"
@@ -835,7 +840,8 @@ def make_pose_studio(data_dir: Path,
         mlp = active_mlp[0]
         if mlp is None:
             return None
-        feats = extract_spatial_features(landmarks)
+        from manux.perception.pose_angles import pose_angles
+        feats = pose_angles(_world) if mlp.feature_version == "pose-angles-v1" else extract_spatial_features(landmarks)
         if feats is None:
             return None
         return mlp.predict(feats)

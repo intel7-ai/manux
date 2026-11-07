@@ -14,7 +14,8 @@ from PySide6.QtWidgets import QApplication
 from manux.app import schema, training_specs
 from manux.data import capture_plan
 from manux.data.training_center import TrainingCenterService
-from manux.desktop import build
+from manux.desktop import build, make_pose_studio
+from manux.data.pose_studio import STUDIO_ACTIONS, STUDIO_CATEGORIES
 from manux.perception.palm_axes import PalmAxesCalibration, valid_axes, palm_point
 from manux.settings.store import Settings
 from manux.ui.bridge import Bridge
@@ -38,6 +39,72 @@ def grab_item(item):
         if not result.image().isNull():
             return result.image()
     raise AssertionError("QML canvas did not render")
+
+
+def test_pose_panel_button_collects_streams_stops_and_saves(studio, monkeypatch):
+    bridge, service, runtime, messages = studio
+    bridge.timer.stop()
+    monkeypatch.setattr(bridge.studio, "_run", lambda *args, **kwargs: None)
+    center = bridge.window.findChild(QObject, "studioDataManagement")
+    center.setProperty("pageIndex", 5)
+    QMetaObject.invokeMethod(center, "open")
+    QTest.qWait(100)
+    bridge.setStudioDiscrepancyOnly(False)
+    bridge.setStudioCaptureMode("snapshot")
+    points = tuple((.2+.1*(i%5), .25+.1*(i//5), 0.) for i in range(21))
+    bridge.apply_view(ViewFrame(None, landmarks=points))
+    button = next(b for b in bridge.window.findChildren(QQuickItem, "capturePoseSample") if b.isVisible())
+    assert button.property("enabled")
+    assert QMetaObject.invokeMethod(button, "click")
+    assert len(bridge.pose_studio.samples) == 1
+    bridge.setStudioCaptureMode("stream")
+    assert QMetaObject.invokeMethod(button, "click")
+    assert bridge.studioStreaming
+    QTest.qWait(60)
+    bridge.apply_view(ViewFrame(None, landmarks=points))
+    assert len(bridge.pose_studio.samples) >= 2
+    assert QMetaObject.invokeMethod(button, "click")
+    assert not bridge.studioStreaming
+    count = len(bridge.pose_studio.samples)
+    save = next(b for b in bridge.window.findChildren(QQuickItem, "savePoseSamples") if b.isVisible())
+    assert QMetaObject.invokeMethod(save, "click")
+    assert not bridge.pose_studio.samples
+    assert len(bridge.pose_studio.load_all_samples()) == count
+    assert bridge.paused and not runtime.engine.state.control_on
+    assert not [m for m in messages if "Error" in m or "has no attribute" in m], messages
+
+
+@pytest.mark.parametrize("action", ["triggerStudioCapture", "trainStudioModel", "toggleSpatialGuard"])
+def test_pose_actions_check_worker_busy_not_dataset_attribute(studio, monkeypatch, action):
+    bridge, service, runtime, messages = studio
+    bridge.timer.stop()
+    calls = []
+    monkeypatch.setattr(bridge.pose_studio, "toggle_stream_or_snapshot", lambda: calls.append("capture"))
+    monkeypatch.setattr(service, "pose_train", lambda model_id: calls.append("train"))
+    monkeypatch.setattr(runtime, "request", lambda request: calls.append(request.kind))
+    service.studio_job.state = {"running": True}
+    getattr(bridge, action)()
+    assert calls == []
+    service.studio_job.state = {"running": False}
+    getattr(bridge, action)()
+    assert calls == [{"triggerStudioCapture": "capture", "trainStudioModel": "train", "toggleSpatialGuard": "spatial_guard"}[action]]
+
+
+def test_main_header_uses_existing_manux_ci_at_both_window_sizes(studio):
+    bridge, service, runtime, messages = studio
+    for width, height in ((780, 560), (1140, 720)):
+        bridge.window.resize(width, height)
+        QTest.qWait(80)
+        logo = bridge.window.findChild(QQuickItem, "mainBrandLogo")
+        assert logo is not None and logo.isVisible()
+        assert str(logo.property("source").toString()).endswith("/assets/manux.svg")
+        image = grab_item(logo)
+        assert not image.isNull()
+        assert any(image.pixelColor(x, y).alpha() > 0
+                   for x in range(image.width()) for y in range(image.height()))
+        toggle = visual_child(bridge.window.contentItem(), "mainControlToggle")
+        edge = toggle.mapToScene(QPointF(toggle.width(), toggle.height()))
+        assert edge.x() <= width and edge.y() <= height
 
 
 def test_idle_main_camera_renders_21_points_bones_and_clears_when_hand_leaves(studio):
@@ -127,7 +194,10 @@ def studio(tmp_path):
     try:
         bridge = Bridge(runtime, settings, tmp_path / "config", layout="studio", services={
             "training_center": service, "palm_calibration": PalmAxesCalibration,
-            "valid_palm_axes": valid_axes, "palm_point": palm_point})
+            "valid_palm_axes": valid_axes, "palm_point": palm_point,
+            "pose_studio": make_pose_studio(tmp_path / "data"),
+            "studio_actions": lambda: list(STUDIO_ACTIONS),
+            "studio_categories": lambda: list(STUDIO_CATEGORIES)})
         bridge._set_stage("main")
         yield bridge, service, runtime, messages
     finally:

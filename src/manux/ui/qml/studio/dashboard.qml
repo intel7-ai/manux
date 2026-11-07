@@ -263,7 +263,14 @@ ApplicationWindow {
                 anchors.leftMargin: 24
                 anchors.rightMargin: 24
                 spacing: 12
-                TextLabel { text: dashboard.appName; font.pixelSize: 26; font.bold: true }
+                Image {
+                    objectName: "mainBrandLogo"
+                    source: "../assets/manux.svg"
+                    Layout.preferredWidth: window.width < 1000 ? Theme.Studio.navWidth : Theme.Studio.navWidth * 1.3
+                    Layout.preferredHeight: Theme.Studio.pad * 3
+                    fillMode: Image.PreserveAspectFit
+                    Accessible.name: dashboard.appName
+                }
                 TextLabel { visible: window.width >= 1000; text: "INPUT STUDIO"; font.pixelSize: 11; font.letterSpacing: 1.4; color: window.muted }
                 Item { Layout.fillWidth: true }
                 ActionButton { objectName: "openLearningCenter"; text: window.width < 1000 ? "학습" : "학습 센터"; onClicked: {dataCenter.pageIndex=0;dataCenter.open()} }

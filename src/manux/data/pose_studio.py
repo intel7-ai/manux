@@ -167,6 +167,8 @@ GESTURE_TO_STUDIO_CLASS: Dict[str, str] = {
     "motion.enter": "thumbs_up",
     "motion.exit": "thumbs_up",
     "v_sign": "v_sign",
+    "control.v_sign": "v_sign",
+    "control.toggle": "v_sign",
     "rock_sign": "rock_sign",
     "window.close": "rock_sign",
     "mouse.move": "none",
