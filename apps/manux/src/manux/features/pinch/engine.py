@@ -304,7 +304,8 @@ class PinchCore:
         k = max(0.05, min(1.0, float(c["shape_curl_smooth"])))
         self._curl_s = mean_curl if self._curl_s is None else self._curl_s + k * (mean_curl - self._curl_s)
         shape_mult = self.shape_dpi(self._curl_s, c)
-        curled = shape_mult > 1.15
+        # Shape is geometry, independent of whether curling makes the speed faster or slower.
+        curled = mean_curl < float(c["shape_curl_open"]) - .05
 
         # Thumb + index hysteresis
         if not self._index_pinched:
@@ -327,7 +328,8 @@ class PinchCore:
             rel_thr = release_threshold + (float(c["scroll_release_margin"]) if scrolling else 0.0)
             joint_limit = rel_thr * float(c["pinch_hold_joint_ratio"])
             joints = [d for d in (_d2(thumb, pts[INDEX_DIP]), _d2(pts[THUMB_IP], index)) if d <= joint_limit]
-            d_hold = min([d_index] + joints)
+            # A nearby joint can still look pinched after the tips separate.
+            d_hold = d_index if scrolling else min([d_index] + joints)
             self.last_hold = (round(d_hold, 4), round(rel_thr, 4), round(d_index, 4))
             if d_hold > rel_thr:
                 self._close_since = None
@@ -530,8 +532,8 @@ class PinchCore:
             return PinchFrame(
                 active_gesture="no_pinch", action="move_cursor", cursor_point=cursor_point,
                 pinch_distance=d_index, distances=distances, is_moving=True,
-                dpi_multiplier=shape_mult if (curled and not self._index_pinched and not self._secondary_since) else 1.0,
-                hand_shape=("fist" if shape_mult >= 0.9 * self._fist_mult(c) else "half" if curled else "open"),
+                dpi_multiplier=shape_mult if not self._index_pinched and not self._secondary_since else 1.0,
+                hand_shape=("half" if curled else "open"),
             )
 
         return PinchFrame(pinch_distance=d_index, distances=distances)

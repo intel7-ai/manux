@@ -35,7 +35,7 @@ for `pinch.move` (1 = open hand, up to `fist_dpi_multiplier` for a curled hand),
 it into the binding's `gain` (contracts sections 5 and 7), so changing those settings changes the speed.
 
 Not ported: Record & Fling (thumb+index `grab`, off by default in v0.3). The Alt-held task switcher of v0.3
-(hand navigation inside the switcher) is not here: `window.task_switcher` is one Alt+Tab (contracts section 7).
+(hand navigation inside the switcher) is not here: `window.task_switcher` opens the Windows picker with Ctrl+Alt+Tab (contracts section 7).
 """
 from __future__ import annotations
 

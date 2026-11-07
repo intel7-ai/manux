@@ -198,6 +198,11 @@ def run_pose_training(request, send=emit):
     from manux.data.studio import atomic_json
     from model_library import add
     studio = PoseSnapshotStudio(Path(request["data_dir"]))
+    model_id = request.get("model_id", studio.active_model_id)
+    if not isinstance(model_id, str) or Path(model_id).name != model_id or not model_id.endswith(".json"):
+        raise ValueError("포즈 모델 선택값이 잘못되었습니다.")
+    if model_id != studio.active_model_id and not studio.activate_model(model_id):
+        raise ValueError("선택한 포즈 모델을 찾을 수 없습니다.")
     xs, ys, weights = [], [], []
     send("progress", stage="포즈 표본 준비 중", progress=.1, phase="loading")
     for sample in studio.load_all_samples():
@@ -217,7 +222,7 @@ def run_pose_training(request, send=emit):
     from manux.data.pose_studio import summarize_pose_fit
     metrics = summarize_pose_fit(model, metrics, np.stack(xs), np.asarray(ys))
     # Serialize atomically. This is a studio candidate, never the TCN active pointer.
-    path = studio.models_dir / "spatial_pose_mlp.json"
+    path = studio.models_dir / model_id
     atomic_json(path, model.to_dict())
     add(Path(request["data_dir"]) / "models/library", path, "포즈 MLP · " + metrics.trained_at)
     send("done", stage="포즈 학습 완료 · 프레임 참고 점수이며 제어에는 자동 적용하지 않습니다",

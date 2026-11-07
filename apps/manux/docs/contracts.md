@@ -257,6 +257,7 @@ v0.4 확인기는 모델 정보 파일의 클래스 → 동작 ID 대응표를 �
 | `mouse.scroll` | begin / hold / end | `gain` | `scroll_grab` |
 | `window.task_switcher` | tap | — | `task_switcher`, `alt_tab` |
 | `window.show_desktop` | tap | — | `show_desktop` |
+| `control.toggle` | tap | — | — |
 | `window.close` | tap | — | 창 닫기(Alt+F4), `spatial_pose.rock_sign` 바인딩 |
 | `nav.back`, `nav.forward` | tap | — | 모션 `back`, `forward` |
 | `tab.prev`, `tab.next` | tap | — | 모션 `tab_prev`, `tab_next` |
@@ -265,7 +266,7 @@ v0.4 확인기는 모델 정보 파일의 클래스 → 동작 ID 대응표를 �
 이 표는 코드 [`actions/catalog.py`](../src/manux/actions/catalog.py)와 같아야 한다(`tests/unit/actions/test_actions.py`가 비교한다). **제안** 줄은 목록에 넣지 않는다.
 
 - `params`(S3 추가, 계약 변경): 바인딩이 줄 수 있는 키. `gain`은 양수 배율(`mouse.move`: 커서 이동 배율 / `mouse.drag`: 드래그 중 커서 이동 배율 / `mouse.scroll`: 스크롤 배율). 프레임마다 바뀌는 값은 `params`가 아니라 `Intent.scale`로 온다(§5).
-- `window.task_switcher`는 S3에서 Alt+Tab 한 번(v0.3 `alt_tab`)이다. v0.3의 Alt를 누른 채 손으로 고르는 전환기(`task_switcher`)는 확인·취소 동작이 필요한 모드라 S4(중재기)에서 정한다.
+- `window.task_switcher`는 Ctrl+Alt+Tab으로 Windows 창 선택기를 연다. 키는 즉시 모두 해제하고 열린 선택기에서 포인터로 고를 수 있다.
 
 v0.3 `grab`의 실제 용도는 이식 때 확인하고 이 표에 추가한다.
 
@@ -286,6 +287,16 @@ v0.3 `grab`의 실제 용도는 이식 때 확인하고 이 표에 추가한다.
 | `params` | 액션별 값(예: 스크롤 배율). 액션 목록에 정의된 키만 |
 
 ## 8. 단계와 출력 대상
+
+### v0.5 V 제어 전환
+
+- `control.v_sign`은 검지·중지 폄, 약지·새끼·엄지 접음을 규칙으로 확인해 기본 0.7초 연속 유지 후 tap을 낸다. 프레임 간격이 0.3초를 넘거나 손이 사라지면 유지 시간을 다시 센다. 기본 쿨다운은 1.5초이며 V를 풀기 전에는 반복하지 않는다.
+- 유지 시간을 우회하지 않도록 `control.v_sign`은 TCN 직접 적용 대상이 아니다. 카탈로그에서 녹화·MLP 표본은 가능하며 TCN 직접 판정 메타데이터에서는 제외한다. 직접 적용 모델이 이를 소유하려 하면 명시 오류로 거부한다.
+- MLP 보조 차단이 켜져 있고 선택한 MLP가 `v_sign` 클래스를 제공하면 같은 손의 확률이 기본 0.8 이상이어야 한다. 활성 모델의 거절·오류를 규칙으로 우회하지 않는다. 보조 차단이 꺼져 있거나 해당 클래스 또는 모델이 없거나 학습 메타데이터에 V 표본이 0개로 기록되면 규칙으로 확인한다. 표본 수가 기록되지 않은 이전 모델은 기존 동작을 유지한다.
+- 기본 바인딩 `control.v_sign → control.toggle`을 라우터가 해석한다. 엔진이 `control.toggle`을 소비하며 Windows 출력 싱크로 보내지 않는다. main에서 제어 상태를 반전하고 출력 해제·다른 기능 reset을 먼저 한다. 전환 프레임에는 다른 명령을 내지 않는다. tutorial에서는 Snapshot에 성공 결과와 `control:practice` 이벤트만 남겨 연습을 완료할 수 있고 제어 상태나 실제 입력은 바꾸지 않는다.
+- 제어가 꺼진 main에서는 V 전환 기능만 실행한다. calibrating/enrolling/recording 중에는 V도 실행하지 않으며 전환 상태를 쌓지 않는다. V 유지 중에도 경쟁 클릭·모드 진입·이동을 억제한다.
+- 바탕화면 보기는 기본 0.6초 동안 손이 정지해야 하며 쿨다운은 3초다. 기존 `pinch.enable_thumb_tucked_open`으로 사용자가 끌 수 있다.
+- 기본 손 모양 속도는 켜짐을 유지하며 편 손은 2배, 주먹은 0.35배로 정밀 이동한다. 기존 `pinch.shape_dpi_min`은 편 손 배율, `pinch.fist_dpi_multiplier`는 주먹 배율이며 중간 모양은 두 값 사이를 보간한다. 이는 11/07 실사용 피드백에 따른 조정이며 측정된 최적값은 아니다.
 
 출처: `qt_runtime.UiState.stage`(`splash | welcome | capture | tutorial | main`), `practice_output()`, `paused`, `calibrating`.
 
@@ -356,6 +367,10 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 - **라벨 추가 필드**: 녹화 설정으로 녹화한 프레임의 `label`에 `condition_key`(물리 조건 6개 + 메모의 해시, `pose-` + 16자리)를 넣는다. 이름·순서·시간은 키에 들어가지 않으므로 같은 물리 조건은 녹화가 달라도 같은 키다. `condition_index`(켜진 행의 순서)는 이전 읽기 도구를 위해 계속 쓴다. `meta.guided.capture_plan`에 사용한 설정 전체를 남긴다.
 - **읽기 규칙**: 학습·평가는 `condition_key`로 조건 그룹을 만들고, 키가 없는 이전 녹화는 `legacy-<condition_index>`로 읽는다. 사람·자세 그룹과 함께 조건 그룹 하나를 통째로 빼고 학습하는 평가를 지원한다. 스와이프 과제의 `do` 프레임 중 요청한 방향으로 움직이지 않은 프레임은 학습 대상에서 뺀다.
 - 손의 3D 좌표가 없거나 일시정지한 동안에는 세트 시간이 멈추고, 그 프레임은 `target: idle`, `phase: paused`로 기록한다(학습 제외).
+
+포즈 표본 JSON 저장(`data/pose_studio.py`)은 split·UUID가 포함된 고유 경로를 사용한다.
+완성된 임시 파일만 원자적으로 신규 게시하며 기존 파일을 덮어쓰지 않는다. 같은 밀리초의
+학습·평가·연속 저장도 서로 보존하고, 저장 실패는 수집 버퍼와 기존 파일을 유지한다.
 
 ## 10. 모델 파일
 
@@ -497,7 +512,7 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 - `Snapshot`에 들어가는 것(**제안**, S6에서 확정): 프레임 번호, 미리보기 영상(화면이 보일 때만), 손 관절(그리기용), 단계·모드·출력 대상, 최근 동작/액션과 결과, 기능별 상태 문구, 카메라 정보·밝기·어두움 경고, fps·단계별 처리 시간, 모델 상태.
 - 현재 구현(`engine/snapshot.py`, 엔진 부분만): 프레임 번호·시각, 단계, 출력 대상, 모드, 제어 켬, 바쁨(녹화 등), 손 있음, 필터 뒤 의도, 라우팅 안 된 의도와 이유, 출력 결과, 기능별 `holding`, 이벤트(`hand_lost`, `mode:…`, `mark:…`), 오류. 영상·관절·카메라 정보·모델 상태는 조립 지점의 실행기(S6)가 덧붙인다.
 - `ViewFrame.model_status`는 실행기가 읽은 모델 모드·갱신 결과 문구다. 브리지는 그대로 표시하고 판단하지 않는다. 교체 성공은 엔진 이벤트 `model:reloaded`에도 남긴다.
-- `UiCommand`(`engine/commands.py`): `SetStage`, `SetControl`, `SetBusy`(`calibrating`/`enrolling`/`recording`), `RequestMode`, `SetBaseMode`, `Mark`.
+- `UiCommand`(`engine/commands.py`): `SetStage`, `SetControl`, `SetBusy`(`calibrating`/`enrolling`/`recording`), `RequestMode`, `SetBaseMode`, `ResetPractice`, `Mark`. `ResetPractice`는 tutorial에서만 출력 해제 → 모든 기능/필터 reset → 기본 모드 복귀 순서로 처리하며 `practice:reset` 이벤트를 남긴다. 다른 단계에서는 효과가 없다.
 - UI → 엔진은 `UiCommand` 큐로만 보낸다. 예: 단계 바꾸기, 제어 켜기/끄기, 조작 손 바꾸기, 설정 값 바꾸기, 바인딩 바꾸기, 녹화 시작/끝, "방금 이상했어요" 표시. UI는 엔진 객체의 필드를 직접 바꾸지 않는다.
 - UI는 판정 값을 계산하지 않는다. 화면에 보일 문구가 판정에서 나와야 하면 엔진이 Snapshot에 넣는다.
 
@@ -551,6 +566,15 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 - Pose/TCN/수집·공유 스튜디오는 분리된 서비스로 조립한다. Pose의 현재 모델 선택·저장·로드·재적용은 최신 #82를 따른다. Dan/Rasp-Jun의 과제·진행/공유·민감도 기능은 testing/#91을 보존하며 기존 계층 import 규칙을 완화하지 않는다.
 - 분류 클래스 rock_sign은 `spatial_pose.rock_sign` 동작을 내고, `window.close` 액션은 바인딩으로만 연결한다. close는 tap 한 번에 Alt+F4를 누른 뒤 해제한다. 기본 assist 모드는 직접 명령을 내지 않는다.
 
+### v0.5 사용성 화면·설정 연결 (2026-11-07)
+
+- 실행기가 `ViewFrame.control_hand`(실제 조작 손), `preview_gesture`(엔진이 채택한 동작 ID), `practice_cursor`(연습 싱크의 정규화 가상 커서), `practice_precision`(채택된 이동의 gain < 1)을 전달한다. 관절은 기존 `landmarks`와 같은 영상 좌표다. Bridge는 값을 노출하고 QML은 이미지의 PreserveAspectFit 영역에 21점과 뼈대를 그린다. 영상 자체를 변경하거나 화면에서 손짓을 판정하지 않는다. 손/영상 소실 때 이전 관절을 남기지 않는다.
+- 연습 싱크는 OS 호출 없는 `CursorMapper` 계산을 재사용한다. 감도·가속·손 모양 배율을 가상 1920×1080 화면에 적용하고 `cursor_position`으로 전달한다. 실제 Windows 커서·클릭을 보내지 않는다. 출력 해제는 가상 커서 위치를 유지하고 이동 앵커만 끊는다.
+- `ViewFrame.actions`에는 출력 결과가 `ok`인 동작만 포함한다. 거절/오류는 온보딩 성공으로 세지 않는다. 제어 전환 뒤 Bridge의 일시정지 표시는 Snapshot.control_on을 따른다.
+- `RuntimeRequest('advanced', config_dir, values)`는 bool/int/float/choice 설정 편집을 런타임 큐로 전달한다. 고급 설정은 알려진 실행 중 조절 가능한 키만 검증하며, 전체 검증·임시 저장 성공 후 메모리 설정과 연습/Windows 싱크를 갱신한다. 실패는 기존 설정 파일·실효값을 유지한다. 저장 중·실패·성공은 별도 revision 결과로 UI에 전달한다. 설정 변경 때 출력 해제·기능 reset·제어 끔을 먼저 적용한다. 프로필이 덮어쓴 값은 편집할 수 없다.
+
+- §12 보충: 최신 영상은 한 장만 유지한다. 연습에서 받아들인 tap/begin·모드 전환은 불변 `PracticeEvent(seq,t,actions,cursor,precision,motion_on,has_hand)`로 별도 최대128개 링에 보존해 `ViewFrame.practice_events`로 전달한다. UI는 seq를 한 번만 소비하고 당시 가상 커서 위치로 성공을 확인한다. 단계 reset/연습 재진입 때 링을 비우고 지속 `practice_epoch`를 증가시켜 이전 단계 이벤트가 다음 단계에 재사용되지 않는다. 영상 프레임을 큐에 쌓지 않는다. UI의 표시 상태가 늦더라도 설정 변경은 항상 SetControl(False)를 큐에 보낸다.
+
 ## 14. 휴대폰 연결 (`link`, v0.8)
 
 출처: Dan(한순중)의 `hand-mouse-gesture-overhaul@9da1f634e8c0afd9d3d6b32a56c83cddfb23d5f8`,
@@ -567,3 +591,18 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 - 초당 프레임 36회(여유 포함) 제한. 서버 ack 전에 다음 프레임을 보내지 않고 건너뛴다. 잘못된 메시지는 닫고 이전 seq·750ms 초과/250ms 이상 미래 촬영 시각은 ack accepted=false로 버린다. audio 종류는 예약만 하고 현재 거절한다. 원격 명령·마이크·Bluetooth 없음.
 - RemoteCamera는 압축 최신 하나만 보관, 덮어쓴 수를 센다. read(timeout)은 소비 스레드에서 JPEG 해독·반전·회전 후 FrameInfo와 BGR image 반환. FrameInfo.t는 수신 perf_counter, seq는 소스 전체에서 증가. 해독 중 연결이 바뀌면 결과 폐기. fps·actual_mode·추정 수신 지연 제공.
 - 새 프레임이 없으면 read는 None. 마지막 수신/접속 뒤 2초 정체면 is_open=false. 끊기/정지 때 즉시 슬롯을 비우고 대기자를 깨운다. QR 대기 화면·이전 프레임은 판정기에 넣지 않는다. 조립자가 Engine.frame_missing(now)으로 손 소실·입력 해제를 처리한다. link는 엔진·Windows 입력을 호출하지 않는다.
+
+### v0.5 MLP·UI 감사 연결 계약
+
+- 포즈 미리보기와 실행기 보조 판정은 모델의 feature_version에 맞는 96차원 또는 world 기반33차원 특징을 사용한다. 필요한 world가 없으면 해당 예측을 생략한다.
+- 같은 클릭 클래스에 해당하는 손바닥/검지 동작은 보조 차단에서 같은 의미로 비교한다. V 제어 결과는 포즈 표본의 v_sign 클래스에 연결한다.
+- 포즈 학습 요청은 선택한 모델 ID를 포함한다. worker는 해당 모델 표본만 읽어 같은 모델 슬롯에 후보를 저장하고 다른 슬롯을 보존한다. 기존 요청에서 ID가 없으면 저장된 선택값을 읽는다.
+- 포즈 수집·학습·보조차단 버튼의 busy 상태는 worker/StudioBridge가 소유한다.
+- 학습·수집·설정 창과 기존 포즈 페이지는 UI interactionBusy를 SetBusy(enrolling)로 큐에 전달한다. 해당 구간의 V는 제어 전환을 만들지 않는다. 등록·녹화 중 규칙 비교는 Windows 싱크가 없는 별도 practice 엔진의 Snapshot을 ViewFrame.rule_preview로 전달하고 녹화의 rule 필드에도 사용한다. 해당 구간이 끝나거나 종료하면 정리한다. 실제 제어 엔진은 출력none을 유지한다.
+
+### v0.5 실사용 후속
+
+- 스크롤 활성 중 엄지·검지 끝이 떨어지면 손가락 중간 관절이 가깝더라도 해제 유예를 시작한다. 스크롤 종료·관성과 드래그 판정은 각자의 기존 계약을 따른다.
+- 상대 커서 이동은 확장 화면의 가로·세로 범위를 주 모니터 대비 축별로 반영한다. 카메라 종횡비 보정을 유지하고, 이동 위치는 확장 화면 경계 안에서 누적하되 실제 출력은 가장 가까운 모니터에 놓는다. 절대 모드는 기존처럼 선택한 모니터를 사용한다.
+- 바탕화면 연습은 practice 싱크의 승인 동작을 표시한다. 선택 모션 연습은 엄지 척으로 모드에 진입한 뒤 승인된 스와이프까지 기다린다. 연습은 Windows 입력을 보내지 않는다.
+- 포즈와 커서 기준 손끝 표시를 공유하는 창은 두 레이아웃에서 설정의 손가락 표시 스위치를 따른다. 제어 전환 알림은 실제 Snapshot의 control_on 변경을 표시한다.

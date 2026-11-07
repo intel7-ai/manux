@@ -141,3 +141,28 @@ def test_reset_clears_the_state():
     d, t = entered()
     d.f.reset("stage_change")                                        # the mode is the arbiter's: stays on, fresh
     assert d.f.core.active and not d.f.core._hist and d.f.core._exit_armed is False
+
+
+def test_onboarding_motion_hold_and_swipe_run_in_the_practice_engine():
+    from manux.app import build_engine, schema
+    from manux.core.contracts import OutputTarget
+    from manux.settings.store import Settings
+    from manux.ui.cards import cards
+    from manux.ui.tutorial import Tutorial, onboarding_steps
+
+    engine = build_engine(Settings(schema()), "pinch")
+    tutorial = Tutorial([onboarding_steps(cards(False))[-1]])
+    hands = [motion_hand(fingers="folded")] * 30 + swipe(0.7, 0.4)
+    try:
+        for index, points in enumerate(hands):
+            t = 1 + index / 30
+            hand = obs(t, points)
+            snap = engine.step(hand.frame, hand)
+            assert snap.output is OutputTarget.PRACTICE
+            tutorial.observe((action for action, _phase, reason in snap.results if reason == "ok"),
+                             snap.mode == "motion", t)
+            if index < 30:
+                assert not tutorial.done[0]
+        assert tutorial.done == [True]
+    finally:
+        engine.shutdown()
