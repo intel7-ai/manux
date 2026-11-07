@@ -72,10 +72,12 @@ def test_invalid_advanced_pair_leaves_entire_edit_unapplied(tmp_path):
 
 def test_optional_v_model_reconnects_after_pipeline_replacement():
     from manux.app import pipeline_parts
-    model = SimpleNamespace(classes=("none", "v_sign"))
+    model = SimpleNamespace(classes=("none", "v_sign"), metadata={})
     settings = Settings(schema())
     runtime = build(settings, SimpleNamespace(close=lambda: None), windows=False, spatial_pose_model=model)
     try:
+        runtime.request(RuntimeRequest("spatial_guard", "on"))
+        runtime._drain_runtime_requests()
         runtime._sync_control_model()
         control = next(f for f in runtime.engine.features if f.id == "control")
         assert control.model is model
