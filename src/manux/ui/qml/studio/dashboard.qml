@@ -1073,6 +1073,8 @@ ApplicationWindow {
         }
     }
 
+    Current.FingerTracker { controller: dashboard }
+
     // Motion-mode badge: always on top and click-through, in the top-right corner of the screen, so the user
     // can tell the mode from anywhere (also when this window is hidden or behind others).
     Window {

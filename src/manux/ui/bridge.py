@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from PySide6.QtCore import Qt, QCoreApplication, QEvent, QObject, Property, QSettings, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QCursor, QGuiApplication, QImage, QFontDatabase
+from PySide6.QtGui import QCursor, QGuiApplication, QIcon, QImage, QFontDatabase
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -501,6 +501,9 @@ class Bridge(QObject):
         self._pose_studio_visible = False
         self._studio_center_open = False
         self.application = QApplication.instance() or QApplication([])
+        self.application.setApplicationName("MANUX")
+        self.application.setApplicationDisplayName("MANUX")
+        self.application.setWindowIcon(QIcon(str(QML.parent / "assets" / "manux-icon.svg")))
         if not getattr(self.application, "_manux_fonts_loaded", False):
             QFontDatabase.addApplicationFont(str(QML.parent / "assets" / "fonts" / "NotoSansKR.ttf"))
             self.application._manux_fonts_loaded = True
@@ -540,6 +543,8 @@ class Bridge(QObject):
         self.motion_on = False
         self.motion_last = ""
         self.motion_exit_until = 0.0
+        self._control_on = False
+        self._control_notice_until = 0.0
         self.motion_badge = (False, "")
         self.finger_frame = None
         self.failure_marks = 0
@@ -635,6 +640,7 @@ class Bridge(QObject):
         if not self.engine.rootObjects():
             raise RuntimeError("MANUX 화면을 열지 못했습니다.")
         self.window = self.engine.rootObjects()[0]
+        self.window.setIcon(self.application.windowIcon())
         if self.layout != "studio":
             self.window.setProperty("title", "MANUX")
         self.timer = QTimer(self)
@@ -1087,6 +1093,8 @@ class Bridge(QObject):
         return "모션 모드 · 꺼짐 (눌러서 켜기)"
 
     def _badge_now(self):
+        if self.stage_name == "main" and time.perf_counter() < self._control_notice_until:
+            return True, "제어 켜짐" if self._control_on else "제어 꺼짐"
         if self.motion_on:
             return True, "모션 모드 켜짐" + (f" · {self.motion_last}" if self.motion_last else "")
         if time.perf_counter() < self.motion_exit_until:
@@ -2654,6 +2662,9 @@ class Bridge(QObject):
         if seq != self._seq:
             self._seq = seq
             self.apply_view(view)
+        elif self._badge_now() != self.motion_badge:
+            self.motion_badge = self._badge_now()
+            self.stateChanged.emit()
 
     def apply_view(self, view: ViewFrame) -> None:
         self._preview_view = view
@@ -2667,6 +2678,9 @@ class Bridge(QObject):
             self.studio.changed.emit()
         self._update_palm_view(view)
         snap = view.snapshot
+        if snap is not None and self.stage_name == "main" and self._control_on != snap.control_on:
+            self._control_on = snap.control_on
+            self._control_notice_until = time.perf_counter() + 1.8
         if snap is not None and self.stage_name == "main" and self.paused == snap.control_on:
             self.paused = not snap.control_on
             self.stateChanged.emit()

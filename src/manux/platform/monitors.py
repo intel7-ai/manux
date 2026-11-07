@@ -57,6 +57,8 @@ class ScreenLayout:
             usable[0] = Monitor(first.left, first.top, first.right, first.bottom, primary=True)
         # Primary first, then left-to-right / top-to-bottom, so "next monitor" is predictable
         self.monitors: List[Monitor] = sorted(usable, key=lambda m: (not m.primary, m.left, m.top))
+        self.bounds = Monitor(min(m.left for m in usable), min(m.top for m in usable),
+                              max(m.right for m in usable), max(m.bottom for m in usable))
 
     @classmethod
     def single(cls, width: int, height: int) -> "ScreenLayout":

@@ -211,3 +211,19 @@ def test_the_fist_speed_setting_reaches_the_intent():
     out, _ = run(PinchFeature(), [H.fist()] * 10, settings={"fist_dpi_multiplier": 10.0})
     fist = [i for i in out if i.gesture == MOVE_FIST]
     assert fist and fist[-1].scale == 10.0
+
+
+def test_scroll_releases_when_tips_separate_even_if_a_joint_stays_close():
+    f = PinchFeature()
+    started, t = run(f, [H.scroll_pinch()] * 8)
+    assert any(i.gesture == SCROLL and i.phase == "begin" for i in started)
+    opening = list(H.scroll_pinch())
+    opening[8] = (0.43, 0.35, 0.0)
+    opening[7] = opening[4]
+    released, _ = run(f, [opening] * 8, t0=t)
+    assert [i.phase for i in released if i.gesture == SCROLL] == ["end"]
+
+
+def test_desktop_does_not_fire_during_slow_palm_drift():
+    out, _ = run(PinchFeature(), [H.desktop_hand(shift=(.00145 * k, 0)) for k in range(48)], t0=5)
+    assert THUMB_TUCKED_OPEN not in gestures(out, "tap")

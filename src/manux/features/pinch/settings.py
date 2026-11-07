@@ -47,7 +47,7 @@ THRESHOLDS: Dict[str, Any] = {
     # show desktop (thumb tucked, four fingers open, held)
     "desktop_thumb_tuck": .45,
     "desktop_hold": .6,
-    "desktop_still_move": .03,
+    "desktop_still_move": .02,
     "desktop_after_activity": 1.0,
     "desktop_extended_ratio": 1.45,
     "desktop_min_palm_width": .45,

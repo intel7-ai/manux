@@ -76,10 +76,26 @@ def test_relative_motion_crosses_onto_the_left_monitor():
     assert x < 0 and LEFT.contains(x, y)
 
 
-def test_relative_speed_uses_the_primary_width_not_the_whole_desktop():
+def test_relative_speed_uses_both_extended_desktop_spans():
+    screens = layout()
+    assert screens.bounds == Monitor(-1280, -1440, 2560, 1080)
     one = CursorMapper(ScreenLayout.single(1920, 1080), REL, start=(960, 540))
-    many = CursorMapper(layout(), REL, start=(960, 540))
-    assert _move(one, [.5, .52]) == _move(many, [.5, .52])
+    many = CursorMapper(screens, REL, start=(960, 540))
+    for mapper in (one, many):
+        mapper.step((.5, .5), 0.0)
+        mapper.step((.52, .52), FRAME)
+    assert many.pos[0] - 960 == pytest.approx((one.pos[0] - 960) * 2, abs=2)
+    assert many.pos[1] - 540 == pytest.approx((one.pos[1] - 540) * 2520 / 1080, abs=2)
+
+
+def test_relative_motion_crosses_an_offset_gap_without_outputting_offscreen_points():
+    screens = ScreenLayout([PRIMARY, Monitor(1920, 700, 3200, 1700)])
+    m = CursorMapper(screens, REL, start=(1890, 670))
+    m.step((.3, .3), 0.0)
+    for i in range(1, 8):
+        point = m.step((.3 + .02 * i, .3 + .02 * i), i * FRAME)
+        assert screens.monitor_at(*point) is not None
+    assert screens.monitors[1].contains(*m.pos)
 
 
 def _rel_move(speed, frames=10):

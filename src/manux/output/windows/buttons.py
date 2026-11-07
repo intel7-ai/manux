@@ -11,7 +11,7 @@ from manux.output.windows.backend import InputBackend
 
 # action id -> keys pressed in order and released in reverse
 KEY_CHORDS: Mapping[str, Tuple[str, ...]] = {
-    "window.task_switcher": ("alt", "tab"),
+    "window.task_switcher": ("ctrl", "alt", "tab"),
     "window.show_desktop": ("win", "d"),
     "window.close": ("alt", "f4"),
     "nav.back": ("alt", "left"),
