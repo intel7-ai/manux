@@ -20,6 +20,8 @@ class WindowsOutputConfig:
     relative_accel_speed_high: float = 0.8   # ... and where it reaches the max gain
     frame_aspect: float = 0.75               # camera height / width: y motion is compared physically
     reanchor_gap: float = 0.1                # s without a movement command -> the next one starts fresh (new in v0.4)
+    relative_gain_y: float = 1.0             # vertical multiplier after speed acceleration
+    relative_y_cross: float = 0.0            # horizontal drift to remove per unit of vertical movement
     # double-click assist: the cursor holds still after a left click so a second click lands on the same pixel
     double_click_window: float = 0.45
     double_click_move_tolerance: float = 0.03

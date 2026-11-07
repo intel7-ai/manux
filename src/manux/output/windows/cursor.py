@@ -125,6 +125,8 @@ class CursorMapper:
         speed = math.hypot(dx, dy) / dt
         t = max(0.0, min(1.0, (speed - v_lo) / (v_hi - v_lo)))
         g = (g_min + (g_max - g_min) * t) * gain
+        dx -= c.relative_y_cross * dy
+        dy *= c.relative_gain_y
         px, py = self.screens.clamp(self._rel_pos[0] + dx * self.screen_w * g,
                                     self._rel_pos[1] + dy * self.screen_w * g)
         self._rel_pos = (px, py)

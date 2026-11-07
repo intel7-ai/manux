@@ -65,6 +65,35 @@ def drained(runtime):
     return runtime.engine.commands.drain()
 
 
+@pytest.mark.parametrize("layout", ["standard", "studio"])
+def test_pointer_setup_page_opens_after_hand_choice_and_returns_to_tutorial(tmp_path, layout):
+    from PySide6.QtCore import QObject
+    from manux.ui.bridge import Bridge
+    settings = Settings(schema())
+    runtime = FakeRuntime(settings)
+    runtime.pointer_setup_dir = tmp_path
+    requests = []
+    runtime.request = lambda request: requests.append(request) is None
+    b = Bridge(runtime, settings, tmp_path, layout=layout)
+    try:
+        b._save_hand("Right")
+        b.application.processEvents()
+        page = b.window.findChild(QObject, "pointerSetupPage")
+        assert page is not None and page.property("visible")
+        assert b.pointerSetup == {"phase": "intro"}
+        b.pointerSetupAction("start")
+        assert requests[-1].path == "start"
+        b.apply_view(ViewFrame(None, pointer_setup={"phase": "review", "note": "도달 6/6"}))
+        b.pointerSetupAction("apply")
+        assert requests[-1].path == "apply"
+        b.apply_view(ViewFrame(None, pointer_setup={"phase": "saved"}))
+        b.application.processEvents()
+        assert not page.property("visible") and b.stage_name == "tutorial"
+        assert b.tutorial is not None
+    finally:
+        b.close()
+
+
 def test_starts_on_the_splash_with_pinch_as_base_mode(bridge):
     b, rt = bridge
     cmds = drained(rt)
