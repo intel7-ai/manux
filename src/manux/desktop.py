@@ -245,7 +245,14 @@ class DesktopRuntime:
                 sink.configure(replace(sink.config, **self.settings.section("cursor")))
 
     def _sync_control_model(self):
-        model = self.spatial_feature.model if self.spatial_feature else None
+        model = (self.spatial_feature.model
+                 if self.spatial_feature and self.spatial_guard and self.spatial_guard.enabled
+                 else None)
+        if model is not None:
+            per_class = model.metadata.get("per_class")
+            v_samples = per_class.get("v_sign") if isinstance(per_class, dict) else None
+            if isinstance(v_samples, dict) and v_samples.get("total") == 0:
+                model = None
         # Pipeline reloads may construct a new control feature, even with the same model.
         for feature in self.engine.features:
             if feature.id == "control" and getattr(feature, "model", None) is not model:

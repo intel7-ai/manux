@@ -230,3 +230,45 @@ def test_motion_entry_event_is_visible_in_pose_comparison():
         intents=(), results=(), events=("mode:pinch->motion:intent",)
     )
     assert normalize_system_action(snapshot) == "thumbs_up"
+
+@pytest.mark.parametrize(
+    ("guard_enabled", "v_total", "starts"),
+    [(False, 5, True), (True, 0, True), (True, 5, False), (True, None, False)],
+)
+def test_v_respects_the_active_pose_guard_and_v_training(guard_enabled, v_total, starts):
+    from manux.app import schema
+    from manux.core.contracts import RuntimeRequest, Stage
+    from manux.desktop import build
+    from manux.engine.commands import SetStage
+    from manux.settings.store import Settings
+    from test_control import v_hand
+
+    class Source:
+        fps = 30.0
+        seq = 0
+
+        def read(self, *args):
+            frame = FrameInfo(self.seq, 1 + self.seq / self.fps, 1280, 720, True)
+            self.seq += 1
+            hand = HandObservation(frame, tuple(v_hand()), "Right", .99)
+            return frame, None, hand, (), 0.0
+
+        def mode_text(self):
+            return "synthetic"
+
+        def close(self):
+            pass
+
+    model = constant_model("thumb_middle")
+    if v_total is not None:
+        model.metadata["per_class"] = {"v_sign": {"total": v_total}}
+    runtime = build(Settings(schema()), Source(), windows=False, spatial_pose_model=model)
+    runtime.engine.commands.put(SetStage(Stage.MAIN))
+    runtime.request(RuntimeRequest("spatial_guard", "on" if guard_enabled else "off"))
+    try:
+        for _ in range(30):
+            runtime.step()
+        assert runtime.spatial_feature.model is model
+        assert runtime.latest()[1].snapshot.control_on is starts
+    finally:
+        runtime.stop()
