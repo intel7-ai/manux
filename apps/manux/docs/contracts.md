@@ -591,3 +591,10 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 - 초당 프레임 36회(여유 포함) 제한. 서버 ack 전에 다음 프레임을 보내지 않고 건너뛴다. 잘못된 메시지는 닫고 이전 seq·750ms 초과/250ms 이상 미래 촬영 시각은 ack accepted=false로 버린다. audio 종류는 예약만 하고 현재 거절한다. 원격 명령·마이크·Bluetooth 없음.
 - RemoteCamera는 압축 최신 하나만 보관, 덮어쓴 수를 센다. read(timeout)은 소비 스레드에서 JPEG 해독·반전·회전 후 FrameInfo와 BGR image 반환. FrameInfo.t는 수신 perf_counter, seq는 소스 전체에서 증가. 해독 중 연결이 바뀌면 결과 폐기. fps·actual_mode·추정 수신 지연 제공.
 - 새 프레임이 없으면 read는 None. 마지막 수신/접속 뒤 2초 정체면 is_open=false. 끊기/정지 때 즉시 슬롯을 비우고 대기자를 깨운다. QR 대기 화면·이전 프레임은 판정기에 넣지 않는다. 조립자가 Engine.frame_missing(now)으로 손 소실·입력 해제를 처리한다. link는 엔진·Windows 입력을 호출하지 않는다.
+
+### v0.5 MLP·UI 감사 연결 계약
+
+- 포즈 미리보기와 실행기 보조 판정은 모델의 feature_version에 맞는 96차원 또는 world 기반33차원 특징을 사용한다. 필요한 world가 없으면 해당 예측을 생략한다.
+- 같은 클릭 클래스에 해당하는 손바닥/검지 동작은 보조 차단에서 같은 의미로 비교한다. V 제어 결과는 포즈 표본의 v_sign 클래스에 연결한다.
+- 포즈 학습 요청은 선택한 모델 ID를 포함한다. worker는 해당 모델 표본만 읽어 같은 모델 슬롯에 후보를 저장하고 다른 슬롯을 보존한다. 기존 요청에서 ID가 없으면 저장된 선택값을 읽는다.
+- 포즈 수집·학습·보조차단 버튼의 busy 상태는 worker/StudioBridge가 소유한다.

@@ -64,7 +64,7 @@ ScrollView {
             Layout.fillWidth: true; spacing: 6
             StudioButton { objectName:"capturePoseSample";text:page.controller.studioStreaming ? "수집 정지" : page.controller.studioCaptureMode==="stream" ? "수집 시작" : "한 장 캡처";primary:true;enabled:page.idle;onClicked:page.controller.triggerStudioCapture() }
             StudioButton { text:"마지막 표본 취소";enabled:page.idle;onClicked:page.controller.undoStudioSample() }
-            StudioButton { text:"표본 저장";enabled:page.idle;onClicked:page.controller.saveStudioDataset() }
+            StudioButton { objectName:"savePoseSamples";text:"표본 저장";enabled:page.idle;onClicked:page.controller.saveStudioDataset() }
             StudioButton { text:"새 수집";enabled:page.idle;onClicked:page.controller.clearStudioSamples() }
             StudioButton { objectName:"trainPoseModel";text:"포즈 모델 학습";enabled:page.idle;onClicked:page.controller.trainStudioModel() }
         }

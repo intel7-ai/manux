@@ -644,11 +644,11 @@ class Bridge(QObject):
     # Original Rasp-Jun studio presentation and calibration adapters.
     @Property(str, constant=True)
     def appName(self):
-        return "MANUX TCN"
+        return "MANUX"
 
     @Property(str, constant=True)
     def appTitle(self):
-        return "MANUX TCN"
+        return "MANUX"
 
     @Property("QVariantList", notify=trainingChanged)
     def studioTrainingRows(self):
@@ -1755,7 +1755,7 @@ class Bridge(QObject):
 
     @Slot()
     def toggleSpatialGuard(self):
-        if self.training_job.running or self.pose_studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
+        if self.training_job.running or self.studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
         self._pause()
         self.runtime.request(RuntimeRequest("spatial_guard", "off" if self._spatial_guard_enabled else "on"))
 
@@ -1975,6 +1975,8 @@ class Bridge(QObject):
 
     @Slot(str)
     def createStudioModel(self, name):
+        if not self.saveStudioDataset():
+            return
         if hasattr(self.pose_studio, "create_model"):
             self.pose_studio.create_model(str(name))
             self._studio_summary_cache = self.pose_studio.summary()
@@ -1982,6 +1984,8 @@ class Bridge(QObject):
 
     @Slot(str)
     def activateStudioModel(self, model_id):
+        if not self.saveStudioDataset():
+            return
         if hasattr(self.pose_studio, "activate_model"):
             self.pose_studio.activate_model(str(model_id))
             self._studio_summary_cache = self.pose_studio.summary()
@@ -1996,7 +2000,7 @@ class Bridge(QObject):
 
     @Slot()
     def triggerStudioCapture(self):
-        if self.training_job.running or self.pose_studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
+        if self.training_job.running or self.studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
         if not self.pose_studio.samples:
             self.pose_studio.profile, self.pose_studio.split = self.tc.profile, self.tc.split
         self._pause()
@@ -2016,19 +2020,28 @@ class Bridge(QObject):
         self._studio_summary_cache = self.pose_studio.summary()
         self.studioChanged.emit()
 
-    @Slot()
+    @Slot(result=bool)
     def saveStudioDataset(self):
-        self.pose_studio.save_dataset()
+        if self.training_job.running or self.studio.busy or self.tc.hub_job.running or self.rec_mode != "off":
+            return False
+        try:
+            self.pose_studio.save_dataset()
+        except (OSError, ValueError) as error:
+            self.pose_studio.status_note = f"표본 저장 실패 · 수집 표본은 유지됩니다. {error}"
+            self.studioChanged.emit()
+            return False
         self._studio_summary_cache = self.pose_studio.summary()
         self.studioChanged.emit()
+        return True
 
     @Slot()
     def trainStudioModel(self):
-        if self.training_job.running or self.pose_studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
+        if self.training_job.running or self.studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
         self._pause()
         self.pose_studio.stop_stream()
-        self.pose_studio.save_dataset()
-        if hasattr(self.tc, "pose_train") and self.tc.pose_train():
+        if not self.saveStudioDataset():
+            return
+        if hasattr(self.tc, "pose_train") and self.tc.pose_train(self.pose_studio.active_model_id):
             self._training_was_running = True
             self.training_timer.start()
             self.trainingChanged.emit()
