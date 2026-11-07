@@ -6,6 +6,7 @@ name: MANUX app (apps/manux, Windows)
 # 정식 production 발행은 manux-release.yml이 담당한다. 이 workflow는 게시하지 않는다.
 on:
   pull_request:
+    branches-ignore: [testing] # no automatic installer builds for source integration
     paths: ["apps/manux/**", ".github/workflows/manux-app.yml"]
   push:
     branches: [preview]

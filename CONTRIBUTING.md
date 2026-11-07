@@ -17,6 +17,8 @@ uv run --locked --python 3.12 --extra ui --extra vision python -m manux
 
 ## 변경과 PR
 
+빠른 통합·웹캠 시험은 [testing 브랜치](docs/testing.md)에 PR로 먼저 합칠 수 있습니다. 자동 CI·설치본 생성 없이 `uv`로 실행하며, 원본 작업 브랜치는 이후 `preview` PR과 기존 필수 검사로 전달합니다.
+
 1. Git 상태·브랜치·원격을 확인합니다. 다른 작업자의 변경과 worktree를 보존합니다.
 2. 새 작업은 최신 `origin/preview`에서 `<이슈>-<설명>` 브랜치를 만듭니다. 기존 작업은 해당 브랜치에서 계속합니다. 열린 PR을 먼저 확인하고 작업 브랜치를 push합니다.
 3. `.local/harness/<requestId>/task.json`에 목표·완료 기준·허용 파일·실제 기준 SHA를 기록합니다. 결과·검사 증거는 같은 폴더의 `result.json`에 남깁니다([하네스](docs/harness.md)).

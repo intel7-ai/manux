@@ -1,6 +1,7 @@
 name: MANUX CI
 on:
   pull_request:
+    branches-ignore: [testing] # local source integration; preview/production keep all gates
   push:
     branches: [main, master, preview, production]
   workflow_dispatch:
