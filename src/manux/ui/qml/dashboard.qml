@@ -765,7 +765,7 @@ ApplicationWindow {
                     TextLabel { text: "쓸 수 있는 동작"; font.pixelSize: 18; font.bold: true }
                     Item { Layout.fillWidth: true }
                     ActionButton {
-                        visible: dashboard.pointerSetupAvailable
+                        visible: dashboard.pointerSetupAvailable && !dashboard.pointerOnly
                         enabled: dashboard.recMode === "off" && !dashboard.trackingActive
                         text: "커서 자동 설정"
                         onClicked: dashboard.beginPointerSetup()

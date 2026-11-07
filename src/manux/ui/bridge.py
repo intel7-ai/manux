@@ -2218,7 +2218,7 @@ class Bridge(QObject):
         self.runtime.set_override("pointer", "axes", self.axes)
         self._set_stage("main")
         if not self.preferences.value("tutorialDone", False, type=bool):
-            if self.pointerSetupAvailable:
+            if self.pointerSetupAvailable and not self.pointerOnly:
                 self._open_pointer_setup(before_tutorial=True)
             else:
                 self.beginTutorial()
@@ -2250,7 +2250,7 @@ class Bridge(QObject):
 
     @Slot()
     def beginPointerSetup(self):
-        if (self.pointerSetupAvailable and self.control_hand and self.stage_name == "main"
+        if (self.pointerSetupAvailable and not self.pointerOnly and self.control_hand and self.stage_name == "main"
                 and self.rec_mode == "off" and not self.trackingActive):
             self._open_pointer_setup(before_tutorial=False)
 
@@ -2269,10 +2269,17 @@ class Bridge(QObject):
             return
         if action == "skip":
             self._close_pointer_setup()
-        elif action in ("start", "apply", "faster", "steadier", "vertical"):
+        elif action in ("capture", "retest"):
+            self.runtime.request(RuntimeRequest("pointer_setup", action))
+        elif action in ("start", "apply"):
             if self.runtime.request(RuntimeRequest("pointer_setup", action)):
                 self._pointer_setup_view = {"phase": "waiting"}
                 self.pointerSetupChanged.emit()
+
+    @Slot(str, float)
+    def pointerSetupAdjust(self, key, value):
+        if self.stage_name == "tutorial" and self._pointer_setup_view.get("phase") in ("aim", "preview", "review"):
+            self.runtime.request(RuntimeRequest("pointer_setup", "adjust", {key: value}))
 
     def _close_pointer_setup(self):
         self.runtime.request(RuntimeRequest("pointer_setup", "skip"))
@@ -2406,6 +2413,9 @@ class Bridge(QObject):
         if self.pointerSetupActive and key != KEY_Q:
             if key == KEY_ESC:
                 self._close_pointer_setup()
+            elif key == KEY_SPACE and self._pointer_setup_view.get("hand") and not self._pointer_setup_view.get("capturing"):
+                if self._pointer_setup_view.get("phase") in ("rest", "horizontal", "up", "down"):
+                    self.pointerSetupAction("capture")
             return
         if self.palmCalibrating and key != KEY_Q:
             if key == KEY_ESC:
@@ -2563,6 +2573,9 @@ class Bridge(QObject):
     def apply_view(self, view: ViewFrame) -> None:
         if self._pointer_setup_view and view.pointer_setup is not None:
             current = dict(view.pointer_setup)
+            for key in ("target", "cursor"):
+                if current.get(key) is not None:
+                    current[key] = list(current[key])
             if current.get("phase") == "saved":
                 self._close_pointer_setup()
             elif current != self._pointer_setup_view:

@@ -352,7 +352,7 @@ ApplicationWindow {
                             }
                             ActionButton {
                                 Layout.fillWidth: true
-                                visible: dashboard.pointerSetupAvailable
+                                visible: dashboard.pointerSetupAvailable && !dashboard.pointerOnly
                                 enabled: dashboard.recMode === "off" && !dashboard.trackingActive
                                 text: "커서 자동 설정"
                                 onClicked: dashboard.beginPointerSetup()

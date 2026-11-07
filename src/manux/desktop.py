@@ -41,13 +41,13 @@ from manux.features import tcn_gate
 from manux.features.spatial_pose import SpatialPoseFeature, SpatialPoseGuard
 from manux.features.pinch.preview import PinchPreview
 from manux.features.pinch.engine import palm_anchor_point
-from manux.features.pointer.workspace import calibrated_pointer
 from manux.ml.card import ModelError
 from manux.ml.predictor import load_model
 from manux.ml.spatial_mlp import SpatialMlpModel, train_spatial_mlp
 from manux.ml.store import active_token, load_active
 from manux.perception.local3d import FEATURES, FEATURE_VERSION
 from manux.perception.palm_axes import corrected_point
+from manux.perception.palm_pitch import palm_pitch
 from manux.perception.spatial_features import SPATIAL_FEATURE_VERSION, extract_spatial_features
 from manux.settings.paths import AppPaths, resolve
 from manux.settings import store as settings_store
@@ -294,7 +294,8 @@ class DesktopRuntime:
             return
         self._pointer_environment_key = sha256(repr(environment).encode("utf-8")).hexdigest()
         values = {} if locked else read_profiles(raw).get(self._pointer_environment_key, {})
-        config = {"relative_gain_y": 1.0, "relative_y_cross": 0.0, "frame_aspect": frame.aspect}
+        config = {"palm_left": 0., "palm_right": 0., "palm_up": 0., "palm_down": 0.,
+                  "palm_x_gain": 1., "palm_y_gain": 1., "frame_aspect": frame.aspect}
         config.update(self.settings.section("cursor"))
         config.update(values)
         candidate = replace(sink.config, **config)
@@ -303,8 +304,9 @@ class DesktopRuntime:
             sink.configure(candidate)
         self._pointer_config_signature = signature if raw else None
 
-    def _pointer_setup_frame(self, frame, hand, stage, sink):
-        action, self._pointer_setup_action = self._pointer_setup_action, None
+    def _pointer_setup_frame(self, frame, hand, pitch, stage, sink):
+        request, self._pointer_setup_action = self._pointer_setup_action, None
+        action = request.path if request is not None else None
         if stage != Stage.TUTORIAL or self.pointer_setup_dir is None:
             self._pointer_setup = None
             return None
@@ -321,8 +323,7 @@ class DesktopRuntime:
             config = WindowsOutputConfig(**self.settings.section("cursor"), frame_aspect=frame.aspect)
             layout = ScreenLayout([monitor])
             self._pointer_setup = PointerSetup(
-                monitor, config, lambda values: CursorMapper(layout, replace(config, **values)),
-                self.pointer_gain() if mode == "pointer" else 1.0)
+                monitor, frame.width, lambda values: CursorMapper(layout, replace(config, **values)))
             self._pointer_setup_environment = self._pointer_environment(frame, monitor, mode)
         setup = self._pointer_setup
         if setup is None:
@@ -333,23 +334,20 @@ class DesktopRuntime:
             setup.note = ("프로필이 이동 감도를 지정하고 있어요. 기본 프로필에서 다시 시도해 주세요."
                           if self._pointer_profile_locked() else "카메라나 조작 환경이 바뀌었어요. 다시 측정해 주세요.")
             return setup.view()
-        if setup.phase == "review":
-            if action == "apply":
-                self._save_pointer_setup(environment, setup)
-            elif action in ("faster", "steadier", "vertical"):
-                setup.adjust(action)
         point = None
-        if hand is not None:
-            if mode == "pointer":
-                cfg = self.settings_for("pointer")
-                tip = hand.landmarks[8]
-                raw = (palm_anchor_point(hand.landmarks, cfg["cursor_anchor_ratio"])
-                       if cfg["anchor"] == "palm" else tip[:2])
-                point = calibrated_pointer(raw, cfg.get("axes"), frame.aspect)
-            else:
-                cfg = self.settings_for("pinch")
-                raw = palm_anchor_point(hand.landmarks, cfg["cursor_anchor_ratio"])
-                point = corrected_point(raw, frame.aspect, cfg.get("palm_axes"))
+        if hand is not None and pitch is not None:
+            cfg = self.settings_for("pinch")
+            raw = palm_anchor_point(hand.landmarks, cfg["cursor_anchor_ratio"])
+            x, _ = corrected_point(raw, frame.aspect, cfg.get("palm_axes"))
+            point = (x, pitch)
+        if action == "capture" and point is not None:
+            setup.capture()
+        elif action == "adjust":
+            setup.adjust(request.values)
+        elif action == "retest" and setup.phase in ("aim", "review", "preview"):
+            setup.begin_aim()
+        elif action == "apply" and setup.phase == "review" and setup.can_apply:
+            self._save_pointer_setup(environment, setup)
         setup.step(frame.t, point)
         return setup.view()
 
@@ -617,9 +615,12 @@ class DesktopRuntime:
         frame, image, hand, hands, detect_ms = item
         self._recording_step(frame.t, frame, hand)
         sink = self.engine.sinks.get(OutputTarget.WINDOWS)
+        pitch = palm_pitch(hand.world) if hand is not None else None
+        if sink is not None and hasattr(sink, "set_palm_pitch"):
+            sink.set_palm_pitch(pitch)
         self._configure_cursor_for_frame(frame, sink)
         snap = self.engine.step(frame, hand)
-        pointer_setup = self._pointer_setup_frame(frame, hand, snap.stage, sink)
+        pointer_setup = self._pointer_setup_frame(frame, hand, pitch, snap.stage, sink)
         self._record_frame(frame.t, hand, snap, self._pose_step(image, frame.t))
         tracking = self._tracking_step(snap, hand, float(detect_ms))
         self._frames += 1
@@ -699,7 +700,7 @@ class DesktopRuntime:
                     self._pointer_setup = self._pointer_setup_action = None
                     self.engine.pause_for_settings()
                 else:
-                    self._pointer_setup_action = command.path
+                    self._pointer_setup_action = command
             if command.kind == "sensitivity":
                 self._apply_sensitivity(command)
             if command.kind == "spatial_guard":
