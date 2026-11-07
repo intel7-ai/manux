@@ -23,7 +23,9 @@ ApplicationWindow {
     readonly property color muted: "#526575"
     readonly property color mint: "#46E5BD"
     readonly property color line: "#DEE5EA"
-    readonly property bool learningDialogOpen: advancedSettings.visible || trainingCenter.visible || capturePlan.visible || trainingProgress.visible
+    readonly property bool learningDialogOpen: advancedSettings.visible || settingsDialog.visible || trainingCenter.visible || capturePlan.visible || trainingProgress.visible
+    readonly property bool interactionBusy: learningDialogOpen || dashboard.currentPage === "studio"
+    onInteractionBusyChanged: dashboard.setInteractionBusy(interactionBusy)
     font.family: "Malgun Gothic"
 
     component TextLabel: Label {

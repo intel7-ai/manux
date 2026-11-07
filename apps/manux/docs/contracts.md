@@ -598,3 +598,4 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 - 같은 클릭 클래스에 해당하는 손바닥/검지 동작은 보조 차단에서 같은 의미로 비교한다. V 제어 결과는 포즈 표본의 v_sign 클래스에 연결한다.
 - 포즈 학습 요청은 선택한 모델 ID를 포함한다. worker는 해당 모델 표본만 읽어 같은 모델 슬롯에 후보를 저장하고 다른 슬롯을 보존한다. 기존 요청에서 ID가 없으면 저장된 선택값을 읽는다.
 - 포즈 수집·학습·보조차단 버튼의 busy 상태는 worker/StudioBridge가 소유한다.
+- 학습·수집·설정 창과 기존 포즈 페이지는 UI interactionBusy를 SetBusy(enrolling)로 큐에 전달한다. 해당 구간의 V는 제어 전환을 만들지 않는다. 등록·녹화 중 규칙 비교는 Windows 싱크가 없는 별도 practice 엔진의 Snapshot을 ViewFrame.rule_preview로 전달하고 녹화의 rule 필드에도 사용한다. 해당 구간이 끝나거나 종료하면 정리한다. 실제 제어 엔진은 출력none을 유지한다.

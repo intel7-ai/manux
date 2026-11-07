@@ -33,7 +33,7 @@ from manux.data.tracking_test import TrackingTest, load_recent_results, result_l
 from manux.data.training_center import TrainingCenterService
 from manux.data.legacy_import import pending_model
 from manux.data.pose_studio import ACTION_IDS, PoseSnapshotStudio, STUDIO_ACTIONS, STUDIO_CATEGORIES, normalize_system_action
-from manux.engine.commands import RequestMode, SetBusy, SetControl
+from manux.engine.commands import RequestMode, SetBaseMode, SetBusy, SetControl
 from manux.engine.pipeline import Engine
 from manux.features import tcn_gate
 from manux.features.spatial_pose import SpatialPoseFeature, SpatialPoseGuard
@@ -227,6 +227,7 @@ class DesktopRuntime:
         self._practice_event_seq = 0
         self._practice_epoch = 0
         self._practice_active = False
+        self._pose_preview = None
         from manux.output.windows.cursor import CursorMapper
         from manux.output.windows.config import WindowsOutputConfig
         from manux.platform.monitors import ScreenLayout
@@ -477,6 +478,9 @@ class DesktopRuntime:
         except Exception:
             pass
         self.engine.shutdown()
+        if self._pose_preview is not None:
+            self._pose_preview.shutdown()
+            self._pose_preview = None
         self.source.close()
         if self._thread is None or not self._thread.is_alive():
             self._close_pose()
@@ -516,6 +520,8 @@ class DesktopRuntime:
             now = time.perf_counter()
             self._recording_step(now, None, None)
             self.engine.frame_missing(now)
+            if self._pose_preview is not None:
+                self._pose_preview.frame_missing(now)
             if getattr(self.source, "error", ""):
                 self._publish(ViewFrame(self._latest.snapshot, camera_ok=False, message=self.source.error,
                                         model_status=self.model_status, rec=self._rec_view(now)))
@@ -531,7 +537,16 @@ class DesktopRuntime:
                 from dataclasses import replace
                 sink.update_config(replace(sink.config, frame_aspect=frame.aspect))
         snap = self.engine.step(frame, hand)
-        self._record_frame(frame.t, hand, snap, self._pose_step(image, frame.t))
+        rule_preview = None
+        if {"enrolling", "recording"}.intersection(snap.busy):
+            if self._pose_preview is None:
+                self._pose_preview = build_engine(self.settings, self.engine.arbiter.base_mode)
+            self._pose_preview.commands.put(SetBaseMode(self.engine.arbiter.base_mode))
+            rule_preview = self._pose_preview.step(frame, hand)
+        elif self._pose_preview is not None:
+            self._pose_preview.shutdown()
+            self._pose_preview = None
+        self._record_frame(frame.t, hand, rule_preview or snap, self._pose_step(image, frame.t))
         tracking = self._tracking_step(snap, hand, float(detect_ms))
         self._frames += 1
         if image is not None and self._frames % 10 == 1:
@@ -574,6 +589,7 @@ class DesktopRuntime:
             practice_cursor=practice.cursor_position if snap.output is OutputTarget.PRACTICE else None,
             practice_precision=bool(practice.precision) if snap.output is OutputTarget.PRACTICE else False,
             practice_events=tuple(self._practice_events), practice_epoch=self._practice_epoch,
+            rule_preview=rule_preview,
             frame_age_ms=max(0.0, (time.perf_counter() - frame.t) * 1000.0)))
 
     def _pose_step(self, image, now):

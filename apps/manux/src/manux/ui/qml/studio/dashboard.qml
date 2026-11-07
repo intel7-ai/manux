@@ -9,6 +9,8 @@ ApplicationWindow {
     objectName: "raspJunStudio"
     readonly property bool learningDialogOpen: advancedSettings.visible || trainingCenter.visible || capturePlan.visible
         || trainingProgressPage.visible || dataCenter.visible || studioSettings.visible || pointerSettings.visible
+    readonly property bool interactionBusy: learningDialogOpen || dashboard.currentPage === "studio"
+    onInteractionBusyChanged: dashboard.setInteractionBusy(interactionBusy)
     width: 1140
     height: 720
     minimumWidth: 780

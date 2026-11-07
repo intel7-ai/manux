@@ -824,6 +824,11 @@ class Bridge(QObject):
         self.paused = True
         self._send(SetControl(False))
 
+    @Slot(bool)
+    def setInteractionBusy(self, busy):
+        self._pause()
+        self._send(SetBusy("enrolling", bool(busy)))
+
     def _set_stage(self, name: str) -> None:
         self.stage_name = name
         self._send(SetStage(STAGES[name]))
@@ -2704,7 +2709,7 @@ class Bridge(QObject):
             self.tip, self.tip_at = (tip[0], tip[1]), time.perf_counter()
             self.aspect = view.aspect
         if self.page == "studio" or self._pose_studio_visible:
-            sys_act = (self._studio_sys_fn(snap, view.actions) if self._studio_sys_fn is not None
+            sys_act = (self._studio_sys_fn(view.rule_preview or snap, view.actions) if self._studio_sys_fn is not None
                        else ("none" if not view.actions else view.actions[0]))
             prev_samples_len = len(self.pose_studio.samples)
             prev_hand = self.pose_studio.hand_tracked
