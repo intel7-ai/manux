@@ -115,9 +115,21 @@ ApplicationWindow {
 
     Timer { interval: 700; running: dashboard.stage === "splash"; onTriggered: dashboard.finishSplash() }
 
+    Current.GestureTutorial {
+        anchors.fill: parent
+        z: 2
+        visible: dashboard.stage === "tutorial" && !dashboard.pointerSetupActive
+    }
+    Current.PointerSetupPage {
+        anchors.fill: parent
+        z: 2
+        visible: dashboard.stage === "tutorial" && dashboard.pointerSetupActive
+        controller: dashboard
+    }
+
     Rectangle {
         anchors.fill: parent
-        visible: dashboard.stage !== "main"
+        visible: dashboard.stage !== "main" && dashboard.stage !== "tutorial"
         color: "#F4F6F8"
         ColumnLayout {
             anchors.centerIn: parent
@@ -337,6 +349,13 @@ ApplicationWindow {
                                     text: "초기화"
                                     onClicked: dashboard.resetPalmCalibration()
                                 }
+                            }
+                            ActionButton {
+                                Layout.fillWidth: true
+                                visible: dashboard.pointerSetupAvailable && !dashboard.pointerOnly
+                                enabled: dashboard.recMode === "off" && !dashboard.trackingActive
+                                text: "커서 자동 설정"
+                                onClicked: dashboard.beginPointerSetup()
                             }
                             SectionLabel { visible: !dashboard.pointerOnly && dashboard.tcnAvailable; text: "손짓 확인 (TCN: 학습된 동작)" }
                             Segmented {

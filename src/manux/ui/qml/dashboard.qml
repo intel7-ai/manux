@@ -448,105 +448,14 @@ ApplicationWindow {
         TextLabel { id: chipLabel; anchors.centerIn: parent; font.pixelSize: 12; color: chip.warn ? "#8A5A00" : window.navy }
     }
 
-    // Guided tutorial: one gesture at a time, confirmed by the engine (practice mode: nothing is clicked).
-    Rectangle {
+    GestureTutorial {
         anchors.fill: parent
-        visible: dashboard.stage === "tutorial"
-        color: "#F4F6F8"
-        ColumnLayout {
-            anchors.centerIn: parent
-            width: Math.min(parent.width - 64, 720)
-            spacing: 14
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 4
-                Repeater {
-                    model: dashboard.tutorialCount
-                    delegate: Rectangle {
-                        required property int index
-                        Layout.fillWidth: true
-                        implicitHeight: 6
-                        radius: 3
-                        color: dashboard.tutorialDoneSteps[index] ? window.mint
-                             : index === dashboard.tutorialIndex ? "#9FB3BF" : window.line
-                    }
-                }
-            }
-            TextLabel {
-                text: dashboard.tutorialFinished ? "준비됐어요"
-                    : (dashboard.tutorialIndex + 1) + " / " + dashboard.tutorialCount
-                color: window.muted
-                font.pixelSize: 13
-            }
-            TextLabel {
-                Layout.fillWidth: true
-                text: dashboard.tutorialFinished ? "이제 켜고 써 보세요" : dashboard.tutorialTitle
-                font.pixelSize: 32
-                font.bold: true
-            }
-            TextLabel {
-                Layout.fillWidth: true
-                wrapMode: Text.Wrap
-                color: window.muted
-                font.pixelSize: 16
-                text: dashboard.tutorialFinished
-                    ? "배운 동작은 메인 화면에 늘 보입니다. 메인 화면의 \"동작 다시 배우기\"로 언제든 다시 할 수 있어요."
-                    : dashboard.tutorialHow
-            }
-            Rectangle {
-                visible: !dashboard.tutorialFinished
-                Layout.fillWidth: true
-                Layout.preferredHeight: Math.min(320, window.height * .42)
-                radius: 16
-                color: window.navy
-                clip: true
-                Image { anchors.fill: parent; source: dashboard.previewUrl; cache: false; fillMode: Image.PreserveAspectFit }
-                Rectangle {
-                    visible: dashboard.tutorialSucceeded
-                    anchors.centerIn: parent
-                    width: doneLabel.implicitWidth + 40
-                    height: 56
-                    radius: 28
-                    color: window.mint
-                    TextLabel { id: doneLabel; anchors.centerIn: parent; text: "잘했어요"; font.pixelSize: 22; font.bold: true }
-                }
-            }
-            Rectangle {
-                visible: !dashboard.tutorialFinished && !dashboard.tutorialSucceeded && dashboard.tutorialProgress > 0
-                Layout.fillWidth: true
-                implicitHeight: 6
-                radius: 3
-                color: window.line
-                Rectangle { width: parent.width * dashboard.tutorialProgress; height: parent.height; radius: 3; color: window.mint }
-            }
-            TextLabel {
-                visible: !dashboard.tutorialFinished
-                Layout.fillWidth: true
-                wrapMode: Text.Wrap
-                color: window.muted
-                font.pixelSize: 12
-                text: "연습 중에는 실제 마우스 커서·클릭·키 입력을 전혀 보내지 않습니다. 화면의 표시로만 확인하세요."
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                ActionButton {
-                    visible: !dashboard.tutorialFinished && dashboard.tutorialIndex > 0
-                    text: "이전"
-                    onClicked: dashboard.tutorialBack()
-                }
-                Item { Layout.fillWidth: true }
-                ActionButton {
-                    visible: !dashboard.tutorialFinished
-                    text: "나중에 하기"
-                    onClicked: dashboard.finishTutorial()
-                }
-                ActionButton {
-                    text: dashboard.tutorialFinished ? "시작하기" : (dashboard.tutorialSucceeded ? "다음" : "건너뛰기")
-                    accent: dashboard.tutorialFinished || dashboard.tutorialSucceeded
-                    onClicked: dashboard.tutorialFinished ? dashboard.finishTutorial() : dashboard.tutorialNext()
-                }
-            }
-        }
+        visible: dashboard.stage === "tutorial" && !dashboard.pointerSetupActive
+    }
+    PointerSetupPage {
+        anchors.fill: parent
+        visible: dashboard.stage === "tutorial" && dashboard.pointerSetupActive
+        controller: dashboard
     }
 
     // Main screen (2026-11-04): on/off, what the camera sees, and what the hand can do. Nothing else;
@@ -855,6 +764,12 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     TextLabel { text: "쓸 수 있는 동작"; font.pixelSize: 18; font.bold: true }
                     Item { Layout.fillWidth: true }
+                    ActionButton {
+                        visible: dashboard.pointerSetupAvailable && !dashboard.pointerOnly
+                        enabled: dashboard.recMode === "off" && !dashboard.trackingActive
+                        text: "커서 자동 설정"
+                        onClicked: dashboard.beginPointerSetup()
+                    }
                     ActionButton {
                         visible: dashboard.tutorialAvailable
                         text: "동작 다시 배우기"

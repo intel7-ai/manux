@@ -53,11 +53,14 @@ class Target:
     dwell_jitter_px: Optional[float] = None
     inside_since: Optional[float] = None
     inside_points: List[Tuple[float, float]] = field(default_factory=list)
+    overshoots: int = 0
+    beyond_target: bool = False
 
 
 class TrackingTest:
     def __init__(self, monitor, count: int = 12, dwell: float = .5, timeout: float = 12.0,
-                 seed: Optional[int] = None, margin: float = .08, hold_margin_px: float = 10.0) -> None:
+                 seed: Optional[int] = None, margin: float = .08, hold_margin_px: float = 10.0,
+                 targets: Optional[List[Target]] = None) -> None:
         self.monitor: Area = monitor  # left, top, width, height in screen px
         self.dwell = float(dwell)
         # Once on a target, a cursor this far past its edge still counts as holding, so
@@ -65,9 +68,9 @@ class TrackingTest:
         self.hold_margin_px = float(hold_margin_px)
         self.timeout = float(timeout)
         rng = random.Random(seed)
-        self.targets: List[Target] = []
+        self.targets: List[Target] = list(targets or ())
         prev = (.5, .5)
-        for i in range(count):
+        for i in range(count if targets is None else 0):
             # Alternate far-ish jumps so every target needs a real movement
             for _ in range(50):
                 fx, fy = rng.uniform(margin, 1 - margin), rng.uniform(margin, 1 - margin)
@@ -139,7 +142,15 @@ class TrackingTest:
 
         cx, cy = self.center_px(target)
         radius = target.size_px / 2 + (self.hold_margin_px if target.inside_since is not None else 0.0)
-        inside = math.dist(pos, (cx, cy)) <= radius
+        if hand and target.start_pos is not None:
+            dx, dy = cx - target.start_pos[0], cy - target.start_pos[1]
+            distance = math.hypot(dx, dy)
+            if distance > radius:
+                past = ((pos[0] - cx) * dx + (pos[1] - cy) * dy) / distance
+                if past > radius and not target.beyond_target:
+                    target.overshoots += 1
+                target.beyond_target = past > radius
+        inside = hand and math.dist(pos, (cx, cy)) <= radius
         if inside:
             if target.inside_since is None:
                 target.inside_since = now

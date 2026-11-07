@@ -46,3 +46,4 @@ class ViewFrame:
     preview_guides: Tuple[Tuple[int, str], ...] = ()  # fingertip index + near/pinched/action; display only
     preview_anchor: Optional[Tuple[float, float]] = None
     preview_moving: bool = False              # rule preview, not evidence of OS output
+    pointer_setup: Optional[Mapping[str, Any]] = None
