@@ -157,3 +157,76 @@ def test_guard_toggle_preserves_selected_model_and_cannot_restore_stale_startup_
         assert runtime.spatial_feature.model is None
     finally:
         runtime.stop()
+
+
+@pytest.mark.parametrize("busy_reason", ["enrolling", "recording"])
+def test_registration_has_practice_only_rule_comparison_while_control_is_blocked(
+    busy_reason,
+    monkeypatch,
+):
+    from types import SimpleNamespace
+    from manux.app import schema
+    from manux.core.contracts import OutputTarget, Stage
+    from manux.desktop import build
+    from manux.engine.commands import SetBusy, SetStage
+    from manux.settings.store import Settings
+
+    class Source:
+        fps = 30.0
+        seq = 0
+
+        def read(self, *args):
+            frame = FrameInfo(self.seq, 1 + self.seq * 0.05, 640, 480, True)
+            self.seq += 1
+            hand = HandObservation(frame, tuple(_dummy_hand(12)), "Right", 0.99)
+            return frame, None, hand, (), 0.0
+
+        def mode_text(self):
+            return "synthetic"
+
+        def close(self):
+            pass
+
+    runtime = build(Settings(schema()), Source(), windows=False)
+    runtime.engine.commands.put(SetStage(Stage.MAIN))
+    runtime.engine.commands.put(SetBusy(busy_reason, True))
+    views = []
+    recorded = []
+    runtime._record_frame = lambda now, hand, snap, pose: recorded.append(snap)
+    try:
+        for _ in range(30):
+            runtime.step()
+            views.append(runtime.latest()[1])
+        assert all(view.snapshot.output is OutputTarget.NONE for view in views)
+        assert all(
+            not view.snapshot.control_on and not view.snapshot.results for view in views
+        )
+        assert all(view.rule_preview.output is OutputTarget.PRACTICE for view in views)
+        assert recorded == [view.rule_preview for view in views]
+        assert OutputTarget.WINDOWS not in runtime._pose_preview.sinks
+        assert any(
+            normalize_system_action(view.rule_preview) == "thumb_middle"
+            for view in views
+        )
+        missing = []
+        with monkeypatch.context() as patch:
+            patch.setattr(runtime.source, "read", lambda *args: None)
+            patch.setattr(runtime._pose_preview, "frame_missing", missing.append)
+            runtime.step()
+        assert len(missing) == 1
+        runtime.engine.commands.put(SetBusy(busy_reason, False))
+        runtime.step()
+        assert (
+            runtime.latest()[1].rule_preview is None and runtime._pose_preview is None
+        )
+    finally:
+        runtime.stop()
+
+
+def test_motion_entry_event_is_visible_in_pose_comparison():
+    from types import SimpleNamespace
+
+    snapshot = SimpleNamespace(
+        intents=(), results=(), events=("mode:pinch->motion:intent",)
+    )
+    assert normalize_system_action(snapshot) == "thumbs_up"

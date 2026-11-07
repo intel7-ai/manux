@@ -209,6 +209,9 @@ def normalize_system_action(snapshot: Any, actions: Sequence[str] = ()) -> str:
             cls = GESTURE_TO_STUDIO_CLASS[act]
             if cls != "none":
                 return cls
+    for event in getattr(snapshot, "events", ()):
+        if event.startswith("mode:") and event.endswith(":intent") and "motion" in event:
+            return "thumbs_up"
     return "none"
 
 

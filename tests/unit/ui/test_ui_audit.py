@@ -155,3 +155,38 @@ def test_library_pose_preview_selects_model_after_preserving_current_samples(
     previous = PoseSnapshotStudio(service.data_dir)
     previous.active_model_id = selected
     assert sample_id in {sample["sampleId"] for sample in previous.load_all_samples()}
+
+
+@pytest.mark.parametrize(
+    "dialog_name", ["studioDataManagement", "advancedSettings", "studioSettings"]
+)
+def test_v_cannot_enable_control_inside_capture_or_settings_dialogs(
+    studio, dialog_name
+):
+    from manux.core.contracts import FrameInfo, HandObservation, OutputTarget
+
+    bridge, service, runtime, messages = studio
+    bridge.timer.stop()
+    dialog = bridge.window.findChild(QObject, dialog_name)
+    QMetaObject.invokeMethod(dialog, "open")
+    QTest.qWait(60)
+    points = [(0.5, 0.8, 0.0)] * 21
+    points[4] = (0.52, 0.64, 0.0)
+    for mcp, tip, x in [(5, 8, 0.44), (9, 12, 0.48), (13, 16, 0.52), (17, 20, 0.56)]:
+        points[mcp] = (x, 0.6, 0.0)
+        points[tip] = (x, 0.4 if mcp in (5, 9) else 0.68, 0.0)
+    for index in range(25):
+        frame = FrameInfo(index, 1 + index * 0.05, 1280, 720, True)
+        snap = runtime.engine.step(
+            frame, HandObservation(frame, tuple(points), "Right", 0.99)
+        )
+        assert "enrolling" in snap.busy
+        assert not snap.control_on and snap.output is OutputTarget.NONE
+    QMetaObject.invokeMethod(dialog, "close")
+    QTest.qWait(60)
+    for index in range(25):
+        frame = FrameInfo(100 + index, 3 + index * 0.05, 1280, 720, True)
+        snap = runtime.engine.step(
+            frame, HandObservation(frame, tuple(points), "Right", 0.99)
+        )
+    assert not snap.busy and snap.control_on
