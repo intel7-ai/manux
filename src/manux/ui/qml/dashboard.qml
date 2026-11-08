@@ -456,9 +456,15 @@ ApplicationWindow {
 
     TutorialPage {
         anchors.fill: parent
-        visible: dashboard.stage === "tutorial"
+        visible: dashboard.stage === "tutorial" && !dashboard.pointerSetupActive
         controller: dashboard
     }
+    PointerSetupPage {
+        anchors.fill: parent
+        visible: dashboard.stage === "tutorial" && dashboard.pointerSetupActive
+        controller: dashboard
+    }
+
     // Main screen (2026-11-04): on/off, what the camera sees, and what the hand can do. Nothing else;
     // options live in the settings dialog.
     ColumnLayout {
@@ -769,6 +775,12 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     TextLabel { text: "쓸 수 있는 동작"; font.pixelSize: 18; font.bold: true }
                     Item { Layout.fillWidth: true }
+                    ActionButton {
+                        visible: dashboard.pointerSetupAvailable && !dashboard.pointerOnly
+                        enabled: dashboard.recMode === "off" && !dashboard.trackingActive
+                        text: "커서 자동 설정"
+                        onClicked: dashboard.beginPointerSetup()
+                    }
                     ActionButton {
                         visible: dashboard.tutorialAvailable
                         text: "동작 다시 배우기"

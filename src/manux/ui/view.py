@@ -46,6 +46,7 @@ class ViewFrame:
     preview_guides: Tuple[Tuple[int, str], ...] = ()  # fingertip index + near/pinched/action; display only
     preview_anchor: Optional[Tuple[float, float]] = None
     preview_moving: bool = False              # rule preview, not evidence of OS output
+    pointer_setup: Optional[Mapping[str, Any]] = None
     control_hand: str = ""                    # physical selected hand, supplied by the runtime
     preview_gesture: str = ""                 # engine gesture id; the UI never classifies landmarks
     practice_cursor: Optional[Tuple[float, float]] = None  # virtual sink cursor, normalized screen

@@ -476,6 +476,7 @@ class Bridge(QObject):
     overlayChanged = Signal()
     fingerFrameChanged = Signal()
     tutorialChanged = Signal()
+    pointerSetupChanged = Signal()
     hiddenToTray = Signal()
     trackingActiveChanged = Signal()
     trainingChanged = Signal()
@@ -594,6 +595,8 @@ class Bridge(QObject):
         self.candidate = ""
         self.remaining = 5
         self.tutorial: Optional[Tutorial] = None
+        self._pointer_setup_view = {}
+        self._setup_before_tutorial = False
         self._tutorial_progress = -1.0
         self._preview_view = ViewFrame(None)
         self._last_practice_seq = 0
@@ -836,6 +839,10 @@ class Bridge(QObject):
         self._send(SetBusy("enrolling", bool(busy)))
 
     def _set_stage(self, name: str) -> None:
+        if name != "tutorial" and self._pointer_setup_view:
+            self.runtime.request(RuntimeRequest("pointer_setup", "skip"))
+            self._pointer_setup_view = {}
+            self.pointerSetupChanged.emit()
         self.stage_name = name
         self._send(SetStage(STAGES[name]))
         if name != "main":
@@ -2275,7 +2282,10 @@ class Bridge(QObject):
         self.runtime.set_override("pointer", "axes", self.axes)
         self._set_stage("main")
         if not self.preferences.value("tutorialDone", False, type=bool):
-            self.beginTutorial()
+            if self.pointerSetupAvailable and not self.pointerOnly:
+                self._open_pointer_setup(before_tutorial=True)
+            else:
+                self.beginTutorial()
 
     def _choose(self, view: ViewFrame) -> None:
         now = time.perf_counter()
@@ -2288,6 +2298,62 @@ class Bridge(QObject):
         if (self.choice.side, remaining) != (self.candidate, self.remaining):
             self.candidate, self.remaining = self.choice.side, remaining
             self.stateChanged.emit()
+
+    # ------------------------------------------------------------------ pointer setup
+    @Property(bool, constant=True)
+    def pointerSetupAvailable(self):
+        return getattr(self.runtime, "pointer_setup_dir", None) is not None
+
+    @Property("QVariantMap", notify=pointerSetupChanged)
+    def pointerSetup(self):
+        return self._pointer_setup_view
+
+    @Property(bool, notify=pointerSetupChanged)
+    def pointerSetupActive(self):
+        return bool(self._pointer_setup_view)
+
+    @Slot()
+    def beginPointerSetup(self):
+        if (self.pointerSetupAvailable and not self.pointerOnly and self.control_hand and self.stage_name == "main"
+                and self.rec_mode == "off" and not self.trackingActive):
+            self._open_pointer_setup(before_tutorial=False)
+
+    def _open_pointer_setup(self, *, before_tutorial):
+        self.cancelPalmCalibration()
+        self.cancelPointerCalibration()
+        self.tutorial = None
+        self._setup_before_tutorial = before_tutorial
+        self._pointer_setup_view = {"phase": "intro"}
+        self._set_stage("tutorial")
+        self.pointerSetupChanged.emit()
+
+    @Slot(str)
+    def pointerSetupAction(self, action):
+        if self.stage_name != "tutorial" or not self._pointer_setup_view:
+            return
+        if action == "skip":
+            self._close_pointer_setup()
+        elif action in ("capture", "retest"):
+            self.runtime.request(RuntimeRequest("pointer_setup", action))
+        elif action in ("start", "apply"):
+            if self.runtime.request(RuntimeRequest("pointer_setup", action)):
+                self._pointer_setup_view = {"phase": "waiting"}
+                self.pointerSetupChanged.emit()
+
+    @Slot(str, float)
+    def pointerSetupAdjust(self, key, value):
+        if self.stage_name == "tutorial" and self._pointer_setup_view.get("phase") in ("aim", "preview", "review"):
+            self.runtime.request(RuntimeRequest("pointer_setup", "adjust", {key: value}))
+
+    def _close_pointer_setup(self):
+        self.runtime.request(RuntimeRequest("pointer_setup", "skip"))
+        self._send(RequestMode(None))
+        self._pointer_setup_view = {}
+        self.pointerSetupChanged.emit()
+        if self._setup_before_tutorial:
+            self.beginTutorial()
+        else:
+            self._set_stage("main")
 
     # ------------------------------------------------------------------ tutorial
     @Property(bool, constant=True)
@@ -2500,6 +2566,13 @@ class Bridge(QObject):
     # ------------------------------------------------------------------ keys, window, tray
     @Slot(int)
     def command(self, key):
+        if self.pointerSetupActive and key != KEY_Q:
+            if key == KEY_ESC:
+                self._close_pointer_setup()
+            elif key == KEY_SPACE and self._pointer_setup_view.get("hand") and not self._pointer_setup_view.get("capturing"):
+                if self._pointer_setup_view.get("phase") in ("rest", "horizontal", "up", "down"):
+                    self.pointerSetupAction("capture")
+            return
         if self.palmCalibrating and key != KEY_Q:
             if key == KEY_ESC:
                 self.cancelPalmCalibration()
@@ -2670,6 +2743,16 @@ class Bridge(QObject):
         self._preview_view = view
         # Notify overlays even with no image so a lost hand cannot leave old joints behind.
         self.previewChanged.emit()
+        if self._pointer_setup_view and view.pointer_setup is not None:
+            current = dict(view.pointer_setup)
+            for key in ("target", "cursor"):
+                if current.get(key) is not None:
+                    current[key] = list(current[key])
+            if current.get("phase") == "saved":
+                self._close_pointer_setup()
+            elif current != self._pointer_setup_view:
+                self._pointer_setup_view = current
+                self.pointerSetupChanged.emit()
         if view.spatial_guard_enabled != self._spatial_guard_enabled:
             self._spatial_guard_enabled = view.spatial_guard_enabled
             self.studioChanged.emit()

@@ -17,6 +17,8 @@ import queue
 import sys
 import threading
 import time
+from dataclasses import replace
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Tuple
 from uuid import uuid4
@@ -24,7 +26,7 @@ from uuid import uuid4
 from manux.actions.bindings import Binding
 from manux.app import _FEATURES, _camera_config, build_engine, schema, pipeline_parts, read_bindings, training_specs
 from manux.capture.camera import LatestFrameCamera, brightness
-from manux.core.contracts import FrameInfo, HandObservation, OutputTarget, PracticeEvent, RecordingIdentity, RuntimeRequest
+from manux.core.contracts import FrameInfo, HandObservation, OutputTarget, PracticeEvent, RecordingIdentity, RuntimeRequest, Stage
 from manux.data.catalog import BY_KEY, tasks_for
 from manux.data.guided import GuidedSession
 from manux.data.recorder import SessionRecorder
@@ -32,24 +34,30 @@ from manux.data.recording import read, replay
 from manux.data.tracking_test import TrackingTest, load_recent_results, result_line, view as tracking_view
 from manux.data.training_center import TrainingCenterService
 from manux.data.legacy_import import pending_model
+from manux.data.pointer_setup import LIMITS as POINTER_SETUP_LIMITS, SETTING_KEY, PointerSetup, read_profiles, write_profiles
 from manux.data.pose_studio import ACTION_IDS, PoseSnapshotStudio, STUDIO_ACTIONS, STUDIO_CATEGORIES, normalize_system_action
 from manux.engine.commands import RequestMode, SetBaseMode, SetBusy, SetControl
 from manux.engine.pipeline import Engine
 from manux.features import tcn_gate
 from manux.features.spatial_pose import SpatialPoseFeature, SpatialPoseGuard
 from manux.features.pinch.preview import PinchPreview
+from manux.features.pinch.engine import palm_anchor_point
 from manux.ml.card import ModelError
 from manux.ml.predictor import load_model
 from manux.ml.spatial_mlp import SpatialMlpModel, train_spatial_mlp
 from manux.ml.store import active_token, load_active
 from manux.perception.local3d import FEATURES, FEATURE_VERSION
+from manux.perception.palm_axes import corrected_point
+from manux.perception.palm_pitch import palm_pitch
 from manux.perception.spatial_features import SPATIAL_FEATURE_VERSION, extract_spatial_features
 from manux.settings.paths import AppPaths, resolve
+from manux.settings import store as settings_store
 from manux.settings.store import Settings, load
 from manux.settings.tcn_policy import GesturePolicies
 from manux.ui.view import SeenHand, ViewFrame
 
 POINTER_MOVE = "pointer.move"
+CURSOR_BASE_KEYS = ("relative_gain_min", "relative_gain_max", "smoothing")
 
 
 class CameraInput:
@@ -221,6 +229,12 @@ class DesktopRuntime:
         self._pose_failed = False
         self.pose_status = "팔·어깨 기록 꺼짐"
         self.sensitivity_result = (0, True, "")
+        self.pointer_setup_dir: Optional[Path] = None
+        self._pointer_setup: Optional[PointerSetup] = None
+        self._pointer_setup_action = None
+        self._pointer_setup_environment = None
+        self._pointer_environment_key = None
+        self._pointer_config_signature = None
         self.advanced_result = (0, True, "")
         self._control_model = None
         self._practice_events = deque(maxlen=128)
@@ -284,6 +298,113 @@ class DesktopRuntime:
     def pointer_gain(self) -> float:
         binding = self.engine.router.bindings.get(POINTER_MOVE)
         return float(binding.params.get("gain", 1.0)) if binding is not None else 1.0
+
+    def _pointer_environment(self, frame, monitor, mode):
+        owner = "pointer" if mode == "pointer" else "pinch"
+        axes = self._overrides.get(owner, {}).get("axes" if owner == "pointer" else "palm_axes")
+        source_id = getattr(self.source, "source", None)
+        if source_id is None:
+            source_id = self.settings.get("camera.source")
+        return (type(self.source).__name__, str(source_id),
+                self.control_hand, frame.width, frame.height, frame.mirrored, frame.rotation, mode,
+                self.settings.get("pointer.anchor") if mode == "pointer" else "palm", axes,
+                self.settings.get(f"{owner}.cursor_anchor_ratio"),
+                self.pointer_gain() if mode == "pointer" else 1.0,
+                monitor.width, monitor.height)
+
+    def _pointer_profile_locked(self):
+        return self.settings.is_overridden(SETTING_KEY) or any(
+            self.settings.is_overridden("cursor." + name) for name in POINTER_SETUP_LIMITS)
+
+    def _configure_cursor_for_frame(self, frame, sink):
+        if sink is None or not hasattr(sink, "set_frame_aspect"):
+            return
+        raw = self.settings.get(SETTING_KEY)
+        if not raw and self._pointer_config_signature is None:
+            sink.set_frame_aspect(frame.aspect)
+            return
+        environment = self._pointer_environment(frame, sink.screens.primary, self.engine.arbiter.base_mode)
+        locked = self._pointer_profile_locked()
+        base_values = tuple(self.settings.get("cursor." + key) for key in CURSOR_BASE_KEYS)
+        signature = (environment, raw, locked, base_values)
+        if signature == self._pointer_config_signature:
+            return
+        self._pointer_environment_key = sha256(repr(environment).encode("utf-8")).hexdigest()
+        values = {} if locked else read_profiles(raw).get(self._pointer_environment_key, {})
+        config = {"palm_left": 0., "palm_right": 0., "palm_up": 0., "palm_down": 0.,
+                  "palm_x_gain": 1., "palm_y_gain": 1., "frame_aspect": frame.aspect}
+        config.update(self.settings.section("cursor"))
+        config.update(values)
+        candidate = replace(sink.config, **config)
+        if candidate != sink.config:
+            sink.release_all("cursor environment changed")
+            sink.configure(candidate)
+        self._pointer_config_signature = signature if raw else None
+
+    def _pointer_setup_frame(self, frame, hand, pitch, stage, sink):
+        request, self._pointer_setup_action = self._pointer_setup_action, None
+        action = request.path if request is not None else None
+        if stage != Stage.TUTORIAL or self.pointer_setup_dir is None:
+            self._pointer_setup = None
+            return None
+        if action is None and self._pointer_setup is None:
+            return None
+
+        from manux.output.windows.config import WindowsOutputConfig
+        from manux.output.windows.cursor import CursorMapper
+        from manux.platform.monitors import ScreenLayout
+
+        mode = self.engine.arbiter.base_mode
+        if action == "start":
+            monitor = (sink.screens if sink is not None else ScreenLayout.detect()).primary
+            config = WindowsOutputConfig(**self.settings.section("cursor"), frame_aspect=frame.aspect)
+            layout = ScreenLayout([monitor])
+            self._pointer_setup = PointerSetup(
+                monitor, frame.width, lambda values: CursorMapper(layout, replace(config, **values)))
+            self._pointer_setup_environment = self._pointer_environment(frame, monitor, mode)
+        setup = self._pointer_setup
+        if setup is None:
+            return None
+        environment = self._pointer_environment(frame, setup.monitor, mode)
+        if environment != self._pointer_setup_environment or self._pointer_profile_locked():
+            setup.phase = "retry"
+            setup.note = ("프로필이 이동 감도를 지정하고 있어요. 기본 프로필에서 다시 시도해 주세요."
+                          if self._pointer_profile_locked() else "카메라나 조작 환경이 바뀌었어요. 다시 측정해 주세요.")
+            return setup.view()
+        point = None
+        if hand is not None and pitch is not None:
+            cfg = self.settings_for("pinch")
+            raw = palm_anchor_point(hand.landmarks, cfg["cursor_anchor_ratio"])
+            x, _ = corrected_point(raw, frame.aspect, cfg.get("palm_axes"))
+            point = (x, pitch)
+        if action == "capture" and point is not None:
+            setup.capture()
+        elif action == "adjust":
+            setup.adjust(request.values)
+        elif action == "retest" and setup.phase in ("aim", "review", "preview"):
+            setup.begin_aim()
+        elif action == "apply" and setup.phase == "review" and setup.can_apply:
+            self._save_pointer_setup(environment, setup)
+        setup.step(frame.t, point)
+        return setup.view()
+
+    def _save_pointer_setup(self, environment, setup):
+        key = sha256(repr(environment).encode("utf-8")).hexdigest()
+        profiles = read_profiles(self.settings.get(SETTING_KEY))
+        profiles.pop(key, None)
+        profiles[key] = dict(setup.values)
+        serialized = write_profiles(profiles)
+        candidate = Settings(self.settings.schema, self.settings.stored())
+        candidate.set(SETTING_KEY, serialized)
+        try:
+            settings_store.save(candidate, self.pointer_setup_dir)
+        except OSError:
+            setup.note = "설정을 저장하지 못했어요. 적용을 다시 누르거나 건너뛰어 주세요."
+            return
+        self.settings.set(SETTING_KEY, serialized)
+        self.engine.pause_for_settings()
+        self._pointer_config_signature = None
+        setup.phase = "saved"
 
     # ------------------------------------------------------------------ tracking test (UI thread calls these)
     def start_tracking_test(self) -> str:
@@ -536,14 +657,16 @@ class DesktopRuntime:
             return
         frame, image, hand, hands, detect_ms = item
         self._recording_step(frame.t, frame, hand)
-        for target in (OutputTarget.WINDOWS, OutputTarget.PRACTICE):
-            sink = self.engine.sinks.get(target)
-            if sink is not None and hasattr(sink, "set_frame_aspect"):
-                sink.set_frame_aspect(frame.aspect)
-            elif target is OutputTarget.PRACTICE and sink is not None:
-                from dataclasses import replace
-                sink.update_config(replace(sink.config, frame_aspect=frame.aspect))
+        sink = self.engine.sinks.get(OutputTarget.WINDOWS)
+        pitch = palm_pitch(hand.world) if hand is not None else None
+        if sink is not None and hasattr(sink, "set_palm_pitch"):
+            sink.set_palm_pitch(pitch)
+        self._configure_cursor_for_frame(frame, sink)
+        practice_sink = self.engine.sinks.get(OutputTarget.PRACTICE)
+        if practice_sink is not None and practice_sink.config is not None:
+            practice_sink.update_config(replace(practice_sink.config, frame_aspect=frame.aspect))
         snap = self.engine.step(frame, hand)
+        pointer_setup = self._pointer_setup_frame(frame, hand, pitch, snap.stage, sink)
         rule_preview = None
         if {"enrolling", "recording"}.intersection(snap.busy):
             if self._pose_preview is None:
@@ -590,7 +713,7 @@ class DesktopRuntime:
             model_status=self._model_view_status(), tracking=tracking, recent=self.recent,
             rec=self._rec_view(frame.t), pose_status=self.pose_status,
             spatial_guard_enabled=bool(self.spatial_guard and self.spatial_guard.enabled),
-            preview_guides=guides, preview_anchor=anchor, preview_moving=moving,
+            preview_guides=guides, preview_anchor=anchor, preview_moving=moving, pointer_setup=pointer_setup,
             control_hand=hand.handedness if hand is not None else self.control_hand,
             preview_gesture=snap.intents[0][0] if snap.intents else "",
             practice_cursor=practice.cursor_position if snap.output is OutputTarget.PRACTICE else None,
@@ -651,6 +774,12 @@ class DesktopRuntime:
                 self.spatial_guard.reset("settings")
         while not self._runtime_requests.empty():
             command = self._runtime_requests.get_nowait()
+            if command.kind == "pointer_setup":
+                if command.path == "skip":
+                    self._pointer_setup = self._pointer_setup_action = None
+                    self.engine.pause_for_settings()
+                else:
+                    self._pointer_setup_action = command
             if command.kind == "sensitivity":
                 self._apply_sensitivity(command)
             if command.kind == "advanced":
@@ -703,24 +832,27 @@ class DesktopRuntime:
                     self.model_store, self._model_token, self._attempted_model_token = previous
 
     def _apply_sensitivity(self, command):
-        from dataclasses import replace
         from manux.settings.sensitivity import prepare
-        from manux.settings.store import save
         revision = self.sensitivity_result[0] + 1
         self.engine.pause_for_settings()
         try:
             values = prepare(self.settings, command.values)
+            if self._pointer_environment_key and any(key.startswith("cursor.") for key in values):
+                profiles = read_profiles(self.settings.get(SETTING_KEY))
+                if profiles.pop(self._pointer_environment_key, None) is not None:
+                    values[SETTING_KEY] = write_profiles(profiles)
             candidate = Settings(self.settings.schema, self.settings.stored())
             for key, value in values.items():
                 if not candidate.set(key, value):
                     raise ValueError("민감도 값을 저장할 수 없습니다.")
-            save(candidate, Path(command.path))
+            settings_store.save(candidate, Path(command.path))
         except (OSError, ValueError) as exc:
             self.sensitivity_result = (revision, False, f"저장 실패 · 기존 설정 유지: {exc}")
             return
         for key, value in values.items():
             self.settings.set(key, value)
         self._configure_cursor_sinks()
+        self._pointer_config_signature = None
         self.pinch_preview.step(None, self.settings_for("pinch"))
         self.sensitivity_result = (revision, True, "저장·적용 완료 · 제어 시작을 누르면 새 감도로 동작합니다.")
 
@@ -1000,6 +1132,7 @@ def main(argv=None) -> int:
                         spatial_pose_model=init_spatial_model)
         runtime.model_status = "가져온 모델 읽기 실패 · 학습센터에서 복구 상태를 확인하세요"
     runtime.pose_model = paths.app_dir / "models" / "pose_landmarker_lite.task"
+    runtime.pointer_setup_dir = paths.config_dir
     runtime.log_dir = paths.log_dir
     runtime.spatial_model_path = spatial_model_path
     runtime.recordings_dir = paths.recordings_dir
