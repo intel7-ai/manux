@@ -12,7 +12,7 @@ A task (`GestureSpec`) has:
   several tasks may share one class, e.g. click and double click are both `thumb_middle`);
 - `gesture`: the v0.4 gesture id the *class* stands for (`label.gesture`, model card `gestures`).
   `None` for the `none` class and for capture-only tasks with no v0.4 feature yet
-  (`v_sign`, `rock_sign`, `swipe_down`): those are recorded and can be trained, but nothing in
+  (`rock_sign`, `swipe_down`): those are recorded and can be trained, but nothing in
   v0.4 checks them yet;
 - `related`: a v0.4 gesture the task performs although its class is not that gesture (cursor moves
   recorded as `none` negatives: `pinch.move`, `pinch.move_fist`, `pointer.move`);
@@ -113,7 +113,8 @@ TASKS: Tuple[GestureSpec, ...] = (
        gesture="pinch.thumb_pinky", modes=_PINCH),
     _t("palm_side", "엄지 접고 손 가로 (바탕화면)", "엄지만 접고 네 손가락을 펴서 옆으로 향하게 유지하세요", WINDOW,
        gesture="pinch.thumb_tucked_open", modes=_PINCH),
-    _t("v_sign", "V 손 모양 (제어 켜기·끄기)", "검지·중지만 V로 펴고 나머지는 접어 가만히 유지하세요", WINDOW),
+    _t("v_sign", "V 손 모양 (제어 켜기·끄기)", "검지·중지만 V로 펴고 나머지는 접어 0.7초 유지하세요", WINDOW,
+       gesture="control.v_sign", min_hold=.7),
     _t("rock_sign", "검지·새끼 펴기 (창 닫기)", "검지·새끼만 펴고 중지·약지를 접어 유지하세요. 실제 창은 닫히지 않아요", WINDOW),
     _t("thumbs_up", "엄지 위로 (모션 모드 켜기·끄기)", "네 손가락을 접고 엄지만 위로 세워 가만히 유지하세요", WINDOW,
        gesture="motion.enter"),
@@ -127,9 +128,9 @@ TASKS: Tuple[GestureSpec, ...] = (
        MOTION, direction="right", gesture="motion.swipe_right_tucked"),
     _t("swipe_down", "손 펴고 아래로 쓸기 (창 닫기)", "손을 펴 아래로 한 번 쓸어 멈추세요. 쉬기 때 올리세요. 실제 창은 닫히지 않아요",
        MOTION, direction="down"),
-    _t("open_move", "손 펴고 이동 (정밀 커서)", "손을 편 채 천천히 여러 방향으로 움직이세요. 손가락을 집지 마세요", MOVE,
+    _t("open_move", "손 펴고 이동 (빠른 커서)", "손을 편 채 여러 방향으로 움직이세요. 손가락을 집지 마세요", MOVE,
        free=True, target=NONE, related="pinch.move", modes=_PINCH),
-    _t("fist_move", "주먹 이동 (빠른 커서)", "주먹을 쥐고 여러 방향으로 움직이세요. 엄지만 세우지 마세요", MOVE,
+    _t("fist_move", "주먹 이동 (정밀 커서)", "주먹을 쥐고 천천히 여러 방향으로 움직이세요. 엄지만 세우지 마세요", MOVE,
        free=True, target=NONE, related="pinch.move_fist", modes=_PINCH),
 )
 

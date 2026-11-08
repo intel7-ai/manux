@@ -135,7 +135,7 @@ def test_click_or_key_while_dragging_releases_the_drag_first():
 
 # ------------------------------------------------------------------ keys
 @pytest.mark.parametrize(("action", "keys"), [
-    ("window.task_switcher", ("alt", "tab")),
+    ("window.task_switcher", ("ctrl", "alt", "tab")),
     ("window.show_desktop", ("win", "d")),
     ("window.close", ("alt", "f4")),
     ("nav.back", ("alt", "left")),
@@ -166,14 +166,19 @@ def test_a_failing_key_press_still_releases_the_pressed_modifiers():
 
 # ------------------------------------------------------------------ every catalog action, phases
 @pytest.mark.parametrize("action", sorted(CATALOG))
-def test_every_catalog_action_is_executed_with_its_phases(action):
+def test_catalog_actions_execute_at_their_owner_with_allowed_phases(action):
     s = sink()
     phases = [p for p in ("begin", "hold", "end", "tap") if p in CATALOG[action].phases]
     if action == "mouse.move":
         s.apply(cmd(action, "hold", (.5, .5), 0.0))
     for i, phase in enumerate(phases):
         r = s.apply(cmd(action, phase, (.5, .5 + .01 * i), 0.1 + i * FRAME))
-        assert r.reason == "ok", (action, phase, r)
+        if action == "control.toggle":
+            # Engine-owned action must never be executed as a Windows shortcut or mouse event.
+            assert not r.accepted and r.reason == "unsupported"
+            assert s.backend.events == []
+        else:
+            assert r.reason == "ok", (action, phase, r)
     s.release_all("test")
     assert s.backend.buttons_down == set() and s.backend.keys_down == set()
 

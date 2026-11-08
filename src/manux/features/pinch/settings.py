@@ -30,15 +30,15 @@ THRESHOLDS: Dict[str, Any] = {
     "motion_fold_ratio": 1.2,
     "motion_thumb_out": .85,
     "motion_thumb_up": .15,
-    # fist (fast move)
+    # fist (precision move; v0.5 feedback 2026-11-07)
     "fist_curl_enter": .95,
     "fist_curl_exit": 1.2,
     "fist_confirm_time": .12,
-    "fist_dpi_multiplier": 25.0,
+    "fist_dpi_multiplier": .35,
     "index_tuck_ratio": 1.15,
     # hand-shape speed (docs: hand-mouse/docs/hand-shape-speed.md)
     "shape_dpi_enabled": True,
-    "shape_dpi_min": 1.0,
+    "shape_dpi_min": 2.0,
     "shape_curl_open": 1.45,
     "shape_curl_fist": .85,
     "shape_dpi_curve": 1.0,
@@ -47,12 +47,12 @@ THRESHOLDS: Dict[str, Any] = {
     # show desktop (thumb tucked, four fingers open, held)
     "desktop_thumb_tuck": .45,
     "desktop_hold": .6,
-    "desktop_still_move": .03,
+    "desktop_still_move": .02,
     "desktop_after_activity": 1.0,
     "desktop_extended_ratio": 1.45,
     "desktop_min_palm_width": .45,
     "desktop_min_tip_gap": .08,
-    "desktop_cooldown": 1.5,          # v0.3 gestures.thumb_tucked_open.cooldown
+    "desktop_cooldown": 3.0,
     "gesture_exclusive_time": 1.0,
     # thumb + index (scroll grab) and thumb + index + middle (drag)
     "grab_scroll_enabled": True,

@@ -23,6 +23,11 @@ class SetControl:
 
 
 @dataclass(frozen=True)
+class ResetPractice:
+    """Release and reset tutorial recognition before a new step (contract section 12)."""
+
+
+@dataclass(frozen=True)
 class SetBusy:
     kind: str                     # calibrating / enrolling / recording (engine.state.BUSY_KINDS)
     on: bool
@@ -43,7 +48,7 @@ class Mark:
     note: str = ""                # "that was wrong" (F key): goes into the snapshot's events
 
 
-UiCommand = Union[SetStage, SetControl, SetBusy, RequestMode, SetBaseMode, Mark]
+UiCommand = Union[SetStage, SetControl, ResetPractice, SetBusy, RequestMode, SetBaseMode, Mark]
 
 
 class CommandQueue:
