@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../theme" as Theme
+import ".." as Current
 
 ScrollView {
     id: page
@@ -14,8 +15,24 @@ ScrollView {
         Copy { text: "포즈 표본 스튜디오"; font.pixelSize: Theme.Studio.title; font.bold: true }
         Copy { Layout.fillWidth: true; text: "자세를 선택하고 카메라에 보여주세요. 표본을 모아 빠른 포즈 미리보기 모델을 만듭니다. TCN 제어 모델과는 별개입니다."; color: Theme.Studio.muted }
         Rectangle {
+            Layout.fillWidth: true; implicitHeight: poseGuide.implicitHeight + Theme.Studio.gap * 2
+            color: Theme.Studio.mintWash; radius: Theme.Studio.radius
+            ColumnLayout {
+                id: poseGuide
+                anchors {left:parent.left;right:parent.right;top:parent.top;margins:Theme.Studio.gap}
+                spacing: 3
+                Copy { Layout.fillWidth: true; text: "포즈 표본 5단계"; font.bold: true }
+                Repeater {
+                    model: ["1. 아래에서 모을 자세를 고르세요.", "2. 카메라 관절 표시와 선택한 정답 이름을 확인하세요.", "3. ‘한 장씩’ 또는 ‘연속 수집’으로 표본을 모으고 손을 풀어 다시 시도하세요.", "4. ‘표본 저장’ 후 ‘포즈 모델 학습’을 누르세요.", "5. 새 시도로 규칙·모델 결과를 비교하세요. 적용은 자동이 아니며 보조 차단은 별도 선택입니다."]
+                    Copy { required property string modelData; Layout.fillWidth: true; text: modelData; font.pixelSize: Theme.Studio.small }
+                }
+            }
+        }
+        Rectangle {
             Layout.fillWidth: true; Layout.preferredHeight: Math.max(180,Math.min(280,page.height*.38)); radius: Theme.Studio.radius; color: Theme.Studio.stage; clip: true
-            Image { anchors.fill: parent; source: page.controller.previewUrl; cache: false; fillMode: Image.PreserveAspectFit }
+            Image { anchors.fill: parent; source: page.controller.previewUrl; cache: false; fillMode: Image.PreserveAspectFit
+                    Current.HandSkeleton { anchors.fill: parent; bridge: page.controller; imageWidth: parent.paintedWidth; imageHeight: parent.paintedHeight }
+                }
             Rectangle {
                 anchors {left:parent.left;right:parent.right;bottom:parent.bottom} height:40; color:Theme.Studio.stage
                 Copy {anchors {fill:parent;margins:10} color:Theme.Studio.stageText; text: page.controller.studioHandTracked ? page.controller.studioGroundTruthLabel+" · "+page.controller.studioCompareBadge : "카메라에 손을 보여주세요"}
@@ -47,7 +64,7 @@ ScrollView {
             Layout.fillWidth: true; spacing: 6
             StudioButton { objectName:"capturePoseSample";text:page.controller.studioStreaming ? "수집 정지" : page.controller.studioCaptureMode==="stream" ? "수집 시작" : "한 장 캡처";primary:true;enabled:page.idle;onClicked:page.controller.triggerStudioCapture() }
             StudioButton { text:"마지막 표본 취소";enabled:page.idle;onClicked:page.controller.undoStudioSample() }
-            StudioButton { text:"표본 저장";enabled:page.idle;onClicked:page.controller.saveStudioDataset() }
+            StudioButton { objectName:"savePoseSamples";text:"표본 저장";enabled:page.idle;onClicked:page.controller.saveStudioDataset() }
             StudioButton { text:"새 수집";enabled:page.idle;onClicked:page.controller.clearStudioSamples() }
             StudioButton { objectName:"trainPoseModel";text:"포즈 모델 학습";enabled:page.idle;onClicked:page.controller.trainStudioModel() }
         }

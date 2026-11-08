@@ -5,9 +5,9 @@ from manux.actions.catalog import CATALOG
 from manux.data import catalog
 from manux.data.catalog import ALL_TASKS, BY_KEY, CAPTURE_ONLY, NONE, TASKS, GestureSpec, check_tasks, tasks_for
 from manux.data.guided import DEFAULT_SPECS
-from manux.features import motion, pinch, pointer
+from manux.features import control, motion, pinch, pointer
 
-DECLARED = set(pinch.GESTURES) | set(pointer.GESTURES) | set(motion.GESTURES) | {motion.ENTER}
+DECLARED = set(pinch.GESTURES) | set(pointer.GESTURES) | set(motion.GESTURES) | set(control.GESTURES) | {motion.ENTER}
 
 RASP_JUN = {  # key -> training label, from origin/codex/rasp-jun-training-center src/gesture_catalog.py
     "thumb_ring": "thumb_ring", "thumb_index": "thumb_index", "none": "none", "thumb_middle": "thumb_middle",
@@ -29,7 +29,8 @@ def test_gesture_ids_exist_in_v04_features_or_are_capture_only():
     for task in ALL_TASKS:
         for gid in (task.gesture, task.related):
             assert gid is None or gid in DECLARED, (task.key, gid)
-    assert set(CAPTURE_ONLY) == {"v_sign", "rock_sign", "swipe_down"}
+    assert set(CAPTURE_ONLY) == {"rock_sign", "swipe_down"}
+    assert BY_KEY["v_sign"].gesture == control.V_SIGN
     assert BY_KEY["thumb_ring"].gesture == pinch.THUMB_RING
     assert BY_KEY["thumb_index"].gesture == pinch.SCROLL
     assert BY_KEY["swipe_left"].gesture == "motion.swipe_left"

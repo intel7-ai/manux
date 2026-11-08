@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from PySide6.QtCore import Qt, QCoreApplication, QEvent, QObject, Property, QSettings, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QCursor, QGuiApplication, QImage, QFontDatabase
+from PySide6.QtGui import QCursor, QGuiApplication, QIcon, QImage, QFontDatabase
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -31,8 +31,7 @@ from manux.settings import profiles, store
 from manux.settings.sensitivity import rows as sensitivity_rows
 from manux.ui import cards as guide
 from manux.ui.finger import overlay_frame
-from manux.ui.hand_preview import draw_hand_preview
-from manux.ui.tutorial import Tutorial
+from manux.ui.tutorial import Tutorial, onboarding_steps
 from manux.ui.view import ViewFrame
 from manux.ui.studio import StudioBridge
 
@@ -465,6 +464,8 @@ class Bridge(QObject):
     stateChanged = Signal()
     sensitivityChanged = Signal()
     sensitivityApplied = Signal()
+    advancedChanged = Signal()
+    advancedApplied = Signal()
     previewChanged = Signal()
     trackingChanged = Signal()
     liveChanged = Signal()
@@ -500,6 +501,9 @@ class Bridge(QObject):
         self._pose_studio_visible = False
         self._studio_center_open = False
         self.application = QApplication.instance() or QApplication([])
+        self.application.setApplicationName("MANUX")
+        self.application.setApplicationDisplayName("MANUX")
+        self.application.setWindowIcon(QIcon(str(QML.parent / "assets" / "manux-icon.svg")))
         if not getattr(self.application, "_manux_fonts_loaded", False):
             QFontDatabase.addApplicationFont(str(QML.parent / "assets" / "fonts" / "NotoSansKR.ttf"))
             self.application._manux_fonts_loaded = True
@@ -539,6 +543,8 @@ class Bridge(QObject):
         self.motion_on = False
         self.motion_last = ""
         self.motion_exit_until = 0.0
+        self._control_on = False
+        self._control_notice_until = 0.0
         self.motion_badge = (False, "")
         self.finger_frame = None
         self.failure_marks = 0
@@ -589,6 +595,9 @@ class Bridge(QObject):
         self.remaining = 5
         self.tutorial: Optional[Tutorial] = None
         self._tutorial_progress = -1.0
+        self._preview_view = ViewFrame(None)
+        self._last_practice_seq = 0
+        self._practice_min_epoch = 0
         self.axes = self._load_axes()
         self.samples = []
         self.calibrating = False
@@ -631,6 +640,7 @@ class Bridge(QObject):
         if not self.engine.rootObjects():
             raise RuntimeError("MANUX 화면을 열지 못했습니다.")
         self.window = self.engine.rootObjects()[0]
+        self.window.setIcon(self.application.windowIcon())
         if self.layout != "studio":
             self.window.setProperty("title", "MANUX")
         self.timer = QTimer(self)
@@ -640,11 +650,11 @@ class Bridge(QObject):
     # Original Rasp-Jun studio presentation and calibration adapters.
     @Property(str, constant=True)
     def appName(self):
-        return "MANUX TCN"
+        return "MANUX"
 
     @Property(str, constant=True)
     def appTitle(self):
-        return "MANUX TCN"
+        return "MANUX"
 
     @Property("QVariantList", notify=trainingChanged)
     def studioTrainingRows(self):
@@ -816,9 +826,14 @@ class Bridge(QObject):
 
     def _pause(self) -> None:
         """v0.3 behaviour: a settings change pauses control; the user turns it on again."""
-        if not self.paused:
-            self.paused = True
-            self._send(SetControl(False))
+        # V may have enabled the engine before the next UI poll updates the display.
+        self.paused = True
+        self._send(SetControl(False))
+
+    @Slot(bool)
+    def setInteractionBusy(self, busy):
+        self._pause()
+        self._send(SetBusy("enrolling", bool(busy)))
 
     def _set_stage(self, name: str) -> None:
         self.stage_name = name
@@ -856,6 +871,40 @@ class Bridge(QObject):
         self.sensitivityChanged.emit()
         self.stateChanged.emit()
         return accepted
+
+    @Property("QVariantList", notify=advancedChanged)
+    def advancedRows(self):
+        from manux.settings.advanced import rows
+        return rows(self.settings)
+
+    @Property(bool, notify=advancedChanged)
+    def advancedPending(self):
+        return getattr(self, "_advanced_pending", False)
+
+    @Property(str, notify=advancedChanged)
+    def advancedStatus(self):
+        return getattr(self, "_advanced_status", "")
+
+    @Slot("QVariantMap", result=bool)
+    def applyAdvancedSettings(self, values):
+        if self.advancedPending:
+            return False
+        self._pause()
+        self._advanced_revision = self.runtime.advanced_result[0]
+        accepted = self.runtime.request(RuntimeRequest("advanced", str(self.config_dir), values))
+        self._advanced_pending = accepted
+        self._advanced_status = "설정 저장 중…" if accepted else "앱이 종료 중이라 저장할 수 없습니다."
+        self.advancedChanged.emit()
+        self.stateChanged.emit()
+        return accepted
+
+    @Property(bool, notify=advancedChanged)
+    def showDesktopEnabled(self):
+        return bool(self.settings.get("pinch.enable_thumb_tucked_open"))
+
+    @Slot(bool)
+    def setShowDesktopEnabled(self, enabled):
+        self.applyAdvancedSettings({"pinch.enable_thumb_tucked_open": bool(enabled)})
 
     @Property(str, notify=stateChanged)
     def stage(self):
@@ -1044,6 +1093,8 @@ class Bridge(QObject):
         return "모션 모드 · 꺼짐 (눌러서 켜기)"
 
     def _badge_now(self):
+        if self.stage_name == "main" and time.perf_counter() < self._control_notice_until:
+            return True, "제어 켜짐" if self._control_on else "제어 꺼짐"
         if self.motion_on:
             return True, "모션 모드 켜짐" + (f" · {self.motion_last}" if self.motion_last else "")
         if time.perf_counter() < self.motion_exit_until:
@@ -1717,7 +1768,7 @@ class Bridge(QObject):
 
     @Slot()
     def toggleSpatialGuard(self):
-        if self.training_job.running or self.pose_studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
+        if self.training_job.running or self.studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
         self._pause()
         self.runtime.request(RuntimeRequest("spatial_guard", "off" if self._spatial_guard_enabled else "on"))
 
@@ -1937,6 +1988,8 @@ class Bridge(QObject):
 
     @Slot(str)
     def createStudioModel(self, name):
+        if not self.saveStudioDataset():
+            return
         if hasattr(self.pose_studio, "create_model"):
             self.pose_studio.create_model(str(name))
             self._studio_summary_cache = self.pose_studio.summary()
@@ -1944,6 +1997,8 @@ class Bridge(QObject):
 
     @Slot(str)
     def activateStudioModel(self, model_id):
+        if not self.saveStudioDataset():
+            return
         if hasattr(self.pose_studio, "activate_model"):
             self.pose_studio.activate_model(str(model_id))
             self._studio_summary_cache = self.pose_studio.summary()
@@ -1958,7 +2013,7 @@ class Bridge(QObject):
 
     @Slot()
     def triggerStudioCapture(self):
-        if self.training_job.running or self.pose_studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
+        if self.training_job.running or self.studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
         if not self.pose_studio.samples:
             self.pose_studio.profile, self.pose_studio.split = self.tc.profile, self.tc.split
         self._pause()
@@ -1978,19 +2033,28 @@ class Bridge(QObject):
         self._studio_summary_cache = self.pose_studio.summary()
         self.studioChanged.emit()
 
-    @Slot()
+    @Slot(result=bool)
     def saveStudioDataset(self):
-        self.pose_studio.save_dataset()
+        if self.training_job.running or self.studio.busy or self.tc.hub_job.running or self.rec_mode != "off":
+            return False
+        try:
+            self.pose_studio.save_dataset()
+        except (OSError, ValueError) as error:
+            self.pose_studio.status_note = f"표본 저장 실패 · 수집 표본은 유지됩니다. {error}"
+            self.studioChanged.emit()
+            return False
         self._studio_summary_cache = self.pose_studio.summary()
         self.studioChanged.emit()
+        return True
 
     @Slot()
     def trainStudioModel(self):
-        if self.training_job.running or self.pose_studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
+        if self.training_job.running or self.studio.busy or self.tc.hub_job.running or self.rec_mode != "off": return
         self._pause()
         self.pose_studio.stop_stream()
-        self.pose_studio.save_dataset()
-        if hasattr(self.tc, "pose_train") and self.tc.pose_train():
+        if not self.saveStudioDataset():
+            return
+        if hasattr(self.tc, "pose_train") and self.tc.pose_train(self.pose_studio.active_model_id):
             self._training_was_running = True
             self.training_timer.start()
             self.trainingChanged.emit()
@@ -2235,20 +2299,23 @@ class Bridge(QObject):
         if not self.control_hand:
             return
         self.cancelPointerCalibration()
-        self.tutorial = Tutorial(self._cards())
+        self.tutorial = Tutorial(onboarding_steps(self._cards()))
         self._set_stage("tutorial")
+        self._reset_practice()
         self.tutorialChanged.emit()
 
     @Slot()
     def tutorialNext(self):
         if self.tutorial is not None:
             self.tutorial.next()
+            self._reset_practice()
             self.tutorialChanged.emit()
 
     @Slot()
     def tutorialBack(self):
         if self.tutorial is not None:
             self.tutorial.back()
+            self._reset_practice()
             self.tutorialChanged.emit()
 
     @Slot()
@@ -2263,10 +2330,30 @@ class Bridge(QObject):
         if t is None or t.finished:
             return
         now = time.perf_counter()
-        changed = t.observe(view.actions if view.landmarks is not None else (), self.motion_on, now)
+        old_index = t.index
+        changed = False
+        for event in view.practice_events:
+            if event.seq <= self._last_practice_seq:
+                continue
+            self._last_practice_seq = event.seq
+            if view.practice_epoch < self._practice_min_epoch:
+                continue
+            # Each retained tap/begin is a distinct engine event, even when the UI missed
+            # every intervening frame. Keep its own cursor position for target hit testing.
+            t.observe((), event.motion_on, event.t, hand_tracked=event.has_hand,
+                      point=event.cursor, precision=event.precision)
+            changed = t.observe(event.actions, event.motion_on, event.t,
+                                hand_tracked=event.has_hand, point=event.cursor,
+                                precision=event.precision) or changed
+        current_actions = view.actions if view.snapshot is None else tuple(a for a in view.actions if a == "mouse.move")
+        changed = t.observe(current_actions if view.landmarks is not None else (), self.motion_on, now,
+                            hand_tracked=view.landmarks is not None, point=view.practice_cursor,
+                            precision=view.practice_precision) or changed
         changed = t.tick(now) or changed
+        if t.index != old_index:
+            self._reset_practice()
         progress = round(t.progress, 2)
-        if changed or progress != self._tutorial_progress:
+        if changed or progress != self._tutorial_progress or t.step_key == "sensitivity":
             self._tutorial_progress = progress
             self.tutorialChanged.emit()
 
@@ -2304,6 +2391,45 @@ class Bridge(QObject):
     def tutorialDoneSteps(self):
         return list(self.tutorial.done) if self.tutorial else []
 
+    def _reset_practice(self):
+        from manux.engine.commands import ResetPractice
+        self._practice_min_epoch = self._preview_view.practice_epoch + 1
+        if self._preview_view.practice_events:
+            self._last_practice_seq = max(self._last_practice_seq, self._preview_view.practice_events[-1].seq)
+        self._send(ResetPractice())
+
+    @Slot()
+    def tutorialRetry(self):
+        if self.tutorial:
+            self.tutorial.retry()
+            self._reset_practice()
+            self.tutorialChanged.emit()
+
+    @Property(str, notify=tutorialChanged)
+    def tutorialKey(self):
+        return self.tutorial.step_key if self.tutorial else ""
+
+    @Property("QVariantList", notify=tutorialChanged)
+    def tutorialTargets(self):
+        return self.tutorial.targets if self.tutorial else []
+
+    @Property("QVariantList", notify=tutorialChanged)
+    def tutorialCursor(self):
+        p = self.tutorial.cursor if self.tutorial else None
+        return list(p) if p else []
+
+    @Property(int, notify=tutorialChanged)
+    def tutorialFailures(self):
+        return self.tutorial.failures if self.tutorial else 0
+
+    @Property(bool, notify=tutorialChanged)
+    def tutorialCanSkip(self):
+        return bool(self.tutorial and self.tutorial.can_skip)
+
+    @Property(str, notify=tutorialChanged)
+    def tutorialHelp(self):
+        return self.tutorial.help_text if self.tutorial else ""
+
     # ------------------------------------------------------------------ live status
     @Property(str, notify=liveChanged)
     def liveGesture(self):
@@ -2340,6 +2466,36 @@ class Bridge(QObject):
     @Property(str, notify=previewChanged)
     def previewUrl(self):
         return f"image://vision/{self.sequence}" if self.sequence else ""
+
+    @Property("QVariantList", notify=previewChanged)
+    def previewLandmarks(self):
+        v = self._preview_view
+        return [list(p) for p in v.landmarks] if v.image is not None and v.landmarks is not None else []
+
+    @Property(str, notify=previewChanged)
+    def previewHandLabel(self):
+        return {"Right": "조작 손: 오른손", "Left": "조작 손: 왼손"}.get(self._preview_view.control_hand, "조작 손 대기")
+
+    @Property(str, notify=previewChanged)
+    def previewMode(self):
+        snap = self._preview_view.snapshot
+        return snap.mode if snap else "대기"
+
+    @Property(str, notify=previewChanged)
+    def previewGesture(self):
+        return self._preview_view.preview_gesture or "동작 대기"
+
+    @Property("QVariantList", notify=previewChanged)
+    def previewGuides(self):
+        return [list(g) for g in self._preview_view.preview_guides]
+
+    @Property("QVariantList", notify=previewChanged)
+    def previewAnchor(self):
+        return list(self._preview_view.preview_anchor or ())
+
+    @Property(bool, notify=previewChanged)
+    def previewMoving(self):
+        return self._preview_view.preview_moving
 
     # ------------------------------------------------------------------ keys, window, tray
     @Slot(int)
@@ -2475,6 +2631,16 @@ class Bridge(QObject):
 
     # ------------------------------------------------------------------ frame rendering (UI thread)
     def poll(self) -> None:
+        advanced = getattr(self.runtime, "advanced_result", (0, True, ""))
+        if advanced[0] != getattr(self, "_advanced_revision", 0):
+            self._advanced_revision = advanced[0]
+            self._advanced_pending = False
+            self._advanced_status = advanced[2]
+            self.advancedChanged.emit()
+            self.sensitivityChanged.emit()
+            self.stateChanged.emit()
+            if advanced[1]:
+                self.advancedApplied.emit()
         result = getattr(self.runtime, "sensitivity_result", (0, True, ""))
         if result[0] != getattr(self, "_sensitivity_revision", 0):
             self._sensitivity_revision = result[0]
@@ -2496,8 +2662,14 @@ class Bridge(QObject):
         if seq != self._seq:
             self._seq = seq
             self.apply_view(view)
+        elif self._badge_now() != self.motion_badge:
+            self.motion_badge = self._badge_now()
+            self.stateChanged.emit()
 
     def apply_view(self, view: ViewFrame) -> None:
+        self._preview_view = view
+        # Notify overlays even with no image so a lost hand cannot leave old joints behind.
+        self.previewChanged.emit()
         if view.spatial_guard_enabled != self._spatial_guard_enabled:
             self._spatial_guard_enabled = view.spatial_guard_enabled
             self.studioChanged.emit()
@@ -2506,6 +2678,12 @@ class Bridge(QObject):
             self.studio.changed.emit()
         self._update_palm_view(view)
         snap = view.snapshot
+        if snap is not None and self.stage_name == "main" and self._control_on != snap.control_on:
+            self._control_on = snap.control_on
+            self._control_notice_until = time.perf_counter() + 1.8
+        if snap is not None and self.stage_name == "main" and self.paused == snap.control_on:
+            self.paused = not snap.control_on
+            self.stateChanged.emit()
         rec_view = dict(view.rec) if view.rec is not None else None
         if rec_view != self.rec_view:
             self.rec_view = rec_view
@@ -2545,7 +2723,7 @@ class Bridge(QObject):
             self.tip, self.tip_at = (tip[0], tip[1]), time.perf_counter()
             self.aspect = view.aspect
         if self.page == "studio" or self._pose_studio_visible:
-            sys_act = (self._studio_sys_fn(snap, view.actions) if self._studio_sys_fn is not None
+            sys_act = (self._studio_sys_fn(view.rule_preview or snap, view.actions) if self._studio_sys_fn is not None
                        else ("none" if not view.actions else view.actions[0]))
             prev_samples_len = len(self.pose_studio.samples)
             prev_hand = self.pose_studio.hand_tracked
@@ -2616,8 +2794,6 @@ class Bridge(QObject):
             image = image[::step, ::step].copy()
             h, w = image.shape[:2]
         self.provider.image = QImage(image.data, w, h, image.strides[0], QImage.Format_BGR888).copy()
-        if self.layout == "studio" and self.stage_name == "main" and not self.use_index_pointer:
-            self.provider.image = draw_hand_preview(self.provider.image, view)
         self.sequence += 1
         self.previewChanged.emit()
 

@@ -50,14 +50,15 @@ def test_v03_renames_are_in_the_settings_converter():
 
 
 # ----------------------------------------------------------------------------- v0.3 behaviours
-def test_open_hand_moves_the_palm_anchor_and_a_fist_moves_fast():
+def test_open_hand_moves_fast_and_a_fist_moves_precisely():
     f = PinchFeature()
     out, t = run(f, [H.open_hand()] * 3)
     assert gestures(out) == [MOVE] * 3
-    assert out[0].phase == "hold" and out[0].point == pytest.approx((0.49, 0.7)) and out[0].scale is None   # open hand: 1x
+    assert out[0].phase == "hold" and out[0].point == pytest.approx((0.49, 0.7))
+    assert out[0].scale == 2.0
     out, _ = run(f, [H.fist()] * 10, t0=t)
     assert MOVE_FIST in gestures(out)                  # after fist_confirm_time (0.12 s)
-    assert out[-1].info["hand_shape"] == "fist" and out[-1].scale == 25.0   # fist_dpi_multiplier
+    assert out[-1].info["hand_shape"] == "fist" and out[-1].scale == .35
 
 
 def test_curled_hand_reports_the_hand_shape_gain():
@@ -128,6 +129,36 @@ def test_thumb_tucked_open_hand_held_still_shows_the_desktop_once():
     assert gestures(out, "tap") == [THUMB_TUCKED_OPEN]
 
 
+def test_desktop_requires_stationary_hold_and_can_be_disabled():
+    out, _ = run(PinchFeature(), [H.desktop_hand(shift=(.01*k, 0)) for k in range(45)], t0=5)
+    assert THUMB_TUCKED_OPEN not in gestures(out, "tap")
+    out, _ = run(PinchFeature(), [H.desktop_hand()] * 60, t0=5,
+                 settings={"enable_thumb_tucked_open": False})
+    assert THUMB_TUCKED_OPEN not in gestures(out, "tap")
+
+
+def test_desktop_cooldown_is_three_seconds_even_after_rearming():
+    f = PinchFeature()
+    first, t = run(f, [H.desktop_hand()] * 24, t0=5)
+    fired = next(i.t for i in first if i.gesture == THUMB_TUCKED_OPEN)
+    _, t = run(f, [H.open_hand()] * 5, t0=t)
+    second, t = run(f, [H.desktop_hand()] * 45, t0=t)
+    assert THUMB_TUCKED_OPEN not in gestures(second, "tap")
+    later, _ = run(f, [H.desktop_hand()] * 60, t0=t)
+    fired_again = next(i.t for i in later if i.gesture == THUMB_TUCKED_OPEN)
+    assert fired_again - fired >= 3.0
+
+
+def test_shape_speed_interpolates_toward_precision_and_user_can_disable_it():
+    from manux.features.pinch.settings import resolve
+    f = PinchFeature()
+    settings = resolve({})
+    speed = [f.core.shape_dpi(curl, settings) for curl in (1.5, 1.2, .85)]
+    assert speed[0] > speed[1] > speed[2]
+    assert speed[0] == 2.0 and speed[-1] == pytest.approx(.35)
+    assert f.core.shape_dpi(1.2, resolve({"shape_dpi_enabled": False})) == 1.0
+
+
 def test_thumbs_up_freezes_the_cursor_and_can_be_switched_off():
     assert run(PinchFeature(), [H.thumbs_up()] * 10)[0] == []
     out, _ = run(PinchFeature(), [H.thumbs_up()] * 10, settings={"motion_pose_freeze": False})
@@ -180,3 +211,19 @@ def test_the_fist_speed_setting_reaches_the_intent():
     out, _ = run(PinchFeature(), [H.fist()] * 10, settings={"fist_dpi_multiplier": 10.0})
     fist = [i for i in out if i.gesture == MOVE_FIST]
     assert fist and fist[-1].scale == 10.0
+
+
+def test_scroll_releases_when_tips_separate_even_if_a_joint_stays_close():
+    f = PinchFeature()
+    started, t = run(f, [H.scroll_pinch()] * 8)
+    assert any(i.gesture == SCROLL and i.phase == "begin" for i in started)
+    opening = list(H.scroll_pinch())
+    opening[8] = (0.43, 0.35, 0.0)
+    opening[7] = opening[4]
+    released, _ = run(f, [opening] * 8, t0=t)
+    assert [i.phase for i in released if i.gesture == SCROLL] == ["end"]
+
+
+def test_desktop_does_not_fire_during_slow_palm_drift():
+    out, _ = run(PinchFeature(), [H.desktop_hand(shift=(.00145 * k, 0)) for k in range(48)], t0=5)
+    assert THUMB_TUCKED_OPEN not in gestures(out, "tap")

@@ -23,11 +23,29 @@ BLOCKED = OutputResult(False, "blocked")
 class PracticeSink:
     target = OutputTarget.PRACTICE
 
-    def __init__(self, limit: int = 256) -> None:
+    def __init__(self, limit: int = 256, *, cursor=None, config=None) -> None:
         self.commands: Deque[ActionCommand] = deque(maxlen=max(1, int(limit)))
         self.releases: Deque[Tuple[str, Tuple[str, ...]]] = deque(maxlen=32)  # (reason, actions ended)
         self._held: dict = {}            # action id -> the begin command
         self._closed = False
+        # The desktop composition root injects pure cursor math; this sink imports no OS path.
+        self.config = config
+        self.cursor = cursor
+        self.precision = False
+
+    @property
+    def cursor_position(self) -> Optional[Tuple[float, float]]:
+        return (self.cursor.pos[0] / 1919, self.cursor.pos[1] / 1079) if self.cursor else None
+
+    def update_config(self, config) -> None:
+        self.config = config
+        if self.cursor:
+            self.cursor.config = config
+
+    def configure(self, config) -> None:
+        self.update_config(config)
+        if self.cursor:
+            self.cursor.reset()
 
     @property
     def held(self) -> FrozenSet[str]:
@@ -47,6 +65,10 @@ class PracticeSink:
                 return BLOCKED
             if not isinstance(cmd, ActionCommand):
                 return OutputResult(False, f"error:not an ActionCommand ({type(cmd).__name__})")
+            if self.cursor and cmd.action in ("mouse.move", "mouse.drag") and cmd.point is not None and cmd.phase in ("begin", "hold"):
+                gain = float(cmd.params.get("gain", 1.0))
+                self.cursor.step(cmd.point, cmd.t, gain)
+                self.precision = gain < 1.0
             if cmd.phase == "begin":
                 self._held[cmd.action] = cmd
             elif cmd.phase == "end":
@@ -61,6 +83,9 @@ class PracticeSink:
             if self._held:
                 self.releases.append((str(reason), tuple(sorted(self._held))))
             self._held.clear()
+            if self.cursor:
+                self.cursor.pause()
+            self.precision = False
         except Exception:
             pass
 

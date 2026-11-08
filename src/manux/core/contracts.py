@@ -29,6 +29,9 @@ class ExecutionDevice:
 Point = Tuple[float, float]
 GestureId = str
 ActionId = str
+# Engine-owned action: resolved through bindings, consumed before an OS sink (contract section 8).
+CONTROL_TOGGLE_ACTION: ActionId = "control.toggle"
+# UiCommand ResetPractice (engine/commands.py) releases tutorial output and resets recognition and mode.
 Phase = Literal["tap", "begin", "hold", "end"]
 PHASES: Tuple[str, ...] = ("tap", "begin", "hold", "end")
 
@@ -191,15 +194,27 @@ class RecordingIdentity:
 
 
 @dataclass(frozen=True)
+class PracticeEvent:
+    """Accepted practice event retained independently of the latest camera image (§12)."""
+    seq: int
+    t: float
+    actions: Tuple[str, ...]
+    cursor: Optional[Point]
+    precision: bool
+    motion_on: bool
+    has_hand: bool
+
+
+@dataclass(frozen=True)
 class RuntimeRequest:
-    kind: Literal["activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard", "sensitivity"]
+    kind: Literal["activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard", "sensitivity", "advanced"]
     path: str = ""
-    values: Mapping[str, float] = field(default_factory=dict)
+    values: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if (self.kind not in ("activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard", "sensitivity")
+        if (self.kind not in ("activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard", "sensitivity", "advanced")
                 or not isinstance(self.path, str)
-                or self.kind in ("activate_model", "preview_model", "sensitivity") and not self.path
+                or self.kind in ("activate_model", "preview_model", "sensitivity", "advanced") and not self.path
                 or self.kind in ("tcn_toggle", "spatial_guard") and self.path not in ("on", "off")):
             raise ValueError("invalid runtime request")
         object.__setattr__(self, "values", MappingProxyType(dict(self.values)))

@@ -3,9 +3,8 @@
 Ported from v0.3 `MouseController.map_to_screen_absolute`, `_relative_step`, `_compute_target_screen_pos`,
 `absolute_monitor`, `cycle_monitor`, `warp_to`.
 
-- relative (default): trackpad-like deltas with pointer acceleration (slow hand = low gain, fast = high).
-  The speed scale is the PRIMARY monitor's width so a second monitor does not double the speed; the
-  cursor may cross onto every monitor.
+- relative (default): trackpad-like deltas with pointer acceleration. Scale each axis by the
+  extended desktop span relative to the primary monitor, preserving camera aspect correction.
 - absolute: the camera's active box maps onto one monitor (the one under the cursor until
   `next_monitor()` picks another). `gain` != 1 adds (gain - 1) x each hand delta to an offset so the
   cursor moves faster without a jump when the gain changes.
@@ -33,10 +32,6 @@ class CursorMapper:
         self._abs_offset: Tuple[float, float] = (0.0, 0.0)
         self._abs_prev: Optional[Tuple[float, float]] = None
         self._rebase = False
-
-    @property
-    def screen_w(self) -> int:
-        return self.screens.primary.width
 
     @property
     def anchored(self) -> bool:
@@ -125,9 +120,12 @@ class CursorMapper:
         speed = math.hypot(dx, dy) / dt
         t = max(0.0, min(1.0, (speed - v_lo) / (v_hi - v_lo)))
         g = (g_min + (g_max - g_min) * t) * gain
-        px, py = self.screens.clamp(self._rel_pos[0] + dx * self.screen_w * g,
-                                    self._rel_pos[1] + dy * self.screen_w * g)
-        self._rel_pos = (px, py)
+        bounds = self.screens.bounds
+        primary = self.screens.primary
+        vertical_scale = primary.width * bounds.height / primary.height
+        self._rel_pos = bounds.clamp(self._rel_pos[0] + dx * bounds.width * g,
+                                     self._rel_pos[1] + dy * vertical_scale * g)
+        px, py = self.screens.clamp(*self._rel_pos)
         return int(round(px)), int(round(py))
 
     def _absolute(self, point: Tuple[float, float], gain: float) -> Tuple[int, int]:

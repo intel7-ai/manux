@@ -23,7 +23,9 @@ ApplicationWindow {
     readonly property color muted: "#526575"
     readonly property color mint: "#46E5BD"
     readonly property color line: "#DEE5EA"
-    readonly property bool learningDialogOpen: trainingCenter.visible || capturePlan.visible || trainingProgress.visible
+    readonly property bool learningDialogOpen: advancedSettings.visible || settingsDialog.visible || trainingCenter.visible || capturePlan.visible || trainingProgress.visible
+    readonly property bool interactionBusy: learningDialogOpen || dashboard.currentPage === "studio"
+    onInteractionBusyChanged: dashboard.setInteractionBusy(interactionBusy)
     font.family: "Malgun Gothic"
 
     component TextLabel: Label {
@@ -49,6 +51,8 @@ ApplicationWindow {
             border.width: 2
         }
     }
+
+    AdvancedSettings { id: advancedSettings; controller: dashboard }
 
     // Settings: everything that is not needed every day. Basic things first; engine options under "고급".
     Dialog {
@@ -196,8 +200,8 @@ ApplicationWindow {
                 Divider {}
                 ActionButton {
                     Layout.fillWidth: true
-                    text: settingsDialog.advanced ? "고급 설정 접기" : "고급 설정 보기"
-                    onClicked: settingsDialog.advanced = !settingsDialog.advanced
+                    text: "모든 고급 설정"
+                    onClicked: { settingsDialog.close(); advancedSettings.open() }
                 }
                 ColumnLayout {
                     visible: settingsDialog.advanced
@@ -367,7 +371,9 @@ ApplicationWindow {
                 Layout.preferredHeight: Math.min(300, window.height * .45)
                 radius: 16
                 color: window.navy
-                Image { anchors.fill: parent; source: dashboard.previewUrl; cache: false; fillMode: Image.PreserveAspectFit }
+                Image { anchors.fill: parent; source: dashboard.previewUrl; cache: false; fillMode: Image.PreserveAspectFit
+                    HandSkeleton { anchors.fill: parent; bridge: dashboard; imageWidth: parent.paintedWidth; imageHeight: parent.paintedHeight }
+                }
             }
             TextLabel {
                 visible: dashboard.stage === "capture"
@@ -448,107 +454,11 @@ ApplicationWindow {
         TextLabel { id: chipLabel; anchors.centerIn: parent; font.pixelSize: 12; color: chip.warn ? "#8A5A00" : window.navy }
     }
 
-    // Guided tutorial: one gesture at a time, confirmed by the engine (practice mode: nothing is clicked).
-    Rectangle {
+    TutorialPage {
         anchors.fill: parent
         visible: dashboard.stage === "tutorial"
-        color: "#F4F6F8"
-        ColumnLayout {
-            anchors.centerIn: parent
-            width: Math.min(parent.width - 64, 720)
-            spacing: 14
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 4
-                Repeater {
-                    model: dashboard.tutorialCount
-                    delegate: Rectangle {
-                        required property int index
-                        Layout.fillWidth: true
-                        implicitHeight: 6
-                        radius: 3
-                        color: dashboard.tutorialDoneSteps[index] ? window.mint
-                             : index === dashboard.tutorialIndex ? "#9FB3BF" : window.line
-                    }
-                }
-            }
-            TextLabel {
-                text: dashboard.tutorialFinished ? "준비됐어요"
-                    : (dashboard.tutorialIndex + 1) + " / " + dashboard.tutorialCount
-                color: window.muted
-                font.pixelSize: 13
-            }
-            TextLabel {
-                Layout.fillWidth: true
-                text: dashboard.tutorialFinished ? "이제 켜고 써 보세요" : dashboard.tutorialTitle
-                font.pixelSize: 32
-                font.bold: true
-            }
-            TextLabel {
-                Layout.fillWidth: true
-                wrapMode: Text.Wrap
-                color: window.muted
-                font.pixelSize: 16
-                text: dashboard.tutorialFinished
-                    ? "배운 동작은 메인 화면에 늘 보입니다. 메인 화면의 \"동작 다시 배우기\"로 언제든 다시 할 수 있어요."
-                    : dashboard.tutorialHow
-            }
-            Rectangle {
-                visible: !dashboard.tutorialFinished
-                Layout.fillWidth: true
-                Layout.preferredHeight: Math.min(320, window.height * .42)
-                radius: 16
-                color: window.navy
-                clip: true
-                Image { anchors.fill: parent; source: dashboard.previewUrl; cache: false; fillMode: Image.PreserveAspectFit }
-                Rectangle {
-                    visible: dashboard.tutorialSucceeded
-                    anchors.centerIn: parent
-                    width: doneLabel.implicitWidth + 40
-                    height: 56
-                    radius: 28
-                    color: window.mint
-                    TextLabel { id: doneLabel; anchors.centerIn: parent; text: "잘했어요"; font.pixelSize: 22; font.bold: true }
-                }
-            }
-            Rectangle {
-                visible: !dashboard.tutorialFinished && !dashboard.tutorialSucceeded && dashboard.tutorialProgress > 0
-                Layout.fillWidth: true
-                implicitHeight: 6
-                radius: 3
-                color: window.line
-                Rectangle { width: parent.width * dashboard.tutorialProgress; height: parent.height; radius: 3; color: window.mint }
-            }
-            TextLabel {
-                visible: !dashboard.tutorialFinished
-                Layout.fillWidth: true
-                wrapMode: Text.Wrap
-                color: window.muted
-                font.pixelSize: 12
-                text: "연습 중에는 실제 마우스 커서·클릭·키 입력을 전혀 보내지 않습니다. 화면의 표시로만 확인하세요."
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                ActionButton {
-                    visible: !dashboard.tutorialFinished && dashboard.tutorialIndex > 0
-                    text: "이전"
-                    onClicked: dashboard.tutorialBack()
-                }
-                Item { Layout.fillWidth: true }
-                ActionButton {
-                    visible: !dashboard.tutorialFinished
-                    text: "나중에 하기"
-                    onClicked: dashboard.finishTutorial()
-                }
-                ActionButton {
-                    text: dashboard.tutorialFinished ? "시작하기" : (dashboard.tutorialSucceeded ? "다음" : "건너뛰기")
-                    accent: dashboard.tutorialFinished || dashboard.tutorialSucceeded
-                    onClicked: dashboard.tutorialFinished ? dashboard.finishTutorial() : dashboard.tutorialNext()
-                }
-            }
-        }
+        controller: dashboard
     }
-
     // Main screen (2026-11-04): on/off, what the camera sees, and what the hand can do. Nothing else;
     // options live in the settings dialog.
     ColumnLayout {
@@ -574,6 +484,7 @@ ApplicationWindow {
                     smooth: true
                 }
                 Item { Layout.fillWidth: true }
+                ActionButton { text: "고급 설정"; onClicked: { dashboard.command(27); advancedSettings.open() } }
                 ActionButton { text: "학습 센터"; onClicked: trainingCenter.open() }
                 TextLabel { text: dashboard.chosenHand; color: window.muted; font.pixelSize: 13 }
                 ActionButton {
@@ -584,6 +495,7 @@ ApplicationWindow {
                 }
             }
         }
+        QuickSpeedControls { Layout.fillWidth: true; Layout.leftMargin: 24; Layout.rightMargin: 24; controller: dashboard }
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -692,7 +604,9 @@ ApplicationWindow {
                                     source: dashboard.previewUrl
                                     cache: false
                                     fillMode: Image.PreserveAspectFit
-                                }
+
+                    HandSkeleton { anchors.fill: parent; bridge: dashboard; imageWidth: parent.paintedWidth; imageHeight: parent.paintedHeight }
+                }
                                 Item {
                                     visible: dashboard.recMode === "guided" && dashboard.recCondition !== ""
                                     x: (parent.width - capturePreview.paintedWidth) / 2
@@ -987,7 +901,9 @@ ApplicationWindow {
                                         source: dashboard.previewUrl
                                         cache: false
                                         fillMode: Image.PreserveAspectFit
-                                    }
+
+                    HandSkeleton { anchors.fill: parent; bridge: dashboard; imageWidth: parent.paintedWidth; imageHeight: parent.paintedHeight }
+                }
                                     Rectangle {
                                         visible: dashboard.studioStreaming
                                         anchors.top: parent.top
@@ -1725,81 +1641,7 @@ ApplicationWindow {
         }
     }
 
-    // Finger tracker: where the fingertips are and what the hand does, drawn around the Windows cursor
-    // (park's HUD idea, src/finger_overlay.py). Click-through; fades when frames stop.
-    Window {
-        id: fingerTracker
-        title: "MANUX 손가락 표시"
-        transientParent: null
-        visible: dashboard.fingerOverlay
-        color: "transparent"
-        flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
-               | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus
-        width: 320
-        height: 320
-        readonly property var frame: dashboard.fingerFrame
-        readonly property bool hasHand: frame.tips !== undefined
-        readonly property real palmPx: 46
-        readonly property var colors: ({ idle: "#94A3B8", move: "#46E5BD", left: "#10B981", right: "#3B82F6", scroll: "#C084FC", other: "#94A3B8" })
-        readonly property var labels: ({ idle: "쉬는 중", move: "커서 이동", left: "좌클릭 · 드래그", right: "우클릭", scroll: "스크롤", other: "손 인식 중" })
-        x: hasHand ? frame.cursor[0] - width / 2 : x
-        y: hasHand ? frame.cursor[1] - height / 2 : y
-        Item {
-            anchors.fill: parent
-            opacity: fingerTracker.hasHand ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: fingerTracker.hasHand ? 80 : 500 } }
-            Canvas {
-                id: fingerCanvas
-                anchors.fill: parent
-                onPaint: {
-                    var ctx = getContext("2d")
-                    ctx.reset()
-                    var f = fingerTracker.frame
-                    if (!fingerTracker.hasHand) return
-                    var color = fingerTracker.colors[f.mode] || fingerTracker.colors.other
-                    var cx = width / 2, cy = height / 2, s = fingerTracker.palmPx
-                    function at(i) { return [cx + f.tips[i][0] * s, cy + f.tips[i][1] * s] }
-                    ctx.lineWidth = 3
-                    ctx.strokeStyle = color
-                    if (f.contact > 0) {
-                        var a = at(0), b = at(f.contact)
-                        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke()
-                    }
-                    for (var i = 0; i < 5; i++) {
-                        var p = at(i)
-                        var active = i === 0 || i === f.contact
-                        ctx.beginPath()
-                        ctx.arc(p[0], p[1], i === 1 ? 7 : 5, 0, Math.PI * 2)
-                        ctx.fillStyle = active ? color : "rgba(255,255,255,0.85)"
-                        ctx.fill()
-                        ctx.lineWidth = 2
-                        ctx.stroke()
-                    }
-                }
-                Connections {
-                    target: dashboard
-                    function onFingerFrameChanged() { fingerCanvas.requestPaint() }
-                }
-            }
-            Rectangle {
-                x: parent.width / 2 + 18
-                y: parent.height / 2 + 26
-                width: trackerLabel.implicitWidth + 20
-                height: 24
-                radius: 12
-                color: "#E0112331"
-                Label {
-                    id: trackerLabel
-                    anchors.centerIn: parent
-                    text: fingerTracker.hasHand ? (fingerTracker.labels[fingerTracker.frame.mode] || fingerTracker.labels.other) : ""
-                    color: fingerTracker.hasHand ? (fingerTracker.colors[fingerTracker.frame.mode] || fingerTracker.colors.other) : "#94A3B8"
-                    font.pixelSize: 13
-                    font.bold: true
-                    font.family: "Malgun Gothic"
-                }
-            }
-        }
-    }
+    FingerTracker { controller: dashboard }
 
     // Motion-mode badge: always on top and click-through, in the top-right corner of the screen, so the user
     // can tell the mode from anywhere (also when this window is hidden or behind others).
