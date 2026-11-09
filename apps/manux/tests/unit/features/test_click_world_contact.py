@@ -63,6 +63,72 @@ def test_world_contact_selects_ring_even_when_middle_looks_closer_in_image():
     assert taps(run(hand,world_contact(hand,"ring")))==[THUMB_RING]
 
 
+@pytest.mark.parametrize("finger,wanted",[("middle",THUMB_MIDDLE),("ring",THUMB_RING)])
+def test_clear_world_contact_survives_image_gap_and_confirmation_jitter(finger,wanted):
+    """Independent image/world estimates need not cross two distance limits together."""
+    feature=PinchFeature()
+    out=[]
+    tip=12 if finger=="middle" else 16
+    for i in range(45):
+        hand=H.open_hand()
+        hand[4]=(.5,.5,0.)
+        hand[tip]=(.5+(.075 if i%2 else .085),.5,0.)
+        world=list(world_contact(hand,finger))
+        palm=math.dist(world[0],world[9])
+        gap=.20 if i%3==0 else .35
+        world[tip]=(world[4][0]+palm*gap,world[4][1],world[4][2])
+        t=1+i/30
+        out.extend(feature.step(replace(H.obs(t,hand),world=tuple(world)),
+                                H.ctx(t,settings={"long_press_drag_multiplier":2.})))
+    assert taps(out)==[wanted]
+    drags=[i for i in out if i.gesture==DRAG]
+    if finger=="middle":
+        assert drags and drags[0].phase=="begin" and all(i.scale==2. for i in drags)
+    else:
+        assert not drags
+
+
+def test_projected_index_overlap_does_not_steal_clear_world_ring_contact():
+    hand=H.open_hand()
+    hand[4],hand[8],hand[16]=(.5,.5,0.),(.505,.5,0.),(.56,.5,0.)
+    out=run(hand,world_contact(hand,"ring"))
+    assert taps(out)==[THUMB_RING]
+    assert all(i.gesture!="pinch.scroll" for i in out)
+
+
+def test_large_image_gap_without_clear_world_contact_does_not_gain_a_click():
+    hand=H.open_hand()
+    hand[4],hand[16]=(.5,.5,0.),(.58,.5,0.)
+    world=list(world_contact(hand,"ring"))
+    palm=math.dist(world[0],world[9])
+    world[16]=(world[4][0]+.40*palm,world[4][1],world[4][2])
+    assert taps(run(hand,tuple(world)))==[]
+
+
+def test_disabled_world_ring_contact_does_not_block_enabled_scroll():
+    hand=H.scroll_pinch()
+    feature=PinchFeature()
+    out=[]
+    for i in range(12):
+        t=1+i/30
+        out.extend(feature.step(replace(H.obs(t,hand),world=world_contact(hand,"ring")),
+                                H.ctx(t,settings={"enable_thumb_ring_pinch":False})))
+    assert any(i.gesture=="pinch.scroll" and i.phase=="begin" for i in out)
+    assert taps(out)==[]
+
+
+def test_world_contact_with_image_gap_releases_then_repeats_without_duplicate_taps():
+    feature=PinchFeature()
+    hand=H.open_hand()
+    hand[4],hand[16]=(.5,.5,0.),(.58,.5,0.)
+    out=[]
+    for i in range(45):
+        world=world_contact(hand,"ring" if i<12 or i>=24 else None)
+        t=1+i/30
+        out.extend(feature.step(replace(H.obs(t,hand),world=world),H.ctx(t)))
+    assert taps(out)==[THUMB_RING,THUMB_RING]
+
+
 def test_folded_middle_contact_keeps_two_x_long_press_drag():
     hand=folded("middle")
     out=run(hand,world_contact(hand,"middle"),frames=45)
