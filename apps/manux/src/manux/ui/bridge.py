@@ -2379,6 +2379,10 @@ class Bridge(QObject):
         palm = not self.pointerOnly
         self.tutorial = Tutorial(onboarding_steps(self._cards(), palm=palm,
                                                   pointer_setup=palm and self.pointerSetupAvailable))
+        # The method already in use is shown selected, so it counts as chosen; tapping the other one switches.
+        current = str(self.settings.get("cursor.vertical_input"))
+        self.tutorial.vertical_chosen, self.tutorial.vertical_method = True, current
+        self.tutorial.skip_keys = set() if current == "wrist_pitch" else {"pointer_setup"}
         self._set_stage("tutorial")
         self._reset_practice()
         self.tutorialChanged.emit()
