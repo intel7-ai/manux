@@ -577,10 +577,13 @@ class TrainingCenterService:
         except (ValueError, OSError) as error:
             return self.hub_job.fail(str(error))
 
-    def pose_train(self):
+    def pose_train(self, model_id=None):
         if self.studio_job.running or self.hub_job.running:
             return self.job.fail("검수·공유가 끝난 뒤 학습하세요.")
-        return self.job.start_request({"kind": "pose_train", "data_dir": str(self.data_dir)})
+        request = {"kind": "pose_train", "data_dir": str(self.data_dir)}
+        if model_id is not None:
+            request["model_id"] = model_id
+        return self.job.start_request(request)
 
     def current_model(self):
         try:

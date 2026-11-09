@@ -7,6 +7,7 @@ ColumnLayout {
     id: player
     required property var studio
     property bool showPose: false
+    property real previewHeight: 280
     property real zoom: 1
     readonly property real aspect: studio.selected.frame_aspect || 0.5625
     spacing: Theme.Studio.gap
@@ -17,8 +18,8 @@ ColumnLayout {
     }
     Rectangle {
         Layout.fillWidth: true
-        Layout.preferredHeight: 280
-        Layout.minimumHeight: 280
+        Layout.preferredHeight: player.previewHeight
+        Layout.minimumHeight: player.previewHeight
         color: Theme.Studio.stage; radius: Theme.Studio.radius
         Canvas {
             id: skeleton

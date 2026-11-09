@@ -7,6 +7,7 @@ Dialog {
     objectName: "studioSettings"
     required property var controller
     signal dataRequested()
+    signal advancedRequested()
     property var settingRows: []
     property var draft: ({})
     property var edits: ({})
@@ -157,6 +158,7 @@ Dialog {
                 enabled: Object.keys(settings.edits).length > 0 && !settings.controller.sensitivityPending
                 onClicked: settings.controller.applySensitivity(settings.edits)
             }
+            Button { text: "고급 설정"; onClicked: { settings.close(); settings.advancedRequested() } }
             Button { text: "닫기"; onClicked: settings.close() }
         }
     }

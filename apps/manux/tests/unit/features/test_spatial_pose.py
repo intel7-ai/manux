@@ -126,3 +126,15 @@ def test_rock_class_is_a_gesture_and_close_runs_once_via_binding():
     first = feature.step(hand, ctx)
     assert [(i.gesture,i.phase) for i in first] == [("spatial_pose.rock_sign","tap")]
     assert feature.step(hand, ctx) == ()  # holding a pose must not close more windows
+
+
+def test_direct_mlp_v_is_evidence_only_so_it_cannot_bypass_control_hold():
+    model = SpatialMlpModel(np.zeros((4,96)), np.zeros(4), np.zeros((2,4)), np.array([-10.,10.]),
+                            classes=("none","v_sign"))
+    feature = SpatialPoseFeature(model, mode="direct")
+    frame = FrameInfo(1, 1., 640, 480, False)
+    hand = HandObservation(frame, tuple(_dummy_hand()), "Right", .99)
+    ctx = FrameContext(frame, "default", "none", "pointer")
+    assert feature.step(hand, ctx) == ()
+    assert feature.evidence.action == "v_sign"
+    assert CLASS_TO_GESTURE["v_sign"] == "control.v_sign"

@@ -65,22 +65,42 @@ Popup {
                 StudioButton { text: "별도 평가"; primary: studio.controller.recordingSplit==="eval"; enabled: studio.idle; onClicked: studio.controller.setRecordingSplit("eval") }
             }
         }
+        Panel {
+            Layout.fillWidth: true; implicitHeight: firstUse.implicitHeight + Theme.Studio.gap * 2; Layout.minimumHeight: implicitHeight
+            ColumnLayout {
+                id: firstUse
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: Theme.Studio.gap }
+                spacing: 3
+                Copy { Layout.fillWidth: true; font.bold: true; text: "처음이라면 ① 별명 저장 → ② 동작 체크 → ③ 집중 녹화 설정 → ④ 별도 평가 녹화 → ⑤ 검증 후 적용" }
+                Copy { Layout.fillWidth: true; font.pixelSize: Theme.Studio.small; color: Theme.Studio.muted; text: "녹화 탭: 시간에 따른 손동작을 학습·평가합니다. 포즈 표본 탭: 한 자세의 관절 표본으로 모양 모델을 만듭니다. 동작의 성공·오작동 평가는 녹화 탭에서 진행하세요." }
+            }
+        }
         RowLayout {
             Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 0; Layout.preferredHeight: 0; spacing: Theme.Studio.gap; clip:true
-            ColumnLayout {
-                Layout.preferredWidth: Theme.Studio.navWidth; Layout.minimumWidth: studio.width<900 ? 84 : Theme.Studio.navWidth; Layout.maximumWidth: Theme.Studio.navWidth; Layout.fillHeight: true; Layout.minimumHeight: 0; spacing: 6
-                Repeater {
-                    model: ["동작", "녹화", "시뮬레이터", "모델", "데이터 공유", "포즈 표본"]
-                    StudioButton {
-                        required property string modelData; required property int index
-                        objectName: "studioTab_" + index
-                        Layout.fillWidth: true; text: modelData; primary: studio.pageIndex===index
-                        onClicked: studio.pageIndex=index
+            ScrollView {
+                id: navigationScroll
+                objectName: "learningNavigationScroll"
+                Layout.preferredWidth: studio.width < 900 ? 104 : Theme.Studio.navWidth
+                Layout.minimumWidth: studio.width < 900 ? 104 : Theme.Studio.navWidth
+                Layout.maximumWidth: Theme.Studio.navWidth
+                Layout.fillHeight: true; Layout.minimumHeight: 0
+                contentWidth: availableWidth; clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                ColumnLayout {
+                    width: navigationScroll.availableWidth; spacing: 6
+                    Repeater {
+                        model: ["동작", "녹화", "시뮬레이터", "모델", "데이터 공유", "포즈 표본"]
+                        StudioButton {
+                            required property string modelData; required property int index
+                            objectName: "studioTab_" + index
+                            Layout.fillWidth: true; text: modelData; primary: studio.pageIndex===index
+                            onClicked: studio.pageIndex=index
+                        }
                     }
+                    Copy { Layout.fillWidth: true; text: studio.controller.trainingStorage; font.pixelSize: Theme.Studio.small; color: Theme.Studio.muted }
+                    Copy { Layout.fillWidth: true; visible: studio.height>620; text: "평가는 학습과 다른 시도로 녹화하세요. 센터에서는 PC 제어를 멈춥니다."; font.pixelSize: Theme.Studio.small; color: Theme.Studio.muted }
                 }
-                Item { Layout.fillHeight: true; Layout.minimumHeight: 0 }
-                Copy { Layout.fillWidth: true; text: studio.controller.trainingStorage; font.pixelSize: Theme.Studio.small; color: Theme.Studio.muted }
-                Copy { Layout.fillWidth: true; visible: studio.height>620; text: "평가는 학습과 다른 시도로 녹화하세요. 센터에서는 PC 제어를 멈춥니다."; font.pixelSize: Theme.Studio.small; color: Theme.Studio.muted }
             }
             StackLayout {
                 Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.fillHeight: true; Layout.minimumHeight: 0; currentIndex: studio.pageIndex
@@ -161,6 +181,14 @@ Popup {
                     spacing: Theme.Studio.gap
                     ColumnLayout {
                         Layout.preferredWidth: Math.max(180, studio.width*0.23); Layout.fillHeight: true; Layout.minimumHeight: 0
+                        Rectangle {
+                            Layout.fillWidth: true; Layout.preferredHeight: Math.max(75, Math.min(140, studio.height * .2))
+                            color: Theme.Studio.stage; radius: Theme.Studio.radius; clip: true
+                            Image {
+                                anchors.fill: parent; source: studio.controller.previewUrl; cache: false; fillMode: Image.PreserveAspectFit
+                                HandSkeleton { anchors.fill: parent; bridge: studio.controller; imageWidth: parent.paintedWidth; imageHeight: parent.paintedHeight }
+                            }
+                        }
                         Copy { text: "녹화 라이브러리 · " + studio.library.recordings.length; font.bold: true }
                         ListView {
                             id: recordings; objectName: "studioRecordings"
@@ -179,16 +207,20 @@ Popup {
                                     Copy { Layout.fillWidth: true; text: ({pass:"양호",warning:"주의",fail:"검수 필요"}[recording.modelData.quality.status] || "검사 전")+" · "+(recording.modelData.split==="eval" ? "별도 평가" : recording.modelData.included ? "학습 포함" : "학습 제외")+" · "+({original:"원본",clean:"보정본",augment:"증강본"}[recording.modelData.derived] || "원본"); color: recording.modelData.quality.status==="fail" ? Theme.Studio.danger : Theme.Studio.mintDark; font.pixelSize: Theme.Studio.small }
                                 }
                             }
-                            Copy { anchors.centerIn: parent; width: parent.width; visible: recordings.count===0; text: "완료된 녹화가 없습니다.\n동작을 선택해 녹화하거나 팀 데이터를 받아오세요."; color: Theme.Studio.muted }
+                            Copy { anchors.centerIn: parent; width: parent.width; visible: recordings.count===0; text: studio.height < 620 ? "녹화 없음 · 동작 탭에서 시작" : "완료된 녹화가 없습니다.\n동작을 선택해 녹화하거나 팀 데이터를 받아오세요."; color: Theme.Studio.muted }
                         }
                     }
                     ScrollView {
                         id: recordingDetail
+                        objectName: "recordingDetailScroll"
+                        contentHeight: recordingDetailBody.implicitHeight
+                        ScrollBar.vertical.policy: ScrollBar.AlwaysOn
                         Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.fillHeight: true; Layout.minimumHeight: 0
                         contentWidth: availableWidth; clip: true
                         ColumnLayout {
+                        id: recordingDetailBody
                         width: recordingDetail.availableWidth; spacing: Theme.Studio.gap
-                        StudioPlayer { Layout.fillWidth: true; Layout.minimumHeight: implicitHeight; studio: studio.library }
+                        StudioPlayer { Layout.fillWidth: true; Layout.minimumHeight: implicitHeight; studio: studio.library; previewHeight: Math.max(110, Math.min(220, recordingDetail.availableHeight * .48)) }
                         Copy { Layout.fillWidth: true; text: (studio.library.selected.quality || {}).summary || "관절 품질을 확인한 뒤 학습 데이터를 선택하세요."; color: Theme.Studio.muted }
                         Flow {
                             Layout.fillWidth: true; spacing: 6

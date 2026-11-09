@@ -160,6 +160,10 @@ class WindowsOutputSink:
         if aspect > 0:
             self.configure(replace(self.config, frame_aspect=float(aspect)))
 
+    def set_palm_pitch(self, pitch: Optional[float]) -> None:
+        self._palm_input = True
+        self._palm_pitch = pitch
+
     def next_monitor(self) -> Monitor:
         """Move to the next monitor's centre (absolute mode maps onto it from now on)."""
         with self._lock:
@@ -237,7 +241,14 @@ class WindowsOutputSink:
                 self._last_sent = self.cursor.pos
             except Exception:  # noqa: BLE001
                 pass
-        self._place(*self.cursor.step(cmd.point, cmd.t, gain))
+        if self._uses_palm(cmd):
+            position = self.cursor.step_palm(cmd.point[0], self._palm_pitch, cmd.t, gain)
+        else:
+            position = self.cursor.step(cmd.point, cmd.t, gain)
+        self._place(*position)
+
+    def _uses_palm(self, cmd: ActionCommand) -> bool:
+        return getattr(self, "_palm_input", False) and cmd.gesture.startswith("pinch.")
 
     def _gain(self, cmd: ActionCommand) -> float:
         g = cmd.params.get("gain", 1.0)
@@ -254,10 +265,16 @@ class WindowsOutputSink:
         """True while the cursor should stay still after a left click (Windows wants both clicks within ~4 px)."""
         if cmd.t >= self._dbl_until or cmd.point is None:
             return False
+        point = cmd.point
+        if self._uses_palm(cmd):
+            pitch = self._palm_pitch
+            y = -pitch / (150 * self.config.frame_aspect) if pitch is not None else (
+                self._dbl_hand[1] if self._dbl_hand is not None else 0.0)
+            point = (point[0], y)
         if self._dbl_hand is None:
-            self._dbl_hand = cmd.point
-        dx = cmd.point[0] - self._dbl_hand[0]
-        dy = (cmd.point[1] - self._dbl_hand[1]) * self.config.frame_aspect
+            self._dbl_hand = point
+        dx = point[0] - self._dbl_hand[0]
+        dy = (point[1] - self._dbl_hand[1]) * self.config.frame_aspect
         self.cursor.pause()            # either way the next move starts fresh (no jump)
         if (dx * dx + dy * dy) ** 0.5 > self.config.double_click_move_tolerance:
             self._dbl_until = float("-inf")   # clearly moving away: release the hold now
@@ -288,7 +305,7 @@ class WindowsOutputSink:
     def _do_mouse_left_click(self, cmd: ActionCommand) -> OutputResult:
         result = self._click(cmd, "left")
         self._dbl_until = cmd.t + max(0.0, self.config.double_click_window)
-        self._dbl_hand = cmd.point
+        self._dbl_hand = None if self._uses_palm(cmd) else cmd.point
         return result
 
     def _do_mouse_right_click(self, cmd: ActionCommand) -> OutputResult:

@@ -8,6 +8,7 @@ from __future__ import annotations
 from manux.settings.schema import Setting
 
 APP = (
+    Setting("app.pointer_calibration", "", kind="str", doc="saved per-environment pointer calibration"),
     Setting("app.training_device", "auto", kind="choice", choices=("auto","cpu","cuda","xpu")),
     Setting("app.inference_device", "cpu", kind="choice", choices=("auto","cpu","cuda","openvino-cpu","openvino-gpu","openvino-npu")),
     Setting("app.hand_lost_reset", 0.3, minimum=0.0, maximum=5.0,
