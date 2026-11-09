@@ -72,6 +72,7 @@ class CameraInput:
         self.landmarker = None
         self.error = ""
         self._next_try = 0.0
+        self._last_camera_frame = 0.0
 
     def _open(self) -> bool:
         now = time.perf_counter()
@@ -89,7 +90,9 @@ class CameraInput:
             if not camera.open():
                 self.error = "카메라를 찾을 수 없습니다. 연결을 확인하세요."
                 return False
-            self.camera, self.error = camera, ""
+            self.camera = camera
+            self._last_camera_frame = time.perf_counter()
+            self.error = "카메라 영상을 연결하고 있습니다."
             return True
         except Exception as exc:                       # missing extras, model download failure ...
             self.error = f"카메라·손 인식을 시작하지 못했습니다: {exc}"
@@ -101,8 +104,16 @@ class CameraInput:
             return None
         item = self.camera.read(timeout=0.05)
         if item is None:
+            now = time.perf_counter()
+            if now - self._last_camera_frame >= 3.0:
+                self.camera.release()
+                self.camera = None
+                self._next_try = now + 1.0
+                self.error = "카메라 영상이 끊겨 다시 연결 중입니다. 다른 앱의 카메라 사용과 USB 연결을 확인하세요."
             return None
         frame, image = item
+        self._last_camera_frame = time.perf_counter()
+        self.error = ""
         self.tracker.use_crop = use_crop
         result = self.tracker.step(frame, image, control_hand or "Right")
         from manux.tracking.selection import physical_side
