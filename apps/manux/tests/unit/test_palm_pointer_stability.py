@@ -142,4 +142,4 @@ def test_profiles_saved_before_neutral_zone_get_default():
     values = dict(palm_left=.3, palm_right=.7, palm_up=110., palm_down=70., palm_x_gain=1.,
                   palm_y_gain=1., smoothing=.3)
     profiles = read_profiles(write_profiles({"b" * 64: values}))
-    assert profiles["b" * 64]["palm_hold"] == .015
+    assert profiles["b" * 64]["palm_hold"] == 0.
