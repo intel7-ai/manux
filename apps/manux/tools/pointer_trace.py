@@ -62,6 +62,7 @@ def score(trace: dict, positions: Iterable[Tuple[float, float]]) -> dict:
     segments: Dict[int, List[Tuple[float, Tuple[float, float], bool]]] = {}
     for row, pos in zip(frames, positions):
         segments.setdefault(row[5], []).append((row[0], pos, row[1] is not None))
+    clicks = click_times(trace)
     rows = []
     for index, points in sorted(segments.items()):
         if index >= len(trace["targets"]):
@@ -90,7 +91,8 @@ def score(trace: dict, positions: Iterable[Tuple[float, float]]) -> dict:
         rows.append({"target": index, "reached": reached_at is not None,
                      "time_s": None if reached_at is None else round(reached_at - points[0][0] - dwell, 3),
                      "overshoots": overshoots, "overshoot_px": round(peak, 1),
-                     "jitter_px": round(_spread(settled), 2), "wobble_px": round(_peak(settled), 1)})
+                     "jitter_px": round(_spread(settled), 2), "wobble_px": round(_peak(settled), 1),
+                     "clicks": sum(points[0][0] <= t <= points[-1][0] for t in clicks)})
     reached = [r for r in rows if r["reached"]]
     return {
         "targets": len(rows),
@@ -102,6 +104,42 @@ def score(trace: dict, positions: Iterable[Tuple[float, float]]) -> dict:
         "max_wobble_px": max((r["wobble_px"] for r in rows), default=0.0),
         "rows": rows,
     }
+
+
+CLICK_CLOSE = .052   # pinch feature's click_threshold (thumb-index tip distance, image units)
+CLICK_OPEN = .07     # must open past this before the next click counts
+
+
+def click_times(trace: dict) -> List[float]:
+    """Times the thumb and index tips closed (needs traces with the 7th pinch column)."""
+    out, armed = [], True
+    for row in trace["frames"]:
+        pinch = row[6] if len(row) > 6 else None
+        if pinch is None:
+            continue
+        if armed and pinch < CLICK_CLOSE:
+            out.append(row[0])
+            armed = False
+        elif pinch > CLICK_OPEN:
+            armed = True
+    return out
+
+
+def click_shifts(trace: dict, positions, aim_before: float = .4, rollback: float = .15) -> List[dict]:
+    """Cursor shift at each click: from where it was `aim_before` s earlier (the aim) to where the click lands,
+    without and with the sink's rollback (click lands where the cursor was `rollback` s earlier)."""
+    times = [row[0] for row in trace["frames"]]
+    positions = list(positions)
+
+    def at(t):
+        i = max(0, next((k for k in range(len(times) - 1, -1, -1) if times[k] <= t), 0))
+        return positions[i]
+    out = []
+    for t in click_times(trace):
+        aim = at(t - aim_before)
+        out.append({"t": round(t, 2), "shift_px": round(math.dist(aim, at(t)), 1),
+                    "with_rollback_px": round(math.dist(aim, at(t - rollback)), 1)})
+    return out
 
 
 def _peak(points: List[Tuple[float, float]]) -> float:
@@ -149,10 +187,17 @@ def main(argv=None) -> int:
             s = score(trace, positions)
             print(f"  {name:<28} reached {s['reached']}/{s['targets']}  median {s['median_time_s']}s  "
                   f"overshoots {s['overshoots']} (max {s['max_overshoot_px']}px)  jitter {s['mean_jitter_px']}px")
+            shifts = click_shifts(trace, positions)
+            if shifts:
+                med = statistics.median
+                print(f"      clicks {len(shifts)}: shift median {med(s['shift_px'] for s in shifts)}px "
+                      f"max {max(s['shift_px'] for s in shifts)}px | with 0.15 s rollback median "
+                      f"{med(s['with_rollback_px'] for s in shifts)}px max {max(s['with_rollback_px'] for s in shifts)}px")
             if args.rows:
                 for r in s["rows"]:
                     print(f"      #{r['target']:<2} {'ok ' if r['reached'] else 'MISS'} {r['time_s']}s  "
-                          f"over {r['overshoots']}/{r['overshoot_px']}px  jitter {r['jitter_px']}px")
+                          f"over {r['overshoots']}/{r['overshoot_px']}px  jitter {r['jitter_px']}px"
+                          + (f"  clicks {r['clicks']}" if r["clicks"] else ""))
     return 0
 
 
