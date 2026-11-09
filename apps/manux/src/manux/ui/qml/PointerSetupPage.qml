@@ -131,7 +131,9 @@ Rectangle {
                     {key: "palm_y_gain", label: "상하 감도", low: .65, high: 1.65, step: .05,
                      hint: "높일수록 작은 기울기로 더 멀리 갑니다."},
                     {key: "smoothing", label: "반응 속도", low: .15, high: .75, step: .05,
-                     hint: "낮출수록 떨림을 더 줄입니다."}
+                     hint: "낮출수록 떨림을 더 줄입니다."},
+                    {key: "palm_hold", label: "정지 범위", low: 0, high: .05, step: .005,
+                     hint: "넓힐수록 손이 조금 흔들려도 커서가 멈춰 있습니다. 0이면 끕니다."}
                 ]
                 delegate: ColumnLayout {
                     required property var modelData

@@ -34,7 +34,7 @@ from manux.data.recording import read, replay
 from manux.data.tracking_test import TrackingTest, load_recent_results, result_line, view as tracking_view
 from manux.data.training_center import TrainingCenterService
 from manux.data.legacy_import import pending_model
-from manux.data.pointer_setup import LIMITS as POINTER_SETUP_LIMITS, SETTING_KEY, PointerSetup, read_profiles, write_profiles
+from manux.data.pointer_setup import DEFAULT_HOLD, LIMITS as POINTER_SETUP_LIMITS, SETTING_KEY, PointerSetup, read_profiles, write_profiles
 from manux.data.pose_studio import ACTION_IDS, PoseSnapshotStudio, STUDIO_ACTIONS, STUDIO_CATEGORIES, normalize_system_action
 from manux.engine.commands import RequestMode, SetBaseMode, SetBusy, SetControl
 from manux.engine.pipeline import Engine
@@ -332,7 +332,7 @@ class DesktopRuntime:
         self._pointer_environment_key = sha256(repr(environment).encode("utf-8")).hexdigest()
         values = {} if locked else read_profiles(raw).get(self._pointer_environment_key, {})
         config = {"palm_left": 0., "palm_right": 0., "palm_up": 0., "palm_down": 0.,
-                  "palm_x_gain": 1., "palm_y_gain": 1., "frame_aspect": frame.aspect}
+                  "palm_x_gain": 1., "palm_y_gain": 1., "palm_hold": DEFAULT_HOLD, "frame_aspect": frame.aspect}
         config.update(self.settings.section("cursor"))
         config.update(values)
         candidate = replace(sink.config, **config)
