@@ -142,3 +142,30 @@ def test_lost_hand_cannot_complete_target_dwell():
     test.update(.6, pos, hand=True, active=True)
     test.update(.9, pos, hand=True, active=True)
     assert test.done
+
+
+def test_fine_round_starts_through_the_runtime_request(tmp_path):
+    settings = Settings(schema(), {"tracking.control_hand": "Right"})
+    source = SyntheticSource()
+    runtime = build(settings, source, windows=False)
+    runtime.pointer_setup_dir = tmp_path
+    runtime.engine.commands.put(SetStage(Stage.TUTORIAL))
+    runtime.request(RuntimeRequest("pointer_setup", "start"))
+    runtime.step()
+    try:
+        for phase, pitch in (("rest", 0), ("horizontal", 0), ("up", 20), ("down", -15)):
+            source.pitch = pitch
+            runtime.request(RuntimeRequest("pointer_setup", "capture"))
+            for index in range(170):
+                if phase == "horizontal":
+                    source.point = (.5 + .15 * math.sin(index / 10), .5)
+                runtime.step()
+                if runtime.latest()[1].pointer_setup["phase"] != phase:
+                    break
+        assert runtime.latest()[1].pointer_setup["phase"] == "aim"
+        assert runtime.request(RuntimeRequest("pointer_setup", "fine"))
+        runtime.step()
+        view = runtime.latest()[1].pointer_setup
+        assert view["phase"] == "aim" and view.get("zoomed") is True
+    finally:
+        runtime.stop()
