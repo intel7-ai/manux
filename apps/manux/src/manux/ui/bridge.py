@@ -2282,10 +2282,7 @@ class Bridge(QObject):
         self.runtime.set_override("pointer", "axes", self.axes)
         self._set_stage("main")
         if not self.preferences.value("tutorialDone", False, type=bool):
-            if self.pointerSetupAvailable and not self.pointerOnly:
-                self._open_pointer_setup(before_tutorial=True)
-            else:
-                self.beginTutorial()
+            self.beginTutorial()   # opens the cursor setup first when this mode has one
 
     def _choose(self, view: ViewFrame) -> None:
         now = time.perf_counter()
@@ -2351,7 +2348,7 @@ class Bridge(QObject):
         self._pointer_setup_view = {}
         self.pointerSetupChanged.emit()
         if self._setup_before_tutorial:
-            self.beginTutorial()
+            self._start_tutorial()
             if self.tutorial is not None:
                 # The cursor setup just tracked this hand on this camera: go straight to "2. speed for my hand".
                 self.tutorial.start_after("camera")
@@ -2366,6 +2363,16 @@ class Bridge(QObject):
 
     @Slot()
     def beginTutorial(self):
+        """"Learn motions": step 1 is the cursor auto-setup (left-right and up-down range) when this mode has one;
+        the setup then hands over to the onboarding at step 2."""
+        if not self.control_hand:
+            return
+        if self.pointerSetupAvailable and not self.pointerOnly and not self._pointer_setup_view:
+            self._open_pointer_setup(before_tutorial=True)
+            return
+        self._start_tutorial()
+
+    def _start_tutorial(self):
         if not self.control_hand:
             return
         self.cancelPointerCalibration()
