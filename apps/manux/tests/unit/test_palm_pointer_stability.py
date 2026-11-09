@@ -260,3 +260,22 @@ def test_long_contact_is_a_drag_and_moves_without_the_tilt_jump():
         t += 1 / 30
         end = mapper.step_palm(.6, 90., t, contact=3.)
     assert abs(end[1] - start[1]) <= 3                        # no jump at the drop either
+
+
+def test_cursor_stays_put_after_a_long_drag_ends():
+    mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**PRECISE))
+    t = 10.
+    for _ in range(30):
+        t += 1 / 30
+        mapper.step_palm(.5, 90., t, contact=3.)
+    for i in range(90):                                       # 3 s drag to the right: the precision gap grows large
+        t += 1 / 30
+        mapper.step_palm(.5 + .12 * min(1., i / 80), 86., t, contact=.7)
+    for _ in range(10):                                       # release and settle
+        t += 1 / 30
+        mapper.step_palm(.62, 90., t, contact=3.)
+    dropped = mapper.pos
+    for _ in range(60):                                       # hand rests for 2 s
+        t += 1 / 30
+        mapper.step_palm(.62, 90., t, contact=3.)
+    assert math.dist(mapper.pos, dropped) <= 3, (dropped, mapper.pos)   # was pulled back by the gap cap
