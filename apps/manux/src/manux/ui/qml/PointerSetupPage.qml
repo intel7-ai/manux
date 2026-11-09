@@ -189,6 +189,11 @@ Rectangle {
                 text: "이 값으로 다시 시험"
                 onClicked: page.controller.pointerSetupAction("retest")
             }
+            Button {
+                visible: page.tuning
+                text: "정밀 시험 (한 칸씩)"
+                onClicked: page.controller.pointerSetupAction("fine")
+            }
         }
     }
 }

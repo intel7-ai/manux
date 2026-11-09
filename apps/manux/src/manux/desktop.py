@@ -361,6 +361,8 @@ class DesktopRuntime:
             layout = ScreenLayout([monitor])
             self._pointer_setup = PointerSetup(
                 monitor, frame.width, lambda values: CursorMapper(layout, replace(config, **values)))
+            if self.log_dir is not None:
+                self._pointer_setup.trace_dir = self.log_dir / "pointer-traces"
             self._pointer_setup_environment = self._pointer_environment(frame, monitor, mode)
         setup = self._pointer_setup
         if setup is None:
@@ -381,8 +383,8 @@ class DesktopRuntime:
             setup.capture()
         elif action == "adjust":
             setup.adjust(request.values)
-        elif action == "retest" and setup.phase in ("aim", "review", "preview"):
-            setup.begin_aim()
+        elif action in ("retest", "fine") and setup.phase in ("aim", "review", "preview"):
+            setup.begin_aim(fine=action == "fine")
         elif action == "apply" and setup.phase == "review" and setup.can_apply:
             self._save_pointer_setup(environment, setup)
         setup.step(frame.t, point)

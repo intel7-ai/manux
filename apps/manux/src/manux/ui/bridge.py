@@ -2333,7 +2333,7 @@ class Bridge(QObject):
             return
         if action == "skip":
             self._close_pointer_setup()
-        elif action in ("capture", "retest"):
+        elif action in ("capture", "retest", "fine"):
             self.runtime.request(RuntimeRequest("pointer_setup", action))
         elif action in ("start", "apply"):
             if self.runtime.request(RuntimeRequest("pointer_setup", action)):
