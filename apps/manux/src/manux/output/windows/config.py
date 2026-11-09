@@ -33,7 +33,7 @@ class WindowsOutputConfig:
     # (the jump happens in that very frame), so there is nothing to roll back. 0.3 s was the recorded fit.
     click_rollback_s: float = 0.0            # a click lands where the cursor was this long ago (pinch tilt)...
     click_rollback_px: float = 60.0          # ...when that is at most this far away (0 s = off)
-    palm_precision: float = 0.4             # cursor gain of a slow hand (1 = off): smaller drift, tremor, click shift
+    palm_precision: float = 0.7             # cursor gain of a slow hand (1 = off): smaller drift, tremor, click shift
     palm_hold: float = 0.0                 # neutral zone radius (share of screen height) that parks the cursor; 0 = off
     # double-click assist: the cursor holds still after a left click so a second click lands on the same pixel
     double_click_window: float = 0.45

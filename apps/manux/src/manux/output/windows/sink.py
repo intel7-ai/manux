@@ -360,7 +360,8 @@ class WindowsOutputSink:
                 pass
         if self._uses_palm(cmd):
             position = self.cursor.step_palm(cmd.point[0], self._palm_pitch, cmd.t, gain,
-                                             contact=getattr(self, "_click_contact", None))
+                                             contact=getattr(self, "_click_contact", None),
+                                             fist=cmd.gesture == "pinch.move_fist")
         else:
             position = self.cursor.step(cmd.point, cmd.t, gain)
         self._place(*position)

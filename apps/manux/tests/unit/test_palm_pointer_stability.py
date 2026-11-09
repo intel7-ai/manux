@@ -143,7 +143,7 @@ def test_profiles_saved_before_precision_get_default_and_lose_the_neutral_zone()
     values = dict(palm_left=.3, palm_right=.7, palm_up=110., palm_down=70., palm_x_gain=1.,
                   palm_y_gain=1., smoothing=.3)
     profiles = read_profiles(write_profiles({"b" * 64: values}))
-    assert profiles["b" * 64]["palm_precision"] == .4
+    assert profiles["b" * 64]["palm_precision"] == .7
     assert "palm_hold" not in read_profiles(write_profiles({"c" * 64: {**values, "palm_hold": .02}}))["c" * 64]
 
 
@@ -174,11 +174,11 @@ def test_fast_sweep_still_reaches_the_edge_and_resyncs():
 def test_fist_gain_scales_moves_and_keeps_the_cursor_there():
     mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**PRECISE))
     for i in range(30):
-        mapper.step_palm(.5, 90., 10 + i / 30, gain=.35)
+        mapper.step_palm(.5, 90., 10 + i / 30, gain=.35, fist=True)
     start = mapper.pos
     for i in range(60):                                      # hand moves right by 100 mapped px, then rests
         x = .5 + 100 / 1919 * .3 * min(1., i / 15)
-        mapper.step_palm(x, 90., 11 + i / 30, gain=.35)
+        mapper.step_palm(x, 90., 11 + i / 30, gain=.35, fist=True)
     moved = mapper.pos[0] - start[0]
     assert 25 <= moved <= 45, moved                           # ~0.35 x 100 px, and no re-sync towards 100
 
@@ -296,3 +296,15 @@ def test_slow_drag_across_the_screen_keeps_up_with_the_hand():
     # hand covered ~1600 px of mapping; it trails by the gap cap (130 px) and the 0.3 s click hold at the start.
     # Without re-sync during drags (previous version) it reached ~650.
     assert moved >= 1250, moved
+
+
+def test_half_curled_hand_gain_is_not_fist_precision():
+    def end(gain, fist):
+        mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**PRECISE))
+        t = 10.
+        for i in range(60):                                   # quick 0.3 s move right, then hold
+            t += 1 / 30
+            mapper.step_palm(.5 + .03 * min(1., i / 9), 90., t, gain=gain, fist=fist)   # ~190 px mapped
+        return mapper.pos[0]
+    assert end(.8, False) == end(1., False)                   # open-hand curl gain does not change the palm cursor
+    assert end(.35, True) - 960 <= .55 * (end(1., False) - 960)   # the fist does (~0.35x of the hand move)
