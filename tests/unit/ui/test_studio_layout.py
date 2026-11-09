@@ -181,6 +181,45 @@ def test_sensitivity_dialog_applies_only_edited_values_and_cancel_discards_draft
     assert not [m for m in messages if any(s in m for s in ("ReferenceError", "TypeError", "Error:", "Cannot assign", "Binding loop"))]
 
 
+def test_vertical_input_choice_applies_and_cancel_keeps_saved_choice(studio):
+    from PySide6.QtCore import Q_ARG
+    from manux.core.contracts import OutputTarget
+    from manux.settings.store import load
+    bridge, service, runtime, messages = studio
+    runtime.pointer_setup_dir = bridge.config_dir
+    assert bridge.pointerSetupAvailable
+    bridge.command(111)
+    QTest.qWait(60)
+    dialog = bridge.window.findChild(QObject, "studioSettings")
+    tabs = visual_child(bridge.window.contentItem(), "sensitivityTabs")
+    tabs.setProperty("currentIndex", 1)
+    QTest.qWait(30)
+    choice = visual_child(bridge.window.contentItem(), "sensitivity-choice-cursor.vertical_input")
+    apply = visual_child(bridge.window.contentItem(), "applySensitivity")
+    assert choice.isVisible() and choice.property("count") == 2
+    before = bridge.settings.stored()
+    choice.setProperty("currentIndex", 0)
+    QMetaObject.invokeMethod(choice, "activated", Q_ARG(int, 0))
+    assert bridge.settings.stored() == before
+    QMetaObject.invokeMethod(apply, "clicked")
+    runtime._drain_runtime_requests()
+    bridge.poll()
+    assert load(schema(), bridge.config_dir).get("cursor.vertical_input") == "hand_position"
+    assert runtime.engine.sinks[OutputTarget.PRACTICE].config.vertical_input == "hand_position"
+    assert not bridge.pointerSetupAvailable
+    assert bridge.paused and not bridge.sensitivityPending
+    choice = visual_child(bridge.window.contentItem(), "sensitivity-choice-cursor.vertical_input")
+    choice.setProperty("currentIndex", 1)
+    QMetaObject.invokeMethod(choice, "activated", Q_ARG(int, 1))
+    QMetaObject.invokeMethod(dialog, "close")
+    QMetaObject.invokeMethod(dialog, "open")
+    QTest.qWait(30)
+    choice = visual_child(bridge.window.contentItem(), "sensitivity-choice-cursor.vertical_input")
+    assert choice.property("currentIndex") == 0
+    assert bridge.settings.get("cursor.vertical_input") == "hand_position"
+    assert not [m for m in messages if any(s in m for s in ("ReferenceError", "TypeError", "Error:", "Cannot assign", "Binding loop"))], messages
+
+
 @pytest.fixture
 def studio(tmp_path):
     app = QApplication.instance() or QApplication([])

@@ -43,7 +43,12 @@ CONTROLS = (
     Control("pinch.long_press_drag_multiplier", "길게 누르기 드래그 배율", 1, 30, .5, "cursor", "좌클릭 핀치를 길게 유지해 드래그할 때의 이동 배율입니다."),
 )
 BY_KEY = {c.key: c for c in CONTROLS}
+VERTICAL_INPUT = Setting(
+    "cursor.vertical_input", "wrist_pitch", kind="choice", choices=("hand_position", "wrist_pitch"),
+    doc="손 전체 이동은 손의 상하 위치를, 손목 기울기는 손목 각도를 사용합니다. 좌우는 모두 손 위치를 사용합니다. 손목 자동 보정은 손목 방식에만 적용됩니다.")
+VERTICAL_LABELS = ("손 전체 이동 (기존 방식)", "손목 기울기")
 CURSOR_SETTINGS = (
+    VERTICAL_INPUT,
     Setting("cursor.relative_gain_min", .35, minimum=.05, maximum=3),
     Setting("cursor.relative_gain_max", 1.2, minimum=.5, maximum=6),
     Setting("cursor.smoothing", .35, minimum=.05, maximum=1),
@@ -51,16 +56,30 @@ CURSOR_SETTINGS = (
 
 
 def rows(settings: Settings):
-    return [dict(key=c.key, label=c.label, minimum=c.low, maximum=c.high, step=c.step,
+    choice = dict(key=VERTICAL_INPUT.key, label="상하 이동 방식", kind="choice", group="cursor",
+                  choices=list(VERTICAL_INPUT.choices), choiceLabels=list(VERTICAL_LABELS),
+                  minimum=0, maximum=1, step=1, hint=VERTICAL_INPUT.doc,
+                  value=settings.get(VERTICAL_INPUT.key), defaultValue=VERTICAL_INPUT.default,
+                  editable=not settings.is_overridden(VERTICAL_INPUT.key))
+    return [choice] + [dict(key=c.key, label=c.label, kind="float", choices=[], choiceLabels=[],
+                 minimum=c.low, maximum=c.high, step=c.step,
                  group=c.group, hint=c.hint, value=settings.get(c.key),
                  defaultValue=settings.schema.get(c.key).default,
                  editable=not settings.is_overridden(c.key)) for c in CONTROLS]
 
 
-def prepare(settings: Settings, edits: Mapping[str, float]) -> dict[str, float]:
+def prepare(settings: Settings, edits: Mapping[str, object]) -> dict[str, object]:
     """Validate a whole edit before any save; enforce Dan's coupled release/gain limits."""
     result = {}
     for key, value in edits.items():
+        if key == VERTICAL_INPUT.key:
+            checked, warning = VERTICAL_INPUT.coerce(value)
+            if warning:
+                raise ValueError("상하 이동 방식을 선택하세요.")
+            if settings.is_overridden(key):
+                raise ValueError("프로필이 지정한 이동 방식입니다. 기본 프로필에서 변경하세요.")
+            result[key] = checked
+            continue
         control = BY_KEY.get(key)
         if control is None or isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
             raise ValueError("올바른 민감도 숫자를 입력하세요.")

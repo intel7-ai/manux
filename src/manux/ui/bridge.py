@@ -2300,9 +2300,10 @@ class Bridge(QObject):
             self.stateChanged.emit()
 
     # ------------------------------------------------------------------ pointer setup
-    @Property(bool, constant=True)
+    @Property(bool, notify=stateChanged)
     def pointerSetupAvailable(self):
-        return getattr(self.runtime, "pointer_setup_dir", None) is not None
+        return (getattr(self.runtime, "pointer_setup_dir", None) is not None
+                and self.settings.get("cursor.vertical_input") == "wrist_pitch")
 
     @Property("QVariantMap", notify=pointerSetupChanged)
     def pointerSetup(self):
@@ -2720,6 +2721,7 @@ class Bridge(QObject):
             self._sensitivity_pending = False
             self._sensitivity_status = result[2]
             self.sensitivityChanged.emit()
+            self.stateChanged.emit()
             if result[1]:
                 self.sensitivityApplied.emit()
         while self.ui_requests:
