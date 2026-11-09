@@ -29,8 +29,9 @@ def onboarding_steps(cards: Sequence[Card], *, palm: bool = False, pointer_setup
                "actions": ("mouse.move",)}]
     if palm:
         result.append({"key": "vertical", "title": "상하 이동 방식 고르기",
-                       "how": "커서를 위아래로 움직일 방법을 고르세요. 손 전체 이동은 손을 위아래로 옮기고, 손목 기울기는 "
-                              "팔을 받친 채 손목을 위아래로 꺾습니다. 고른 뒤 화면의 위치 3곳에 커서를 잠깐 올려 보세요.",
+                       "how": "커서를 위아래로 움직일 방법입니다. 손 전체 이동은 손을 위아래로 옮기고, 손목 기울기는 "
+                              "팔을 받친 채 손목을 위아래로 꺾습니다. 강조된 방식이 지금 방식이며, 다른 쪽을 누르면 바뀝니다. "
+                              "화면의 위치 1·2·3에 커서를 잠깐씩 올려 보세요.",
                        "actions": ("mouse.move",)})
         if pointer_setup:
             result.append({"key": "pointer_setup", "title": "커서 움직임 맞춤 설정", "optional": True,
