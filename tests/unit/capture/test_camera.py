@@ -96,3 +96,49 @@ def test_failed_open_reports_false():
 
 def test_brightness():
     assert brightness(np.full((36, 64, 3), 100, dtype=np.uint8)) == pytest.approx(100, abs=0.5)
+
+
+def test_windows_prefers_directshow_and_releases_failed_backend(monkeypatch):
+    from types import SimpleNamespace
+    import sys
+    import manux.capture.camera as module
+    attempts, released = [], []
+    class Capture:
+        def __init__(self, backend): self.backend = backend
+        def isOpened(self): return self.backend == 2
+        def release(self): released.append(self.backend)
+        def set(self, *args): return True
+    def open_capture(source, backend):
+        assert source == 1
+        attempts.append(backend)
+        return Capture(backend)
+    fake = SimpleNamespace(VideoCapture=open_capture, CAP_DSHOW=1, CAP_MSMF=2,
+                           CAP_PROP_FRAME_WIDTH=3, CAP_PROP_FRAME_HEIGHT=4, CAP_PROP_FPS=5, CAP_PROP_BUFFERSIZE=6)
+    monkeypatch.setitem(sys.modules, "cv2", fake)
+    monkeypatch.setattr(module.sys, "platform", "win32")
+    result = module._open_cv2(1, CameraConfig(source=1))
+    assert attempts == [1, 2] and released == [1] and result.backend == 2
+
+
+def test_stopped_capture_cannot_publish_a_late_frame():
+    cam = LatestFrameCamera()
+    stopped = threading.Event()
+    class LateCapture:
+        def read(self):
+            stopped.set()
+            return True, np.ones((4, 6, 3), dtype=np.uint8)
+    cam._grab_loop(LateCapture(), stopped)
+    assert cam._latest is None and cam._latest_id == 0
+
+
+def test_open_does_not_reactivate_previous_capture_stop_event():
+    fake = FakeCapture()
+    cam = camera(fake)
+    old_stop = cam._stop
+    cam.release()
+    assert old_stop.is_set()
+    assert cam.open()
+    try:
+        assert old_stop.is_set() and cam._stop is not old_stop
+    finally:
+        cam.release()

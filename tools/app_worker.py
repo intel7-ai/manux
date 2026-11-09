@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import redirect_stdout
+from importlib.util import find_spec
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,13 @@ from manux.core.contracts import RecordingIdentity
 
 class HubActionError(ValueError):
     """A fixed, credential-free message suitable for the desktop UI."""
+
+
+class TrainingDataRequired(ValueError):
+    """A recording prerequisite, not a failed optimizer or model export."""
+    def __init__(self, message, stage):
+        super().__init__(message)
+        self.stage = stage
 
 
 def upload_access(client):
@@ -39,12 +47,41 @@ def check_cancel(request):
         raise ValueError("작업을 취소했습니다. 사용 중 모델은 유지됩니다.")
 
 
+TRAIN_COMPONENTS = ("torch", "onnx", "onnxscript", "onnxruntime")
+
+
+def worker_error(error):
+    """Explain known missing components without exposing exception paths or secrets."""
+    if isinstance(error, ModuleNotFoundError) and error.name in TRAIN_COMPONENTS:
+        return (f"학습·모델 구성요소 누락: {error.name}. Trainer 포함 설치본을 사용하세요. "
+                "소스 실행 환경: uv sync --locked --python 3.12 --extra ui --extra vision --extra train --extra hub")
+    return str(error) if isinstance(error, ValueError) else "작업 구성요소 또는 파일을 확인하세요."
+
+
+def label_names(labels):
+    from manux.data.catalog import BY_KEY
+    return ", ".join(BY_KEY[label].name if label in BY_KEY else label for label in sorted(labels))
+
+
+def evaluation_targets(segments, length):
+    """Only labels backed by a complete, continuous 3D window count as evaluation."""
+    from manux.perception.temporal import inputs
+    targets = set()
+    for segment in segments:
+        _, usable = inputs(segment.frames, segment.aspect, length)
+        targets.update(label for label, valid in zip(segment.targets(), usable) if valid and label)
+    return targets
+
+
 def run_training(request, send=emit):
     import train_tcn
     from compose_tcn import compose
     from training_device import select, record
     execution = select(request.get("device", os.environ.get("MANUX_TRAIN_DEVICE", "auto")))
     send("progress", stage="학습 장치 · " + execution.actual, execution=record(execution))
+    for component in TRAIN_COMPONENTS:
+        if find_spec(component) is None:
+            raise ModuleNotFoundError(name=component)
     from promote_tcn import validate_and_install
     from tcn_data import load, class_mapping, class_names
     from manux.ml.store import active_token, load_active
@@ -56,8 +93,9 @@ def run_training(request, send=emit):
     train_paths = [Path(p) for p in request.get("train", found_train)]
     eval_paths = [Path(p) for p in request.get("eval", found_eval)]
     if not train_paths or not eval_paths:
-        raise ValueError("학습용과 별도 평가용 녹화를 먼저 준비하세요.")
+        raise TrainingDataRequired("학습용과 별도 평가용 녹화를 먼저 준비하세요.", "학습·평가 녹화 필요")
     check_cancel(request)
+    send("progress", stage="학습·평가 데이터 확인 중", phase="loading", progress=.03)
     cache = Path(request["cache_dir"])
     segments = load(train_paths, split="train", cache_dir=cache)
     all_classes = class_names(segments)
@@ -72,7 +110,8 @@ def run_training(request, send=emit):
         raise ValueError("학습할 동작의 유효한 녹화가 없습니다.")
     focused = request.get("focus_labels", [request["focus_label"]] if request.get("focus_label") else [])
     if set(focused) - set(classes):
-        raise ValueError("선택한 동작의 학습 녹화가 없습니다.")
+        raise TrainingDataRequired("선택한 동작의 학습 녹화가 없습니다: " + label_names(set(focused) - set(classes))
+                                   + ". 해당 동작의 학습용 녹화를 준비하세요.", "학습 녹화 필요")
     selected = sorted(set(focused or classes[1:]))
     if any(not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name == "none" for name in selected):
         raise ValueError("학습할 동작 이름이 잘못되었습니다.")
@@ -87,10 +126,12 @@ def run_training(request, send=emit):
     retained = set(current.card.gestures) if current else set()
     output_classes = {"none", *retained, *selected}
     evaluation = load(eval_paths, split="eval", cache_dir=cache)
-    targets = {name for s in evaluation for name in s.labels()}
+    targets = evaluation_targets(evaluation, train_tcn.WINDOW)
     if not output_classes <= targets:
-        missing = ", ".join(sorted(output_classes - targets))
-        raise ValueError(f"평가 녹화가 부족한 동작: {missing}. 별도 시도로 녹화하세요.")
+        missing = label_names(output_classes - targets)
+        raise TrainingDataRequired(f"평가 녹화가 부족한 동작: {missing}. 학습센터에서 별도 평가용(eval)을 선택하고 "
+                                   "평가 녹화를 시작한 뒤 안내 동작을 수행하세요. 대기·일시정지나 손 추적이 없는 구간은 평가로 세지 않습니다.",
+                                   "평가 녹화 필요")
     folder = Path(request["job_dir"])
     candidate = folder / "candidate.onnx"
     send("progress", stage="선택 동작 학습 준비 · 다른 분류기 유지", phase="loading", progress=.1, steps=len(selected),
@@ -262,8 +303,9 @@ def main(argv=None):
     parser.add_argument("--self-check", type=Path)
     args = parser.parse_args(argv)
     if args.self_check is not None:
-        import torch, onnxruntime, huggingface_hub
+        import torch, onnx, onnxscript, onnxruntime, huggingface_hub
         args.self_check.write_text(json.dumps({"worker": True, "torch": torch.__version__,
+                                               "onnx": onnx.__version__, "onnxscript": onnxscript.__version__,
                                                "onnxruntime": onnxruntime.__version__, "hub": huggingface_hub.__version__}), encoding="utf-8")
         return 0
     try:
@@ -293,8 +335,8 @@ def main(argv=None):
             raise ValueError("알 수 없는 작업입니다.")
         return 0
     except Exception as error:
-        text = str(error) if isinstance(error, ValueError) else "작업 구성요소 또는 파일을 확인하세요."
-        emit("error", message=text)
+        detail = {"code": "recordings_required", "stage": error.stage} if isinstance(error, TrainingDataRequired) else {}
+        emit("error", message=worker_error(error), **detail)
         return 1
 
 

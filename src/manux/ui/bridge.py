@@ -2300,9 +2300,10 @@ class Bridge(QObject):
             self.stateChanged.emit()
 
     # ------------------------------------------------------------------ pointer setup
-    @Property(bool, constant=True)
+    @Property(bool, notify=stateChanged)
     def pointerSetupAvailable(self):
-        return getattr(self.runtime, "pointer_setup_dir", None) is not None
+        return (getattr(self.runtime, "pointer_setup_dir", None) is not None
+                and self.settings.get("cursor.vertical_input") == "wrist_pitch")
 
     @Property("QVariantMap", notify=pointerSetupChanged)
     def pointerSetup(self):
@@ -2720,6 +2721,7 @@ class Bridge(QObject):
             self._sensitivity_pending = False
             self._sensitivity_status = result[2]
             self.sensitivityChanged.emit()
+            self.stateChanged.emit()
             if result[1]:
                 self.sensitivityApplied.emit()
         while self.ui_requests:
@@ -2864,6 +2866,10 @@ class Bridge(QObject):
         if (state, live) != (self.state, self.live_gesture):
             self.state, self.live_gesture = state, live
             self.liveChanged.emit()
+        if not view.camera_ok and not self.provider.image.isNull():
+            self.provider.image = QImage()
+            self.sequence += 1
+            self.previewChanged.emit()
         if view.image is None or not self.window.isVisible():
             return
         now = time.perf_counter()

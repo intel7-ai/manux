@@ -73,6 +73,19 @@ def test_completed_progress_is_restored_with_metrics_but_never_restarts_job(tmp_
     assert state["bestLoss"] == "0.3000" and "학습 녹화 4개" in state["data"]
 
 
+def test_recording_prerequisite_is_restored_as_action_needed(tmp_path):
+    job = WorkerJob(tmp_path)
+    job.state = dict(job_id="preflight", running=True, started=100., progress=.03)
+    job._cancel = tmp_path / "cancel"
+    event = {"event": "error", "code": "recordings_required", "stage": "평가 녹화 필요", "message": "좌클릭 평가를 녹화하세요."}
+    proc = SimpleNamespace(stdout=io.StringIO(json.dumps(event) + "\n"), wait=lambda: 1)
+    job._read(proc, {"job_id": "preflight"})
+    state = view(WorkerJob(tmp_path).snapshot())
+    assert state["status"] == "needs_data" and state["statusText"] == "평가 녹화 필요"
+    assert state["error"] == event["message"] and not state["cancellable"]
+    assert state["percent"] < 100 and state["remaining"] == "—"
+
+
 @pytest.mark.parametrize("kind", ["import", "validate_import"])
 def test_import_and_validation_cancel_at_safe_boundaries(tmp_path, kind):
     job = WorkerJob(tmp_path)

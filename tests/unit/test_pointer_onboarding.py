@@ -98,6 +98,20 @@ def test_setup_measures_tests_and_only_applies_on_confirmation(tmp_path):
         assert round(values["palm_up"]) == 20 and round(values["palm_down"]) == -15
         runtime.step()
         assert sink.config.palm_right == values["palm_right"]
+        saved_profiles = settings.get(SETTING_KEY)
+        runtime.request(RuntimeRequest("sensitivity", str(tmp_path), {"cursor.vertical_input": "hand_position"}))
+        runtime.step()
+        assert sink.config.vertical_input == "hand_position"
+        assert sink.config.palm_left == sink.config.palm_right
+        assert settings.get(SETTING_KEY) == saved_profiles
+        assert load(schema(), tmp_path).get("cursor.vertical_input") == "hand_position"
+        practice = runtime.engine.sinks[OutputTarget.PRACTICE]
+        assert practice.config == sink.config
+        runtime.request(RuntimeRequest("advanced", str(tmp_path), {"cursor.vertical_input": "wrist_pitch"}))
+        runtime.step()
+        assert sink.config.palm_right == values["palm_right"]
+        assert settings.get(SETTING_KEY) == saved_profiles
+        assert practice.config == sink.config
         source.source = "different camera"
         runtime.step()
         assert sink.config.palm_left == sink.config.palm_right

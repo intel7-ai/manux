@@ -91,6 +91,29 @@ def test_a_missing_camera_is_a_message_not_a_crash(tmp_path):
     runtime.stop()
 
 
+def test_stalled_usb_camera_reconnects_and_recovers_preview(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    import numpy as np
+    import manux.desktop as module
+    from manux.core.contracts import FrameInfo
+    now = [10.0]
+    monkeypatch.setattr(module.time, "perf_counter", lambda: now[0])
+    source = CameraInput(Settings(schema()), tmp_path / "unused.task", source="1")
+    released = []
+    stalled = SimpleNamespace(read=lambda **kwargs: None, release=lambda: released.append(True))
+    source.camera, source._last_camera_frame = stalled, now[0]
+    assert source.read("Right", False) is None and source.camera is stalled
+    now[0] += 3.1
+    assert source.read("Right", False) is None and source.camera is None
+    assert released == [True] and "다시 연결" in source.error
+    # The normal open path observes its retry delay and does not spin on the driver.
+    assert not source._open()
+    source.camera = SimpleNamespace(read=lambda **kwargs: (FrameInfo(0, now[0], 6, 4, True), np.ones((4, 6, 3), dtype=np.uint8)))
+    source.tracker = SimpleNamespace(step=lambda *args: SimpleNamespace(hand=None, hands=(), detect_ms=1.0))
+    assert source.read("Right", False) is not None and not source.error
+    assert source._last_camera_frame == now[0]
+
+
 def windows_runtime(tmp_path, settings):
     from manux.core.contracts import OutputTarget
     from manux.output.windows import WindowsOutputSink
@@ -147,7 +170,7 @@ def test_sensitivity_apply_reaches_cursor_and_feature_and_survives_restart(tmp_p
     event_count = len(backend.events)
     runtime.request(RuntimeRequest("sensitivity", str(tmp_path / "config"), {
         "cursor.relative_gain_min": 2., "cursor.relative_gain_max": 3., "cursor.smoothing": 1.,
-        "pinch.click_threshold": .08, "pinch.pinch_threshold": .07}))
+        "pinch.click_threshold": .08, "pinch.pinch_threshold": .07, "cursor.vertical_input": "hand_position"}))
     try:
         runtime._drain_runtime_requests()
         assert runtime.sensitivity_result[1]
@@ -165,6 +188,8 @@ def test_sensitivity_apply_reaches_cursor_and_feature_and_survives_restart(tmp_p
         restarted = build(restored, runtime.source, windows=True)
         try:
             assert restarted.engine.sinks[OutputTarget.WINDOWS].config.relative_gain_max == 3.
+            assert restarted.engine.sinks[OutputTarget.WINDOWS].config.vertical_input == "hand_position"
+            assert restarted.engine.sinks[OutputTarget.PRACTICE].config.vertical_input == "hand_position"
             assert restarted.settings_for("pinch")["click_threshold"] == .08
         finally:
             restarted.stop()
@@ -185,7 +210,8 @@ def test_sensitivity_save_failure_keeps_live_and_saved_values(tmp_path, monkeypa
         raise OSError("synthetic disk failure")
     monkeypatch.setattr(store, "save", fail)
     try:
-        runtime.request(RuntimeRequest("sensitivity", str(config_dir), {"pinch.click_threshold": .08}))
+        runtime.request(RuntimeRequest("sensitivity", str(config_dir), {
+            "pinch.click_threshold": .08, "cursor.vertical_input": "hand_position"}))
         runtime._drain_runtime_requests()
         assert not runtime.sensitivity_result[1]
         assert "저장 실패" in runtime.sensitivity_result[2]
