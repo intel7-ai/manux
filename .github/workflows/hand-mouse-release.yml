@@ -10,7 +10,7 @@ on:
     branches: [production]
     paths: ["hand-mouse/**", ".github/workflows/hand-mouse-release.yml"]
   pull_request:
-    branches-ignore: [testing] # testing never builds or publishes an installer automatically
+    branches-ignore: [testing, v0.5-testing] # testing never builds or publishes an installer automatically
     paths: ["hand-mouse/**", ".github/workflows/hand-mouse-release.yml"]
 
 permissions: {}

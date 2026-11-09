@@ -7,7 +7,7 @@ name: MANUX app (apps/manux, Windows)
 # (apps/manux/docs/architecture.md section 8, S6).
 on:
   pull_request:
-    branches-ignore: [testing] # no automatic installer builds for source integration
+    branches-ignore: [testing, v0.5-testing] # no automatic installer builds for source integration
     paths: ["apps/manux/**", ".github/workflows/manux-app.yml"]
   push:
     branches: [preview]
