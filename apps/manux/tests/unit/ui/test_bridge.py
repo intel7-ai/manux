@@ -416,3 +416,22 @@ def test_runtime_frame_latency_is_shown_without_relabeling_inference_time(bridge
     b.apply_view(ViewFrame(None, fps=30.0, detect_ms=7.0, frame_age_ms=22.0))
     assert "추론 7.0 ms" in b.state[-1]
     assert "앱 내 프레임 지연 22.0 ms" in b.state[-1]
+
+
+@pytest.mark.parametrize("layout", ["standard", "studio"])
+def test_relearn_motions_starts_with_cursor_setup_then_step_2(tmp_path, layout):
+    from manux.ui.bridge import Bridge
+    settings = Settings(schema())
+    runtime = FakeRuntime(settings)
+    runtime.pointer_setup_dir = tmp_path
+    runtime.request = lambda request: True
+    b = Bridge(runtime, settings, tmp_path, layout=layout)
+    try:
+        b.control_hand = "Right"
+        b._set_stage("main")
+        b.beginTutorial()                                  # "learn motions" button
+        assert b.stage_name == "tutorial" and b.pointerSetup == {"phase": "intro"} and b.tutorial is None
+        b.pointerSetupAction("skip")
+        assert b.tutorial is not None and b.tutorial.step_key == "sensitivity"
+    finally:
+        b.close()
