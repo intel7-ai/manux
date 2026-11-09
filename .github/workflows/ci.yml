@@ -1,7 +1,6 @@
 name: MANUX CI
 on:
   pull_request:
-    branches-ignore: [testing, v0.5-testing] # local source integration; preview/production keep all gates
   push:
     branches: [main, master, preview, production]
   workflow_dispatch:
@@ -52,7 +51,7 @@ jobs:
       - name: Python 3.12+ with MANUX and pytest
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/pip" install --quiet -e ".[test]"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet -e ".[test,link]" opencv-python-headless
       - run: '"$RUNNER_TEMP/venv/bin/python" -m pytest -q'
   required:
     name: MANUX required

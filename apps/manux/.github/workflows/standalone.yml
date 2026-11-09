@@ -1,0 +1,140 @@
+name: MANUX standalone
+
+# preview의 중첩 경로에서는 GitHub가 무시하며 subtree split 후 루트 workflow가 된다.
+# GITHUB_TOKEN의 split push는 후속 workflow를 시작하지 않는다.
+# 독립 브랜치의 일반 push·PR·workflow_dispatch에서 실행한다.
+on:
+  pull_request:
+    branches: [manux-preview, manux-production]
+  push:
+    branches: [manux-preview, manux-production]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manux-standalone-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Windows pytest and contracts
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+      - name: Install runtime test dependencies (no Trainer)
+        run: uv sync --locked --python 3.12 --extra ui --extra vision --extra ml
+      - name: Structure and module contracts
+        run: uv run --locked --no-sync --python 3.12 pytest -q tests/architecture tests/contract
+      - name: Full pytest (no webcam or Windows input)
+        run: uv run --locked --no-sync --python 3.12 pytest -q
+
+  preview:
+    name: Preview base installer
+    needs: tests
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+      - run: uv sync --locked --python 3.12 --extra ui --extra vision --extra ml --extra package
+      - name: Version
+        id: version
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          if (-not (Select-String -Path pyproject.toml -Pattern '^version = "0\.5\.0"$')) { throw 'Expected v0.5 source' }
+          $suffix = if ($env:PR_NUMBER) { "pr$env:PR_NUMBER" } else { 'preview' }
+          "version=0.5.$env:RUN_NUMBER-$suffix" >> $env:GITHUB_OUTPUT
+      - run: dotnet tool install -g vpk --version 1.2.161
+      - name: Build Preview base package (no Trainer)
+        run: ./packaging/build.ps1 -Version ${{ steps.version.outputs.version }} -SourceSha ${{ github.sha }}
+      - name: Built app self-check (no webcam or Windows input)
+        run: |
+          if (Test-Path build/dist/MANUX/worker) { throw 'Base package contains Trainer' }
+          $out = "$env:RUNNER_TEMP/built-check.json"
+          $p = Start-Process build/dist/MANUX/MANUX.exe -ArgumentList '--self-check', "`"$out`"" -WindowStyle Hidden -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'Built self-check timed out' }
+          if ($p.ExitCode -ne 0) { throw "Built self-check exited $($p.ExitCode)" }
+          $info = Get-Content $out -Raw | ConvertFrom-Json
+          if (-not $info.ok -or $info.pack_id -ne 'MANUXPreview' -or $info.updates) { throw 'Invalid Preview self-check' }
+          Get-Content $out
+      - name: Install and check the installed app
+        run: |
+          $setup = Get-ChildItem build/releases -Filter '*-Setup.exe' | Select-Object -First 1
+          if ($null -eq $setup) { throw 'No Setup.exe' }
+          $p = Start-Process $setup.FullName -ArgumentList '--silent' -WindowStyle Hidden -PassThru
+          if (-not $p.WaitForExit(300000)) { $p.Kill(); throw 'Setup timed out' }
+          if ($p.ExitCode -ne 0) { throw "Setup exited $($p.ExitCode)" }
+          Start-Sleep -Seconds 5
+          Get-Process MANUX -ErrorAction SilentlyContinue | Stop-Process -Force
+          $exe = Join-Path $env:LOCALAPPDATA 'MANUXPreview/current/MANUX.exe'
+          if (-not (Test-Path $exe)) { throw 'Installed MANUX.exe not found' }
+          $out = "$env:RUNNER_TEMP/installed-check.json"
+          $q = Start-Process $exe -ArgumentList '--self-check', "`"$out`"" -WindowStyle Hidden -PassThru
+          if (-not $q.WaitForExit(120000)) { $q.Kill(); throw 'Installed self-check timed out' }
+          if ($q.ExitCode -ne 0) { throw "Installed self-check exited $($q.ExitCode)" }
+          $info = Get-Content $out -Raw | ConvertFrom-Json
+          if (-not $info.ok -or $info.pack_id -ne 'MANUXPreview' -or $info.updates) { throw 'Invalid installed Preview' }
+          Get-Content $out
+      - name: Self-check and package size evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: manux-standalone-checks-${{ steps.version.outputs.version }}
+          path: |
+            ${{ runner.temp }}/*-check.json
+            build/package-size.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Preview installer
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: MANUX-Preview-${{ steps.version.outputs.version }}-base
+          path: build/releases/*-Setup.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  required:
+    name: MANUX required
+    if: always()
+    needs: [tests, preview]
+    runs-on: windows-latest
+    timeout-minutes: 2
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: manux-production accepts PRs from manux-preview only
+        if: github.event_name == 'pull_request' && github.base_ref == 'manux-production'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          if ($env:HEAD_REF -ne 'manux-preview' -or $env:HEAD_REPO -ne $env:BASE_REPO) {
+            Write-Output '::error::manux-production에는 같은 저장소의 manux-preview PR만 병합합니다.'
+            exit 1
+          }
+      - name: All gates must pass
+        env:
+          TEST_RESULT: ${{ needs.tests.result }}
+          PREVIEW_RESULT: ${{ needs.preview.result }}
+        run: |
+          if ($env:TEST_RESULT -ne 'success' -or $env:PREVIEW_RESULT -ne 'success') {
+            throw "Required gates failed: tests=$env:TEST_RESULT preview=$env:PREVIEW_RESULT"
+          }

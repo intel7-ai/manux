@@ -25,7 +25,7 @@ from manux.data.catalog import ALL_TASKS, BY_KEY, CATEGORIES, DISPLAY_KEYS, NONE
 from manux.data.recorder import public_source
 from manux.data.recording import read
 from manux.core.contracts import RecordingIdentity
-from manux.data.worker_job import WorkerJob
+from manux.data.worker_job import WorkerJob, worker_available, COMPONENT_REQUIRED
 from manux.data import studio
 from manux.data.training_progress import view as progress_view
 from manux.data.legacy_import import pending_model
@@ -683,6 +683,11 @@ class TrainingCenterService:
                 row["can_train"] = False
                 if BY_KEY[row["key"]].label != NONE:
                     row["advice"] = "녹화·공유 가능 · 제어 전환·안전 동작 또는 연속 커서 이동은 기존 판정을 사용합니다."
+        for row in rows:
+            row["trainer_available"] = worker_available()
+            if not row["trainer_available"]:
+                row["can_train"] = False
+                row["advice"] = COMPONENT_REQUIRED
         storage = storage_text(summary)
         return summary, report, rows, storage
 

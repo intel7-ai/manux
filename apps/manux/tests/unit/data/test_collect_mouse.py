@@ -2,6 +2,8 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from contextlib import contextmanager
+from uuid import UUID
 
 import numpy as np
 import pytest
@@ -119,7 +121,7 @@ def test_camera_loop_saves_a_guided_set(tmp_path, monkeypatch):
     tracker = SimpleNamespace(step=lambda frame, *_: SimpleNamespace(hand=frame_hand(frame.t)[1]))
     settings = Settings(schema())
     engine = build_engine(settings, "pinch", recording=True)
-    args = SimpleNamespace(profile="synthetic", preset="pinch", split="eval")
+    args = SimpleNamespace(profile="synthetic", preset="pinch", split="eval", session_id="synthetic-session")
     task = next(task for task in PRESETS["pinch"] if task.key == "thumb_middle")
     monkeypatch.setattr(collect_mouse, "draw", lambda *_: None)
     try:
@@ -181,3 +183,90 @@ def test_cli_plan_choices(tmp_path, capsys):
     parser, args = cli("--preset", "pointer", "--focus", "pointer_left", "none")
     assert [t.key for t in collect_mouse.resolve_tasks(parser, args)] == ["pointer_left", "none"]
     capsys.readouterr()
+
+
+def test_cli_session_ids_reach_every_saved_take(tmp_path, monkeypatch, capsys):
+    """Run the real CLI and capture loop with synthetic frames, no camera or OpenCV."""
+    screen = SimpleNamespace(
+        error=RuntimeError, WINDOW_NORMAL=0, WND_PROP_VISIBLE=0,
+        namedWindow=lambda *_: None, imshow=lambda *_: None, destroyAllWindows=lambda: None,
+        waitKey=lambda _: 32, getWindowProperty=lambda *_: 1,
+    )
+    monkeypatch.setitem(sys.modules, "cv2", screen)
+    monkeypatch.setattr(collect_mouse, "draw", lambda *_: None)
+    monkeypatch.setattr(collect_mouse, "resolve_plan", lambda *_: (plan(**TIMING), [0]))
+
+    @contextmanager
+    def camera_session(*_):
+        ticks = iter(offset + t for offset in (0, 6) for t in (0, 1, 2.05, 2.10, 2.15, 4.2, 5.3))
+        image = np.zeros((480, 640, 3), dtype=np.uint8)
+        camera = SimpleNamespace(read=lambda **_: (frame_hand(next(ticks))[0], image),
+                                 actual_mode=lambda: (640, 480, 30.0))
+        tracker = SimpleNamespace(step=lambda frame, *_: SimpleNamespace(hand=frame_hand(frame.t)[1]))
+        yield camera, tracker
+
+    monkeypatch.setattr(collect_mouse, "camera_session", camera_session)
+    sessions = []
+    for run, override in enumerate((None, None, "shared-anonymous-session", "shared-anonymous-session")):
+        folder = tmp_path / str(run)
+        monkeypatch.setenv("MANUX_DATA_DIR", str(folder))
+        argv = ["--profile", "synthetic", "--focus", "thumb_middle", "thumb_ring"]
+        if override:
+            argv += ["--session-id", override]
+        assert collect_mouse.main(argv) == 0
+        files = list(folder.rglob("*.jsonl.gz"))
+        assert len(files) == 2
+        ids = {read(path).meta["session_id"] for path in files}
+        assert len(ids) == 1
+        session_id = ids.pop()
+        sessions.append(session_id)
+        assert f"Session ID: {session_id}" in capsys.readouterr().out
+        if override:
+            assert session_id == override
+        else:
+            assert UUID(session_id).version == 4
+    assert sessions[0] != sessions[1]
+    assert sessions[2] == sessions[3]
+
+
+@pytest.mark.parametrize("task_key", ["thumb_middle", "none", "open_move", "fist_move", "pointer_move"])
+def test_console_stage_transitions_and_english_window(tmp_path, monkeypatch, capsys, task_key):
+    task = collect_mouse.BY_KEY[task_key]
+    times = ([0, 1, 1.1, 1.2] if task.free else
+             [0, 1, 1.2, 2.05, 2.1, 2.2, 2.3, 2.4, 4.6, 5.7, 6.8, 8.5])
+    ticks = iter(times)
+    keys = iter([32] + [-1] * (len(times) - 2) + [27])
+    screen = SimpleNamespace(
+        WINDOW_NORMAL=0, WND_PROP_VISIBLE=0,
+        namedWindow=lambda *_: None, imshow=lambda *_: None, destroyAllWindows=lambda: None,
+        waitKey=lambda _: next(keys), getWindowProperty=lambda *_: 1,
+    )
+    image = np.zeros((480, 640, 3), dtype=np.uint8)
+    camera = SimpleNamespace(read=lambda **_: (frame_hand(next(ticks))[0], image),
+                             actual_mode=lambda: (640, 480, 30.0))
+    tracker = SimpleNamespace(step=lambda frame, *_: SimpleNamespace(
+        hand=None if frame.t in (2.2, 2.3) else frame_hand(frame.t)[1]))
+    window = []
+    monkeypatch.setattr(collect_mouse, "draw", lambda *args: window.append(args[3][1]))
+    settings = Settings(schema())
+    engine = build_engine(settings, "pinch", recording=True)
+    args = SimpleNamespace(profile="synthetic", preset="pinch", split="train", session_id="stage-test")
+    try:
+        collect_mouse.capture(screen, camera, tracker, engine, "Right", [(0, task)], args,
+                              tmp_path, settings, plan(**{**TIMING, "reps": 2}))
+    finally:
+        engine.shutdown()
+    stages = [line for line in capsys.readouterr().out.splitlines() if line.startswith(f"[1/1 {task_key}]")]
+    if task.free:
+        assert stages == [f"[1/1 {task_key}] {task.do}"]
+        assert window[1].startswith("GO - move") and window[1].endswith("(10s)")
+    else:
+        assert len(stages) == 8  # prep/do/paused/do/rest/prep/do/rest, once each
+        assert "준비… 1/2" in stages[0] and f"{task.do} 1/2" in stages[1]
+        assert "타이머가 멈췄어요" in stages[2]
+        assert f"{task.do} 1/2" in stages[3] and "쉬세요" in stages[4]
+        assert "준비… 2/2" in stages[5] and f"{task.do} 2/2" in stages[6]
+        assert "쉬세요" in stages[7]
+        assert "GET READY  1/2" in window and "GO  1/2" in window
+        assert "PAUSED - show your hand (timer stopped)  1/2" in window
+    assert all(text.isascii() for text in window)

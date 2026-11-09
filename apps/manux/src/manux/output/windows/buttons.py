@@ -13,6 +13,7 @@ from manux.output.windows.backend import InputBackend
 KEY_CHORDS: Mapping[str, Tuple[str, ...]] = {
     "window.task_switcher": ("alt", "tab"),
     "window.show_desktop": ("win", "d"),
+    "window.close": ("alt", "f4"),
     "nav.back": ("alt", "left"),
     "nav.forward": ("alt", "right"),
     "tab.prev": ("ctrl", "shift", "tab"),

@@ -1,8 +1,10 @@
-# MANUX (apps/manux, v0.4)
+# MANUX (v0.5)
+
+**이 브랜치가 MANUX 개발 기준입니다: `manux-preview` (2026-11-07 10:00 KST 전환).** 정식 반영은 `manux-preview → manux-production` PR을 거칩니다. 아래 명령은 분리된 저장소 루트 기준입니다. 원본 preview의 전환 준비본을 시험할 때만 먼저 앱 하위 폴더로 이동합니다.
 
 웹캠으로 Windows를 손짓으로 다루는 앱 MANUX. Qt/QML + Python 한 프로세스이고, MediaPipe 손 인식 위에 규칙 판정과 가벼운 TCN 모델을 같은 계약으로 얹는다.
 
-**현재 상태 (2026-11-06):** 포인터·핀치·모션, TCN 확인기·명시적 직접 판정, 개인 모델 검증/교체와 헤드리스 실행기가 병합됐습니다. 데스크톱·트래킹 측정·MANUX Preview 시험 설치본도 있습니다. 실제 PC 확인 뒤 정식 배포 채널을 전환하기 전까지 Releases는 `hand-mouse/`(v0.3)에서 빌드합니다. 자세한 상태와 미검증 항목은 [AGENTS.md](AGENTS.md#현재-상태)가 기준입니다.
+**현재 상태 (2026-11-07 전환 준비):** 포인터·핀치·모션, TCN 확인기·명시적 직접 판정, 개인 모델 검증/교체와 헤드리스 실행기가 병합됐습니다. 데스크톱·트래킹 측정·MANUX Preview 시험 설치본도 있습니다. D-009의 정식 채널 전환에 이어 독립 개발·발행 브랜치를 준비합니다. `manux-production` 생성·기본 브랜치·보호 설정은 사람이 수행하며, 실제 발행은 해당 브랜치 push 이후입니다. 작업 규칙은 [AGENTS.md](AGENTS.md), 설치·기여와 전환은 [CONTRIBUTING.md](CONTRIBUTING.md)·[브랜치 흐름](docs/branch-flow.md)을 따릅니다. 열린 PR의 기능을 이미 병합된 기능으로 간주하지 않습니다.
 
 ## 먼저 읽을 것
 
@@ -17,8 +19,7 @@
 v0.3과 같은 화면(`ui/qml/dashboard.qml`)이 v0.4 엔진 위에서 돕니다.
 
 ```powershell
-cd apps/manux
-uv run --locked --python 3.12 --extra ui --extra vision --extra train --extra hub python -m manux
+uv run --locked --python 3.12 --extra ui --extra vision --extra ml python -m manux
 ```
 
 - 웹캠 없이 화면 확인: `uv run --python 3.12 --extra ui python -m manux --replay <녹화.jsonl.gz> --no-windows-input`
@@ -27,25 +28,24 @@ uv run --locked --python 3.12 --extra ui --extra vision --extra train --extra hu
 - 손 모델은 `models/hand_landmarker.task`(번들)를 씁니다. 다른 파일은 `--hand-model`로 지정합니다.
 - 설치본 없이 빠르게 점검: `python -m manux --self-check out.json` (번들 모델·MediaPipe·OpenCV·Qt를 확인하고 결과를 씁니다)
 - 트래킹 측정: 왼쪽 패널의 **트래킹 측정 (클릭 없음)**. v0.3과 같은 표적·수치이며, 측정 중에는 검지 포인터로 바꾸고 클릭을 끕니다. 결과는 `%APPDATA%\MANUX-dev\v04\logs\tracking-*.csv`(설치본은 해당 앱의 `logs`)에 저장되고 최근 결과 목록에 나옵니다. 실제 Windows 출력이 있어야 합니다(`--no-windows-input`이면 측정하지 않음).
-- [학습 센터](docs/learning-center.md): 별명·train/eval 녹화, HF 연결/본인 업로드/팀 다운로드, 통합 재학습·독립 평가·검증 후 앱 적용. 설치본에는 별도 worker가 포함됩니다.
+- [학습 센터](docs/learning-center.md): 별명·train/eval 녹화, HF 연결/본인 업로드/팀 다운로드, 통합 재학습·독립 평가·검증 후 앱 적용. 고급 학습·현재 HF 작업에는 Trainer 구성이 필요합니다.
 - 아직 없는 것: 미리보기 위 손가락 번호 그리기, 사용자 정의 카탈로그·바인딩 편집 화면.
 
 학습 센터·별명별 녹화·HF 공유·별도 worker는 [#72](https://github.com/intel7-ai/manux/pull/72), 별명 입력·권한 표시는 [#75](https://github.com/intel7-ai/manux/pull/75), 기본 한 손 추적·앱 내 프레임 지연 표시는 [#76](https://github.com/intel7-ai/manux/pull/76)으로 연결합니다. 현재 앱의 [학습 센터 사용법](docs/learning-center.md)과 [커서 지연 측정 범위](docs/cursor-performance.md)를 참고하세요. 직접 TCN·특징 캐시·검증 후 개인 모델 설치/교체는 이미 [직접 TCN 안내](docs/direct-tcn.md)에 있습니다.
 
 ## 시험용 설치파일 (MANUX Preview)
 
-`apps/manux/`를 바꾼 PR과 preview push마다 GitHub Actions의 **MANUX app (apps/manux, Windows)** 이 `MANUX-Preview-<버전>` artifact를 만듭니다. 안의 `MANUXPreview-preview-Setup.exe`를 실행하면 설치됩니다.
+독립 브랜치의 PR(`manux-preview`·`manux-production` 대상)과 두 브랜치 push마다 GitHub Actions의 **MANUX standalone**이 기본 `MANUX-Preview-<버전>-base` artifact를 만듭니다. 안의 `MANUXPreview-preview-Setup.exe`를 실행하면 설치됩니다. Windows 시험·설치 검증을 마지막 **MANUX required**가 집계합니다. 원본 preview에서는 중첩 workflow가 실행되지 않으며 기존 원본 CI가 준비본을 검사합니다.
 
 - 이름은 **MANUX Preview**이고 Releases의 MANUX(v0.3)와 **나란히** 설치됩니다. 서로 덮어쓰지 않습니다.
 - 설정은 `%APPDATA%\MANUXPreview\v04`에 둡니다. 자동 업데이트는 하지 않습니다. 새 PR 설치파일을 다시 설치하면 교체됩니다.
-- CI가 설치 → 자가 진단(`--self-check`) → 창 스크린샷까지 확인합니다. 실제 웹캠·실제 Windows 입력은 확인하지 않습니다.
-- 직접 빌드: `packaging/build.ps1 -Version 0.4.0-local` (vpk 필요, 스크립트 머리말 참고). `-Release`(package id MANUX, 자동 업데이트 켬)는 배포 채널 전환 때만 씁니다.
+- 독립 CI가 번들 자가 진단 → 설치 → 설치 후 자가 진단(`--self-check`)을 확인합니다. 실제 웹캠·실제 Windows 입력은 확인하지 않습니다.
+- 직접 빌드: `packaging/build.ps1 -Version 0.5.0-local` (vpk 필요, 스크립트 머리말 참고). `-Release`는 정식 MANUX 채널입니다. 고급 학습을 포함하려면 `-WithTrainer`를 추가합니다.
 
 ## 시험
 
 ```powershell
-cd apps/manux
-uv run --python 3.12 pytest -q
+uv run --locked --python 3.12 pytest -q
 ```
 
 카메라·모델 없이 실행된다. 이 시험이 통과해도 손 인식이나 실제 사용 성능을 뜻하지 않는다.
@@ -70,11 +70,10 @@ TCN 확인기를 연결하려면 `uv run --extra ml`로 실행하고
 
 ## 테스터 프로필 데이터 수집
 
-저장소 루트에서 `apps/manux`로 이동한 뒤 실행합니다. `tester01`은 실명 대신 쓸
+독립 저장소 루트에서 실행합니다. `tester01`은 실명 대신 쓸
 테스터 별명입니다. 같은 별명으로 다시 실행하면 파일이 계속 추가됩니다.
 
 ```powershell
-cd apps/manux
 uv run --locked --extra vision python tools/collect_mouse.py --profile tester01 --source 0
 ```
 
@@ -101,9 +100,13 @@ uv run --locked --extra vision python tools/collect_mouse.py --profile tester01 
 - 원본 영상은 화면에만 표시합니다. 손 관절 좌표·과제 라벨·규칙 판정은
   `%APPDATA%/MANUX-dev/v04/recordings/profile-tester01/pinch/train/` 아래에 세트별
   `.jsonl.gz`로 저장합니다. 실제 Windows 마우스·키보드 입력은 꺼져 있습니다.
-  카메라 모델은 사용자 폴더의 모델이 있으면 그것을, 없으면 `apps/manux/models/hand_landmarker.task`를 사용합니다.
+  카메라 모델은 사용자 폴더의 모델이 있으면 그것을, 없으면 `models/hand_landmarker.task`를 사용합니다.
 
 ## TCN 학습과 평가 (S5)
+
+규칙·MLP·직접 TCN·거부권·혼합 후보를 같은 독립 녹화와 시도 지표로 비교하려면
+[판정기 비교 도구](docs/eval-judges.md)를 사용합니다. 33/96차원 특징과 동작당
+10/30/60초 학습량을 고를 수 있습니다. 실제 사용자 정확도는 아직 측정하지 않았습니다.
 
 녹화에는 `label.target`과 `label.gesture`를 사용합니다. 이전 3클래스 녹화는 기존
 이름을 읽습니다. 더블클릭처럼 같은 입력을 반복하는 과제는 기존 입력 클래스에 포함됩니다.
@@ -137,3 +140,28 @@ PC를 공유하면 사람마다 다른 별명이 필요합니다. 자세 그룹�
 녹화에 포함해야 합니다. 더블클릭·스크롤 방향별 사용성은 실제 출력 평가가 필요합니다.
 커서 이동과 엄지 척도 학습 데이터에 포함할 수 있으며 실행기의 TCN 확인은 클릭처럼
 `tap` 또는 `begin`으로 시작하는 바인딩에 적용됩니다. 원본과 모델은 작업 폴더 밖에 보관합니다.
+
+
+## v0.5 설치·독립 브랜치
+
+정식 발행은 루트 [.github/workflows/release.yml](.github/workflows/release.yml)에서 `manux-production` push에만 실행되며 버전은 `0.5.<run_number>`, 태그는 `v0.5.<run_number>`다. 읽기 권한의 build job이 검증한 artifact만 쓰기 권한의 publish job이 게시한다. 이 전환 준비 PR에서는 실제 발행하지 않는다. 개발 단계의 설정·데이터·업데이트 연속성은 보장하지 않으며 필요하면 이전 앱을 제거하고 새 설치본을 설치한다. 사용자 데이터는 자동 삭제하지 않는다.
+
+독립 CI는 기본 Preview만 빌드한다. 기본 구성에는 torch worker가 없으며 TCN 고급 학습 버튼은 **추가 구성요소 필요**로 비활성화된다. 현재 HF 연결·다운로드·업로드도 같은 worker를 사용하므로 필요할 때 `-WithTrainer` 구성으로 직접 빌드한다. 녹화와 기본 마우스 기능은 기본 구성에서 사용할 수 있다.
+
+```powershell
+# 기본 / 고급 학습 포함 / 정식 채널 로컬 빌드
+./packaging/build.ps1 -Version 0.5.0-local
+./packaging/build.ps1 -Version 0.5.0-local -WithTrainer
+./packaging/build.ps1 -Version 0.5.0 -Release
+```
+
+빌드 스크립트는 실제 설치파일 MB·MiB와 폴더 크기를 로그·`package-size.json`에 남긴다. 크기 비교는 같은 버전·구성의 측정값을 기준으로 한다. 실제 웹캠·Windows 입력 수동 확인은 CI 자가 진단·합성 시험과 별도다.
+
+전환 준비 중 원본 `preview`의 `split-manux.yml`은 앱 폴더를 subtree split하여 `manux-preview`에 fast-forward로만 올린다. 독립 브랜치에서는 루트의 [.github/workflows/standalone.yml](.github/workflows/standalone.yml)이 Windows pytest·구조/계약·기본 Preview 설치 검사를 제공한다. 분리 전 중첩 위치에서는 GitHub가 무시한다. 독립 개발을 시작한 뒤 두 브랜치를 동시에 개발 기준으로 쓰지 않는다.
+
+workflow 파일 변경 때문에 병합 후 자동 분리 push가 GitHub 기본 토큰 권한으로 거절될 수 있다. 그때는 사람이 workflow 변경을 허용하는 자격 증명으로 분리 결과를 일반 push한다. 강제 push하지 않는다. `GITHUB_TOKEN`의 자동 push는 새 push workflow도 시작하지 않으므로 독립 브랜치의 일반 push/PR 또는 수동 CI 실행으로 확인한다. 복구 명령·브랜치 보호·기본 브랜치·`manux-production` 생성은 [브랜치 흐름](docs/branch-flow.md)을 따른다.
+
+D-009에 따라 v0.3 동등성 시험·golden fixture·생성기는 폐기했다. 이식 당시 S2·S4 확인으로 갈음하며 v0.5부터 현재 동작·계약을 기준으로 시험한다. 시험은 레거시 소스나 실제 사용자 녹화를 요구하지 않는다.
+
+
+스튜디오 통합 범위·충돌 우선순위·평가 수치의 의미는 [v0.5 통합 기록](docs/v05-integration.md)을 따릅니다. Pose Studio의 내부 확인 값은 실제 정확도가 아닙니다.

@@ -18,6 +18,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Tuple
+from uuid import uuid4
 
 from manux.actions.bindings import Binding
 from manux.app import _FEATURES, _camera_config, build_engine, schema, pipeline_parts, read_bindings, training_specs
@@ -209,6 +210,8 @@ class DesktopRuntime:
         self._rec_marks_seen = 0
         self._rec_identity = RecordingIdentity("local")
         self._rec_identity_active = None
+        self._rec_session_id: Optional[str] = None
+        self._rec_session_id_active: Optional[str] = None
         self._runtime_requests = queue.SimpleQueue()
         self._spatial_updates = queue.SimpleQueue()
         self.spatial_model_path = None
@@ -216,6 +219,7 @@ class DesktopRuntime:
         self._pose_tracker = None
         self._pose_failed = False
         self.pose_status = "팔·어깨 기록 꺼짐"
+        self.sensitivity_result = (0, True, "")
 
     # ------------------------------------------------------------------ settings the UI changes
     def settings_for(self, fid: str) -> Mapping[str, object]:
@@ -309,6 +313,8 @@ class DesktopRuntime:
             focus = tuple(task.key for task in tasks_for(focus))
         with self._lock:
             self._rec_identity = identity
+            # One explicit start = one collection bundle, not one frame/set/file.
+            self._rec_session_id = str(uuid4()) if mode != "off" else None
             _, _, _, adv, _ = self._rec_want
             self._rec_want = (mode, focus, copy.deepcopy(dict(plan)) if plan is not None else None, adv, False)
 
@@ -330,10 +336,13 @@ class DesktopRuntime:
         with self._lock:
             mode, focus, plan, adv, paused = self._rec_want
             identity = self._rec_identity
-        if (mode, focus, identity) != (self._rec_mode, self._rec_focus, self._rec_identity_active):
+            session_id = self._rec_session_id
+        if (mode, focus, identity, session_id) != (
+                self._rec_mode, self._rec_focus, self._rec_identity_active, self._rec_session_id_active):
             self._stop_recording(now)
             self._rec_mode, self._rec_focus = mode, focus
             self._rec_identity_active = identity
+            self._rec_session_id_active = session_id
             if mode in ("guided", "free") and self.recordings_dir is not None:
                 try:
                     self.engine.commands.put(SetBusy("recording", True))
@@ -345,6 +354,7 @@ class DesktopRuntime:
                         "focus": focus,
                         "person": identity.profile, "profile": identity.profile,
                         "preset": identity.preset, "split": identity.split,
+                        "session_id": session_id,
                     }
                     if mode == "guided":
                         self._guided = GuidedSession(tasks_for(focus), plan=plan, settle=0.35)
@@ -561,10 +571,12 @@ class DesktopRuntime:
                 self.spatial_guard.reset("settings")
         while not self._runtime_requests.empty():
             command = self._runtime_requests.get_nowait()
+            if command.kind == "sensitivity":
+                self._apply_sensitivity(command)
             if command.kind == "spatial_guard":
                 try:
                     self.engine.prepare_model_reload()
-                    model = SpatialMlpModel.load(self.spatial_model_path) if command.path == "on" and self.spatial_model_path else None
+                    model = (SpatialMlpModel.load(self.spatial_model_path) if self.spatial_model_path else self.spatial_feature.model) if command.path == "on" else None
                     if command.path == "on" and model is None: raise ValueError("no pose model")
                     self.spatial_feature.set_model(model)
                     self.spatial_guard.enabled = command.path == "on"
@@ -605,6 +617,30 @@ class DesktopRuntime:
                 self._model_token = None
                 if not self.reload_model(force=True):
                     self.model_store, self._model_token, self._attempted_model_token = previous
+
+    def _apply_sensitivity(self, command):
+        from dataclasses import replace
+        from manux.settings.sensitivity import prepare
+        from manux.settings.store import save
+        revision = self.sensitivity_result[0] + 1
+        self.engine.pause_for_settings()
+        try:
+            values = prepare(self.settings, command.values)
+            candidate = Settings(self.settings.schema, self.settings.stored())
+            for key, value in values.items():
+                if not candidate.set(key, value):
+                    raise ValueError("민감도 값을 저장할 수 없습니다.")
+            save(candidate, Path(command.path))
+        except (OSError, ValueError) as exc:
+            self.sensitivity_result = (revision, False, f"저장 실패 · 기존 설정 유지: {exc}")
+            return
+        for key, value in values.items():
+            self.settings.set(key, value)
+        sink = self.engine.sinks.get(OutputTarget.WINDOWS)
+        if sink is not None and hasattr(sink, "configure"):
+            sink.configure(replace(sink.config, **self.settings.section("cursor")))
+        self.pinch_preview.step(None, self.settings_for("pinch"))
+        self.sensitivity_result = (revision, True, "저장·적용 완료 · 제어 시작을 누르면 새 감도로 동작합니다.")
 
     def _model_modes(self, model):
         if not self.tcn_enabled:
@@ -686,8 +722,10 @@ def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, t
                                     else policy_store.modes(direct.card.raw) if policy_store and direct else None))
     if windows:
         from manux.output.windows import Win32Backend, WindowsOutputSink
+        from manux.output.windows.config import WindowsOutputConfig
         from manux.platform.monitors import ScreenLayout
-        engine.sinks[OutputTarget.WINDOWS] = WindowsOutputSink(Win32Backend(), ScreenLayout.detect())
+        engine.sinks[OutputTarget.WINDOWS] = WindowsOutputSink(
+            Win32Backend(), ScreenLayout.detect(), WindowsOutputConfig(**settings.section("cursor")))
     runtime = DesktopRuntime(engine, source, settings, model_store=tcn_store, model_token=token, model_status=status,
                              policy_store=policy_store, current_model=direct)
     runtime.spatial_feature = spatial_pose_feature
@@ -697,22 +735,22 @@ def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, t
 
 
 def make_pose_studio(data_dir: Path,
-                     on_model_updated: Optional[Callable[[SpatialMlpModel], None]] = None) -> PoseSnapshotStudio:
+                     on_model_updated: Optional[Callable[[Optional[SpatialMlpModel]], None]] = None) -> PoseSnapshotStudio:
     """Create a PoseSnapshotStudio wired to the 96-dim SpatialFeatureExtractor and 4-second SpatialMlpModel."""
     import numpy as np
 
     active_mlp: List[Optional[SpatialMlpModel]] = [None]
-    model_file = Path(data_dir) / "models" / "spatial_mlp" / "spatial_pose_mlp.json"
-    if model_file.is_file():
-        try:
-            active_mlp[0] = SpatialMlpModel.load(model_file)
-        except Exception:
-            active_mlp[0] = None
 
-    model_stamp = [model_file.stat().st_mtime_ns if model_file.is_file() else None]
+    def update_model(model: Optional[SpatialMlpModel]) -> None:
+        active_mlp[0] = model
+        if on_model_updated is not None:
+            on_model_updated(model)
+
+    model_stamp = [None]
 
     def predict_fn(landmarks: Any, _world: Any) -> Optional[Dict[str, Any]]:
-        stamp = model_file.stat().st_mtime_ns if model_file.is_file() else None
+        model_file = studio.models_dir / (studio.active_model_id or "spatial_pose_mlp.json")
+        stamp = (str(model_file), model_file.stat().st_mtime_ns) if model_file.is_file() else None
         if stamp != model_stamp[0]:
             try: active_mlp[0] = SpatialMlpModel.load(model_file) if stamp else None
             except (ValueError, OSError, KeyError): active_mlp[0] = None
@@ -744,21 +782,21 @@ def make_pose_studio(data_dir: Path,
             ws.append(1.8 if s.get("isFailureSample") else 1.0)
         if len(xs) < 2:
             raise ValueError("유효한 3D 관절 표본이 2개 미만입니다.")
+        from manux.data.pose_studio import pose_training_partition
+        tx, ty, tw, validation = pose_training_partition(np.stack(xs), np.array(ys, dtype=np.int64), np.array(ws, dtype=np.float64))
         model, metrics = train_spatial_mlp(
-            np.stack(xs),
-            np.array(ys, dtype=np.int64),
-            np.array(ws, dtype=np.float64),
+            tx, ty, tw, validation_data=validation,
             classes=ACTION_IDS,
             feature_version=SPATIAL_FEATURE_VERSION,
         )
+        from manux.data.pose_studio import summarize_pose_fit
+        metrics = summarize_pose_fit(model, metrics, np.stack(xs), np.array(ys))
         model.save(out_path)
-        active_mlp[0] = model
-        if on_model_updated is not None:
-            on_model_updated(model)
+        update_model(model)
         return {
             "train_accuracy": metrics.train_accuracy,
             "test_accuracy": metrics.test_accuracy,
-            "total_samples": metrics.total_samples,
+            "total_samples": len(xs),
             "train_samples": metrics.train_samples,
             "test_samples": metrics.test_samples,
             "elapsed_ms": metrics.elapsed_ms,
@@ -766,7 +804,16 @@ def make_pose_studio(data_dir: Path,
             "trained_at": metrics.trained_at,
         }
 
-    return PoseSnapshotStudio(data_dir, train_fn=train_fn, predict_fn=predict_fn)
+    studio = PoseSnapshotStudio(
+        data_dir,
+        train_fn=train_fn,
+        predict_fn=predict_fn,
+        load_model_fn=SpatialMlpModel.load,
+        on_model_updated=update_model,
+    )
+    if studio.active_model is not None:
+        update_model(studio.active_model)
+    return studio
 
 
 def default_hand_model(paths: AppPaths) -> Path:
@@ -813,7 +860,18 @@ def main(argv=None) -> int:
     except (OSError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 1
-    spatial_model_path = paths.data_dir / "models" / "spatial_mlp" / "spatial_pose_mlp.json"
+    models_dir = paths.data_dir / "models" / "spatial_mlp"
+    active_cfg = models_dir / "active_model.json"
+    active_model_file = "spatial_pose_mlp.json"
+    if active_cfg.is_file():
+        try:
+            active_model_file = json.loads(active_cfg.read_text("utf-8")).get("active_model_id", active_model_file)
+        except Exception:
+            pass
+    spatial_model_path = models_dir / active_model_file
+    if not spatial_model_path.is_file():
+        spatial_model_path = models_dir / "spatial_pose_mlp.json"
+
     init_spatial_model: Optional[SpatialMlpModel] = None
     if spatial_model_path.is_file():
         try:
@@ -854,7 +912,7 @@ def main(argv=None) -> int:
     tc.simulation_bindings = read_bindings(args.bindings)
     tc.simulation_config = {"simulation_mode": args.tcn_mode,
                             "simulation_model": str(args.tcn_model) if args.tcn_model else None}
-    studio = make_pose_studio(paths.data_dir)
+    studio = make_pose_studio(paths.data_dir, runtime.set_spatial_model)
     from manux.perception.palm_axes import PalmAxesCalibration, valid_axes, palm_point
     return run(runtime, settings, paths, tray=not args.no_tray, screenshot=args.screenshot, layout=args.ui,
                services={
@@ -865,6 +923,7 @@ def main(argv=None) -> int:
                    "export_logs": lambda metrics: export_logs(paths, metrics, info.label),
                    "training_center": tc,
                    "pose_studio": studio,
+                   "studio_categories": lambda: list(STUDIO_CATEGORIES),
                    "studio_actions": lambda: list(STUDIO_ACTIONS),
                    "studio_categories": lambda: list(STUDIO_CATEGORIES),
                    "studio_system_action": normalize_system_action,

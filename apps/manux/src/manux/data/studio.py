@@ -12,7 +12,7 @@ import hashlib
 import json
 import math
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 from uuid import uuid4
 
@@ -43,7 +43,7 @@ def recording_path(root, key):
     if not isinstance(key, str) or not key or "\\" in key:
         raise ValueError("녹화 항목을 선택하세요.")
     path = root / key
-    if Path(key).is_absolute() or ".." in Path(key).parts or not path.resolve().is_relative_to(root):
+    if PureWindowsPath(key).drive or Path(key).is_absolute() or ".." in Path(key).parts or not path.resolve().is_relative_to(root):
         raise ValueError("녹화 폴더 밖의 파일은 사용할 수 없습니다.")
     if any(p.startswith(".") for p in Path(key).parts) or not key.endswith(".jsonl.gz"):
         raise ValueError("완료된 녹화만 사용할 수 있습니다.")
