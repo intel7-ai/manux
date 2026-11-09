@@ -66,7 +66,7 @@ process.stdin.on('end', async () => {
       assert.equal(options.cache, 'no-store');
       return await new Promise(resolve => screenRequests.push({resolve, options}));
     },
-    AbortController, Image: class {async decode() {}},
+    AbortController, Image: class {set src(value) {queueMicrotask(() => this.onload?.());}},
     URL: {createObjectURL: () => 'blob:synthetic-' + (++objectUrls), revokeObjectURL: url => revoked.push(url)},
     setTimeout: () => 1, clearTimeout() {},
     setInterval: () => 1, clearInterval() {}, requestAnimationFrame: () => 1, cancelAnimationFrame() {},

@@ -139,6 +139,26 @@
     let callbackId = null, videoCallback = false, cameraBusy = false;
     let screenToken = null, screenTimer = null, screenAbort = null, screenEpoch = 0, screenUrl = null;
     let lastScreenAt = 0;
+    let screenDisplayState = 'waiting';
+
+    function loadScreenImage(url, signal) {
+      // onload works in Android/in-app browsers whose Image.decode is absent or
+      // rejects otherwise displayable JPEGs. Bound the decode by the request deadline.
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        const finish = error => {
+          image.onload = image.onerror = null;
+          signal.removeEventListener('abort', aborted);
+          if (error) reject(error); else resolve(image);
+        };
+        const aborted = () => finish(new Error('PC 화면 읽기 시간 초과'));
+        image.onload = () => finish(null);
+        image.onerror = () => finish(new Error('PC 화면 이미지 읽기 실패'));
+        signal.addEventListener('abort', aborted, {once: true});
+        if (signal.aborted) { aborted(); return; }
+        image.src = url;
+      });
+    }
 
     function stopScreen() {
       ++screenEpoch;
@@ -165,26 +185,33 @@
       screenAbort = controller;
       const deadline = setTimeout(() => controller.abort(), 1500);
       let nextUrl = null;
+      let stage = '서버 응답';
+      let phase = 'fetch';
       try {
         const response = await fetch('/screen', {method: 'POST', cache: 'no-store',
-          headers: {Authorization: 'Bearer ' + screenToken}, signal: controller.signal});
-        if (!response.ok) throw new Error('PC 화면 대기');
+          headers: {Authorization: 'Bearer ' + screenToken, 'X-Manux-Display': screenDisplayState}, signal: controller.signal});
+        if (!response.ok) throw new Error('PC 화면 대기 (' + response.status + ')');
+        stage = '이미지 수신';
+        phase = 'blob';
         const blob = await response.blob();
         if (epoch !== screenEpoch) return;
         nextUrl = URL.createObjectURL(blob);
-        const decoded = new Image();
-        decoded.src = nextUrl;
-        await decoded.decode();
+        stage = '이미지 표시';
+        phase = 'image';
+        await loadScreenImage(nextUrl, controller.signal);
         if (epoch !== screenEpoch) return;
         const previous = screenUrl;
         screenUrl = nextUrl; nextUrl = null;
         desktopScreen.src = screenUrl;
         if (previous) URL.revokeObjectURL(previous);
         lastScreenAt = performance.now();
+        screenDisplayState = 'shown';
         screenStatus.textContent = 'PC 모니터 · 손 인식 카메라 연결 중';
-      } catch (_) {
+      } catch (error) {
         if (epoch === screenEpoch) {
-          screenStatus.textContent = 'PC 화면을 다시 받는 중 · 손 인식은 계속됩니다';
+          screenDisplayState = phase + '_failed';
+          screenStatus.textContent = 'PC 화면 재시도 · ' + stage + ' · ' +
+            (error.name === 'AbortError' ? '시간 초과' : error.message);
           if (performance.now() - lastScreenAt > 2000) {
             desktopScreen.removeAttribute('src');
             if (screenUrl) { URL.revokeObjectURL(screenUrl); screenUrl = null; }
