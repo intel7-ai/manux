@@ -279,3 +279,19 @@ def test_cursor_stays_put_after_a_long_drag_ends():
         t += 1 / 30
         mapper.step_palm(.62, 90., t, contact=3.)
     assert math.dist(mapper.pos, dropped) <= 3, (dropped, mapper.pos)   # was pulled back by the gap cap
+
+
+def test_slow_drag_across_the_screen_keeps_up_with_the_hand():
+    mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**PRECISE))
+    t = 10.
+    for _ in range(30):
+        t += 1 / 30
+        mapper.step_palm(.38, 90., t, contact=3.)
+    start = mapper.pos[0]
+    for i in range(120):                                      # hold thumb+middle, drag slowly (~550 px/s) to the right
+        t += 1 / 30
+        mapper.step_palm(.38 + .25 * min(1., i / 100), 86., t, contact=.7)
+    moved = mapper.pos[0] - start
+    # hand covered ~1600 px of mapping; it trails by the gap cap (130 px) and the 0.3 s click hold at the start.
+    # Without re-sync during drags (previous version) it reached ~650.
+    assert moved >= 1250, moved

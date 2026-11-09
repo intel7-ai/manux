@@ -110,7 +110,6 @@ class CursorMapper:
         self._last_contact: Optional[float] = None
         self._contact_since: Optional[float] = None
         self._guard_rebase = False
-        self._contact_drag = False
         self._capture_offset = False
         self._map_offset: Tuple[float, float] = (0.0, 0.0)
         self._reset_hold()
@@ -226,12 +225,10 @@ class CursorMapper:
                 self._guard_until = now + CLICK_GUARD_SETTLE
                 self._guard_rebase = True
                 return self.pos
-            # Held longer than any recorded click: a drag. Follow the hand again from here (re-anchored, so the
-            # pinch tilt that happened during the hold is not applied as a jump), without re-syncing to the
-            # mapping, which still contains that tilt.
-            self._contact_drag = True
+            # Held longer than any recorded click: a drag. Follow the hand again from here, re-anchored with a new
+            # mapping offset (below) so the pinch tilt is absorbed instead of jumping, then move like any other
+            # move: precise when slow, 1:1 and re-synced when fast, so a drag across the screen keeps up.
         else:
-            self._contact_drag = False
             if self._contact_since is not None:          # fingers just parted (click or drag end)
                 self._contact_since = None
                 self._guard_until = max(self._guard_until, now + CLICK_GUARD_SETTLE)
@@ -332,7 +329,7 @@ class CursorMapper:
             k = g_low + (1.0 - g_low) * u
             x, y = self._prec_pos[0] + dx * k, self._prec_pos[1] + dy * k
             # only a fast hand re-syncs: a slow or resting one never drags the cursor on after it stops
-            pull = 0.0 if self._contact_drag else min(1.0, u * dt / PALM_PRECISION_RESYNC)
+            pull = min(1.0, u * dt / PALM_PRECISION_RESYNC)
             x, y = x + (target[0] - x) * pull, y + (target[1] - y) * pull
             if pull:                      # a fast hand also fades the click/drag reference offset
                 self._map_offset = (self._map_offset[0] * (1 - pull), self._map_offset[1] * (1 - pull))
@@ -346,7 +343,7 @@ class CursorMapper:
             y = target[1]
         gap = math.dist((x, y), target)
         limit = PALM_PRECISION_MAX_GAP * self.screens.primary.height
-        if gap > limit and not self._contact_drag:   # a drag stays relative (the mapping holds the pinch tilt)
+        if gap > limit:
             x, y = target[0] + (x - target[0]) * limit / gap, target[1] + (y - target[1]) * limit / gap
         self._prec_pos = (x, y)
         return self._prec_pos
