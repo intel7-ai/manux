@@ -163,7 +163,8 @@ class PointerSetup:
         self.mapper = self.make_mapper(self.values)
         self.phase, self.last_t, self.note, self.can_apply = "aim", None, "", False
 
-    def step(self, now, point):
+    def step(self, now, point, pinch=None):
+        self.pinch = pinch
         dt = None if self.last_t is None else now - self.last_t
         self.last_t = now
         self.point = point if point is not None and all(map(math.isfinite, point)) and (
@@ -220,7 +221,7 @@ class PointerSetup:
         self.test.update(now, self.mapper.pos, hand=self.point is not None, active=True)
         x, pitch = self.point if self.point is not None else (None, None)
         # full precision: a replay with the same settings must reproduce the recorded cursor exactly
-        self.trace.append((now, x, pitch, self.mapper.pos[0], self.mapper.pos[1], index))
+        self.trace.append((now, x, pitch, self.mapper.pos[0], self.mapper.pos[1], index, getattr(self, "pinch", None)))
         if not self.test.done:
             return
         stats = self.test.summary()

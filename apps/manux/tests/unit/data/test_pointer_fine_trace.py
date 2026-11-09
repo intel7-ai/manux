@@ -70,3 +70,18 @@ def test_cli_prints_recorded_replay_and_variant(tmp_path, capsys):
     assert pointer_trace.main([str(path), "--set", "palm_hold=0"]) == 0
     out = capsys.readouterr().out
     assert "recorded" in out and "replay" in out and "with palm_hold=0" in out
+
+
+def test_trace_marks_clicks_and_measures_the_shift(tmp_path):
+    trace = {"version": 1, "kind": "menu", "monitor": [0, 0, 1920, 1080], "values": {}, "dwell": 1.0,
+             "targets": [{"fx": .5, "fy": .5, "size_px": 24}],
+             "frames": []}
+    for i in range(60):                                       # hold at 960, then pinch at t=1.0 tilts the cursor 15 px
+        t = i / 30
+        y = 540 + (15 if t >= .95 else 0)
+        pinch = .02 if 1.0 <= t < 1.3 else .1
+        trace["frames"].append([t, .5, 90., 960, y, 0, pinch])
+    assert pointer_trace.click_times(trace) == [1.0]
+    shift = pointer_trace.click_shifts(trace, pointer_trace.recorded(trace))[0]
+    assert shift["shift_px"] == 15 and shift["with_rollback_px"] == 0
+    assert pointer_trace.score(trace, pointer_trace.recorded(trace))["rows"][0]["clicks"] == 1
