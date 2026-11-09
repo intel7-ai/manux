@@ -194,6 +194,11 @@ Rectangle {
                 text: "정밀 시험 (한 칸씩)"
                 onClicked: page.controller.pointerSetupAction("fine")
             }
+            Button {
+                visible: page.tuning
+                text: "메뉴 시험 (1초 멈춤)"
+                onClicked: page.controller.pointerSetupAction("menu")
+            }
         }
     }
 }

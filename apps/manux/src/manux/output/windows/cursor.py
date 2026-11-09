@@ -54,7 +54,8 @@ class OneEuro:
 # both betas add ~3-5 Hz of bandwidth at those speeds. `smoothing` sets the resting cutoff.
 PALM_X_BETA = 12.0
 PALM_PITCH_BETA = .07
-PALM_PITCH_JUMP = 90.0   # deg between frames: a wrap or a bad landmark frame, not a hand movement
+PALM_PITCH_CUTOFF_SCALE = .5   # wrist pitch is ~2x noisier than hand X at rest (fine traces): filter it harder
+PALM_PITCH_JUMP = 90.0  # deg between frames: a wrap or a bad landmark frame, not a hand movement
 PALM_EASE_SECONDS = .2   # after a pause the calibrated cursor glides from where it was to the hand
 
 
@@ -211,7 +212,8 @@ class CursorMapper:
         if (pitch is not None and self._palm_y.value is not None
                 and abs(pitch - self._palm_y.value) > PALM_PITCH_JUMP):
             self.pause()   # a wrap or a bad frame: glide from the cursor instead of sweeping across the screen
-        self._palm_x.min_cutoff = self._palm_y.min_cutoff = palm_min_cutoff(c.smoothing)  # config is reassigned live
+        cutoff = palm_min_cutoff(c.smoothing)  # config is reassigned live
+        self._palm_x.min_cutoff, self._palm_y.min_cutoff = cutoff, cutoff * PALM_PITCH_CUTOFF_SCALE
         x = self._palm_x(x, now)
         if pitch is not None:
             pitch = self._palm_y(pitch, now)
