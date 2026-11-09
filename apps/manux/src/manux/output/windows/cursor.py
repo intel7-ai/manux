@@ -213,7 +213,7 @@ class CursorMapper:
         return self.pos
 
     def step_palm(self, x: float, pitch: Optional[float], now: float, gain: float = 1.0,
-                  contact: Optional[float] = None) -> Tuple[int, int]:
+                  contact: Optional[float] = None, fist: bool = False) -> Tuple[int, int]:
         """Use hand X and wrist pitch for both the practice cursor and Windows output.
 
         `contact` is how close a click is (thumb to middle/ring tip over the click threshold; below 1 = touching).
@@ -293,7 +293,9 @@ class CursorMapper:
         self._map_offset = (ox, oy)
         target_x, target_y = monitor.clamp(target_x + ox, target_y + oy)
         target_x, target_y = monitor.clamp(*self._palm_hold((target_x, target_y), now, monitor.height))
-        target_x, target_y = monitor.clamp(*self._precision((target_x, target_y), now, gain))
+        # Only the fist gesture is precision: the open-hand gain also varies with finger curl (2.0 open .. 0.35
+        # fist), and a relaxed, half-curled hand must not drop into fist mode mid-move.
+        target_x, target_y = monitor.clamp(*self._precision((target_x, target_y), now, gain if fist else 1.0))
         # The filters already smooth the hand; only glide in after a restart so the cursor never jumps.
         alpha = .25 if now < self._palm_ease_until else 1.0
         self._palm_pos = (px + alpha * (target_x - px), py + alpha * (target_y - py))

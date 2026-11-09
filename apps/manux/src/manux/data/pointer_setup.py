@@ -12,8 +12,9 @@ SETTING_KEY = "app.pointer_calibration"
 ADJUSTMENTS = {"palm_x_gain": (.65, 1.65), "palm_y_gain": (.65, 1.65), "smoothing": (.15, .75),
                "palm_precision": (.25, 1.)}
 DEFAULT_HOLD = 0.  # neutral zone radius as a share of screen height (0 = off; fine-round traces: any zone slows one-cell moves)
-# Cursor gain of a slow hand. Fine-round traces: 0.4 cut the wobble while holding from 20 to 8 px (max).
-DEFAULT_PRECISION = .4
+# Cursor gain of the slowest moves (gain rises with speed to 1). 0.4 cut holding wobble in fine traces but felt
+# heavy in real use; 0.7 is the light default and the fist (0.35x) is the precision gesture.
+DEFAULT_PRECISION = .7
 LIMITS = {**ADJUSTMENTS, "palm_left": (0., 1.), "palm_right": (0., 1.),
           "palm_up": (-180., 180.), "palm_down": (-180., 180.)}
 PHASES = ("rest", "horizontal", "up", "down")

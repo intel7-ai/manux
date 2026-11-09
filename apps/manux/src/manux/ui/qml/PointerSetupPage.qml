@@ -155,6 +155,13 @@ Rectangle {
         }
         Label {
             Layout.fillWidth: true
+            visible: page.tuning
+            text: "작은 칸·메뉴를 맞출 때는 주먹을 쥔 채 움직이면 커서가 천천히 정밀하게 움직입니다. (시험 화면이 아닌 실제 제어에서 동작)"
+            color: Theme.Studio.ink
+            wrapMode: Text.Wrap
+        }
+        Label {
+            Layout.fillWidth: true
             visible: page.tuning && !!page.setup.rangeText
             text: page.setup.rangeText || ""
             color: Theme.Studio.muted
