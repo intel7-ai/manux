@@ -21,12 +21,16 @@ def onboarding_steps(cards: Sequence[Card], *, palm: bool = False, pointer_setup
     """Teach everyday controls first; keep the full catalog on the main screen.
 
     The control hand was chosen before this (hand choice screen), so there is no camera/hand step. With the palm
-    cursor: 1 move the cursor, 2 choose how up/down works (whole hand vs wrist tilt) and reach three positions,
-    3 optional cursor fit setup (wrist tilt only), then speed/clicks, click, scroll, V and the optional ones."""
+    cursor: 1 move the cursor, 2 click, 3 choose how up/down works (whole hand vs wrist tilt) and reach three
+    positions, 4 optional cursor fit setup (wrist tilt only), then speed/clicks, scroll, V and the optional ones."""
     by_key = {str(c["key"]): c for c in cards}
     result = [{"key": "move", "title": "커서 이동",
                "how": "손바닥이 카메라에 보이게 하고 손을 움직여 연습 커서를 움직여 보세요.",
                "actions": ("mouse.move",)}]
+    if "click" in by_key:            # click right after moving: the later steps use it
+        click = dict(by_key["click"])
+        click.update(title="클릭 연습")
+        result.append(click)
     if palm:
         result.append({"key": "vertical", "title": "상하 이동 방식 고르기",
                        "how": "커서를 위아래로 움직일 방법입니다. 손 전체 이동은 손을 위아래로 옮기고, 손목 기울기는 "
@@ -41,9 +45,6 @@ def onboarding_steps(cards: Sequence[Card], *, palm: bool = False, pointer_setup
         result.append({"key": "sensitivity", "title": "내 손에 맞는 속도",
                        "how": "편 손은 빠르게, 주먹은 느리고 정밀하게 움직입니다. 속도를 조절하고 화면의 목표 3개를 손짓으로 클릭하세요. 실제 PC에는 입력하지 않습니다.",
                        "actions": ("mouse.move", "mouse.left_click"), "require_precision": "scroll" in by_key})
-        click = dict(by_key["click"])
-        click.update(title="클릭 연습")
-        result.append(click)
     if "scroll" in by_key:
         scroll = dict(by_key["scroll"])
         scroll.update(title="스크롤 연습")

@@ -82,6 +82,8 @@ def test_pointer_setup_page_opens_after_hand_choice_and_returns_to_tutorial(tmp_
         assert b.tutorial is not None and b.tutorial.step_key == "move"
         lesson = b.tutorial
         b.tutorialNext()
+        assert b.tutorial.step_key == "click"
+        b.tutorialNext()
         assert b.tutorial.step_key == "vertical"
         b.tutorialChooseVertical("wrist_pitch")
         assert b.tutorialVertical == "wrist_pitch"          # already the default: nothing to save
@@ -122,7 +124,7 @@ def test_pointer_setup_page_opens_after_hand_choice_and_returns_to_tutorial(tmp_
         b.apply_view(ViewFrame(None, pointer_setup={"phase": "saved"}))
         b.application.processEvents()
         assert not page.property("visible") and b.stage_name == "tutorial"
-        assert b.tutorial is lesson and lesson.done[2]     # back in the same lesson, the fit step done
+        assert b.tutorial is lesson and lesson.done[3]     # back in the same lesson, the fit step done
         lesson.tick(time.perf_counter() + 1)
         assert lesson.step_key == "sensitivity"
     finally:
@@ -444,6 +446,7 @@ def test_relearn_motions_with_hand_position_skips_the_cursor_fit(tmp_path, layou
         b.beginTutorial()                                  # "learn motions": the hand is already chosen
         assert b.stage_name == "tutorial" and not b.pointerSetup and b.tutorial.step_key == "move"
         b.tutorialNext()
+        b.tutorialNext()                                   # past the click practice
         b.tutorialChooseVertical("hand_position")
         b.tutorialNext()                                   # the wrist-only cursor fit is passed over
         assert b.tutorial.step_key == "sensitivity"
