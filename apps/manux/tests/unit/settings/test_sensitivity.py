@@ -48,3 +48,23 @@ def test_profile_values_and_coupled_overrides_cannot_be_silently_overwritten():
         with pytest.raises(ValueError, match="프로필"):
             prepare(settings, edits)
     assert settings.get("pinch.release_threshold") == .10
+
+
+@pytest.mark.parametrize("mode", ["hand_position", "wrist_pitch"])
+def test_vertical_input_is_a_validated_choice_in_both_editors(mode):
+    from manux.settings import advanced
+    settings = Settings(schema(), {"pinch.click_threshold": .0537})
+    before = settings.stored()
+    edits = {"cursor.vertical_input": mode}
+    for validate, describe in ((prepare, rows), (advanced.prepare, advanced.rows)):
+        assert validate(settings, edits) == edits
+        row = next(r for r in describe(settings) if r["key"] == "cursor.vertical_input")
+        assert row["kind"] == "choice" and len(row["choiceLabels"]) == 2
+        for bad in ("unknown", True, 0, None, []):
+            with pytest.raises(ValueError):
+                validate(settings, {"cursor.vertical_input": bad})
+        assert settings.stored() == before
+        settings.apply_profile(edits)
+        with pytest.raises(ValueError, match="프로필"):
+            validate(settings, edits)
+        settings.apply_profile({})

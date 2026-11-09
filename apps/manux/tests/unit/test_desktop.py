@@ -147,7 +147,7 @@ def test_sensitivity_apply_reaches_cursor_and_feature_and_survives_restart(tmp_p
     event_count = len(backend.events)
     runtime.request(RuntimeRequest("sensitivity", str(tmp_path / "config"), {
         "cursor.relative_gain_min": 2., "cursor.relative_gain_max": 3., "cursor.smoothing": 1.,
-        "pinch.click_threshold": .08, "pinch.pinch_threshold": .07}))
+        "pinch.click_threshold": .08, "pinch.pinch_threshold": .07, "cursor.vertical_input": "hand_position"}))
     try:
         runtime._drain_runtime_requests()
         assert runtime.sensitivity_result[1]
@@ -165,6 +165,8 @@ def test_sensitivity_apply_reaches_cursor_and_feature_and_survives_restart(tmp_p
         restarted = build(restored, runtime.source, windows=True)
         try:
             assert restarted.engine.sinks[OutputTarget.WINDOWS].config.relative_gain_max == 3.
+            assert restarted.engine.sinks[OutputTarget.WINDOWS].config.vertical_input == "hand_position"
+            assert restarted.engine.sinks[OutputTarget.PRACTICE].config.vertical_input == "hand_position"
             assert restarted.settings_for("pinch")["click_threshold"] == .08
         finally:
             restarted.stop()
@@ -185,7 +187,8 @@ def test_sensitivity_save_failure_keeps_live_and_saved_values(tmp_path, monkeypa
         raise OSError("synthetic disk failure")
     monkeypatch.setattr(store, "save", fail)
     try:
-        runtime.request(RuntimeRequest("sensitivity", str(config_dir), {"pinch.click_threshold": .08}))
+        runtime.request(RuntimeRequest("sensitivity", str(config_dir), {
+            "pinch.click_threshold": .08, "cursor.vertical_input": "hand_position"}))
         runtime._drain_runtime_requests()
         assert not runtime.sensitivity_result[1]
         assert "저장 실패" in runtime.sensitivity_result[2]

@@ -317,20 +317,22 @@ class DesktopRuntime:
             self.settings.is_overridden("cursor." + name) for name in POINTER_SETUP_LIMITS)
 
     def _configure_cursor_for_frame(self, frame, sink):
-        if sink is None or not hasattr(sink, "set_frame_aspect"):
+        if sink is None or getattr(sink, "config", None) is None:
             return
         raw = self.settings.get(SETTING_KEY)
         if not raw and self._pointer_config_signature is None:
-            sink.set_frame_aspect(frame.aspect)
+            if sink.config.frame_aspect != frame.aspect:
+                sink.configure(replace(sink.config, frame_aspect=frame.aspect))
             return
         environment = self._pointer_environment(frame, sink.screens.primary, self.engine.arbiter.base_mode)
         locked = self._pointer_profile_locked()
         base_values = tuple(self.settings.get("cursor." + key) for key in CURSOR_BASE_KEYS)
-        signature = (environment, raw, locked, base_values)
+        vertical_input = self.settings.get("cursor.vertical_input")
+        signature = (environment, raw, locked, base_values, vertical_input)
         if signature == self._pointer_config_signature:
             return
         self._pointer_environment_key = sha256(repr(environment).encode("utf-8")).hexdigest()
-        values = {} if locked else read_profiles(raw).get(self._pointer_environment_key, {})
+        values = {} if locked or vertical_input == "hand_position" else read_profiles(raw).get(self._pointer_environment_key, {})
         config = {"palm_left": 0., "palm_right": 0., "palm_up": 0., "palm_down": 0.,
                   "palm_x_gain": 1., "palm_y_gain": 1., "palm_hold": DEFAULT_HOLD, "frame_aspect": frame.aspect}
         config.update(self.settings.section("cursor"))
@@ -344,7 +346,8 @@ class DesktopRuntime:
     def _pointer_setup_frame(self, frame, hand, pitch, stage, sink):
         request, self._pointer_setup_action = self._pointer_setup_action, None
         action = request.path if request is not None else None
-        if stage != Stage.TUTORIAL or self.pointer_setup_dir is None:
+        if (stage != Stage.TUTORIAL or self.pointer_setup_dir is None
+                or self.settings.get("cursor.vertical_input") != "wrist_pitch"):
             self._pointer_setup = None
             return None
         if action is None and self._pointer_setup is None:
@@ -659,12 +662,14 @@ class DesktopRuntime:
         self._recording_step(frame.t, frame, hand)
         sink = self.engine.sinks.get(OutputTarget.WINDOWS)
         pitch = palm_pitch(hand.world) if hand is not None else None
-        if sink is not None and hasattr(sink, "set_palm_pitch"):
-            sink.set_palm_pitch(pitch)
-        self._configure_cursor_for_frame(frame, sink)
         practice_sink = self.engine.sinks.get(OutputTarget.PRACTICE)
+        for output in (sink, practice_sink):
+            if output is not None and hasattr(output, "set_palm_pitch"):
+                output.set_palm_pitch(pitch)
+        self._configure_cursor_for_frame(frame, sink if sink is not None else practice_sink)
         if practice_sink is not None and practice_sink.config is not None:
-            practice_sink.update_config(replace(practice_sink.config, frame_aspect=frame.aspect))
+            practice_sink.update_config(replace(getattr(sink, "config", None) or practice_sink.config,
+                                                frame_aspect=frame.aspect))
         snap = self.engine.step(frame, hand)
         pointer_setup = self._pointer_setup_frame(frame, hand, pitch, snap.stage, sink)
         rule_preview = None
@@ -837,7 +842,7 @@ class DesktopRuntime:
         self.engine.pause_for_settings()
         try:
             values = prepare(self.settings, command.values)
-            if self._pointer_environment_key and any(key.startswith("cursor.") for key in values):
+            if self._pointer_environment_key and any(key.startswith("cursor.") and key != "cursor.vertical_input" for key in values):
                 profiles = read_profiles(self.settings.get(SETTING_KEY))
                 if profiles.pop(self._pointer_environment_key, None) is not None:
                     values[SETTING_KEY] = write_profiles(profiles)

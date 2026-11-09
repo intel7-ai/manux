@@ -12,6 +12,7 @@ from dataclasses import dataclass
 class WindowsOutputConfig:
     # cursor mapping
     movement_mode: str = "relative"          # "relative" (trackpad with acceleration) | "absolute"
+    vertical_input: str = "wrist_pitch"      # palm mode: "hand_position" | "wrist_pitch"
     smoothing: float = 0.35                  # EMA on the hand point (1.0 = none)
     active_margin: float = 0.3               # absolute: camera border that maps beyond the screen edge
     relative_gain_min: float = 0.35          # relative: gain at slow hand speed (screen widths per frame width)
