@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 
 from manux.core.contracts import ActionCommand
 from manux.output.windows.backend import FakeBackend
@@ -94,7 +95,7 @@ def test_real_thread_updates_at_least_60_hz():
 
 
 def test_click_rolls_back_a_small_last_moment_shift():
-    sink, clock = manual_sink()
+    sink, clock = manual_sink(replace(ABS, click_rollback_s=.15))   # off by default; the guard replaced it
     move(sink, 100, .5)
     sink.glide_step(100.1)
     steady = sink.backend.pos
@@ -109,7 +110,7 @@ def test_click_rolls_back_a_small_last_moment_shift():
 
 
 def test_click_after_a_real_move_is_not_rolled_back():
-    sink, clock = manual_sink()
+    sink, clock = manual_sink(replace(ABS, click_rollback_s=.15))
     move(sink, 100, .3)
     sink.glide_step(100.1)
     clock.t = 101.0

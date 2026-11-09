@@ -20,6 +20,7 @@ PHASES = ("rest", "horizontal", "up", "down")
 DURATIONS = {"rest": .8, "horizontal": 4., "up": 1.2, "down": 1.2}
 PREP_SECONDS = .6
 TRACE_VERSION = 1
+KNUCKLE_JOINTS = (0, 5, 9, 13, 17)   # wrist and the four finger roots, 8th trace column (x, y, z each)
 # Fine round: 40 px cells (Minesweeper, toolbar buttons), one cell per step in all four directions
 FINE_CELL_PX = 40
 FINE_ORIGIN = (.5, .45)
@@ -163,8 +164,10 @@ class PointerSetup:
         self.mapper = self.make_mapper(self.values)
         self.phase, self.last_t, self.note, self.can_apply = "aim", None, "", False
 
-    def step(self, now, point, pinch=None):
+    def step(self, now, point, pinch=None, world=None):
         self.pinch = pinch
+        # wrist + knuckle joints (world coords) for the trace: lets the replay tool try other pitch definitions
+        self.knuckles = None if world is None else [round(v, 5) for i in KNUCKLE_JOINTS for v in world[i][:3]]
         dt = None if self.last_t is None else now - self.last_t
         self.last_t = now
         self.point = point if point is not None and all(map(math.isfinite, point)) and (
@@ -173,7 +176,7 @@ class PointerSetup:
             if self.point is None:
                 self.mapper.pause()
             else:
-                self.mapper.step_palm(*self.point, now)
+                self.mapper.step_palm(*self.point, now, contact=self.pinch)
             if self.phase == "aim":
                 self._aim(now)
         elif self.phase in PHASES and self.capturing:
@@ -221,7 +224,8 @@ class PointerSetup:
         self.test.update(now, self.mapper.pos, hand=self.point is not None, active=True)
         x, pitch = self.point if self.point is not None else (None, None)
         # full precision: a replay with the same settings must reproduce the recorded cursor exactly
-        self.trace.append((now, x, pitch, self.mapper.pos[0], self.mapper.pos[1], index, getattr(self, "pinch", None)))
+        self.trace.append((now, x, pitch, self.mapper.pos[0], self.mapper.pos[1], index, getattr(self, "pinch", None),
+                           getattr(self, "knuckles", None)))
         if not self.test.done:
             return
         stats = self.test.summary()

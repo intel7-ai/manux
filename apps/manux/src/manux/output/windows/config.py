@@ -29,7 +29,9 @@ class WindowsOutputConfig:
     cursor_hz: float = 120.0                 # cursor glides between camera frames at this rate (0 = jump per frame)
     # Menu round with 18 real clicks: the pinch tilt moved the cursor median 11 px, up to 58 px, before the click
     # fired; landing where it was 0.3 s earlier left median ~2 px (max ~10). The cap must cover those 58 px.
-    click_rollback_s: float = 0.3            # a click lands where the cursor was this long ago (pinch tilt)...
+    # Off by default: the snap back felt awkward, and the palm cursor now holds still while a click's fingers touch
+    # (the jump happens in that very frame), so there is nothing to roll back. 0.3 s was the recorded fit.
+    click_rollback_s: float = 0.0            # a click lands where the cursor was this long ago (pinch tilt)...
     click_rollback_px: float = 60.0          # ...when that is at most this far away (0 s = off)
     palm_precision: float = 0.4             # cursor gain of a slow hand (1 = off): smaller drift, tremor, click shift
     palm_hold: float = 0.0                 # neutral zone radius (share of screen height) that parks the cursor; 0 = off

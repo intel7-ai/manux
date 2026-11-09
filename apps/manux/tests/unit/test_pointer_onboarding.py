@@ -29,7 +29,9 @@ class SyntheticSource:
         hand = None
         if self.point is not None:
             x, y = self.point
-            landmarks = tuple((x, y + (.03 if i == 0 else -.03 if i == 9 else 0.), 0.) for i in range(21))
+            # thumb tip (4) kept apart from the finger tips, or the hand would read as a held click
+            landmarks = tuple((x - (.1 if i == 4 else 0.), y + (.03 if i == 0 else -.03 if i == 9 else 0.), 0.)
+                              for i in range(21))
             angle = math.radians(self.pitch)
             world = ((0., 0., 0.),) + ((0., -.08 * math.sin(angle), -.08 * math.cos(angle)),) * 20
             hand = HandObservation(frame, landmarks, "Right", .95, world=world)

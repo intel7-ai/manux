@@ -203,3 +203,26 @@ def test_small_moves_get_the_same_gain_fast_or_slow():
         return run(mapper, xs, [90.] * (n + 30))[-1][0] - start
     slow, quick = moved(.4), moved(.12)                        # 150 px/s and 500 px/s
     assert abs(slow - quick) <= 3, (slow, quick)              # a ramp across these speeds made flicks overshoot
+
+
+def test_cursor_holds_while_click_fingers_touch():
+    mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**CALIBRATED))
+    t = 10.
+    for _ in range(30):
+        t += 1 / 30
+        mapper.step_palm(.5, 90., t, contact=2.)
+    before = mapper.pos
+    for _ in range(6):                                        # fingers touch: the pitch jumps 6 deg
+        t += 1 / 30
+        assert mapper.step_palm(.5, 84., t, contact=.7) == before
+    for _ in range(5):                                        # parted, pitch back, still settling (< 0.2 s)
+        t += 1 / 30
+        assert mapper.step_palm(.5, 90., t, contact=2.) == before
+    for _ in range(30):
+        t += 1 / 30
+        mapper.step_palm(.5, 90., t, contact=2.)
+    assert math.dist(mapper.pos, before) <= 2                 # no jump afterwards either
+    for _ in range(30):
+        t += 1 / 30
+        mapper.step_palm(.6, 90., t, contact=2.)
+    assert mapper.pos[0] > before[0] + 100                    # and it follows the hand again

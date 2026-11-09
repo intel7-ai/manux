@@ -388,18 +388,20 @@ class DesktopRuntime:
             setup.begin_aim(kind="aim" if action == "retest" else action)
         elif action == "apply" and setup.phase == "review" and setup.can_apply:
             self._save_pointer_setup(environment, setup)
-        # How close a click is: thumb tip to middle tip (left click) or ring tip (right click), as a share of
-        # the pinch feature's own thresholds, so below 1 means the click closed. Marks clicks in the trace.
-        pinch = None
-        if hand is not None:
-            cfg = self.settings_for("pinch")
-            thumb = hand.landmarks[4]
-
-            def tip(i):
-                return ((thumb[0] - hand.landmarks[i][0]) ** 2 + (thumb[1] - hand.landmarks[i][1]) ** 2) ** .5
-            pinch = min(tip(12) / float(cfg["click_threshold"]), tip(16) / float(cfg["ring_click_threshold"]))
-        setup.step(frame.t, point, pinch)
+        setup.step(frame.t, point, self._click_contact(hand), world=None if hand is None else hand.world)
         return setup.view()
+
+    def _click_contact(self, hand):
+        """How close a click is: thumb tip to middle tip (left click) or ring tip (right click), as a share of
+        the pinch feature's own thresholds, so below 1 means the click closed."""
+        if hand is None:
+            return None
+        cfg = self.settings_for("pinch")
+        thumb = hand.landmarks[4]
+
+        def tip(i):
+            return ((thumb[0] - hand.landmarks[i][0]) ** 2 + (thumb[1] - hand.landmarks[i][1]) ** 2) ** .5
+        return min(tip(12) / float(cfg["click_threshold"]), tip(16) / float(cfg["ring_click_threshold"]))
 
     def _save_pointer_setup(self, environment, setup):
         key = sha256(repr(environment).encode("utf-8")).hexdigest()
@@ -674,6 +676,7 @@ class DesktopRuntime:
         pitch = palm_pitch(hand.world) if hand is not None else None
         if sink is not None and hasattr(sink, "set_palm_pitch"):
             sink.set_palm_pitch(pitch)
+            sink.set_click_contact(self._click_contact(hand))
         self._configure_cursor_for_frame(frame, sink)
         practice_sink = self.engine.sinks.get(OutputTarget.PRACTICE)
         if practice_sink is not None and practice_sink.config is not None:

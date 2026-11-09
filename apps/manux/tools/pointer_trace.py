@@ -34,20 +34,50 @@ def load(path: Path) -> dict:
     return data
 
 
-def replay(trace: dict, overrides: Optional[Dict[str, float]] = None) -> List[Tuple[int, int]]:
-    """Cursor positions the given settings produce for the recorded input (one per frame)."""
+def replay(trace: dict, overrides: Optional[Dict[str, float]] = None, guard: bool = False,
+           knuckles: Optional[Tuple[int, ...]] = None) -> List[Tuple[int, int]]:
+    """Cursor positions the given settings produce for the recorded input (one per frame).
+
+    guard: feed the recorded click contact (7th column) so the cursor holds while a click's fingers touch.
+    knuckles: recompute the pitch from the recorded joints (8th column) with these finger roots instead,
+    rescaled onto the recorded pitch (least squares) so the calibrated mapping still fits."""
     left, top, width, height = trace["monitor"]
     layout = ScreenLayout([Monitor(left, top, left + width, top + height, primary=True)])
     values = {k: v for k, v in {**trace["values"], **(overrides or {})}.items() if k in CONFIG_KEYS}
     mapper = CursorMapper(layout, replace(WindowsOutputConfig(), **values))
+    pitches = alt_pitches(trace, knuckles) if knuckles else [row[2] for row in trace["frames"]]
     out = []
-    for t, x, pitch, *_ in trace["frames"]:
+    for row, pitch in zip(trace["frames"], pitches):
+        t, x = row[0], row[1]
+        contact = row[6] if guard and len(row) > 6 and trace.get("pinch") == "click_ratio" else None
         if x is None:
             mapper.pause()
         else:
-            mapper.step_palm(x, pitch, t)
+            mapper.step_palm(x, pitch, t, contact=contact)
         out.append(tuple(mapper.pos))
     return out
+
+
+def alt_pitches(trace: dict, knuckles: Tuple[int, ...]) -> List[Optional[float]]:
+    """Pitch from other finger roots, mapped onto the recorded pitch's scale (needs the 8th joints column)."""
+    from manux.perception.palm_pitch import palm_pitch
+    order = (0, 5, 9, 13, 17)
+    raw = []
+    for row in trace["frames"]:
+        joints = row[7] if len(row) > 7 else None
+        if joints is None or row[2] is None:
+            raw.append(None)
+            continue
+        world = {j: joints[3 * k:3 * k + 3] for k, j in enumerate(order)}
+        raw.append(palm_pitch(world, knuckles))
+    pairs = [(a, row[2]) for a, row in zip(raw, trace["frames"]) if a is not None and row[2] is not None]
+    if len(pairs) < 10:
+        raise ValueError("this trace has no joint column: record it again with the current app")
+    ma = statistics.fmean(a for a, _ in pairs)
+    mb = statistics.fmean(b for _, b in pairs)
+    var = sum((a - ma) ** 2 for a, _ in pairs) or 1e-9
+    slope = sum((a - ma) * (b - mb) for a, b in pairs) / var
+    return [None if a is None else mb + slope * (a - ma) for a in raw]
 
 
 def recorded(trace: dict) -> List[Tuple[int, int]]:
@@ -177,6 +207,8 @@ def main(argv=None) -> int:
     ap.add_argument("files", nargs="+", type=Path)
     ap.add_argument("--set", action="append", metavar="KEY=VALUE", help="cursor setting to try (repeatable)")
     ap.add_argument("--rows", action="store_true", help="also print every target")
+    ap.add_argument("--compare", action="store_true",
+                    help="also replay with the click guard and with pitch from index+pinky roots only")
     args = ap.parse_args(argv)
     overrides = _parse_set(args.set)
     for path in args.files:
@@ -184,6 +216,13 @@ def main(argv=None) -> int:
         runs = [("recorded", recorded(trace)), ("replay", replay(trace))]
         if overrides:
             runs.append(("with " + " ".join(f"{k}={v:g}" for k, v in overrides.items()), replay(trace, overrides)))
+        if args.compare and trace.get("pinch") == "click_ratio":
+            runs.append(("click guard", replay(trace, overrides, guard=True)))
+            try:
+                runs.append(("index+pinky pitch", replay(trace, overrides, knuckles=(5, 17))))
+                runs.append(("index+pinky + guard", replay(trace, overrides, guard=True, knuckles=(5, 17))))
+            except ValueError as exc:
+                print(f"  ({exc})")
         print(f"{path.name}  ({trace['kind']}, {len(trace['frames'])} frames)")
         for name, positions in runs:
             s = score(trace, positions)
