@@ -111,6 +111,8 @@ class CursorMapper:
         self._contact_since: Optional[float] = None
         self._guard_rebase = False
         self._contact_drag = False
+        self._capture_offset = False
+        self._map_offset: Tuple[float, float] = (0.0, 0.0)
         self._reset_hold()
         self._reset_precision()
 
@@ -169,6 +171,7 @@ class CursorMapper:
     def reset(self) -> None:
         self.pause()
         self._reset_precision()
+        self._map_offset, self._capture_offset = (0.0, 0.0), False
         self._abs_monitor = None  # absolute re-picks the monitor under the cursor
 
     @property
@@ -238,6 +241,7 @@ class CursorMapper:
         if self._guard_rebase:
             self._guard_rebase = False
             self.pause()       # continue from where the cursor is; the tilt that came with the pinch is dropped
+            self._capture_offset = True   # ... and take the cursor's spot as the mapping's new reference
         c = self.config
         if c.palm_left == c.palm_right:
             # Uncalibrated: relative movement, smoothed by `_relative`'s own EMA (not filtered twice).
@@ -272,6 +276,21 @@ class CursorMapper:
             fy = (pitch - c.palm_up) / (c.palm_down - c.palm_up)
             target_y = monitor.top + (.5 + (fy - .5) * c.palm_y_gain) * (monitor.height - 1)
         target_x, target_y = monitor.clamp(target_x, target_y)
+        # Mapping offset: after a click or drag the cursor's spot becomes the reference instead of being pulled
+        # back to the mapped spot (that pull looked like the cursor sliding after a drop). It fades only while the
+        # hand moves fast (see _precision), and a hand pushed to a screen edge drops it on that axis.
+        if self._capture_offset:
+            self._capture_offset = False
+            base = self._prec_pos if self._prec_pos is not None else self.pos
+            self._map_offset = (base[0] - target_x, base[1] - target_y)
+        ox, oy = self._map_offset
+        edge = PALM_PRECISION_EDGE_PX
+        if target_x <= monitor.left + edge or target_x >= monitor.left + monitor.width - 1 - edge:
+            ox = 0.0
+        if target_y <= monitor.top + edge or target_y >= monitor.top + monitor.height - 1 - edge:
+            oy = 0.0
+        self._map_offset = (ox, oy)
+        target_x, target_y = monitor.clamp(target_x + ox, target_y + oy)
         target_x, target_y = monitor.clamp(*self._palm_hold((target_x, target_y), now, monitor.height))
         target_x, target_y = monitor.clamp(*self._precision((target_x, target_y), now, gain))
         # The filters already smooth the hand; only glide in after a restart so the cursor never jumps.
@@ -315,6 +334,8 @@ class CursorMapper:
             # only a fast hand re-syncs: a slow or resting one never drags the cursor on after it stops
             pull = 0.0 if self._contact_drag else min(1.0, u * dt / PALM_PRECISION_RESYNC)
             x, y = x + (target[0] - x) * pull, y + (target[1] - y) * pull
+            if pull:                      # a fast hand also fades the click/drag reference offset
+                self._map_offset = (self._map_offset[0] * (1 - pull), self._map_offset[1] * (1 - pull))
         # The mapping clamps the hand at the screen edge, so pushing further gives no more movement: a hand at an
         # edge puts the cursor on that edge, or an edge button (taskbar, close) could stay out of reach.
         m = self.screens.primary
