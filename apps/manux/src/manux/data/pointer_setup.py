@@ -11,7 +11,7 @@ from manux.data.tracking_test import Target, TrackingTest, view as tracking_view
 SETTING_KEY = "app.pointer_calibration"
 ADJUSTMENTS = {"palm_x_gain": (.65, 1.65), "palm_y_gain": (.65, 1.65), "smoothing": (.15, .75),
                "palm_hold": (0., .05)}
-DEFAULT_HOLD = .015  # neutral zone radius as a share of screen height (0 = off)
+DEFAULT_HOLD = 0.  # neutral zone radius as a share of screen height (0 = off; fine-round traces: any zone slows one-cell moves)
 LIMITS = {**ADJUSTMENTS, "palm_left": (0., 1.), "palm_right": (0., 1.),
           "palm_up": (-180., 180.), "palm_down": (-180., 180.)}
 PHASES = ("rest", "horizontal", "up", "down")
@@ -79,8 +79,7 @@ def recommend(samples):
                 (_percentile(rest_pitch, .9) - _percentile(rest_pitch, .1)) / abs(up - down))
     return dict(palm_left=left, palm_right=right, palm_up=up, palm_down=down,
                 palm_x_gain=1., palm_y_gain=1., smoothing=max(.20, .45 - 1.5 * noise),
-                # A shakier resting hand gets a wider neutral zone (noise is a share of the mapped range).
-                palm_hold=round(min(.04, max(DEFAULT_HOLD, .75 * noise)), 3))
+                palm_hold=DEFAULT_HOLD)  # opt-in only: parking the cursor blocked one-cell moves in fine traces
 
 
 def _zoom(data, monitor):
