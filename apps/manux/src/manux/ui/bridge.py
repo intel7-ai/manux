@@ -2923,13 +2923,29 @@ class _HandChoice:
         return side if self.frames >= 5 and self.seconds_remaining(now) == 0 else ""
 
 
+DEFAULT_LAYOUT = "studio"
+
+
+def choose_layout(preferences, requested: Optional[str] = None) -> str:
+    """`--ui` wins and is remembered as a deliberate choice. Without it, only a remembered deliberate choice
+    keeps its layout: before v0.5 every launch stored "standard" whether or not anyone chose it."""
+    if requested:
+        preferences.setValue("layoutChosen", True)
+        return requested
+    if preferences.value("layoutChosen", False, type=bool):
+        stored = preferences.value("layout", DEFAULT_LAYOUT, type=str)
+        if stored in ("studio", "standard"):
+            return stored
+    return DEFAULT_LAYOUT
+
+
 def run(runtime, settings, paths, *, tray: bool = True, screenshot: Optional[Path] = None,
         services: Optional[Dict[str, Callable]] = None, hotkeys=None, hotkey_defaults=None,
         normalize_combo=None, combo_label=None, make_tray=None, layout=None) -> int:
     """Run the desktop window until the user quits. The composition root passes the platform pieces."""
     app = QApplication.instance() or QApplication([])
     preferences = QSettings(str(paths.config_dir / "ui.ini"), QSettings.Format.IniFormat)
-    layout = layout or preferences.value("layout", "standard", type=str)
+    layout = choose_layout(preferences, layout)
     bridge = Bridge(runtime, settings, paths.config_dir, services=services, hotkeys=hotkeys, layout=layout,
                     hotkey_defaults=hotkey_defaults, normalize_combo=normalize_combo or (lambda c: c),
                     combo_label=combo_label or (lambda c: c), hide_to_tray=tray and make_tray is not None)
