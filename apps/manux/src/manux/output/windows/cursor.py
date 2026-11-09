@@ -54,7 +54,9 @@ class OneEuro:
 # both betas add ~3-5 Hz of bandwidth at those speeds. `smoothing` sets the resting cutoff.
 PALM_X_BETA = 12.0
 PALM_PITCH_BETA = .07
-PALM_PITCH_CUTOFF_SCALE = .5   # wrist pitch is ~2x noisier than hand X at rest (fine traces): filter it harder
+CLICK_GUARD_CLOSE = 1.3    # click contact ratio below this holds the palm cursor (no frame of real use went this low)
+CLICK_GUARD_SETTLE = .2    # ... and it keeps holding this long after the fingers part (the pitch jumps back)
+PALM_PITCH_CUTOFF_SCALE =.5   # wrist pitch is ~2x noisier than hand X at rest (fine traces): filter it harder
 PALM_PITCH_JUMP = 90.0  # deg between frames: a wrap or a bad landmark frame, not a hand movement
 PALM_EASE_SECONDS = .2   # after a pause the calibrated cursor glides from where it was to the hand
 
@@ -101,6 +103,7 @@ class CursorMapper:
         self._palm_x = OneEuro(1.0, PALM_X_BETA)
         self._palm_y = OneEuro(1.0, PALM_PITCH_BETA)
         self._palm_ease_until = 0.0
+        self._guard_until = float("-inf")
         self._reset_hold()
         self._reset_precision()
 
@@ -196,8 +199,18 @@ class CursorMapper:
             self.pos = self._relative(point, now, gain)
         return self.pos
 
-    def step_palm(self, x: float, pitch: Optional[float], now: float, gain: float = 1.0) -> Tuple[int, int]:
-        """Use hand X and wrist pitch for both the practice cursor and Windows output."""
+    def step_palm(self, x: float, pitch: Optional[float], now: float, gain: float = 1.0,
+                  contact: Optional[float] = None) -> Tuple[int, int]:
+        """Use hand X and wrist pitch for both the practice cursor and Windows output.
+
+        `contact` is how close a click is (thumb to middle/ring tip over the click threshold; below 1 = touching).
+        While the fingers touch, and briefly after they part, the cursor holds still: recorded clicks showed the
+        measured wrist pitch jumping 5-7 deg in the very frame the fingers met, i.e. a 30-60 px cursor jump."""
+        if contact is not None and contact < CLICK_GUARD_CLOSE:
+            self._guard_until = now + CLICK_GUARD_SETTLE
+            return self.pos
+        if now < self._guard_until:
+            return self.pos
         c = self.config
         if c.palm_left == c.palm_right:
             # Uncalibrated: relative movement, smoothed by `_relative`'s own EMA (not filtered twice).

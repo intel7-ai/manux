@@ -181,6 +181,11 @@ class WindowsOutputSink:
         self._palm_input = True
         self._palm_pitch = pitch
 
+    def set_click_contact(self, ratio: Optional[float]) -> None:
+        """How close a click is this frame (thumb to middle/ring tip over the click threshold; < 1 touching).
+        The palm cursor holds still while the fingers touch (see CursorMapper.step_palm)."""
+        self._click_contact = ratio
+
     def next_monitor(self) -> Monitor:
         """Move to the next monitor's centre (absolute mode maps onto it from now on)."""
         with self._lock:
@@ -354,7 +359,8 @@ class WindowsOutputSink:
             except Exception:  # noqa: BLE001
                 pass
         if self._uses_palm(cmd):
-            position = self.cursor.step_palm(cmd.point[0], self._palm_pitch, cmd.t, gain)
+            position = self.cursor.step_palm(cmd.point[0], self._palm_pitch, cmd.t, gain,
+                                             contact=getattr(self, "_click_contact", None))
         else:
             position = self.cursor.step(cmd.point, cmd.t, gain)
         self._place(*position)
