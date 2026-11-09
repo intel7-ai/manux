@@ -1,5 +1,6 @@
 """Synthetic end-to-end selective retraining; no camera, personal data or network."""
 import argparse
+import gzip
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,16 @@ def main(argv=None):
         for label in ("thumb_ring", "thumb_middle"):
             for split in ("train", "eval"):
                 recording(records / split / f"{label}.jsonl.gz", split, label)
+        # Exercise the legacy task/target-only format through real training and export.
+        legacy = records / "train" / "thumb_middle.jsonl.gz"
+        with gzip.open(legacy, "rt", encoding="utf-8") as stream:
+            rows = [json.loads(line) for line in stream]
+        for row in rows:
+            if row.get("type") == "frame":
+                row["label"].pop("gesture", None)
+                row["label"]["task"] = "thumb_middle"
+        with gzip.open(legacy, "wt", encoding="utf-8") as stream:
+            for row in rows: stream.write(json.dumps(row) + "\n")
         def run(number, focus, expect_success=True, **overrides):
             job = root / f"job-{number}"
             job.mkdir()
@@ -68,6 +79,7 @@ def main(argv=None):
         run(3, ["thumb_middle"], expect_success=False, eval=[str(records / "eval/thumb_middle.jsonl.gz")])
         assert active_token(root / "store") == token
         report = dict(synthetic=True, initial=first["metrics"], selected=second["metrics"],
+            legacy_left_click_trained=True,
             old_training_absent=True, unchanged_classifier_bytes=True, unchanged_policy=True,
             selected_default_shadow=True, missing_old_eval_preserved_model=True,
             epoch_events=sum("epoch" in e for e in events))
