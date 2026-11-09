@@ -245,7 +245,7 @@ class PointerSetup:
 
     def trace_data(self):
         """The round as plain data: raw palm input per frame plus the target schedule (no images)."""
-        return {"version": TRACE_VERSION, "kind": self.kind,
+        return {"version": TRACE_VERSION, "kind": self.kind, "pinch": "click_ratio",
                 "monitor": [self.monitor.left, self.monitor.top, self.monitor.width, self.monitor.height],
                 "values": dict(self.values), "dwell": self.test.dwell, "hold_margin_px": self.test.hold_margin_px,
                 "targets": [{"fx": t.fx, "fy": t.fy, "size_px": t.size_px, "shown_at": t.shown_at,

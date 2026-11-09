@@ -106,12 +106,14 @@ def score(trace: dict, positions: Iterable[Tuple[float, float]]) -> dict:
     }
 
 
-CLICK_CLOSE = .052   # pinch feature's click_threshold (thumb-index tip distance, image units)
-CLICK_OPEN = .07     # must open past this before the next click counts
+CLICK_CLOSE = 1.0    # 7th column: thumb-to-middle/ring tip distance over the pinch feature's click threshold
+CLICK_OPEN = 1.35    # must open past this before the next click counts
 
 
 def click_times(trace: dict) -> List[float]:
-    """Times the thumb and index tips closed (needs traces with the 7th pinch column)."""
+    """Times a click closed (thumb to middle or ring tip). Older traces recorded thumb-index: no clicks."""
+    if trace.get("pinch") != "click_ratio":
+        return []
     out, armed = [], True
     for row in trace["frames"]:
         pinch = row[6] if len(row) > 6 else None

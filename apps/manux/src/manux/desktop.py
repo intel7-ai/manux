@@ -388,11 +388,16 @@ class DesktopRuntime:
             setup.begin_aim(kind="aim" if action == "retest" else action)
         elif action == "apply" and setup.phase == "review" and setup.can_apply:
             self._save_pointer_setup(environment, setup)
-        # thumb-index tip distance (image units, as the pinch feature measures it): marks clicks in the trace
+        # How close a click is: thumb tip to middle tip (left click) or ring tip (right click), as a share of
+        # the pinch feature's own thresholds, so below 1 means the click closed. Marks clicks in the trace.
         pinch = None
         if hand is not None:
-            (tx, ty), (ix, iy) = hand.landmarks[4][:2], hand.landmarks[8][:2]
-            pinch = ((tx - ix) ** 2 + (ty - iy) ** 2) ** .5
+            cfg = self.settings_for("pinch")
+            thumb = hand.landmarks[4]
+
+            def tip(i):
+                return ((thumb[0] - hand.landmarks[i][0]) ** 2 + (thumb[1] - hand.landmarks[i][1]) ** 2) ** .5
+            pinch = min(tip(12) / float(cfg["click_threshold"]), tip(16) / float(cfg["ring_click_threshold"]))
         setup.step(frame.t, point, pinch)
         return setup.view()
 
