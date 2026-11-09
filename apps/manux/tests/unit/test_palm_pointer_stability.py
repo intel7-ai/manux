@@ -226,3 +226,16 @@ def test_cursor_holds_while_click_fingers_touch():
         t += 1 / 30
         mapper.step_palm(.6, 90., t, contact=2.)
     assert mapper.pos[0] > before[0] + 100                    # and it follows the hand again
+
+
+def test_cursor_also_holds_while_click_fingers_close_fast():
+    mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**CALIBRATED))
+    t = 10.
+    for _ in range(30):
+        t += 1 / 30
+        mapper.step_palm(.5, 90., t, contact=3.4)
+    before = mapper.pos
+    # recorded click: contact 3.4 -> 2.76 -> 1.62 -> 0.94 while the hand tilts up by 5 deg, before touching
+    for contact, pitch in ((2.76, 92.6), (1.62, 95.), (.94, 93.)):
+        t += 1 / 30
+        assert mapper.step_palm(.5, pitch, t, contact=contact) == before
