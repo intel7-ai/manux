@@ -71,10 +71,14 @@ PALM_RELEASE_CATCHUP = .5  # ...and moves this much extra per pixel of hand move
 PALM_RELEASE_SNAP = .25    # one-frame hand jumps beyond this share of screen height are followed directly
 
 
-# Recorded peak hand speeds: menu rows / cells 250-650 px/s, large aims 1000-2700 px/s. Keeping every small move
-# below the ramp gives it one steady gain (a ramp across them made small flicks overshoot, then hunt).
-PALM_PRECISION_SLOW = 650.0     # px/s of mapped hand speed: below this the precision gain applies fully
-PALM_PRECISION_FAST = 1100.0    # ... above this the cursor moves 1:1 and re-syncs with the mapping
+# Gain curve: g(v) = precision + (1 - precision) * min(1, v / FULL) ** CURVE (v = mapped hand speed, px/s).
+# With precision 0.4: 100 px/s -> 0.49, 300 -> 0.61, 600 -> 0.79, 1000+ -> 1. The earlier flat 0.4 up to 650 px/s
+# (then a ramp) kept card drags and ordinary moves at 0.4x: a screen recording showed the cursor never above
+# ~360 px/s and mostly creeping, which felt heavy. A smooth curve has no cliff for a flick to fall over.
+PALM_PRECISION_FULL = 1000.0
+PALM_PRECISION_CURVE = .85
+PALM_PRECISION_SLOW = 650.0     # px/s: re-sync with the mapping starts above this...
+PALM_PRECISION_FAST = 1100.0    # ... and is full above this
 PALM_PRECISION_RESYNC = .25     # s to close the gap to the mapping while moving fast
 PALM_PRECISION_EDGE_PX = 8.0    # a hand mapped this close to a screen edge puts the cursor on the mapping there
 PALM_PRECISION_MAX_GAP = .12   # the cursor never sits further than this share of screen height off the mapping
@@ -324,9 +328,11 @@ class CursorMapper:
             x, y = self._prec_pos[0] + dx * g_low, self._prec_pos[1] + dy * g_low
         else:
             speed = math.hypot(dx, dy) / dt
+            # Gain rises smoothly and continuously with speed (like pointer acceleration), so ordinary moves are
+            # light and only the slowest ones are damped; re-sync to the mapping still only happens when fast.
+            k = g_low + (1.0 - g_low) * min(1.0, speed / PALM_PRECISION_FULL) ** PALM_PRECISION_CURVE
             u = max(0.0, min(1.0, (speed - PALM_PRECISION_SLOW) / (PALM_PRECISION_FAST - PALM_PRECISION_SLOW)))
-            u = u * u * (3 - 2 * u)                       # smoothstep: no kink when the gain changes
-            k = g_low + (1.0 - g_low) * u
+            u = u * u * (3 - 2 * u)
             x, y = self._prec_pos[0] + dx * k, self._prec_pos[1] + dy * k
             # only a fast hand re-syncs: a slow or resting one never drags the cursor on after it stops
             pull = min(1.0, u * dt / PALM_PRECISION_RESYNC)

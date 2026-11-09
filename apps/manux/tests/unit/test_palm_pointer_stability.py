@@ -192,18 +192,19 @@ def test_cursor_does_not_slide_on_after_the_hand_stops():
     assert out[-1] - out[9] <= 10, out                     # was ~40 px of creep with the slow filter + rest re-sync
 
 
-def test_small_moves_get_the_same_gain_fast_or_slow():
+def test_gain_rises_smoothly_with_speed():
     def moved(duration):
         mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**PRECISE))
         run(mapper, [.5] * 30, [90.] * 30)
         start = mapper.pos[0]
-        n = round(duration * 30)
-        dx = 60 / 1919 * .3                                    # a 60 px (mapped) flick, like one menu row at 0.4x
+        n = max(1, round(duration * 30))
+        dx = 120 / 1919 * .3                                   # the same 120 px (mapped) move at different speeds
         xs = [.5 + dx * min(1., i / n) for i in range(n + 30)]
         return run(mapper, xs, [90.] * (n + 30))[-1][0] - start
-    slow, quick = moved(.4), moved(.12)                        # 150 px/s and 500 px/s
-    assert abs(slow - quick) <= 3, (slow, quick)              # a ramp across these speeds made flicks overshoot
-
+    dists = [moved(d) for d in (1.2, .6, .4, .25, .15)]     # 100 -> 800 px/s
+    assert all(b >= a - 1 for a, b in zip(dists, dists[1:])), dists      # faster never travels less
+    assert all(b <= a * 1.4 for a, b in zip(dists, dists[1:])), dists    # and no cliff between speeds
+    assert dists[1] >= 60, dists                                         # 200 px/s is not damped to 0.4x anymore
 
 def test_cursor_holds_while_click_fingers_touch():
     mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**CALIBRATED))
