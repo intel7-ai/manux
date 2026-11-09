@@ -26,6 +26,7 @@ class WindowsOutputConfig:
     palm_down: float = 0.0
     palm_x_gain: float = 1.0
     palm_y_gain: float = 1.0
+    palm_hold: float = 0.015                 # neutral zone radius (share of screen height) that parks the cursor
     # double-click assist: the cursor holds still after a left click so a second click lands on the same pixel
     double_click_window: float = 0.45
     double_click_move_tolerance: float = 0.03

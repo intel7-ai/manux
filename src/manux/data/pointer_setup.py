@@ -8,7 +8,9 @@ from statistics import median
 from manux.data.tracking_test import Target, TrackingTest, view as tracking_view
 
 SETTING_KEY = "app.pointer_calibration"
-ADJUSTMENTS = {"palm_x_gain": (.65, 1.65), "palm_y_gain": (.65, 1.65), "smoothing": (.15, .75)}
+ADJUSTMENTS = {"palm_x_gain": (.65, 1.65), "palm_y_gain": (.65, 1.65), "smoothing": (.15, .75),
+               "palm_hold": (0., .05)}
+DEFAULT_HOLD = .015  # neutral zone radius as a share of screen height (0 = off)
 LIMITS = {**ADJUSTMENTS, "palm_left": (0., 1.), "palm_right": (0., 1.),
           "palm_up": (-180., 180.), "palm_down": (-180., 180.)}
 PHASES = ("rest", "horizontal", "up", "down")
@@ -33,6 +35,9 @@ def read_profiles(value: str) -> dict:
     profiles = data.get("profiles")
     if not isinstance(profiles, dict):
         return {}
+    # Early v3 profiles were saved before the neutral zone existed: give them the default.
+    profiles = {key: {"palm_hold": DEFAULT_HOLD, **values} if isinstance(values, dict) else values
+                for key, values in profiles.items()}
     return {key: values for key, values in list(profiles.items())[-8:]
             if len(key) == 64 and isinstance(values, dict) and values.keys() == LIMITS.keys()
             and all(_bounded(values[name], bounds) for name, bounds in LIMITS.items())
@@ -65,7 +70,9 @@ def recommend(samples):
     noise = max((_percentile(rest_x, .9) - _percentile(rest_x, .1)) / (right - left),
                 (_percentile(rest_pitch, .9) - _percentile(rest_pitch, .1)) / abs(up - down))
     return dict(palm_left=left, palm_right=right, palm_up=up, palm_down=down,
-                palm_x_gain=1., palm_y_gain=1., smoothing=max(.20, .45 - 1.5 * noise))
+                palm_x_gain=1., palm_y_gain=1., smoothing=max(.20, .45 - 1.5 * noise),
+                # A shakier resting hand gets a wider neutral zone (noise is a share of the mapped range).
+                palm_hold=round(min(.04, max(DEFAULT_HOLD, .75 * noise)), 3))
 
 
 class PointerSetup:
