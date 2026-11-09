@@ -84,6 +84,18 @@ class WindowsOutputSink:
         self._pump_thread: Optional[threading.Thread] = None
         self._pump_stop = threading.Event()
         self._last_sent: Optional[Tuple[int, int]] = start
+        # Glide: camera frames arrive at ~30 Hz, so the cursor would step once per frame. A thread moves it
+        # from where it is to each new target over about one frame interval at `cursor_hz` instead.
+        self._glide_from: Optional[Tuple[float, float]] = None
+        self._glide_to: Optional[Tuple[int, int]] = None
+        self._glide_t0 = 0.0
+        self._glide_dur = 1 / 30
+        self._frame_dt = 1 / 30
+        self._last_target_t: Optional[float] = None
+        self._shown: Optional[Tuple[float, float]] = None
+        self._glide_thread: Optional[threading.Thread] = None
+        self._glide_wake = threading.Event()
+        self.glide_sends = 0                   # cursor positions sent by the glide thread (diagnostics)
 
     # ------------------------------------------------------------------ public API
     def apply(self, cmd: ActionCommand) -> OutputResult:
@@ -125,6 +137,7 @@ class WindowsOutputSink:
                 except Exception as exc:  # noqa: BLE001
                     self.errors.append(f"release_all({reason}): {exc}")
             self.dragging = False
+            self._stop_glide()
             self.cursor.reset()
             self._move_gesture = None
             self._dbl_until = float("-inf")
@@ -134,9 +147,10 @@ class WindowsOutputSink:
         with self._lock:
             self._closed = True
         self._pump_stop.set()
-        t = self._pump_thread
-        if t is not None and t is not threading.current_thread():
-            t.join(timeout=0.5)
+        self._glide_wake.set()
+        for t in (self._pump_thread, self._glide_thread):
+            if t is not None and t is not threading.current_thread():
+                t.join(timeout=0.5)
 
     def tick(self, now: Optional[float] = None) -> None:
         """Advance scroll inertia (and, threaded, the wheel pump). The pump thread calls this every ~8 ms."""
@@ -167,8 +181,9 @@ class WindowsOutputSink:
     def next_monitor(self) -> Monitor:
         """Move to the next monitor's centre (absolute mode maps onto it from now on)."""
         with self._lock:
+            self._stop_glide()
             target = self.cursor.next_monitor()
-            self.backend.set_cursor_pos(*self.cursor.pos)
+            self._send(*self.cursor.pos)
             return target
 
     @property
@@ -220,10 +235,82 @@ class WindowsOutputSink:
                 break
             self._pump_stop.wait(0.008)
 
-    def _place(self, x: int, y: int) -> None:
+    def _send(self, x: int, y: int) -> None:
         if (x, y) != self._last_sent:
             self.backend.set_cursor_pos(x, y)
             self._last_sent = (x, y)
+        self._shown = (float(x), float(y))
+
+    def _place(self, x: int, y: int) -> None:
+        """New cursor target for this frame: glide there when the glide thread can run, else jump."""
+        hz = float(self.config.cursor_hz)
+        if not self._threaded or hz <= 0 or self._closed:
+            self._send(x, y)
+            return
+        now = self._clock()
+        if self._last_target_t is not None:
+            dt = now - self._last_target_t
+            if 0 < dt <= .2:   # a longer gap is a pause, not the frame rate
+                self._frame_dt += .3 * (min(max(dt, 1 / 240), 1 / 15) - self._frame_dt)
+        self._last_target_t = now
+        start = self._shown if self._shown is not None else (
+            (float(self._last_sent[0]), float(self._last_sent[1])) if self._last_sent is not None else None)
+        if start is None:
+            self._send(x, y)
+            return
+        self._glide_from, self._glide_to = start, (x, y)
+        self._glide_t0, self._glide_dur = now, self._frame_dt
+        self._ensure_glide()
+
+    def _settle(self) -> None:
+        """Finish the glide at once: a click or press must land where the hand points now."""
+        if self._glide_to is not None:
+            self._send(*self._glide_to)
+        self._glide_from = self._glide_to = None
+
+    def _stop_glide(self) -> None:
+        """Stop gliding where the cursor is (pause, hand loss, release)."""
+        self._glide_from = self._glide_to = None
+        self._last_target_t = None
+
+    def glide_step(self, now: Optional[float] = None) -> bool:
+        """Move one glide step; False when there is nothing left to glide. The glide thread calls this."""
+        now = self._clock() if now is None else now
+        with self._lock:
+            if self._closed or self._glide_to is None or self._glide_from is None:
+                return False
+            f = 1.0 if self._glide_dur <= 0 else min(1.0, (now - self._glide_t0) / self._glide_dur)
+            (fx, fy), (tx, ty) = self._glide_from, self._glide_to
+            x, y = fx + (tx - fx) * f, fy + (ty - fy) * f
+            before = self._last_sent
+            self._send(int(round(x)), int(round(y)))
+            self._shown = (x, y)
+            if self._last_sent != before:
+                self.glide_sends += 1
+            if f >= 1.0:
+                self._glide_from = self._glide_to = None
+                return False
+            return True
+
+    def _ensure_glide(self) -> None:
+        self._glide_wake.set()
+        if self._glide_thread is not None and self._glide_thread.is_alive():
+            return
+        self._glide_thread = threading.Thread(target=self._glide_loop, name="manux-cursor-glide", daemon=True)
+        self._glide_thread.start()
+
+    def _glide_loop(self) -> None:
+        while not self._closed:
+            self._glide_wake.clear()
+            try:
+                busy = self.glide_step()
+            except Exception as exc:  # noqa: BLE001
+                self.errors.append(f"glide: {exc}")
+                busy = False
+            if busy:
+                time.sleep(1.0 / max(60.0, float(self.config.cursor_hz)))  # high-resolution on Windows (3.11+)
+            elif not self._glide_wake.wait(1.0):
+                break                                  # a second with nothing to glide: end (restarted on demand)
 
     def _move(self, cmd: ActionCommand, gain: float = 1.0) -> None:
         """Move the cursor for a command that carries a hand point."""
@@ -238,7 +325,9 @@ class WindowsOutputSink:
             # start from the real cursor (the user may have moved the physical mouse)
             try:
                 self.cursor.warp(*self.backend.cursor_pos())
+                self._stop_glide()
                 self._last_sent = self.cursor.pos
+                self._shown = (float(self._last_sent[0]), float(self._last_sent[1]))
             except Exception:  # noqa: BLE001
                 pass
         if self._uses_palm(cmd):
@@ -296,6 +385,7 @@ class WindowsOutputSink:
         return OK
 
     def _click(self, cmd: ActionCommand, button: str) -> OutputResult:
+        self._settle()
         self._end_drag()
         if self.scroll.active:
             self.scroll.end(cmd.t, launch=False)
@@ -317,6 +407,7 @@ class WindowsOutputSink:
                 self.scroll.end(cmd.t, launch=False)
             if cmd.point is not None:
                 self._move(cmd, self._gain(cmd))
+            self._settle()
             self.buttons.press("left")
             self.dragging = True
             return OK
@@ -330,6 +421,7 @@ class WindowsOutputSink:
         if self.dragging:
             if cmd.point is not None:
                 self._move(cmd, self._gain(cmd))
+            self._settle()
             self._end_drag()
         return OK
 
@@ -338,6 +430,7 @@ class WindowsOutputSink:
             if cmd.point is None:
                 return _error("mouse.scroll begin needs a point")
             gain = self._gain(cmd)
+            self._settle()
             self._end_drag()
             self.cursor.pause()
             self.scroll.begin(cmd.point, cmd.t, gain)

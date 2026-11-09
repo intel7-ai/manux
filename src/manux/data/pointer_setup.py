@@ -8,13 +8,15 @@ from statistics import median
 from manux.data.tracking_test import Target, TrackingTest, view as tracking_view
 
 SETTING_KEY = "app.pointer_calibration"
-ADJUSTMENTS = {"palm_x_gain": (.65, 1.65), "palm_y_gain": (.65, 1.65), "smoothing": (.15, .75)}
+ADJUSTMENTS = {"palm_x_gain": (.65, 1.65), "palm_y_gain": (.65, 1.65), "smoothing": (.15, .75),
+               "palm_hold": (0., .05)}
+DEFAULT_HOLD = .015  # neutral zone radius as a share of screen height (0 = off)
 LIMITS = {**ADJUSTMENTS, "palm_left": (0., 1.), "palm_right": (0., 1.),
-          "palm_up": (-90., 90.), "palm_down": (-90., 90.)}
+          "palm_up": (-180., 180.), "palm_down": (-180., 180.)}
 PHASES = ("rest", "horizontal", "up", "down")
 DURATIONS = {"rest": .8, "horizontal": 4., "up": 1.2, "down": 1.2}
 PREP_SECONDS = .6
-VERSION = 2
+VERSION = 3  # 3: pitch is the camera's vertical-plane angle (no fold at upright); v2 angles are not comparable
 
 
 def _bounded(value, bounds):
@@ -33,6 +35,9 @@ def read_profiles(value: str) -> dict:
     profiles = data.get("profiles")
     if not isinstance(profiles, dict):
         return {}
+    # Early v3 profiles were saved before the neutral zone existed: give them the default.
+    profiles = {key: {"palm_hold": DEFAULT_HOLD, **values} if isinstance(values, dict) else values
+                for key, values in profiles.items()}
     return {key: values for key, values in list(profiles.items())[-8:]
             if len(key) == 64 and isinstance(values, dict) and values.keys() == LIMITS.keys()
             and all(_bounded(values[name], bounds) for name, bounds in LIMITS.items())
@@ -56,14 +61,18 @@ def recommend(samples):
     neutral, up, down = (median(pitch for _, pitch in samples[phase])
                          for phase in ("rest", "up", "down"))
     if right - left < .035:
-        raise ValueError("좌우 범위가 너무 작게 측정됐어요. 편한 양 끝까지 왕복해 주세요.")
+        raise ValueError(f"좌우 범위가 너무 작게 측정됐어요(카메라 폭의 {right - left:.1%}). "
+                         "편한 양 끝까지 왕복해 주세요.")
     if (up - neutral) * (down - neutral) >= 0 or min(abs(up - neutral), abs(down - neutral)) < 3 or abs(up - down) < 8:
-        raise ValueError("위·아래 기울기가 충분히 구분되지 않았어요. 팔을 받친 채 중립에서 양쪽으로 기울여 주세요.")
+        raise ValueError(f"위·아래 기울기가 충분히 구분되지 않았어요(중립 {neutral:.0f}° · 위 {up:.0f}° · "
+                         f"아래 {down:.0f}°). 팔을 받친 채 중립에서 양쪽으로 기울여 주세요.")
     rest_x, rest_pitch = zip(*samples["rest"])
     noise = max((_percentile(rest_x, .9) - _percentile(rest_x, .1)) / (right - left),
                 (_percentile(rest_pitch, .9) - _percentile(rest_pitch, .1)) / abs(up - down))
     return dict(palm_left=left, palm_right=right, palm_up=up, palm_down=down,
-                palm_x_gain=1., palm_y_gain=1., smoothing=max(.20, .45 - 1.5 * noise))
+                palm_x_gain=1., palm_y_gain=1., smoothing=max(.20, .45 - 1.5 * noise),
+                # A shakier resting hand gets a wider neutral zone (noise is a share of the mapped range).
+                palm_hold=round(min(.04, max(DEFAULT_HOLD, .75 * noise)), 3))
 
 
 class PointerSetup:
@@ -137,8 +146,9 @@ class PointerSetup:
             return
         if self.phase in ("rest", "up", "down"):
             angles = [pitch for _, pitch in samples]
-            if _percentile(angles, .9) - _percentile(angles, .1) > 6.:
-                self.note = "측정하는 동안 같은 기울기를 잠깐 유지해 주세요."
+            spread = _percentile(angles, .9) - _percentile(angles, .1)
+            if spread > 6.:
+                self.note = f"측정하는 동안 같은 기울기를 잠깐 유지해 주세요(흔들림 {spread:.0f}° · 허용 6°)."
                 return
         index = PHASES.index(self.phase)
         if index < len(PHASES) - 1:

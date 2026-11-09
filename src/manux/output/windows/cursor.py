@@ -18,6 +18,57 @@ from manux.output.windows.config import WindowsOutputConfig
 from manux.platform.monitors import Monitor, ScreenLayout
 
 
+class OneEuro:
+    """One Euro filter (Casiez et al. 2012): heavy smoothing while still, little lag while moving.
+
+    A fixed EMA must trade resting jitter for lag; the lag makes people overshoot and correct back."""
+
+    def __init__(self, min_cutoff: float, beta: float, d_cutoff: float = 1.0) -> None:
+        self.min_cutoff, self.beta, self.d_cutoff = min_cutoff, beta, d_cutoff
+        self.reset()
+
+    def reset(self) -> None:
+        self.value: Optional[float] = None
+        self._speed = 0.0
+        self._t = 0.0
+
+    @staticmethod
+    def _alpha(cutoff: float, dt: float) -> float:
+        tau = 1.0 / (2 * math.pi * cutoff)
+        return 1.0 / (1.0 + tau / dt)
+
+    def __call__(self, value: float, now: float) -> float:
+        dt = now - self._t
+        if self.value is None or not 0 < dt <= .5:
+            self.value, self._speed, self._t = value, 0.0, now
+            return value
+        self._t = now
+        speed = (value - self.value) / dt
+        self._speed += self._alpha(self.d_cutoff, dt) * (speed - self._speed)
+        cutoff = self.min_cutoff + self.beta * abs(self._speed)
+        self.value += self._alpha(cutoff, dt) * (value - self.value)
+        return self.value
+
+
+# Palm input filters. Hand X is in frame widths (a deliberate move is ~0.3/s), pitch in degrees (~60°/s);
+# both betas add ~3-5 Hz of bandwidth at those speeds. `smoothing` sets the resting cutoff.
+PALM_X_BETA = 12.0
+PALM_PITCH_BETA = .07
+PALM_PITCH_JUMP = 90.0   # deg between frames: a wrap or a bad landmark frame, not a hand movement
+PALM_EASE_SECONDS = .2   # after a pause the calibrated cursor glides from where it was to the hand
+
+
+PALM_HOLD_SECONDS = .2     # hand inside the neutral zone this long -> the cursor parks
+PALM_HOLD_EXIT = 1.5       # leave the zone by this many radii to move again (hysteresis)
+PALM_RELEASE_TAU = .5      # s: after leaving, the cursor continues from where it parked instead of jumping...
+PALM_RELEASE_CATCHUP = .5  # ...and moves this much extra per pixel of hand movement until it is back on the hand
+PALM_RELEASE_SNAP = .25    # one-frame hand jumps beyond this share of screen height are followed directly
+
+
+def palm_min_cutoff(smoothing: float) -> float:
+    return .2 + 1.5 * max(0.05, min(1.0, float(smoothing)))
+
+
 class CursorMapper:
     def __init__(self, screens: ScreenLayout, config: WindowsOutputConfig,
                  start: Optional[Tuple[int, int]] = None) -> None:
@@ -35,6 +86,23 @@ class CursorMapper:
         self._palm_pos: Optional[Tuple[float, float]] = None
         self._palm_pitch: Optional[float] = None
         self._palm_tracking = False
+        self._palm_x = OneEuro(1.0, PALM_X_BETA)
+        self._palm_y = OneEuro(1.0, PALM_PITCH_BETA)
+        self._palm_ease_until = 0.0
+        self._reset_hold()
+
+    def _reset_hold(self) -> None:
+        self._hold_pos: Optional[Tuple[float, float]] = None   # where the cursor is parked
+        self._hold_ref: Tuple[float, float] = (0.0, 0.0)       # hand target when it parked
+        self._hold_anchor: Optional[Tuple[float, float]] = None
+        self._hold_since = 0.0
+        self._hold_offset: Tuple[float, float] = (0.0, 0.0)
+        self._hold_t: Optional[float] = None
+        self._hold_last: Optional[Tuple[float, float]] = None
+
+    @property
+    def parked(self) -> bool:
+        return self._hold_pos is not None
 
     @property
     def anchored(self) -> bool:
@@ -45,6 +113,9 @@ class CursorMapper:
         """The hand stopped driving the cursor: the next point starts fresh (no jump)."""
         self._anchor = None
         self._palm_pos = None
+        self._palm_x.reset()
+        self._palm_y.reset()
+        self._reset_hold()
         self._abs_prev = None
         if self.config.movement_mode != "absolute":
             self._smoothed = None
@@ -56,6 +127,9 @@ class CursorMapper:
         self.pos = (int(x), int(y))
         self._anchor = None
         self._palm_pos = None
+        self._palm_x.reset()
+        self._palm_y.reset()
+        self._reset_hold()
         self._abs_prev = None
         self._smoothed = None
         self._rebase = bool(rebase)
@@ -103,8 +177,11 @@ class CursorMapper:
         """Use hand X and wrist pitch for both the practice cursor and Windows output."""
         c = self.config
         if c.palm_left == c.palm_right:
+            # Uncalibrated: relative movement, smoothed by `_relative`'s own EMA (not filtered twice).
             tracked = pitch is not None
-            if tracked != self._palm_tracking:
+            jumped = (tracked and self._palm_pitch is not None
+                      and abs(pitch - self._palm_pitch) > PALM_PITCH_JUMP)
+            if tracked != self._palm_tracking or jumped:
                 self.pause()
                 self._palm_tracking = tracked
             if pitch is not None:
@@ -112,8 +189,18 @@ class CursorMapper:
             y = -(self._palm_pitch or 0.0) / (150 * c.frame_aspect)
             return self.step((x, y), now, gain)
 
+        if (pitch is not None and self._palm_y.value is not None
+                and abs(pitch - self._palm_y.value) > PALM_PITCH_JUMP):
+            self.pause()   # a wrap or a bad frame: glide from the cursor instead of sweeping across the screen
+        self._palm_x.min_cutoff = self._palm_y.min_cutoff = palm_min_cutoff(c.smoothing)  # config is reassigned live
+        x = self._palm_x(x, now)
+        if pitch is not None:
+            pitch = self._palm_y(pitch, now)
         monitor = self.screens.primary
-        px, py = self._palm_pos if self._palm_pos is not None else monitor.clamp(*self.pos)
+        if self._palm_pos is None:
+            self._palm_pos = monitor.clamp(*self.pos)
+            self._palm_ease_until = now + PALM_EASE_SECONDS
+        px, py = self._palm_pos
         fx = (x - c.palm_left) / (c.palm_right - c.palm_left)
         target_x = monitor.left + (.5 + (fx - .5) * c.palm_x_gain) * (monitor.width - 1)
         target_y = py
@@ -121,10 +208,50 @@ class CursorMapper:
             fy = (pitch - c.palm_up) / (c.palm_down - c.palm_up)
             target_y = monitor.top + (.5 + (fy - .5) * c.palm_y_gain) * (monitor.height - 1)
         target_x, target_y = monitor.clamp(target_x, target_y)
-        alpha = min(c.smoothing, .12) if self._palm_pos is None else c.smoothing
+        target_x, target_y = monitor.clamp(*self._palm_hold((target_x, target_y), now, monitor.height))
+        # The filters already smooth the hand; only glide in after a restart so the cursor never jumps.
+        alpha = .25 if now < self._palm_ease_until else 1.0
         self._palm_pos = (px + alpha * (target_x - px), py + alpha * (target_y - py))
         self.pos = tuple(round(value) for value in self._palm_pos)
         return self.pos
+
+    def _palm_hold(self, target: Tuple[float, float], now: float, height: int) -> Tuple[float, float]:
+        """Neutral zone: a hand that stays within `palm_hold` (share of screen height) parks the cursor.
+
+        It moves again only once the hand leaves PALM_HOLD_EXIT x that radius, and then continues from the
+        parked spot (the gap closes over PALM_RELEASE_TAU) so leaving the zone never makes the cursor jump."""
+        radius = max(0.0, float(self.config.palm_hold)) * height
+        dt = 0.0 if self._hold_t is None else max(0.0, now - self._hold_t)
+        self._hold_t = now
+        ox, oy = self._hold_offset
+        moved = 0.0 if self._hold_last is None else math.dist(target, self._hold_last)
+        self._hold_last = target
+        if ox or oy:
+            # Close the gap mostly while the hand moves (the cursor runs PALM_RELEASE_CATCHUP faster than the
+            # hand until it is back on it), and slowly while it rests. A huge one-frame move just follows.
+            gap = math.hypot(ox, oy)
+            left = (gap - PALM_RELEASE_CATCHUP * moved) * math.exp(-dt / PALM_RELEASE_TAU)
+            if left < .5 or moved > PALM_RELEASE_SNAP * height:
+                left = 0.0
+            ox, oy = (ox * left / gap, oy * left / gap) if left else (0.0, 0.0)
+            self._hold_offset = (ox, oy)
+        if radius <= 0:
+            self._hold_pos = None
+            return target[0] + ox, target[1] + oy
+        if self._hold_pos is not None:
+            if math.dist(target, self._hold_ref) <= PALM_HOLD_EXIT * radius:
+                return self._hold_pos
+            hx, hy = self._hold_pos
+            self._hold_offset = (hx - target[0], hy - target[1])
+            self._hold_pos, self._hold_anchor, self._hold_since = None, target, now
+            return hx, hy
+        if self._hold_anchor is None or math.dist(target, self._hold_anchor) > radius:
+            self._hold_anchor, self._hold_since = target, now
+        elif now - self._hold_since >= PALM_HOLD_SECONDS and not (ox or oy):
+            # (not while still catching up after leaving the zone: keep following until on the hand)
+            self._hold_pos, self._hold_ref = target, target
+            return self._hold_pos
+        return target[0] + ox, target[1] + oy
 
     def _relative(self, point: Tuple[float, float], now: float, gain: float) -> Tuple[int, int]:
         c = self.config
