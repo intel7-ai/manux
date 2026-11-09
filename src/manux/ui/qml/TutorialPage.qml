@@ -59,9 +59,9 @@ Rectangle {
                 Item {
                     objectName: "tutorialTargets"
                     anchors.fill: parent
-                    visible: page.controller.tutorialKey === "sensitivity"
+                    visible: ["move", "vertical", "sensitivity"].indexOf(page.controller.tutorialKey) >= 0
                     Repeater {
-                        model: page.controller.tutorialTargets
+                        model: page.controller.tutorialKey === "move" ? [] : page.controller.tutorialTargets
                         Rectangle {
                             required property var modelData; required property int index
                             width: 44; height: 44; radius: 22
@@ -85,6 +85,31 @@ Rectangle {
                     text: "성공했어요"; color: Theme.Studio.ink; font.bold: true; font.pixelSize: Theme.Studio.title
                     background: Rectangle { color: Theme.Studio.mint; radius: Theme.Studio.radius }
                 }
+            }
+            RowLayout {
+                objectName: "tutorialVerticalChoice"
+                Layout.fillWidth: true; spacing: Theme.Studio.gap
+                visible: page.controller.tutorialKey === "vertical"
+                Repeater {
+                    model: [{key: "hand_position", label: "손 전체 이동", hint: "손을 위아래로 옮깁니다"},
+                            {key: "wrist_pitch", label: "손목 기울기", hint: "팔을 받치고 손목을 위아래로 꺾습니다"}]
+                    delegate: Button {
+                        required property var modelData
+                        objectName: "tutorialVertical_" + modelData.key
+                        Layout.fillWidth: true
+                        text: modelData.label + "\n" + modelData.hint
+                        highlighted: page.controller.tutorialVertical === modelData.key
+                        onClicked: page.controller.tutorialChooseVertical(modelData.key)
+                    }
+                }
+            }
+            Button {
+                objectName: "tutorialOpenPointerSetup"
+                Layout.fillWidth: true
+                visible: page.controller.tutorialKey === "pointer_setup"
+                text: "맞춤 설정 시작 (좌우 범위 · 위아래 각도 측정)"
+                highlighted: true
+                onClicked: page.controller.tutorialOpenPointerSetup()
             }
             QuickSpeedControls {
                 Layout.fillWidth: true; visible: page.controller.tutorialKey === "sensitivity"

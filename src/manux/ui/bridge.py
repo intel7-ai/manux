@@ -597,6 +597,7 @@ class Bridge(QObject):
         self.tutorial: Optional[Tutorial] = None
         self._pointer_setup_view = {}
         self._setup_before_tutorial = False
+        self._resume_tutorial = None
         self._tutorial_progress = -1.0
         self._preview_view = ViewFrame(None)
         self._last_practice_seq = 0
@@ -2282,10 +2283,7 @@ class Bridge(QObject):
         self.runtime.set_override("pointer", "axes", self.axes)
         self._set_stage("main")
         if not self.preferences.value("tutorialDone", False, type=bool):
-            if self.pointerSetupAvailable and not self.pointerOnly:
-                self._open_pointer_setup(before_tutorial=True)
-            else:
-                self.beginTutorial()
+            self.beginTutorial()
 
     def _choose(self, view: ViewFrame) -> None:
         now = time.perf_counter()
@@ -2300,9 +2298,10 @@ class Bridge(QObject):
             self.stateChanged.emit()
 
     # ------------------------------------------------------------------ pointer setup
-    @Property(bool, constant=True)
+    @Property(bool, notify=stateChanged)
     def pointerSetupAvailable(self):
-        return getattr(self.runtime, "pointer_setup_dir", None) is not None
+        return (getattr(self.runtime, "pointer_setup_dir", None) is not None
+                and self.settings.get("cursor.vertical_input") == "wrist_pitch")
 
     @Property("QVariantMap", notify=pointerSetupChanged)
     def pointerSetup(self):
@@ -2333,7 +2332,7 @@ class Bridge(QObject):
             return
         if action == "skip":
             self._close_pointer_setup()
-        elif action in ("capture", "retest"):
+        elif action in ("capture", "retest", "fine", "menu"):
             self.runtime.request(RuntimeRequest("pointer_setup", action))
         elif action in ("start", "apply"):
             if self.runtime.request(RuntimeRequest("pointer_setup", action)):
@@ -2350,8 +2349,15 @@ class Bridge(QObject):
         self._send(RequestMode(None))
         self._pointer_setup_view = {}
         self.pointerSetupChanged.emit()
-        if self._setup_before_tutorial:
-            self.beginTutorial()
+        if self._resume_tutorial is not None:
+            # opened from the onboarding's optional "cursor fit" step: back to the lesson, that step done
+            self.tutorial, self._resume_tutorial = self._resume_tutorial, None
+            self._set_stage("tutorial")
+            self.tutorial.complete_current(time.perf_counter())
+            self._reset_practice()
+            self.tutorialChanged.emit()
+        elif self._setup_before_tutorial:
+            self._start_tutorial()
         else:
             self._set_stage("main")
 
@@ -2362,13 +2368,51 @@ class Bridge(QObject):
 
     @Slot()
     def beginTutorial(self):
+        """"Learn motions" (and the first run): the control hand is already chosen. Move the cursor, choose how
+        up/down works, optionally fit the cursor (wrist tilt), then the everyday gestures."""
+        self._start_tutorial()
+
+    def _start_tutorial(self):
         if not self.control_hand:
             return
         self.cancelPointerCalibration()
-        self.tutorial = Tutorial(onboarding_steps(self._cards()))
+        palm = not self.pointerOnly
+        self.tutorial = Tutorial(onboarding_steps(self._cards(), palm=palm,
+                                                  pointer_setup=palm and self.pointerSetupAvailable))
+        # The method already in use is shown selected, so it counts as chosen; tapping the other one switches.
+        current = str(self.settings.get("cursor.vertical_input"))
+        self.tutorial.vertical_chosen, self.tutorial.vertical_method = True, current
+        self.tutorial.skip_keys = set() if current == "wrist_pitch" else {"pointer_setup"}
         self._set_stage("tutorial")
         self._reset_practice()
         self.tutorialChanged.emit()
+
+    @Property(str, notify=tutorialChanged)
+    def tutorialVertical(self):
+        chosen = self.tutorial.vertical_method if self.tutorial is not None else ""
+        return chosen or str(self.settings.get("cursor.vertical_input"))
+
+    @Slot(str)
+    def tutorialChooseVertical(self, method):
+        """Step "choose up/down": save cursor.vertical_input and let the user try it on the three positions."""
+        if self.tutorial is None or self.tutorial.step_key != "vertical" or method not in ("hand_position", "wrist_pitch"):
+            return
+        if method != self.settings.get("cursor.vertical_input") and not self.applySensitivity({"cursor.vertical_input": method}):
+            return
+        self.tutorial.retry()                     # fresh positions with the chosen method
+        self.tutorial.vertical_chosen, self.tutorial.vertical_method = True, method
+        # the cursor fit measures wrist angles: with whole-hand up/down there is nothing to fit
+        self.tutorial.skip_keys = set() if method == "wrist_pitch" else {"pointer_setup"}
+        self._reset_practice()
+        self.tutorialChanged.emit()
+
+    @Slot()
+    def tutorialOpenPointerSetup(self):
+        """Step "cursor fit (optional)": run the cursor setup, then come back to the next lesson step."""
+        if self.tutorial is None or self.tutorial.step_key != "pointer_setup" or not self.pointerSetupAvailable:
+            return
+        self._resume_tutorial = self.tutorial
+        self._open_pointer_setup(before_tutorial=False)
 
     @Slot()
     def tutorialNext(self):
@@ -2419,7 +2463,8 @@ class Bridge(QObject):
         if t.index != old_index:
             self._reset_practice()
         progress = round(t.progress, 2)
-        if changed or progress != self._tutorial_progress or t.step_key == "sensitivity":
+        # steps that draw the practice cursor refresh every frame so it follows the hand
+        if changed or progress != self._tutorial_progress or t.step_key in ("move", "vertical", "sensitivity"):
             self._tutorial_progress = progress
             self.tutorialChanged.emit()
 
@@ -2720,6 +2765,7 @@ class Bridge(QObject):
             self._sensitivity_pending = False
             self._sensitivity_status = result[2]
             self.sensitivityChanged.emit()
+            self.stateChanged.emit()
             if result[1]:
                 self.sensitivityApplied.emit()
         while self.ui_requests:

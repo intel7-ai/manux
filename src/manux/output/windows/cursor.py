@@ -54,7 +54,13 @@ class OneEuro:
 # both betas add ~3-5 Hz of bandwidth at those speeds. `smoothing` sets the resting cutoff.
 PALM_X_BETA = 12.0
 PALM_PITCH_BETA = .07
-PALM_PITCH_JUMP = 90.0   # deg between frames: a wrap or a bad landmark frame, not a hand movement
+CLICK_GUARD_CLOSE = 1.3    # click contact ratio below this holds the palm cursor (no frame of real use went this low)
+CLICK_GUARD_CLOSING_DROP = .4   # ... or when it falls this much in one frame (the hand tilts while fingers close,
+CLICK_GUARD_CLOSING_BELOW = 3.  # 1-2 frames before they touch), counted only once it is this close
+CLICK_GUARD_MAX_HOLD = .3       # recorded clicks touched 0.14-0.27 s; longer contact is a drag and moves again
+CLICK_GUARD_SETTLE = .2  # ... and it keeps holding this long after the fingers part (the pitch jumps back)
+PALM_PITCH_CUTOFF_SCALE =.5   # wrist pitch is ~2x noisier than hand X at rest (fine traces): filter it harder
+PALM_PITCH_JUMP = 90.0  # deg between frames: a wrap or a bad landmark frame, not a hand movement
 PALM_EASE_SECONDS = .2   # after a pause the calibrated cursor glides from where it was to the hand
 
 
@@ -65,8 +71,23 @@ PALM_RELEASE_CATCHUP = .5  # ...and moves this much extra per pixel of hand move
 PALM_RELEASE_SNAP = .25    # one-frame hand jumps beyond this share of screen height are followed directly
 
 
+# Gain curve: g(v) = precision + (1 - precision) * min(1, v / FULL) ** CURVE (v = mapped hand speed, px/s).
+# With precision 0.4: 100 px/s -> 0.49, 300 -> 0.61, 600 -> 0.79, 1000+ -> 1. The earlier flat 0.4 up to 650 px/s
+# (then a ramp) kept card drags and ordinary moves at 0.4x: a screen recording showed the cursor never above
+# ~360 px/s and mostly creeping, which felt heavy. A smooth curve has no cliff for a flick to fall over.
+PALM_PRECISION_FULL = 1000.0
+PALM_PRECISION_CURVE = .85
+PALM_PRECISION_SLOW = 650.0     # px/s: re-sync with the mapping starts above this...
+PALM_PRECISION_FAST = 1100.0    # ... and is full above this
+PALM_PRECISION_RESYNC = .25     # s to close the gap to the mapping while moving fast
+PALM_PRECISION_EDGE_PX = 8.0    # a hand mapped this close to a screen edge puts the cursor on the mapping there
+PALM_PRECISION_MAX_GAP = .12   # the cursor never sits further than this share of screen height off the mapping
+
+
 def palm_min_cutoff(smoothing: float) -> float:
-    return .2 + 1.5 * max(0.05, min(1.0, float(smoothing)))
+    # Snappy on purpose: low-speed precision (palm_precision) now absorbs the resting wobble, and a slow filter
+    # left the cursor sliding on after the hand stopped (felt like momentum).
+    return 1.0 + 3.0 * max(0.05, min(1.0, float(smoothing)))
 
 
 class CursorMapper:
@@ -89,7 +110,19 @@ class CursorMapper:
         self._palm_x = OneEuro(1.0, PALM_X_BETA)
         self._palm_y = OneEuro(1.0, PALM_PITCH_BETA)
         self._palm_ease_until = 0.0
+        self._guard_until = float("-inf")
+        self._last_contact: Optional[float] = None
+        self._contact_since: Optional[float] = None
+        self._guard_rebase = False
+        self._capture_offset = False
+        self._map_offset: Tuple[float, float] = (0.0, 0.0)
         self._reset_hold()
+        self._reset_precision()
+
+    def _reset_precision(self, pos: Optional[Tuple[float, float]] = None) -> None:
+        self._prec_pos: Optional[Tuple[float, float]] = pos     # cursor under low-speed precision
+        self._prec_target: Optional[Tuple[float, float]] = None
+        self._prec_t = 0.0
 
     def _reset_hold(self) -> None:
         self._hold_pos: Optional[Tuple[float, float]] = None   # where the cursor is parked
@@ -116,6 +149,9 @@ class CursorMapper:
         self._palm_x.reset()
         self._palm_y.reset()
         self._reset_hold()
+        # keep where precision put the cursor (a click or a short pause must not snap it back to the mapping);
+        # only forget the last hand point so the gap in time is not read as one big move
+        self._prec_target = None
         self._abs_prev = None
         if self.config.movement_mode != "absolute":
             self._smoothed = None
@@ -130,12 +166,15 @@ class CursorMapper:
         self._palm_x.reset()
         self._palm_y.reset()
         self._reset_hold()
+        self._reset_precision((float(x), float(y)))
         self._abs_prev = None
         self._smoothed = None
         self._rebase = bool(rebase)
 
     def reset(self) -> None:
         self.pause()
+        self._reset_precision()
+        self._map_offset, self._capture_offset = (0.0, 0.0), False
         self._abs_monitor = None  # absolute re-picks the monitor under the cursor
 
     @property
@@ -173,8 +212,37 @@ class CursorMapper:
             self.pos = self._relative(point, now, gain)
         return self.pos
 
-    def step_palm(self, x: float, pitch: Optional[float], now: float, gain: float = 1.0) -> Tuple[int, int]:
-        """Use hand X and wrist pitch for both the practice cursor and Windows output."""
+    def step_palm(self, x: float, pitch: Optional[float], now: float, gain: float = 1.0,
+                  contact: Optional[float] = None, fist: bool = False) -> Tuple[int, int]:
+        """Use hand X and wrist pitch for both the practice cursor and Windows output.
+
+        `contact` is how close a click is (thumb to middle/ring tip over the click threshold; below 1 = touching).
+        While the fingers touch, and briefly after they part, the cursor holds still: recorded clicks showed the
+        measured wrist pitch jumping 5-7 deg in the very frame the fingers met, i.e. a 30-60 px cursor jump."""
+        closing = (contact is not None and self._last_contact is not None and contact < CLICK_GUARD_CLOSING_BELOW
+                   and self._last_contact - contact > CLICK_GUARD_CLOSING_DROP)
+        self._last_contact = contact
+        if contact is not None and (contact < CLICK_GUARD_CLOSE or closing):
+            if self._contact_since is None:
+                self._contact_since = now
+            if now - self._contact_since <= CLICK_GUARD_MAX_HOLD:
+                self._guard_until = now + CLICK_GUARD_SETTLE
+                self._guard_rebase = True
+                return self.pos
+            # Held longer than any recorded click: a drag. Follow the hand again from here, re-anchored with a new
+            # mapping offset (below) so the pinch tilt is absorbed instead of jumping, then move like any other
+            # move: precise when slow, 1:1 and re-synced when fast, so a drag across the screen keeps up.
+        else:
+            if self._contact_since is not None:          # fingers just parted (click or drag end)
+                self._contact_since = None
+                self._guard_until = max(self._guard_until, now + CLICK_GUARD_SETTLE)
+                self._guard_rebase = True
+            if now < self._guard_until:
+                return self.pos
+        if self._guard_rebase:
+            self._guard_rebase = False
+            self.pause()       # continue from where the cursor is; the tilt that came with the pinch is dropped
+            self._capture_offset = True   # ... and take the cursor's spot as the mapping's new reference
         c = self.config
         if c.palm_left == c.palm_right:
             # Uncalibrated: relative movement, smoothed by `_relative`'s own EMA (not filtered twice).
@@ -192,7 +260,8 @@ class CursorMapper:
         if (pitch is not None and self._palm_y.value is not None
                 and abs(pitch - self._palm_y.value) > PALM_PITCH_JUMP):
             self.pause()   # a wrap or a bad frame: glide from the cursor instead of sweeping across the screen
-        self._palm_x.min_cutoff = self._palm_y.min_cutoff = palm_min_cutoff(c.smoothing)  # config is reassigned live
+        cutoff = palm_min_cutoff(c.smoothing)  # config is reassigned live
+        self._palm_x.min_cutoff, self._palm_y.min_cutoff = cutoff, cutoff * PALM_PITCH_CUTOFF_SCALE
         x = self._palm_x(x, now)
         if pitch is not None:
             pitch = self._palm_y(pitch, now)
@@ -208,12 +277,84 @@ class CursorMapper:
             fy = (pitch - c.palm_up) / (c.palm_down - c.palm_up)
             target_y = monitor.top + (.5 + (fy - .5) * c.palm_y_gain) * (monitor.height - 1)
         target_x, target_y = monitor.clamp(target_x, target_y)
+        # Mapping offset: after a click or drag the cursor's spot becomes the reference instead of being pulled
+        # back to the mapped spot (that pull looked like the cursor sliding after a drop). It fades only while the
+        # hand moves fast (see _precision), and a hand pushed to a screen edge drops it on that axis.
+        if self._capture_offset:
+            self._capture_offset = False
+            base = self._prec_pos if self._prec_pos is not None else self.pos
+            self._map_offset = (base[0] - target_x, base[1] - target_y)
+        ox, oy = self._map_offset
+        edge = PALM_PRECISION_EDGE_PX
+        if target_x <= monitor.left + edge or target_x >= monitor.left + monitor.width - 1 - edge:
+            ox = 0.0
+        if target_y <= monitor.top + edge or target_y >= monitor.top + monitor.height - 1 - edge:
+            oy = 0.0
+        self._map_offset = (ox, oy)
+        target_x, target_y = monitor.clamp(target_x + ox, target_y + oy)
         target_x, target_y = monitor.clamp(*self._palm_hold((target_x, target_y), now, monitor.height))
+        # Only the fist gesture is precision: the open-hand gain also varies with finger curl (2.0 open .. 0.35
+        # fist), and a relaxed, half-curled hand must not drop into fist mode mid-move.
+        target_x, target_y = monitor.clamp(*self._precision((target_x, target_y), now, gain if fist else 1.0))
         # The filters already smooth the hand; only glide in after a restart so the cursor never jumps.
         alpha = .25 if now < self._palm_ease_until else 1.0
         self._palm_pos = (px + alpha * (target_x - px), py + alpha * (target_y - py))
         self.pos = tuple(round(value) for value in self._palm_pos)
         return self.pos
+
+    def _precision(self, target: Tuple[float, float], now: float, gain: float = 1.0) -> Tuple[float, float]:
+        """Precision at low speed on top of the calibrated (absolute) mapping.
+
+        A slow hand moves the cursor `palm_precision` x as far as the mapping says (drift, tremor and the small
+        tilt of a pinch shrink with it); a fast hand moves it 1:1 and pulls it back onto the mapping, so a
+        quick sweep still reaches every edge and the hand-to-screen relation never drifts away for long.
+        The gap to the mapping is capped at PALM_PRECISION_MAX_GAP x screen height.
+
+        A command gain below 1 is the fist (precision gesture): every move is scaled by it, whatever the
+        speed, and the cursor does not re-sync, so it stays where the fist put it. Gains above 1 belong to
+        the uncalibrated relative mode and are ignored here."""
+        fist = gain < 1.0
+        g_low = max(0.05, min(1.0, float(self.config.palm_precision)))
+        if fist:
+            g_low = max(0.05, min(g_low, float(gain)))
+        prev, prev_t = self._prec_target, self._prec_t
+        self._prec_target, self._prec_t = target, now
+        if self._prec_pos is None or (g_low >= 1.0 and not fist):
+            self._prec_pos = target
+            return target
+        if prev is None:                  # first point after a pause: continue from where the cursor is
+            return self._prec_pos
+        dt = max(1e-3, min(.1, now - prev_t))
+        dx, dy = target[0] - prev[0], target[1] - prev[1]
+        if fist:
+            x, y = self._prec_pos[0] + dx * g_low, self._prec_pos[1] + dy * g_low
+        else:
+            speed = math.hypot(dx, dy) / dt
+            # Gain rises smoothly and continuously with speed (like pointer acceleration), so ordinary moves are
+            # light and only the slowest ones are damped; re-sync to the mapping still only happens when fast.
+            k = g_low + (1.0 - g_low) * min(1.0, speed / PALM_PRECISION_FULL) ** PALM_PRECISION_CURVE
+            u = max(0.0, min(1.0, (speed - PALM_PRECISION_SLOW) / (PALM_PRECISION_FAST - PALM_PRECISION_SLOW)))
+            u = u * u * (3 - 2 * u)
+            x, y = self._prec_pos[0] + dx * k, self._prec_pos[1] + dy * k
+            # only a fast hand re-syncs: a slow or resting one never drags the cursor on after it stops
+            pull = min(1.0, u * dt / PALM_PRECISION_RESYNC)
+            x, y = x + (target[0] - x) * pull, y + (target[1] - y) * pull
+            if pull:                      # a fast hand also fades the click/drag reference offset
+                self._map_offset = (self._map_offset[0] * (1 - pull), self._map_offset[1] * (1 - pull))
+        # The mapping clamps the hand at the screen edge, so pushing further gives no more movement: a hand at an
+        # edge puts the cursor on that edge, or an edge button (taskbar, close) could stay out of reach.
+        m = self.screens.primary
+        edge = PALM_PRECISION_EDGE_PX   # the filtered hand only approaches the range end, never quite reaches it
+        if target[0] <= m.left + edge or target[0] >= m.left + m.width - 1 - edge:
+            x = target[0]
+        if target[1] <= m.top + edge or target[1] >= m.top + m.height - 1 - edge:
+            y = target[1]
+        gap = math.dist((x, y), target)
+        limit = PALM_PRECISION_MAX_GAP * self.screens.primary.height
+        if gap > limit:
+            x, y = target[0] + (x - target[0]) * limit / gap, target[1] + (y - target[1]) * limit / gap
+        self._prec_pos = (x, y)
+        return self._prec_pos
 
     def _palm_hold(self, target: Tuple[float, float], now: float, height: int) -> Tuple[float, float]:
         """Neutral zone: a hand that stays within `palm_hold` (share of screen height) parks the cursor.

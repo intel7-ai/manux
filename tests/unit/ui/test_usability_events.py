@@ -50,3 +50,17 @@ def test_settings_always_send_pause_when_ui_has_not_observed_engine_v_toggle(bri
     b.paused = True  # stale UI: the engine has just enabled via V, before the next poll
     b.setClickStyle("trigger")
     assert SetControl(False) in drained(runtime)
+
+
+@pytest.mark.parametrize("key", ["move", "vertical"])
+def test_cursor_steps_refresh_the_practice_cursor_every_frame(bridge, monkeypatch, key):
+    b, _ = bridge
+    steps = onboarding_steps(cards(False), palm=True, pointer_setup=True)
+    b.tutorial = Tutorial([next(s for s in steps if s["key"] == key)])
+    seen = []
+    b.tutorialChanged.connect(lambda: seen.append(b.tutorialCursor))
+    for i, x in enumerate((.3, .4, .5)):
+        monkeypatch.setattr("manux.ui.bridge.time.perf_counter", lambda i=i: 10. + i * .03)
+        b._tutorial_frame(ViewFrame(object(), landmarks=((.5, .5, 0.),) * 21, actions=(),
+                                    practice_cursor=(x, .5)))
+    assert [round(c[0], 2) for c in seen[-3:]] == [.3, .4, .5]   # was only refreshed on the "speed" step

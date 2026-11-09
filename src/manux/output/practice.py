@@ -32,6 +32,21 @@ class PracticeSink:
         self.config = config
         self.cursor = cursor
         self.precision = False
+        self._palm_input = False
+        self._palm_pitch = None
+        self._click_contact: Optional[float] = None
+
+    @property
+    def screens(self):
+        return self.cursor.screens
+
+    def set_palm_pitch(self, pitch: Optional[float]) -> None:
+        self._palm_input = True
+        self._palm_pitch = pitch
+
+    def set_click_contact(self, ratio: Optional[float]) -> None:
+        """Same click contact guard as the Windows sink (the practice cursor must feel like the real one)."""
+        self._click_contact = ratio
 
     @property
     def cursor_position(self) -> Optional[Tuple[float, float]]:
@@ -67,7 +82,11 @@ class PracticeSink:
                 return OutputResult(False, f"error:not an ActionCommand ({type(cmd).__name__})")
             if self.cursor and cmd.action in ("mouse.move", "mouse.drag") and cmd.point is not None and cmd.phase in ("begin", "hold"):
                 gain = float(cmd.params.get("gain", 1.0))
-                self.cursor.step(cmd.point, cmd.t, gain)
+                if self._palm_input and self.config.vertical_input == "wrist_pitch" and cmd.gesture.startswith("pinch."):
+                    self.cursor.step_palm(cmd.point[0], self._palm_pitch, cmd.t, gain, contact=self._click_contact,
+                                          fist=cmd.gesture == "pinch.move_fist")
+                else:
+                    self.cursor.step(cmd.point, cmd.t, gain)
                 self.precision = gain < 1.0
             if cmd.phase == "begin":
                 self._held[cmd.action] = cmd
