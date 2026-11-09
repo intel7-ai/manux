@@ -11,6 +11,7 @@ from typing import Mapping
 
 from manux.settings.schema import Setting
 from manux.settings.sensitivity import BY_KEY as SENSITIVITY
+from manux.settings.sensitivity import VERTICAL_INPUT, VERTICAL_LABELS
 from manux.settings.store import Settings
 
 
@@ -35,6 +36,7 @@ EXTRA_SETTINGS = (
 GROUPS = {"pinch": "손바닥 · 핀치", "pointer": "검지 · 트리거", "motion": "모션",
           "cursor": "커서 · 스크롤", "control": "제어 켜기 · 끄기", "app": "안전"}
 LABELS = {
+    "vertical_input": "상하 이동 방식",
     "movement_mode": "이동 좌표 방식", "active_margin": "절대좌표 가장자리 여백",
     "relative_gain_min": "기본 이동 속도", "relative_gain_max": "빠른 이동 속도",
     "relative_accel_speed_low": "가속 시작 손 속도", "relative_accel_speed_high": "최대 가속 손 속도",
@@ -145,6 +147,7 @@ def rows(settings: Settings):
         result.append(dict(key=key, label=LABELS.get(short, control.label if control else short.replace("_", " ")),
                            group=GROUPS[owner], kind=setting.kind, minimum=low, maximum=high, step=step,
                            choices=list(setting.choices), value=settings.get(key), defaultValue=setting.default,
+                           choiceLabels=list(VERTICAL_LABELS if key == VERTICAL_INPUT.key else setting.choices),
                            hint=hint,
                            editable=not settings.is_overridden(key)))
     return result

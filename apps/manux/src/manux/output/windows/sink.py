@@ -367,7 +367,8 @@ class WindowsOutputSink:
         self._place(*position)
 
     def _uses_palm(self, cmd: ActionCommand) -> bool:
-        return getattr(self, "_palm_input", False) and cmd.gesture.startswith("pinch.")
+        return (self.config.vertical_input == "wrist_pitch"
+                and getattr(self, "_palm_input", False) and cmd.gesture.startswith("pinch."))
 
     def _gain(self, cmd: ActionCommand) -> float:
         g = cmd.params.get("gain", 1.0)
