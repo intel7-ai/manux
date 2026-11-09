@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from statistics import median
 
 from manux.data.tracking_test import Target, TrackingTest, view as tracking_view
@@ -16,6 +17,13 @@ LIMITS = {**ADJUSTMENTS, "palm_left": (0., 1.), "palm_right": (0., 1.),
 PHASES = ("rest", "horizontal", "up", "down")
 DURATIONS = {"rest": .8, "horizontal": 4., "up": 1.2, "down": 1.2}
 PREP_SECONDS = .6
+TRACE_VERSION = 1
+# Fine round: 40 px cells (Minesweeper, toolbar buttons), one cell per step in all four directions
+FINE_CELL_PX = 40
+FINE_ORIGIN = (.5, .45)
+FINE_VIEW_PX = 640
+FINE_PATH = ((0, 0), (1, 0), (2, 0), (2, 1), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1),
+             (0, -1), (1, -1), (1, 0), (0, 0), (0, 1))
 VERSION = 3  # 3: pitch is the camera's vertical-plane angle (no fold at upright); v2 angles are not comparable
 
 
@@ -75,6 +83,22 @@ def recommend(samples):
                 palm_hold=round(min(.04, max(DEFAULT_HOLD, .75 * noise)), 3))
 
 
+def _zoom(data, monitor):
+    """The setup page shows the whole screen ~3x smaller; for 40 px cells show a 640 px wide window
+    around the grid instead, so cells and cursor look close to their real size."""
+    span_x = min(1., FINE_VIEW_PX / monitor.width)
+    span_y = min(1., span_x * monitor.width / monitor.height * 9 / 16)
+    x0, y0 = FINE_ORIGIN[0] - span_x / 2, FINE_ORIGIN[1] - span_y / 2
+    out = {"aspect": (span_x * monitor.width) / (span_y * monitor.height), "zoomed": True}
+    if data.get("target") is not None:
+        fx, fy, size = data["target"]
+        out["target"] = ((fx - x0) / span_x, (fy - y0) / span_y, size / span_x)
+    if data.get("cursor") is not None:
+        cx, cy = data["cursor"]
+        out["cursor"] = (min(1., max(0., (cx - x0) / span_x)), min(1., max(0., (cy - y0) / span_y)))
+    return out
+
+
 class PointerSetup:
     def __init__(self, monitor, frame_width, make_mapper):
         self.monitor, self.frame_width, self.make_mapper = monitor, frame_width, make_mapper
@@ -92,6 +116,10 @@ class PointerSetup:
         self.mapper = None
         self.round = 0
         self.can_apply = False
+        self.aim_ok = False
+        self.kind = "aim"
+        self.trace = []
+        self.trace_dir = None   # set by the runtime: where finished rounds are written for replay
 
     def capture(self):
         if self.phase in PHASES and not self.capturing and self.point is not None:
@@ -99,14 +127,25 @@ class PointerSetup:
             self.started, self.frames, self.progress, self.note = None, 0, 0., ""
             self.samples[self.phase].clear()
 
-    def begin_aim(self):
+    def begin_aim(self, fine=False):
         self.round += 1
-        direction = 1 if self.round % 2 else -1
-        points = ((.50, .28, 110), (.50, .72, 110), (.27, .72, 90),
-                  (.73, .72, 90), (.59, .42, 70), (.49, .48, 55))
-        targets = [Target(.5 + (x - .5) * direction, .5 + (y - .5) * direction, size)
-                   for x, y, size in points]
-        self.test = TrackingTest(self.monitor, dwell=.28, timeout=8, hold_margin_px=4, targets=targets)
+        if fine:
+            # One cell at a time, like moving between Minesweeper cells or small buttons
+            w, h = self.monitor.width, self.monitor.height
+            cells = [(FINE_ORIGIN[0] + cx * FINE_CELL_PX / w, FINE_ORIGIN[1] + cy * FINE_CELL_PX / h)
+                     for cx, cy in FINE_PATH]
+            targets = [Target(x, y, FINE_CELL_PX) for x, y in cells]
+            self.test = TrackingTest(self.monitor, dwell=.35, timeout=6, hold_margin_px=0, targets=targets)
+        else:
+            self.aim_ok = False
+            direction = 1 if self.round % 2 else -1
+            points = ((.50, .28, 110), (.50, .72, 110), (.27, .72, 90),
+                      (.73, .72, 90), (.59, .42, 70), (.49, .48, 55))
+            targets = [Target(.5 + (x - .5) * direction, .5 + (y - .5) * direction, size)
+                       for x, y, size in points]
+            self.test = TrackingTest(self.monitor, dwell=.28, timeout=8, hold_margin_px=4, targets=targets)
+        self.kind = "fine" if fine else "aim"
+        self.trace = []
         self.mapper = self.make_mapper(self.values)
         self.phase, self.last_t, self.note, self.can_apply = "aim", None, "", False
 
@@ -163,14 +202,49 @@ class PointerSetup:
         self.begin_aim()
 
     def _aim(self, now):
+        index = self.test.index
         self.test.update(now, self.mapper.pos, hand=self.point is not None, active=True)
-        if self.test.done:
-            stats = self.test.summary()
-            self.phase = "review"
-            self.can_apply = stats["reached"] >= 4 and stats["lost_s"] <= 2.
+        x, pitch = self.point if self.point is not None else (None, None)
+        # full precision: a replay with the same settings must reproduce the recorded cursor exactly
+        self.trace.append((now, x, pitch, self.mapper.pos[0], self.mapper.pos[1], index))
+        if not self.test.done:
+            return
+        stats = self.test.summary()
+        self.phase = "review"
+        if self.kind == "fine":
+            overshoots = sum(t.overshoots for t in self.test.targets)
+            self.can_apply = getattr(self, "aim_ok", False)
+            self.note = (f"한 칸 이동 {stats['reached']}/{stats['targets']}"
+                         + (f" · 중간 {stats['median_time_s']:.2f}초" if stats["median_time_s"] is not None else "")
+                         + f" · 넘침 {overshoots}회")
+        else:
+            self.can_apply = self.aim_ok = stats["reached"] >= 4 and stats["lost_s"] <= 2.
             self.note = f"표적 {stats['reached']}/{stats['targets']} 도달"
             if not self.can_apply:
                 self.note += " · 감도를 조정하거나 손 위치를 확인한 뒤 다시 시험하세요."
+        saved = self._save_trace()
+        if saved is not None:
+            self.note += f" · 기록 {saved.name}"
+
+    def trace_data(self):
+        """The round as plain data: raw palm input per frame plus the target schedule (no images)."""
+        return {"version": TRACE_VERSION, "kind": self.kind,
+                "monitor": [self.monitor.left, self.monitor.top, self.monitor.width, self.monitor.height],
+                "values": dict(self.values), "dwell": self.test.dwell, "hold_margin_px": self.test.hold_margin_px,
+                "targets": [{"fx": t.fx, "fy": t.fy, "size_px": t.size_px, "shown_at": t.shown_at,
+                             "reached_at": t.reached_at, "overshoots": t.overshoots} for t in self.test.targets],
+                "frames": [list(row) for row in self.trace]}
+
+    def _save_trace(self):
+        if self.trace_dir is None or not self.trace:
+            return None
+        try:
+            self.trace_dir.mkdir(parents=True, exist_ok=True)
+            path = self.trace_dir / time.strftime(f"pointer-{self.kind}-%Y%m%d-%H%M%S.json")
+            path.write_text(json.dumps(self.trace_data()), encoding="utf-8")
+            return path
+        except OSError:
+            return None
 
     def adjust(self, values):
         if self.phase not in ("aim", "review", "preview") or len(values) != 1:
@@ -196,6 +270,8 @@ class PointerSetup:
         if self.phase in ("aim", "preview"):
             data.update(tracking_view(self.test, self.mapper.pos))
             data["aspect"] = self.monitor.width / self.monitor.height
+            if self.kind == "fine":
+                data.update(_zoom(data, self.monitor))
             if self.phase == "preview":
                 data["target"] = None
         return data
