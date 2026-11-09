@@ -112,6 +112,8 @@ def test_pointer_setup_page_opens_after_hand_choice_and_returns_to_tutorial(tmp_
         b.application.processEvents()
         assert not page.property("visible") and b.stage_name == "tutorial"
         assert b.tutorial is not None
+        # the setup already tracked this hand on this camera: onboarding starts at 2. speed for my hand
+        assert b.tutorial.step_key == "sensitivity" and b.tutorial.done[0]
     finally:
         b.close()
 

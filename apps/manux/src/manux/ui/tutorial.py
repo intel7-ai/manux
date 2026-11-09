@@ -171,6 +171,13 @@ class Tutorial:
             self.index += 1
         self._reset_step()
 
+    def start_after(self, key: str) -> None:
+        """Begin past an already-confirmed step (e.g. the camera check right after the cursor setup)."""
+        if self.index < len(self.steps) and self.step_key == key:
+            self.done[self.index] = True
+            self.index += 1
+            self._reset_step()
+
     def back(self) -> None:
         self.index = max(0, self.index-1)
         self._reset_step()

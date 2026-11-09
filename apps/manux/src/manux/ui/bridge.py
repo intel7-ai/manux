@@ -2352,6 +2352,10 @@ class Bridge(QObject):
         self.pointerSetupChanged.emit()
         if self._setup_before_tutorial:
             self.beginTutorial()
+            if self.tutorial is not None:
+                # The cursor setup just tracked this hand on this camera: go straight to "2. speed for my hand".
+                self.tutorial.start_after("camera")
+                self.tutorialChanged.emit()
         else:
             self._set_stage("main")
 
