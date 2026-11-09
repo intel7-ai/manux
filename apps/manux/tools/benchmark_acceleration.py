@@ -105,8 +105,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if not 1 <= args.repeats <= 5 or not 1 <= args.copies <= 100 or args.epochs<1:
         parser.error("use 1..5 repeats, 1..100 copies and positive epochs")
-    repository = Path(__file__).resolve().parents[3]
-    if args.work_dir.resolve().is_relative_to(repository): parser.error("write benchmark models outside the repository")
+    from manux.data.repository import repository_root
+    repository = repository_root(Path(__file__))
+    if repository is not None and args.work_dir.resolve().is_relative_to(repository): parser.error("write benchmark models outside the repository")
     args.work_dir.mkdir(parents=True,exist_ok=True)
     train, evaluation = synthetic(args.work_dir, args.copies)
     declarations = args.work_dir / "decisions.json"

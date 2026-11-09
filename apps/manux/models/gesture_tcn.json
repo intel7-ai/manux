@@ -1,0 +1,827 @@
+{
+  "classes": [
+    "none",
+    "thumb_index",
+    "thumb_ring",
+    "thumb_middle",
+    "thumb_pinky",
+    "palm_side",
+    "thumbs_up"
+  ],
+  "window": 15,
+  "features": 133,
+  "feature_version": "local3d-v1",
+  "threshold": 0.7,
+  "frames_in_a_row": 3,
+  "gestures": {
+    "thumb_index": "pinch.scroll",
+    "thumb_ring": "pinch.thumb_ring",
+    "thumb_middle": "pinch.thumb_middle",
+    "thumb_pinky": "pinch.thumb_pinky",
+    "palm_side": "pinch.thumb_tucked_open",
+    "thumbs_up": "motion.enter"
+  },
+  "epochs": 25,
+  "trained": "2026-11-06 02:37:09",
+  "data": [
+    {
+      "file": "20261105-030947-guided.jsonl.gz",
+      "pc": "pc-ded5",
+      "camera": {
+        "source": "0",
+        "mode": [
+          1280,
+          720,
+          30.0
+        ],
+        "mirror": true,
+        "phone_web": false,
+        "note": "폰 카메라 (카메라 번호 0으로 연결, 집 PC pc-ded5)"
+      },
+      "frames": 28994
+    },
+    {
+      "file": "20261105-094058-home-pc-guided.jsonl.gz",
+      "pc": "home-pc",
+      "camera": {
+        "source": "0",
+        "mode": [
+          1280,
+          720,
+          30.0
+        ],
+        "mirror": true,
+        "phone_web": false,
+        "note": "폰 카메라 (카메라 번호 0으로 연결, 집 PC)"
+      },
+      "frames": 29537
+    },
+    {
+      "file": "20261105-104228-home-pc-guided.jsonl.gz",
+      "pc": "home-pc",
+      "camera": {
+        "source": "0",
+        "mode": [
+          1280,
+          720,
+          30.0
+        ],
+        "mirror": true,
+        "phone_web": false,
+        "note": "폰 카메라 (카메라 번호 0으로 연결, 집 PC)"
+      },
+      "frames": 6046
+    },
+    {
+      "file": "20261105-113527-home-pc-guided.jsonl.gz",
+      "pc": "home-pc",
+      "camera": {
+        "source": "0",
+        "mode": [
+          1280,
+          720,
+          30.0
+        ],
+        "mirror": true,
+        "phone_web": false,
+        "note": "폰 카메라 (카메라 번호 0으로 연결, 집 PC)"
+      },
+      "frames": 6025
+    },
+    {
+      "file": "20261105-120844-home-pc-guided.jsonl.gz",
+      "pc": "home-pc",
+      "camera": {
+        "source": "0",
+        "mode": [
+          1280,
+          720,
+          30.0
+        ],
+        "mirror": true,
+        "phone_web": false,
+        "note": "폰 카메라 (카메라 번호 0으로 연결, 집 PC)"
+      },
+      "frames": 5849
+    },
+    {
+      "file": "20261105-142443-ffc668da-home-pc-guided.jsonl.gz",
+      "pc": "home-pc",
+      "camera": {
+        "source": "0",
+        "mode": [
+          1280,
+          720,
+          30.0
+        ],
+        "mirror": true,
+        "phone_web": false,
+        "note": "폰 카메라 (카메라 번호 0으로 연결, 집 PC)"
+      },
+      "frames": 15198
+    },
+    {
+      "file": "20261105-143456-ca052343-home-pc-guided.jsonl.gz",
+      "pc": "home-pc",
+      "camera": {
+        "source": "0",
+        "mode": [
+          1280,
+          720,
+          30.0
+        ],
+        "mirror": true,
+        "phone_web": false,
+        "note": "폰 카메라 (카메라 번호 0으로 연결, 집 PC)"
+      },
+      "frames": 4907
+    },
+    {
+      "file": "20261105-143809-a18918c5-home-pc-guided.jsonl.gz",
+      "pc": "home-pc",
+      "camera": {
+        "source": "0",
+        "mode": [
+          1280,
+          720,
+          30.0
+        ],
+        "mirror": true,
+        "phone_web": false,
+        "note": "폰 카메라 (카메라 번호 0으로 연결, 집 PC)"
+      },
+      "frames": 4869
+    },
+    {
+      "file": "20261105-144201-f15dc83d-home-pc-guided.jsonl.gz",
+      "pc": "home-pc",
+      "camera": {
+        "source": "0",
+        "mode": [
+          1280,
+          720,
+          30.0
+        ],
+        "mirror": true,
+        "phone_web": false,
+        "note": "폰 카메라 (카메라 번호 0으로 연결, 집 PC)"
+      },
+      "frames": 5036
+    },
+    {
+      "file": "20261105-174342-f8dfca21-home-pc-guided.jsonl.gz",
+      "pc": "home-pc",
+      "camera": {
+        "source": "0",
+        "mode": [
+          1280,
+          720,
+          30.0
+        ],
+        "mirror": true,
+        "phone_web": false,
+        "note": "폰 카메라 (카메라 번호 0으로 연결, 집 PC)"
+      },
+      "frames": 4948
+    },
+    {
+      "file": "20261105-194358-599bcb32-home-pc-guided.jsonl.gz",
+      "pc": "home-pc",
+      "camera": {
+        "source": "0",
+        "mode": [
+          1280,
+          720,
+          30.0
+        ],
+        "mirror": true,
+        "phone_web": false,
+        "note": "폰 카메라 (카메라 번호 0으로 연결, 집 PC)"
+      },
+      "frames": 5827
+    },
+    {
+      "file": "20261105-222130-9ec6de20-home-pc-guided.jsonl.gz",
+      "pc": "home-pc",
+      "camera": {
+        "source": "0",
+        "mode": [
+          1280,
+          720,
+          30.0
+        ],
+        "mirror": true,
+        "phone_web": false,
+        "note": "폰 카메라 (카메라 번호 0으로 연결, 집 PC)"
+      },
+      "frames": 5482
+    },
+    {
+      "file": "20261105-230210-3a82297b-home-pc-guided.jsonl.gz",
+      "pc": "home-pc",
+      "camera": {
+        "source": "0",
+        "mode": [
+          1280,
+          720,
+          30.0
+        ],
+        "mirror": true,
+        "phone_web": false,
+        "note": "폰 카메라 (카메라 번호 0으로 연결, 집 PC)"
+      },
+      "frames": 5207
+    }
+  ],
+  "held_out_results": [
+    {
+      "posture": 2,
+      "rules": {
+        "reps": {
+          "thumb_ring": [
+            6,
+            15
+          ],
+          "thumb_index": [
+            5,
+            15
+          ]
+        },
+        "misfires": {
+          "right_click": 3,
+          "left_click": 5,
+          "drag_hold": 4,
+          "scroll_grab": 2,
+          "task_switcher": 1
+        },
+        "confused": 1,
+        "free_by_task": {
+          "none": {
+            "minutes": 2.8960499999999616,
+            "misfires": 15
+          }
+        }
+      },
+      "tcn": {
+        "reps": {
+          "thumb_ring": [
+            10,
+            15
+          ],
+          "thumb_index": [
+            12,
+            15
+          ]
+        },
+        "misfires": {
+          "thumb_index": 0,
+          "thumb_ring": 0,
+          "thumb_middle": 0,
+          "thumb_pinky": 0,
+          "palm_side": 0,
+          "thumbs_up": 1
+        },
+        "confused": 1,
+        "free_by_task": {
+          "none": {
+            "minutes": 2.8960499999999616,
+            "misfires": 1
+          }
+        }
+      },
+      "free_minutes": 2.9
+    },
+    {
+      "posture": 2,
+      "rules": {
+        "reps": {
+          "thumb_ring": [
+            10,
+            15
+          ],
+          "thumb_index": [
+            7,
+            15
+          ]
+        },
+        "misfires": {
+          "scroll_grab": 11,
+          "left_click": 14,
+          "drag_hold": 4
+        },
+        "confused": 3,
+        "free_by_task": {
+          "none": {
+            "minutes": 2.9625333333332544,
+            "misfires": 29
+          }
+        }
+      },
+      "tcn": {
+        "reps": {
+          "thumb_ring": [
+            15,
+            15
+          ],
+          "thumb_index": [
+            15,
+            15
+          ]
+        },
+        "misfires": {
+          "thumb_index": 3,
+          "thumb_ring": 1,
+          "thumb_middle": 0,
+          "thumb_pinky": 0,
+          "palm_side": 0,
+          "thumbs_up": 5
+        },
+        "confused": 1,
+        "free_by_task": {
+          "none": {
+            "minutes": 2.9625333333332544,
+            "misfires": 9
+          }
+        }
+      },
+      "free_minutes": 2.96
+    },
+    {
+      "posture": 2,
+      "rules": {
+        "reps": {
+          "thumb_index": [
+            1,
+            15
+          ]
+        },
+        "misfires": {},
+        "confused": 4,
+        "free_by_task": {}
+      },
+      "tcn": {
+        "reps": {
+          "thumb_index": [
+            15,
+            15
+          ]
+        },
+        "misfires": {
+          "thumb_index": 0,
+          "thumb_ring": 0,
+          "thumb_middle": 0,
+          "thumb_pinky": 0,
+          "palm_side": 0,
+          "thumbs_up": 0
+        },
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "free_minutes": 0.0
+    },
+    {
+      "posture": 2,
+      "rules": {
+        "reps": {
+          "thumb_index": [
+            11,
+            15
+          ]
+        },
+        "misfires": {},
+        "confused": 1,
+        "free_by_task": {}
+      },
+      "tcn": {
+        "reps": {
+          "thumb_index": [
+            15,
+            15
+          ]
+        },
+        "misfires": {
+          "thumb_index": 0,
+          "thumb_ring": 0,
+          "thumb_middle": 0,
+          "thumb_pinky": 0,
+          "palm_side": 0,
+          "thumbs_up": 0
+        },
+        "confused": 1,
+        "free_by_task": {}
+      },
+      "free_minutes": 0.0
+    },
+    {
+      "posture": 2,
+      "rules": {
+        "reps": {
+          "thumb_index": [
+            9,
+            15
+          ]
+        },
+        "misfires": {},
+        "confused": 3,
+        "free_by_task": {}
+      },
+      "tcn": {
+        "reps": {
+          "thumb_index": [
+            8,
+            15
+          ]
+        },
+        "misfires": {
+          "thumb_index": 0,
+          "thumb_ring": 0,
+          "thumb_middle": 0,
+          "thumb_pinky": 0,
+          "palm_side": 0,
+          "thumbs_up": 0
+        },
+        "confused": 4,
+        "free_by_task": {}
+      },
+      "free_minutes": 0.0
+    },
+    {
+      "posture": 2,
+      "rules": {
+        "reps": {},
+        "misfires": {},
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "tcn": {
+        "reps": {},
+        "misfires": {
+          "thumb_index": 0,
+          "thumb_ring": 0,
+          "thumb_middle": 0,
+          "thumb_pinky": 0,
+          "palm_side": 0,
+          "thumbs_up": 0
+        },
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "free_minutes": 0.0
+    },
+    {
+      "posture": 2,
+      "rules": {
+        "reps": {},
+        "misfires": {},
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "tcn": {
+        "reps": {},
+        "misfires": {
+          "thumb_index": 0,
+          "thumb_ring": 0,
+          "thumb_middle": 0,
+          "thumb_pinky": 0,
+          "palm_side": 0,
+          "thumbs_up": 0
+        },
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "free_minutes": 0.0
+    },
+    {
+      "posture": 2,
+      "rules": {
+        "reps": {},
+        "misfires": {},
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "tcn": {
+        "reps": {},
+        "misfires": {
+          "thumb_index": 0,
+          "thumb_ring": 0,
+          "thumb_middle": 0,
+          "thumb_pinky": 0,
+          "palm_side": 0,
+          "thumbs_up": 0
+        },
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "free_minutes": 0.0
+    },
+    {
+      "posture": 2,
+      "rules": {
+        "reps": {},
+        "misfires": {},
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "tcn": {
+        "reps": {},
+        "misfires": {
+          "thumb_index": 0,
+          "thumb_ring": 0,
+          "thumb_middle": 0,
+          "thumb_pinky": 0,
+          "palm_side": 0,
+          "thumbs_up": 0
+        },
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "free_minutes": 0.0
+    },
+    {
+      "posture": 2,
+      "rules": {
+        "reps": {},
+        "misfires": {},
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "tcn": {
+        "reps": {},
+        "misfires": {
+          "thumb_index": 0,
+          "thumb_ring": 0,
+          "thumb_middle": 0,
+          "thumb_pinky": 0,
+          "palm_side": 0,
+          "thumbs_up": 0
+        },
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "free_minutes": 0.0
+    },
+    {
+      "posture": 2,
+      "rules": {
+        "reps": {},
+        "misfires": {},
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "tcn": {
+        "reps": {},
+        "misfires": {
+          "thumb_index": 0,
+          "thumb_ring": 0,
+          "thumb_middle": 0,
+          "thumb_pinky": 0,
+          "palm_side": 0,
+          "thumbs_up": 0
+        },
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "free_minutes": 0.0
+    },
+    {
+      "posture": 2,
+      "rules": {
+        "reps": {},
+        "misfires": {},
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "tcn": {
+        "reps": {},
+        "misfires": {
+          "thumb_index": 0,
+          "thumb_ring": 0,
+          "thumb_middle": 0,
+          "thumb_pinky": 0,
+          "palm_side": 0,
+          "thumbs_up": 0
+        },
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "free_minutes": 0.0
+    },
+    {
+      "posture": 2,
+      "rules": {
+        "reps": {},
+        "misfires": {},
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "tcn": {
+        "reps": {},
+        "misfires": {
+          "thumb_index": 0,
+          "thumb_ring": 0,
+          "thumb_middle": 0,
+          "thumb_pinky": 0,
+          "palm_side": 0,
+          "thumbs_up": 0
+        },
+        "confused": 0,
+        "free_by_task": {}
+      },
+      "free_minutes": 0.0
+    }
+  ],
+  "condition_groups": [
+    "legacy-0",
+    "legacy-1",
+    "legacy-2",
+    "pose-2ad3a76aa08cfcc7",
+    "pose-481ac8122c20d57b",
+    "pose-92e7af1903dfa03b",
+    "pose-997c280c1cf7279d",
+    "pose-a71da4b247af51c0",
+    "pose-ad8a0a30d0c786cc",
+    "pose-b65c32c9911d1033",
+    "pose-bb6d3f1d0d0e7f08",
+    "pose-fc4174532d5cbfc5"
+  ],
+  "loss_curve": [
+    1.6115,
+    1.0058,
+    0.7495,
+    0.6467,
+    0.5965,
+    0.5589,
+    0.5306,
+    0.5143,
+    0.4985,
+    0.4842,
+    0.4697,
+    0.454,
+    0.4471,
+    0.4404,
+    0.4346,
+    0.4222,
+    0.4191,
+    0.4136,
+    0.4097,
+    0.4064,
+    0.4052,
+    0.4021,
+    0.3946,
+    0.3907,
+    0.3896
+  ],
+  "train_accuracy": {
+    "none": 0.639,
+    "thumb_index": 0.962,
+    "thumb_ring": 0.913,
+    "thumb_middle": 0.976,
+    "thumb_pinky": 0.987,
+    "palm_side": 1.0,
+    "thumbs_up": 0.996
+  },
+  "per_gesture": {
+    "none": {
+      "windows": 60363,
+      "train_accuracy": 0.639,
+      "free_minutes": 5.86,
+      "misfires": 10,
+      "rules_misfires": 44,
+      "misfires_per_min": 1.71,
+      "rules_misfires_per_min": 7.51
+    },
+    "thumb_index": {
+      "windows": 12505,
+      "train_accuracy": 0.962,
+      "recognised": 65,
+      "total": 75,
+      "rate": 0.867,
+      "rules_rate": 0.44
+    },
+    "thumb_ring": {
+      "windows": 4235,
+      "train_accuracy": 0.913,
+      "recognised": 25,
+      "total": 30,
+      "rate": 0.833,
+      "rules_rate": 0.533
+    },
+    "thumb_middle": {
+      "windows": 7272,
+      "train_accuracy": 0.976,
+      "recognised": 0,
+      "total": 0,
+      "rate": null,
+      "rules_rate": null
+    },
+    "thumb_pinky": {
+      "windows": 5576,
+      "train_accuracy": 0.987,
+      "recognised": 0,
+      "total": 0,
+      "rate": null,
+      "rules_rate": null
+    },
+    "palm_side": {
+      "windows": 1812,
+      "train_accuracy": 1.0,
+      "recognised": 0,
+      "total": 0,
+      "rate": null,
+      "rules_rate": null
+    },
+    "thumbs_up": {
+      "windows": 1781,
+      "train_accuracy": 0.996,
+      "recognised": 0,
+      "total": 0,
+      "rate": null,
+      "rules_rate": null
+    }
+  },
+  "per_task": {
+    "thumb_ring": {
+      "windows": 4235,
+      "train_accuracy": 0.913,
+      "recognised": 25,
+      "total": 30,
+      "rate": 0.833,
+      "rules_rate": 0.533
+    },
+    "thumb_index": {
+      "windows": 12505,
+      "train_accuracy": 0.962,
+      "recognised": 65,
+      "total": 75,
+      "rate": 0.867,
+      "rules_rate": 0.44
+    },
+    "none": {
+      "windows": 60363,
+      "train_accuracy": 0.639,
+      "free_minutes": 5.86,
+      "misfires": 10,
+      "rules_misfires": 44,
+      "misfires_per_min": 1.71,
+      "rules_misfires_per_min": 7.51
+    },
+    "thumb_middle": {
+      "windows": 7272,
+      "train_accuracy": 0.976,
+      "recognised": 0,
+      "total": 0,
+      "rate": null,
+      "rules_rate": null
+    },
+    "thumb_middle_drag": {
+      "windows": 7272,
+      "train_accuracy": 0.976,
+      "recognised": 0,
+      "total": 0,
+      "rate": null,
+      "rules_rate": null
+    },
+    "thumb_pinky": {
+      "windows": 5576,
+      "train_accuracy": 0.987,
+      "recognised": 0,
+      "total": 0,
+      "rate": null,
+      "rules_rate": null
+    },
+    "palm_side": {
+      "windows": 1812,
+      "train_accuracy": 1.0,
+      "recognised": 0,
+      "total": 0,
+      "rate": null,
+      "rules_rate": null
+    },
+    "thumbs_up": {
+      "windows": 1781,
+      "train_accuracy": 0.996,
+      "recognised": 0,
+      "total": 0,
+      "rate": null,
+      "rules_rate": null
+    },
+    "open_move": {
+      "windows": 60363,
+      "train_accuracy": 0.639,
+      "free_minutes": 0,
+      "misfires": 0,
+      "rules_misfires": 0,
+      "misfires_per_min": null,
+      "rules_misfires_per_min": null
+    },
+    "fist_move": {
+      "windows": 60363,
+      "train_accuracy": 0.639,
+      "free_minutes": 0,
+      "misfires": 0,
+      "rules_misfires": 0,
+      "misfires_per_min": null,
+      "rules_misfires_per_min": null
+    }
+  }
+}

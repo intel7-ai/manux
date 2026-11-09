@@ -28,6 +28,7 @@ from manux.perception.local3d import FEATURES, FEATURE_VERSION
 from manux.output.null import NullSink
 from manux.output.practice import PracticeSink
 from manux.settings.builtin import ALL
+from manux.settings.sensitivity import CURSOR_SETTINGS
 from manux.settings.paths import resolve
 from manux.settings.schema import Schema, Setting
 from manux.settings.store import Settings, load
@@ -53,7 +54,7 @@ def configure_acceleration(args, settings):
 
 
 def schema() -> Schema:
-    settings = Schema(ALL)
+    settings = Schema(ALL + CURSOR_SETTINGS)
     for module in [*(module for module, _ in _FEATURES), tcn_gate]:
         settings.add(Setting(key, default, kind=_SETTING_TYPES[type(default)])
                      for key, default in module.SETTINGS.items() if default is not None)
@@ -85,6 +86,9 @@ def pipeline_parts(direct_model=None, binding_overrides=None, policies=None):
     for module, _ in _FEATURES:
         defaults.update(module.DEFAULT_BINDINGS)
         phases.update(module.GESTURE_PHASES)
+    from manux.features.spatial_pose import DEFAULT_BINDINGS as POSE_BINDINGS, GESTURE_PHASES as POSE_PHASES
+    defaults.update(POSE_BINDINGS)
+    phases.update(POSE_PHASES)
     features = [factory() for _, factory in _FEATURES]
     sources = {}
     if direct_model is not None:

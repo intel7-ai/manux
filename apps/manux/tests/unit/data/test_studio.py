@@ -31,7 +31,7 @@ def source(tmp_path):
     return tmp_path, path.relative_to(tmp_path).as_posix(), path
 
 
-@pytest.mark.parametrize("key", ["../outside.jsonl.gz", ".trash/a.jsonl.gz", "C:/outside.jsonl.gz", "a\\b.jsonl.gz", "x.part"])
+@pytest.mark.parametrize("key", ["../outside.jsonl.gz", ".trash/a.jsonl.gz", "C:/outside.jsonl.gz", "C:relative.jsonl.gz", "a\\b.jsonl.gz", "x.part"])
 def test_recording_identifiers_cannot_leave_library(tmp_path, key):
     with pytest.raises(ValueError): studio.recording_path(tmp_path, key)
 

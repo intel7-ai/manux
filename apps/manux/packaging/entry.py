@@ -42,8 +42,18 @@ def run() -> int:
     run_install_hooks()          # must be first: the installer starts the app with hook arguments
     _preview_data_dir()
     _log_to_file()
-    from manux.desktop import main
-    return main()
+    # Screenshot smoke checks must retain the stuck thread when a runner times out.
+    # Normal interactive launches have no watchdog or time limit.
+    import faulthandler
+    diagnostic = "--screenshot" in sys.argv
+    if diagnostic:
+        faulthandler.dump_traceback_later(60, file=sys.stderr)
+    try:
+        from manux.desktop import main
+        return main()
+    finally:
+        if diagnostic:
+            faulthandler.cancel_dump_traceback_later()
 
 
 if __name__ == "__main__":

@@ -80,6 +80,9 @@ class Settings:
     def stored(self) -> Dict[str, Any]:
         return dict(self._stored)
 
+    def is_overridden(self, key: str) -> bool:
+        return key in self._overlay
+
 
 def load(schema: Schema, config_dir: Path) -> Settings:
     path = Path(config_dir) / FILE_NAME

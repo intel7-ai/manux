@@ -36,6 +36,7 @@ apps/manux/
     core/                계약 타입과 프로토콜(contracts.py). 표준 라이브러리만
     settings/            설정 스키마·기본값·이전 버전 변환, 프로필, 저장 경로
     capture/             카메라. 최신 프레임 하나만 유지
+    link/                선택적 휴대폰 HTTPS·짝짓기·브라우저 페이지 (엔진·입력 없음)
     tracking/            MediaPipe 손 인식, 손 주변 확대, 조작 손 선택
     perception/          관절 → 특징(손 기준 좌표 local3d, 손 품질)
     features/            기능 모듈. 기능마다 하위 패키지 하나 (§5)
@@ -65,6 +66,7 @@ apps/manux/
 | --- | --- | --- |
 | `core` | 없음 | 표준 라이브러리만 |
 | `settings`, `capture`, `tracking`, `perception`, `ml`, `data`, `platform` | `core` | 각자 필요한 것 (아래 금지 목록 제외) |
+| `link` | `core`, `capture` | 지연 import하는 `aiohttp`, `cryptography` |
 | `actions` | `core`, `settings` | |
 | `features` | `core`, `perception`, `ml` | **다른 기능 모듈 import 금지** |
 | `output` | `core`, `actions`, `platform` | |
@@ -81,7 +83,11 @@ apps/manux/
 | `pyautogui`, `ctypes`, `uiautomation`, `win32*` | `output`, `platform` |
 | `onnxruntime` | `ml` |
 | `openvino` (선택 의존성) | `ml` (실제 GPU/NPU 실행 장치 확인) |
+
+| `aiohttp`, `cryptography` | `link` (명시적 서버/인증서 시작 때 지연 import) |
 | `torch` | `tools/`만 (앱 프로세스에는 없음. 설치본의 별도 MANUXWorker에 포함) |
+
+link는 기본 꺼짐이며 엔진·판정·Windows 입력·설정을 import하지 않는다. 서버/인증서는 명시적으로 켤 때만 aiohttp/cryptography를 import한다. 끊김 때 remote.read는 None을 반환하고 조립자는 기존 frame_missing 경로로 손 소실을 처리한다. 앱 조립은 #96 이후 별도 PR이다.
 
 ## 5. 기능 모듈
 
@@ -117,7 +123,9 @@ v0.3에서 옮길 첫 기능 후보 (이름은 제안):
 ## 6. 프레임 흐름
 
 ```text
-capture ─► tracking ─► HandObservation | None
+phone JPEG ─► link (인증·HTTPS) ─► capture.remote (최신 하나·해독)
+                                      │
+capture (USB/URL 또는 remote) ─► tracking ─► HandObservation | None
                               │
                        perception (특징)
                               │
@@ -145,17 +153,17 @@ capture ─► tracking ─► HandObservation | None
 
 ## 8. 이식 순서
 
-`hand-mouse/`는 v0.4가 대체할 때까지 설치본으로 유지하고 버그 수정만 받는다. 각 단계는 **재생 비교**로 v0.3과 같은 출력을 확인한 뒤 끝낸다. 측정하지 않은 단계는 완료로 표시하지 않는다.
+D-009 승인으로 v0.5 정식 설치본은 `apps/manux/`에서 빌드한다. `hand-mouse/`의 정식 발행은 비활성화한다. S2·S4의 v0.3 동등성 확인은 이식 당시 결과로 갈음한다. D-009(2026-11-06, Sean 승인)에 따라 v0.5부터 의도적으로 동작을 바꾸며 동등성을 유지하지 않는다. 현재 기능·계약 시험으로 검증한다. 측정하지 않은 단계는 완료로 표시하지 않는다.
 
 | 단계 | 내용 | 완료 기준 | 상태 (2026-11-05 preview) |
 | --- | --- | --- | --- |
 | S0 | 폴더 골격, 계약 문서·코드, 의존 규칙 시험, 에이전트 안내 | 구조 시험 통과, 팀 검토 | 완료 (#53, CI 강제 #55) |
 | S1 | `core` 보강, `settings`(v0.3 `gestures.json` 변환), `capture`, `tracking`, 재생 도구 | v0.3 녹화를 읽어 `HandObservation` 열로 재생 | 완료 (#56). Dan 녹화 28,557/28,557 손 재생 |
-| S2 | `pointer` 기능 + `output/practice`·`output/null` | 같은 입력 열에서 v0.3 `PointerEngine`과 출력 불일치 0 | 완료 (#58), 합성 비교 |
+| S2 | `pointer` 기능 + `output/practice`·`output/null` | 이식 당시 비교(#58)로 갈음; v0.5 동등성 제약 없음(D-009) | 완료 (#58), 합성 비교 |
 | S3 | `output/windows` (커서 매핑·클릭·스크롤 관성·창 전환을 `mouse_controller.py`에서 분리) | 실제 Windows에서 이동·클릭·드래그·스크롤 수동 확인 기록 | 코드 병합 (#57). **실제 Windows 수동 확인 미실행** |
-| S4 | `pinch`(클릭·스크롤 잡기·드래그), `motion` 기능, 중재기(비공개 필드 읽기 제거) | v0.3 재생 비교, 모션 진입 차단 시험 | 완료 (#59 엔진, #60·#61 기능), 합성 비교 |
+| S4 | `pinch`(클릭·스크롤 잡기·드래그), `motion` 기능, 중재기(비공개 필드 읽기 제거) | 이식 당시 비교(#59~#61)로 갈음; v0.5는 모션 진입·현재 계약 시험(D-009) | 완료 (#59 엔진, #60·#61 기능), 합성 비교 |
 | S5 | `tcn_gate`, `ml`, `data/recorder`, `tools/train_tcn.py` (Dan 브랜치에서) | 모델 정보 검증, 확인기 켬/끔 재생 비교 | 코드 병합 (#60·#62). 모델 정보 검증 완료. **실제 녹화로 확인기 켬/끔 비교 미실행** |
-| S6 | QML 셸: 페이지·튜토리얼·설정·트레이·단축키·업데이트, 설치본 | 설치본으로 v0.3 기능 목록 수동 확인 후 배포 채널 전환 | **진행 중.** 화면(`ui/`, v0.3 `dashboard.qml` 그대로 + 새 브리지)·`desktop.py`·트레이·전역 단축키·손가락 HUD·튜토리얼·방향 보정. 설치본: `packaging/` + `platform/updater.py`, PR마다 `MANUX Preview` 설치파일(`manux-app.yml`, 게시 안 함·업데이트 안 함·v0.3과 나란히 설치). 트래킹 측정(`data/tracking_test.py`). 남음: 미리보기 위 그리기, 학습 센터 화면(S6a 모듈 위), 실제 웹캠·Windows 확인, **배포 채널 전환**(`build.ps1 -Release`를 릴리스 workflow에 연결) |
+| S6 | 데스크톱·Preview/정식 설치본·선택 Trainer | 합성/설치 검사와 실제 웹캠·Windows 수동 확인을 구분 | v0.5 채널 전환 승인(D-009, 2026-11-06). 기본 설치본은 torch worker 제외, -WithTrainer는 선택 구성. production의 manux-release.yml이 apps/manux를 발행. **실제 발행·웹캠·Windows 수동 확인은 미실행** |
 
 S2와 S3, S4와 S5는 서로 다른 폴더를 고치므로 동시에 진행할 수 있다.
 
@@ -164,3 +172,8 @@ S2와 S3, S4와 S5는 서로 다른 폴더를 고치므로 동시에 진행할 �
 - 기존 웹앱(`src/`, `public/`, `server.js`)과 Electron(`desktop/`)의 새 기능. 기존 문서는 그 앱의 기록으로 둔다.
 - 5~10m 원거리 다중 TCN, 시선 추적 연동. 실험 결과가 나오면 v0.5 범위에서 다시 정한다.
 - 책상 위 포인터 정밀도만을 위한 조정([제품 방향](https://github.com/intel7-ai/manux/blob/product-direction-in-bed/docs/product-direction.md)).
+
+
+## v0.5 통합 보충
+
+스튜디오 통합은 [통합 기록](v05-integration.md)을 따른다. §4 의존 방향은 변경하지 않는다. MLP 저장/추론은 ml, 순수 특징은 perception, 표본/내부 확인 분할은 data, 학습 worker는 tools, 조립·런타임 교체는 desktop.py에 둔다. 수집 화면의 비동기 읽기 완료는 queued Qt signal로 알린다.

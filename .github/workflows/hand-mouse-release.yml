@@ -10,7 +10,6 @@ on:
     branches: [production]
     paths: ["hand-mouse/**", ".github/workflows/hand-mouse-release.yml"]
   pull_request:
-    branches-ignore: [testing, v0.5-testing] # testing never builds or publishes an installer automatically
     paths: ["hand-mouse/**", ".github/workflows/hand-mouse-release.yml"]
 
 permissions: {}
@@ -21,6 +20,8 @@ concurrency:
 
 jobs:
   build:
+    # v0.3 remains available for maintenance PR testing only; production uses apps/manux.
+    if: github.event_name == 'pull_request'
     name: MANUX installer (Windows)
     runs-on: windows-latest
     timeout-minutes: 40
@@ -70,7 +71,9 @@ jobs:
   publish:
     name: Publish MANUX release
     needs: build
-    if: github.ref == 'refs/heads/production' && github.repository == 'intel7-ai/manux'
+    # Disabled by Sean approval, 2026-11-06 (D-009): official releases moved to apps/manux.
+    # Keep this job for history; do not publish v0.3 even on production pushes.
+    if: ${{ false }}
     runs-on: windows-latest
     timeout-minutes: 15
     permissions:

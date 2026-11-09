@@ -137,6 +137,7 @@ def test_click_or_key_while_dragging_releases_the_drag_first():
 @pytest.mark.parametrize(("action", "keys"), [
     ("window.task_switcher", ("alt", "tab")),
     ("window.show_desktop", ("win", "d")),
+    ("window.close", ("alt", "f4")),
     ("nav.back", ("alt", "left")),
     ("nav.forward", ("alt", "right")),
     ("tab.prev", ("ctrl", "shift", "tab")),

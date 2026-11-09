@@ -1,26 +1,18 @@
-"""Synthetic hands for the pinch / motion tests, and the v0.3 loader for the parity tests.
+"""Synthetic hands for the pinch / motion feature tests.
 
 The hand shapes follow v0.3 `hand-mouse/tests/test_gesture_mouse.py` (`make_real_hand` and friends) and
 `tests/test_motion_mode.py` (`hand`). Landmarks are (x, y, z) tuples. No recorded data.
 """
 from __future__ import annotations
 
-import copy
-import importlib.util
-import json
 import math
 import random
-import sys
-import types
-from contextlib import contextmanager
-from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from manux.core.contracts import Activity, FrameContext, FrameInfo, HandObservation, OutputTarget, Stage
 
 Hand = List[Tuple[float, float, float]]
 JOINTS = ((5, 8), (9, 12), (13, 16), (17, 20))
-HAND_MOUSE = Path(__file__).resolve().parents[5] / "hand-mouse"
 
 
 # ----------------------------------------------------------------------------- pinch hands (v0.3 geometry)
@@ -266,31 +258,3 @@ def check_pairs(intents) -> None:
             assert open_.get(i.gesture), f"hold without begin of {i.gesture} at {i.t}"
 
 
-# ----------------------------------------------------------------------------- v0.3 loader (tests only)
-@contextmanager
-def v03_modules() -> Iterator[types.SimpleNamespace]:
-    """v0.3 `gesture_engine` (+ its stdlib-only app_paths / profiles) and `motion_mode`, loaded by path.
-
-    `hand-mouse/src/__init__.py` imports the camera (cv2), so a stand-in `src` package is used and removed
-    afterwards. `apps/manux/src` never imports `hand-mouse/`."""
-    saved = {k: v for k, v in sys.modules.items() if k == "src" or k.startswith("src.")}
-    for k in saved:
-        del sys.modules[k]
-    stub = types.ModuleType("src")
-    stub.__path__ = [str(HAND_MOUSE / "src")]
-    sys.modules["src"] = stub
-    try:
-        from src import gesture_engine, motion_mode, profiles  # type: ignore
-        yield types.SimpleNamespace(ge=gesture_engine, mm=motion_mode, profiles=profiles)
-    finally:
-        for k in [k for k in sys.modules if k == "src" or k.startswith("src.")]:
-            del sys.modules[k]
-        sys.modules.update(saved)
-
-
-def v03_shipped_config(ge) -> dict:
-    """What a fresh v0.3 install runs with: code defaults + the shipped config/gestures.json."""
-    cfg = copy.deepcopy(ge.DEFAULT_CONFIG)
-    shipped = json.loads((HAND_MOUSE / "config" / "gestures.json").read_text(encoding="utf-8"))
-    ge.GestureEngine._deep_merge(cfg, shipped)
-    return cfg

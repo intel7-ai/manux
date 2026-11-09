@@ -257,6 +257,7 @@ v0.4 확인기는 모델 정보 파일의 클래스 → 동작 ID 대응표를 �
 | `mouse.scroll` | begin / hold / end | `gain` | `scroll_grab` |
 | `window.task_switcher` | tap | — | `task_switcher`, `alt_tab` |
 | `window.show_desktop` | tap | — | `show_desktop` |
+| `window.close` | tap | — | 창 닫기(Alt+F4), `spatial_pose.rock_sign` 바인딩 |
 | `nav.back`, `nav.forward` | tap | — | 모션 `back`, `forward` |
 | `tab.prev`, `tab.next` | tap | — | 모션 `tab_prev`, `tab_next` |
 | `media.play_pause`, `media.volume_up`, `media.volume_down` | tap | — | **제안** (없음. 침대 사용 R6) |
@@ -336,7 +337,14 @@ class OutputSink(Protocol):
 - 저장 위치는 [D-006](decisions.md#d-006-학습-데이터-위치): v0.4 동안은 팀 공유 허용, 릴리스(기본 모드)부터는 사용자 PC에만.
 
 테스터 수집기는 위 형식으로 완료한 세트마다 파일 하나를 쓴다. `meta.person`에는 테스터 별명,
-`meta.preset`에는 손 조작 방식, `meta.split`에는 `train` 또는 `eval`을 기록한다. `label.task`는
+`meta.preset`에는 손 조작 방식, `meta.split`에는 `train` 또는 `eval`을 기록한다. `meta.session_id`는
+학습 센터에서 체크한 과제를 연속 녹화하는 **시작 요청 한 번의 묶음**을 식별한다.
+묶음 시작 시 `str(uuid4())`로 생성한 하이픈 포함 UUID v4 문자열(36자)을 쓰며, 같은 묶음의
+모든 파일에 같은 값을 넣는다. 일시정지·재개·다음 과제·파일 재열기는 값을 바꾸지 않는다.
+같은 옵션으로 새 묶음을 시작하거나 앱을 재시작해 녹화를 시작하면 새 값을 만든다.
+CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 녹화의 필드 누락은 허용한다.
+
+`label.task`는
 실제 과제(예: 더블클릭), `label.target`은 학습 클래스(예: `thumb_middle`)다. 같은 제스처를
 쓰는 클릭과 더블클릭은 같은 클래스를 쓴다. 자세·카메라 조건은 실행을 바꿔도 고정된 인덱스를 쓴다.
 `rule.gesture`는 프레임의 대표 규칙 판정이며 학습 라벨은 가이드에서 따로 부여한다.
@@ -418,7 +426,7 @@ class OutputSink(Protocol):
 출처: `config/gestures.json`, `gesture_engine.load_config/save_config/set_profile`, `profiles.py`, `app_paths.py`, Qt `QSettings`(화면 선택 값).
 
 **계약:**
-- 설정 키는 `<기능 ID>.<이름>` 또는 공용 `app.<이름>`, `camera.<이름>`, `tracking.<이름>`. 기능의 기본값은 그 기능의 `SETTINGS`에 있다.
+- 설정 키는 `<기능 ID>.<이름>` 또는 공용 `app.<이름>`, `camera.<이름>`, `tracking.<이름>`, `cursor.<이름>`. 기능의 기본값은 그 기능의 `SETTINGS`에 있다.
 - 설정 파일은 `<설정 폴더>/settings.json` = `{"version": 1, "values": {키: 값}}`이다. 읽을 때 이전 버전을 변환한다.
 - v0.3 변환(`settings/migrate_v03.py`): 주인이 있는 키는 표(`RENAMES`)대로 새 키로 바꾸고, 나머지는 `v03.<키>`로 그대로 보존한다. 기능을 옮길 때 그 기능의 v0.3 키를 표에 추가한다. v0.3 파일은 읽기만 하고 고치지 않는다.
 - 잘못된 값(타입·범위)은 그 키만 기본값으로 되돌리고 경고를 남긴다. 앱은 멈추지 않는다. 모르는 키는 지우지 않고 보존한다.
@@ -428,6 +436,14 @@ class OutputSink(Protocol):
 - 공용 계층의 설정(`app.`, `camera.`, `tracking.`)은 `settings/builtin.py`에 선언한다. 계층 규칙상 `capture`·`tracking`은 `settings`를 import할 수 없으므로 조립 지점이 값을 넘긴다.
 
 ## 12. 화면과 엔진 사이 (`Snapshot`, `UiCommand`)
+
+- 스튜디오 민감도 편집은 Dan `hand-mouse-gesture-overhaul@a60241d`의 지원되는 핀치·이동 항목만 노출한다.
+  `RuntimeRequest(kind="sensitivity", path=<config dir>, values=<편집한 키/값>)`를 런타임 큐로 보낸다.
+  런타임은 범위·핀치 해제 기준(+0.02)·최소/최대 이동 감도를 검증하고 원자 저장한다. 실패 시 기존 값과 파일을 유지한다.
+  성공하면 출력 해제·기능 reset·제어 일시정지 후 적용하며, 다시 제어를 시작해야 실제 입력을 낸다.
+  결과는 `DesktopRuntime.sensitivity_result`(revision, success, text)로 UI가 읽는다.
+  `cursor.relative_gain_min/max`, `cursor.smoothing`은 공유 설정으로 저장하며 조립 지점에서 Windows 출력에 전달한다.
+  현재 프로필이 덮어쓴 값은 편집을 막고 표시한다. 창 열기·취소는 감도를 변경하지 않는다.
 
 - `ViewFrame.frame_age_ms`는 앱이 카메라 프레임을 받은 시각부터 런타임 처리 후 화면 상태를
   발행하기 직전까지의 경과 시간이다. `None`은 측정값 없음이다. UI는 측정값만 표시한다.
@@ -453,7 +469,10 @@ class OutputSink(Protocol):
   모델의 다른 분류기를 동결한 구성 요소로 유지하고 선택한 분류기만 학습한다. 자기완결 ONNX로
   결합한 뒤 전체 eval 검증을 통과해야 설치한다(위 testing 계약).
 - 학습·HF 작업은 별도 worker 프로세스에서 실행한다. 소스는 Python + `tools/app_worker.py`,
-  설치본은 함께 배포한 `worker/MANUXWorker.exe`를 사용한다. 앱 프로세스는 torch를 import하지 않는다.
+  Trainer 선택 설치본은 `worker/MANUXWorker.exe`를 사용한다. 기본 설치본은 worker/torch를 포함하지 않는다.
+  서비스는 각 학습 행에 `trainer_available`을 노출하며 worker가 없으면 `can_train=false`와
+  "추가 구성요소 필요" 사유를 돌려준다. 화면은 기존 행 전달 경로로 고급 학습을 비활성화한다.
+  worker 직접 요청도 시작 전에 같은 사유로 거절한다. 앱 프로세스는 torch를 import하지 않는다.
   요청·진행·성공·실패를 JSON으로 주고받으며 성공 코드만으로 모델 적용을 주장하지 않는다.
 - 설치 성공은 `RuntimeRequest(kind="activate_model", path=<store>)`로 런타임 요청 큐에 전달한다.
   런타임이 프레임 경계에서 모델을 검사·교체한다. UI는 엔진 필드를 직접 바꾸지 않는다.
@@ -522,3 +541,29 @@ class OutputSink(Protocol):
 2. PR 본문에 "계약 변경"과 영향받는 계층·기능 ID를 적는다.
 3. `tests/contract/`와 `tests/architecture/`를 실행해 결과를 PR에 적는다.
 4. **제안**을 **계약**으로 바꿀 때는 [결정 기록](decisions.md)에 한 줄 남긴다.
+
+
+### v0.5 스튜디오 통합 (2026-11-06)
+
+- MLP는 `ml/spatial_mlp.py` 하나다. 33차원 pose-angles-v1 / 96차원 spatial-mlp-v1과 동적 클래스를 허용하며 내부에서 학습/평가를 나누지 않는다. 선택적 validation_data는 호출자가 분리해 전달한다. 파일 저장·로드 형식은 manux-spatial-mlp/1이다.
+- Pose Studio의 기존 무작위 80/20 프레임 내부 확인은 data의 명시적 분할 함수로 옮긴다. 10개 미만은 원래처럼 학습 표본 재확인이다. 화면 문구는 **학습 데이터 내부 확인(실제 정확도 아님)**이며 독립 세션/사람 평가가 아니다. eval_judges는 이 분할을 쓰지 않는다.
+- `perception/spatial_features.py`는 #82의 96차원 원본 하나, pose_angles.py는 33차원 평가 비교용으로 유지한다.
+- Pose/TCN/수집·공유 스튜디오는 분리된 서비스로 조립한다. Pose의 현재 모델 선택·저장·로드·재적용은 최신 #82를 따른다. Dan/Rasp-Jun의 과제·진행/공유·민감도 기능은 testing/#91을 보존하며 기존 계층 import 규칙을 완화하지 않는다.
+- 분류 클래스 rock_sign은 `spatial_pose.rock_sign` 동작을 내고, `window.close` 액션은 바인딩으로만 연결한다. close는 tap 한 번에 Alt+F4를 누른 뒤 해제한다. 기본 assist 모드는 직접 명령을 내지 않는다.
+
+## 14. 휴대폰 연결 (`link`, v0.8)
+
+출처: Dan(한순중)의 `hand-mouse-gesture-overhaul@9da1f634e8c0afd9d3d6b32a56c83cddfb23d5f8`,
+`src/phone_web_bridge.py`와 `src/camera.py`. 영향 계층: core, capture, 신규 link.
+
+- 기본 꺼짐. 명시적 PhoneLink.start()/개발 실행기만 HTTPS listener를 연다. 앱 선택·QR 표시는 #96 이후 별도 PR이다.
+- peer/bind 허용 주소는 RFC1918 IPv4(10/8, 172.16/12, 192.168/16), IPv6 ULA(fc00::/7), 로컬 시험용 loopback뿐이다. 공인·문서용·multicast·unspecified 주소 거절. 실제 TCP peer를 검사하며 Forwarded/X-Forwarded-For는 신뢰하지 않는다. Host와 HTTPS Origin은 listener 주소와 일치해야 한다.
+- PC에서 6자리 난수 코드 발급, 단조시계 120초 만료·성공 한 번만 사용. 재발급은 이전 코드/미접속 토큰 폐기. 코드 교환은 전역 분당 5회, HTTP는 전역 분당 120회 제한.
+- POST /pair의 {code, device} 검증 후 256bit 이상 접속 토큰 응답. 메모리에서만 관리하고 IP에 묶으며 120초 안에 한 번 WebSocket 인증에 쓴다. /ws 첫 JSON {kind:"auth", token} 없이는 프레임을 받지 않고 5초 내 인증하지 않으면 닫는다. 코드·토큰을 URL/QR/로그에 넣지 않는다.
+- 한 기기만 접속. PC에 device(64자 이하 표시명, 권한 아님)·peer 표시. disconnect()는 연결·토큰·코드·프레임 폐기. block()은 전역 차단하고 끊는다. unblock() 후 새 코드 필요. 종료도 같은 정리.
+- 첫 명시 실행 때 사용자 데이터 폴더 link/certs에 자체 서명 인증서/키 생성. Git checkout/worktree 내부와 그 안을 가리키는 링크 경로 거절. TLS 1.2 이상 HTTPS만 제공. 인증서 경고 후 iOS Safari getUserMedia 가능 여부는 사람이 검증한다.
+- binary 프레임 하나 = 4byte big-endian JSON 길이 + UTF-8 JSON + JPEG. JSON ≤1024byte, 전체 ≤1MiB. JSON: {kind:"frame", seq, captured_at, width, height, mirrored, rotation, facing}. seq는 연결 내 증가 정수, captured_at은 PC epoch 초로 보정한 촬영 시각, JPEG 각 변 ≤1280·총 ≤1280×960, rotation은 적용할 시계방향 0/90/180/270, facing은 user|environment, mirrored는 적용할 좌우 반전이다. 캔버스는 회전 반영 픽셀이므로 기본 rotation=0, 전면만 mirrored=true. **480×360 상한·품질 0.55·목표 최대 30fps**는 원본 유지.
+- sync JSON {kind:"sync", sent:epoch_ms} → {kind:"sync", sent, server:epoch_ms} 왕복 중간점으로 시계 보정. 촬영 시각은 JPEG 인코딩 직전 추정치이고 센서 노출 시각이 아니다. 데모 지연은 추정 촬영→PC 수신 시간이며 오차가 있다.
+- 초당 프레임 36회(여유 포함) 제한. 서버 ack 전에 다음 프레임을 보내지 않고 건너뛴다. 잘못된 메시지는 닫고 이전 seq·750ms 초과/250ms 이상 미래 촬영 시각은 ack accepted=false로 버린다. audio 종류는 예약만 하고 현재 거절한다. 원격 명령·마이크·Bluetooth 없음.
+- RemoteCamera는 압축 최신 하나만 보관, 덮어쓴 수를 센다. read(timeout)은 소비 스레드에서 JPEG 해독·반전·회전 후 FrameInfo와 BGR image 반환. FrameInfo.t는 수신 perf_counter, seq는 소스 전체에서 증가. 해독 중 연결이 바뀌면 결과 폐기. fps·actual_mode·추정 수신 지연 제공.
+- 새 프레임이 없으면 read는 None. 마지막 수신/접속 뒤 2초 정체면 is_open=false. 끊기/정지 때 즉시 슬롯을 비우고 대기자를 깨운다. QR 대기 화면·이전 프레임은 판정기에 넣지 않는다. 조립자가 Engine.frame_missing(now)으로 손 소실·입력 해제를 처리한다. link는 엔진·Windows 입력을 호출하지 않는다.

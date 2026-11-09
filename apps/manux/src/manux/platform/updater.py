@@ -24,7 +24,7 @@ BUILD_INFO = "build_info.json"
 
 @dataclass(frozen=True)
 class BuildInfo:
-    version: str = "0.4.0.dev0"
+    version: str = "0.5.0"
     pack_id: str = ""            # Velopack package id: "MANUX" (release) or "MANUXPreview" (PR builds)
     channel: str = ""
     updates: bool = False        # check GitHub Releases for this pack id / channel
@@ -35,7 +35,7 @@ class BuildInfo:
         return self.version if self.pack_id in ("", "MANUX") else f"{self.version} ({self.pack_id})"
 
 
-def read_build_info(app_dir: Path, default_version: str = "0.4.0.dev0") -> BuildInfo:
+def read_build_info(app_dir: Path, default_version: str = "0.5.0") -> BuildInfo:
     """The bundled build_info.json, or a source-run default (no updates)."""
     try:
         raw: Mapping[str, Any] = json.loads((Path(app_dir) / BUILD_INFO).read_text(encoding="utf-8"))
