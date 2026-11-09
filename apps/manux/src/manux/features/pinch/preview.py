@@ -41,6 +41,6 @@ class PinchPreview:
         if self.previous != identity:
             self.core = PinchCore()
             self.previous = identity
-        frame = self.core.step(hand.frame.t, hand.landmarks, config)
+        frame = self.core.step(hand.frame.t, hand.landmarks, config, world=hand.world)
         return (pinch_guides(frame, config, self.core.pinched_fingers),
                 palm_anchor_point(hand.landmarks, config["cursor_anchor_ratio"]), frame.is_moving)

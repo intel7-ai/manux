@@ -37,6 +37,23 @@ MIDDLE_TIP = 12
 RING_TIP = 16
 PINKY_TIP = 20
 CLICK_SEPARATION_PALM = .02  # A tiny projected gap between overlapping tips is not a reliable winner.
+CLICK_WORLD_ENTER = .45     # Thumb-tip gap, normalized by wrist -> middle MCP length.
+CLICK_WORLD_FOLDED = .30    # A clearly touching fingertip may be folded toward the camera.
+CLICK_WORLD_RELEASE = .65
+
+
+def world_tip_distances(world: Optional[Sequence[Pt]]) -> Optional[Dict[str, float]]:
+    """Distance-only 3D evidence: translation, rotation and hand size do not change it."""
+    if world is None or len(world) != 21:
+        return None
+    if any(len(p) != 3 or not all(math.isfinite(v) for v in p) for p in world):
+        return None
+    scale = math.dist(world[WRIST], world[MIDDLE_MCP])
+    if scale <= 1e-6:
+        return None
+    return {name: math.dist(world[THUMB_TIP], world[index]) / scale
+            for name, index in (("index", INDEX_TIP), ("middle", MIDDLE_TIP),
+                                ("ring", RING_TIP), ("pinky", PINKY_TIP))}
 
 
 @dataclass
@@ -191,7 +208,8 @@ class PinchCore:
         return lo * (hi / lo) ** t
 
     # ------------------------------------------------------------------ per frame
-    def step(self, now: float, pts: Optional[Sequence[Pt]], c: Mapping[str, Any]) -> PinchFrame:
+    def step(self, now: float, pts: Optional[Sequence[Pt]], c: Mapping[str, Any],
+             *, world: Optional[Sequence[Pt]] = None) -> PinchFrame:
         """One frame. `pts`: 21 (x, y, z) or None (no hand). `c`: resolved settings (settings.resolve)."""
         if pts is None or len(pts) < 21:
             # A gap cannot count toward confirming a new click; an established hold keeps its grace.
@@ -439,6 +457,20 @@ class PinchCore:
                       and (now - self._desktop_fired_at) >= exclusive),
         }
         thresholds = {"middle": click_threshold, "ring": ring_thr, "pinky": pinky_thr}
+        world_distances = world_tip_distances(world)
+        keep = {"middle": ratios[1] > click_tuck * .9, "ring": ratios[2] > ring_tuck * .9}
+        if world_distances is not None:
+            # Screen overlap is not contact. Prefer a clearly separated 3D fingertip while retaining
+            # the user's image-distance sensitivity, and allow a genuinely touching folded finger.
+            for finger, curl_ratio, tuck in (("middle", ratios[1], click_tuck), ("ring", ratios[2], ring_tuck)):
+                distance = world_distances[finger]
+                other = min(value for name, value in world_distances.items() if name != finger)
+                touching = distance <= CLICK_WORLD_FOLDED
+                entry[finger] = (distance <= CLICK_WORLD_ENTER and distance < other * neighbor_ratio
+                                 and other - distance >= CLICK_SEPARATION_PALM
+                                 and (curl_ratio > tuck or touching))
+                keep[finger] = (distance <= CLICK_WORLD_RELEASE
+                                and (curl_ratio > tuck * .9 or distance <= CLICK_WORLD_ENTER))
         # Drop stale candidates before testing any new finger: left/right evaluation order must not
         # decide which finger owns a pinch. Only a confirmed hold gets release hysteresis.
         for finger in tuple(self._secondary_since):
@@ -497,10 +529,10 @@ class PinchCore:
 
         middle_ok = confirmed("middle", d_middle, dip(MIDDLE_TIP), click_threshold,
                               entry_ok=entry["middle"],
-                              keep_ok=ratios[1] > click_tuck * 0.9)
+                              keep_ok=keep["middle"])
         ring_ok = confirmed("ring", d_ring, dip(RING_TIP), ring_thr,
                             entry_ok=entry["ring"],
-                            keep_ok=ratios[2] > ring_tuck * 0.9)
+                            keep_ok=keep["ring"])
         self.last_pinky = None
         if d_pinky <= pinky_thr * 1.6:
             self.last_pinky = {
