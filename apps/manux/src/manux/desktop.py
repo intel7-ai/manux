@@ -384,8 +384,8 @@ class DesktopRuntime:
             setup.capture()
         elif action == "adjust":
             setup.adjust(request.values)
-        elif action in ("retest", "fine") and setup.phase in ("aim", "review", "preview"):
-            setup.begin_aim(fine=action == "fine")
+        elif action in ("retest", "fine", "menu") and setup.phase in ("aim", "review", "preview"):
+            setup.begin_aim(kind="aim" if action == "retest" else action)
         elif action == "apply" and setup.phase == "review" and setup.can_apply:
             self._save_pointer_setup(environment, setup)
         setup.step(frame.t, point)

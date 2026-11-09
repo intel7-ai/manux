@@ -24,6 +24,10 @@ TRACE_VERSION = 1
 FINE_CELL_PX = 40
 FINE_ORIGIN = (.5, .45)
 FINE_VIEW_PX = 640
+# Menu round: rows of a menu like Minesweeper's difficulty list, held still for a second each
+MENU_ROW_PX = 24
+MENU_DWELL = 1.0
+MENU_PATH = (0, 1, 2, 1, 3, 4, 3, 2, 0, -1, 0, 2)
 FINE_PATH = ((0, 0), (1, 0), (2, 0), (2, 1), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1),
              (0, -1), (1, -1), (1, 0), (0, 0), (0, 1))
 VERSION = 3  # 3: pitch is the camera's vertical-plane angle (no fold at upright); v2 angles are not comparable
@@ -130,9 +134,16 @@ class PointerSetup:
             self.started, self.frames, self.progress, self.note = None, 0, 0., ""
             self.samples[self.phase].clear()
 
-    def begin_aim(self, fine=False):
+    def begin_aim(self, fine=False, kind=None):
+        kind = kind or ("fine" if fine else "aim")
         self.round += 1
-        if fine:
+        if kind == "menu":
+            # A menu column: 24 px rows, move to a neighbouring row and stay on it for a second
+            h = self.monitor.height
+            targets = [Target(FINE_ORIGIN[0], FINE_ORIGIN[1] + row * MENU_ROW_PX / h, MENU_ROW_PX)
+                       for row in MENU_PATH]
+            self.test = TrackingTest(self.monitor, dwell=MENU_DWELL, timeout=8, hold_margin_px=0, targets=targets)
+        elif kind == "fine":
             # One cell at a time, like moving between Minesweeper cells or small buttons
             w, h = self.monitor.width, self.monitor.height
             cells = [(FINE_ORIGIN[0] + cx * FINE_CELL_PX / w, FINE_ORIGIN[1] + cy * FINE_CELL_PX / h)
@@ -147,7 +158,7 @@ class PointerSetup:
             targets = [Target(.5 + (x - .5) * direction, .5 + (y - .5) * direction, size)
                        for x, y, size in points]
             self.test = TrackingTest(self.monitor, dwell=.28, timeout=8, hold_margin_px=4, targets=targets)
-        self.kind = "fine" if fine else "aim"
+        self.kind = kind
         self.trace = []
         self.mapper = self.make_mapper(self.values)
         self.phase, self.last_t, self.note, self.can_apply = "aim", None, "", False
@@ -214,12 +225,14 @@ class PointerSetup:
             return
         stats = self.test.summary()
         self.phase = "review"
-        if self.kind == "fine":
+        if self.kind in ("fine", "menu"):
             overshoots = sum(t.overshoots for t in self.test.targets)
             self.can_apply = getattr(self, "aim_ok", False)
-            self.note = (f"한 칸 이동 {stats['reached']}/{stats['targets']}"
+            self.note = (f"{'메뉴 줄' if self.kind == 'menu' else '한 칸 이동'} {stats['reached']}/{stats['targets']}"
                          + (f" · 중간 {stats['median_time_s']:.2f}초" if stats["median_time_s"] is not None else "")
-                         + f" · 넘침 {overshoots}회")
+                         + f" · 넘침 {overshoots}회"
+                         + (f" · 멈춤 흔들림 {stats['mean_dwell_jitter_px']:.1f}px"
+                            if self.kind == "menu" and stats["mean_dwell_jitter_px"] is not None else ""))
         else:
             self.can_apply = self.aim_ok = stats["reached"] >= 4 and stats["lost_s"] <= 2.
             self.note = f"표적 {stats['reached']}/{stats['targets']} 도달"
@@ -273,7 +286,7 @@ class PointerSetup:
         if self.phase in ("aim", "preview"):
             data.update(tracking_view(self.test, self.mapper.pos))
             data["aspect"] = self.monitor.width / self.monitor.height
-            if self.kind == "fine":
+            if self.kind in ("fine", "menu"):
                 data.update(_zoom(data, self.monitor))
             if self.phase == "preview":
                 data["target"] = None
