@@ -3,6 +3,7 @@ name: hand-mouse (Windows)
 # The Python hand-mouse app runs on Windows; check it there, not only on Linux.
 on:
   pull_request:
+    branches-ignore: [testing, v0.5-testing] # CI-free integration branches
     paths: ["hand-mouse/**", ".github/workflows/hand-mouse.yml"]
   push:
     branches: [preview, production]

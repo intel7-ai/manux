@@ -1,6 +1,7 @@
 name: MANUX CI
 on:
   pull_request:
+    branches-ignore: [testing, v0.5-testing] # CI-free integration branches
   push:
     branches: [main, master, preview, production]
   workflow_dispatch:
