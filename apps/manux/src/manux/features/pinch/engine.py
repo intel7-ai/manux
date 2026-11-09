@@ -1,7 +1,6 @@
 """Pinch judgement, ported from v0.3 `hand-mouse/src/gesture_engine.py` `GestureEngine.process`.
 
-The arithmetic and the order of the checks are copied unchanged (the parity test compares every
-field per frame with exact equality). What changed:
+The port retains the v0.3 gesture geometry and action order, with these changes:
 
 - Record & Fling (thumb+index `grab`, off by default in v0.3) is not ported: `record_on` is always
   False here, so thumb+index is the scroll grab (or nothing, with `grab_scroll_enabled` off).
@@ -14,6 +13,8 @@ field per frame with exact equality). What changed:
 - Hand loss: `step(t, None)` only records the time; the engine calls `reset()` after
   `app.hand_lost_reset` (v0.3 did that inside `process(None)`).
 - Diagnostics v0.3 kept for its failure log (`last_pinky`, `last_desktop`, `last_hold`) are kept.
+- Click candidates need continuous, unambiguous evidence. Confirmed pinches retain their finger
+  until release so neighboring fingertip jitter cannot switch a click or a drag.
 
 Landmarks are tuples `(x, y, z)` in image coordinates (contracts section 1).
 """
@@ -35,6 +36,7 @@ INDEX_TIP = 8
 MIDDLE_TIP = 12
 RING_TIP = 16
 PINKY_TIP = 20
+CLICK_SEPARATION_PALM = .02  # A tiny projected gap between overlapping tips is not a reliable winner.
 
 
 @dataclass
@@ -87,6 +89,7 @@ class PinchCore:
         self._last_trigger_times: Dict[str, float] = {}
         self._secondary_since: Dict[str, float] = {}
         self._secondary_off: Dict[str, float] = {}
+        self._secondary_confirmed: set[str] = set()
         self._click_fresh: Dict[str, bool] = {}
         self._release_clear = False
         self._close_since: Optional[float] = None
@@ -138,6 +141,7 @@ class PinchCore:
         self._middle_hold_pinched = False
         self._secondary_since.clear()
         self._secondary_off.clear()
+        self._secondary_confirmed.clear()
         self._long_fired.clear()
         self._drag_since = None
         self._fist = False
@@ -149,6 +153,12 @@ class PinchCore:
         self._curl_s = None
 
     # ------------------------------------------------------------------ helpers
+    def _drop_secondary(self, finger: str) -> None:
+        self._secondary_since.pop(finger, None)
+        self._secondary_off.pop(finger, None)
+        self._secondary_confirmed.discard(finger)
+        self._long_fired.pop(finger, None)
+
     def _can_trigger(self, gesture_id: str, now: float, finger: Optional[str], cooldown: float = 0.35) -> bool:
         """Finger pinches fire ONCE per pinch (open and pinch again to repeat); others use their cooldown."""
         if finger is not None:
@@ -184,6 +194,10 @@ class PinchCore:
     def step(self, now: float, pts: Optional[Sequence[Pt]], c: Mapping[str, Any]) -> PinchFrame:
         """One frame. `pts`: 21 (x, y, z) or None (no hand). `c`: resolved settings (settings.resolve)."""
         if pts is None or len(pts) < 21:
+            # A gap cannot count toward confirming a new click; an established hold keeps its grace.
+            for finger in tuple(self._secondary_since):
+                if finger not in self._secondary_confirmed:
+                    self._drop_secondary(finger)
             if self._lost_since is None:
                 self._lost_since = now
             return PinchFrame()
@@ -244,6 +258,8 @@ class PinchCore:
             self._middle_hold_pinched = False
             self._drag_since = None
             self._secondary_since.clear()
+            self._secondary_off.clear()
+            self._secondary_confirmed.clear()
             return PinchFrame(active_gesture="fist", action="move_cursor", cursor_point=cursor_point_early,
                               pinch_distance=d_index, distances=distances, is_moving=True,
                               dpi_multiplier=max(0.1, float(c["fist_dpi_multiplier"])), hand_shape="fist")
@@ -378,6 +394,8 @@ class PinchCore:
 
         if self._index_pinched and index_active:
             self._secondary_since.clear()
+            self._secondary_off.clear()
+            self._secondary_confirmed.clear()
         for finger in [f for f in self._long_fired if f not in self._secondary_since]:
             self._long_fired.pop(finger, None)
 
@@ -405,16 +423,41 @@ class PinchCore:
         ring_tuck = float(c["ring_tuck_ratio"])
         margin = float(c["click_release_margin"])
         click_grace = float(c["click_release_grace"])
+        click_tuck = float(c["click_tuck_ratio"])
+        ring_thr = float(c["ring_click_threshold"])
+        neighbor_ratio = max(0.0, min(1.0, float(c["click_neighbor_ratio"])))
+        separation = palm_len * CLICK_SEPARATION_PALM
+        nearest = min((("middle", d_middle), ("ring", d_ring), ("pinky", d_pinky)), key=lambda kv: kv[1])[0]
+        entry = {
+            "middle": (ratios[1] > click_tuck and nearest == "middle"
+                       and d_middle < d_ring * neighbor_ratio and d_ring - d_middle >= separation),
+            "ring": (ratios[2] > ring_tuck and nearest == "ring"
+                     and d_ring < d_middle * neighbor_ratio and d_middle - d_ring >= separation),
+            "pinky": (nearest == "pinky" and ratios[3] > float(c["pinky_tuck_ratio"])
+                      and d_pinky < d_ring * float(c["pinky_ring_dominance"])
+                      and _d2(pts[RING_TIP], pts[PINKY_TIP]) > float(c["pinky_ring_min_gap"])
+                      and (now - self._desktop_fired_at) >= exclusive),
+        }
+        thresholds = {"middle": click_threshold, "ring": ring_thr, "pinky": pinky_thr}
+        # Drop stale candidates before testing any new finger: left/right evaluation order must not
+        # decide which finger owns a pinch. Only a confirmed hold gets release hysteresis.
+        for finger in tuple(self._secondary_since):
+            if finger in self._secondary_confirmed:
+                continue
+            dist = distances[finger]
+            clear_of_index = not index_active or not (d_index < dist * neighbor_ratio)
+            if not (on(f"thumb_{finger}_pinch") and entry[finger] and dist <= thresholds[finger]
+                    and clear_of_index and not locked):
+                self._drop_secondary(finger)
 
         def confirmed(finger: str, dist: float, dip: float, thr: float,
                       entry_ok: bool = True, keep_ok: bool = True) -> bool:
             if not on(f"thumb_{finger}_pinch"):
-                self._secondary_since.pop(finger, None)
-                self._secondary_off.pop(finger, None)
+                self._drop_secondary(finger)
                 return False
             if finger not in self._secondary_since:
                 if c["side_pinch_exclusive"] and any(
-                        other != finger and other not in self._secondary_off for other in self._secondary_since):
+                        other != finger for other in self._secondary_since):
                     return False
                 if index_active:
                     clear_of_index = not (d_index < dist * float(c["click_neighbor_ratio"]))
@@ -439,26 +482,24 @@ class PinchCore:
                         if held_dist > limit * float(c["drag_clear_ratio"]):
                             grace = min(grace, float(c["drag_clear_grace"]))
                     if now - off >= grace:
-                        self._secondary_since.pop(finger, None)
-                        self._secondary_off.pop(finger, None)
+                        self._drop_secondary(finger)
                         self._click_fresh[finger] = True
-                        self._long_fired.pop(finger, None)
                         return False
                 else:
                     self._secondary_off.pop(finger, None)
-            return (now - self._secondary_since[finger]) >= confirm
+            if (now - self._secondary_since[finger]) >= confirm:
+                self._secondary_confirmed.add(finger)
+                return True
+            return False
 
         def dip(tip_i: int) -> float:
             return _d2(thumb, pts[tip_i - 1])
 
-        click_tuck = float(c["click_tuck_ratio"])
-        nearest = min((("middle", d_middle), ("ring", d_ring), ("pinky", d_pinky)), key=lambda kv: kv[1])[0]
         middle_ok = confirmed("middle", d_middle, dip(MIDDLE_TIP), click_threshold,
-                              entry_ok=ratios[1] > click_tuck and nearest == "middle",
+                              entry_ok=entry["middle"],
                               keep_ok=ratios[1] > click_tuck * 0.9)
-        ring_thr = float(c["ring_click_threshold"])
         ring_ok = confirmed("ring", d_ring, dip(RING_TIP), ring_thr,
-                            entry_ok=ratios[2] > ring_tuck and nearest == "ring",
+                            entry_ok=entry["ring"],
                             keep_ok=ratios[2] > ring_tuck * 0.9)
         self.last_pinky = None
         if d_pinky <= pinky_thr * 1.6:
@@ -473,13 +514,7 @@ class PinchCore:
         pinky_ok = confirmed(
             "pinky", d_pinky, dip(PINKY_TIP), pinky_thr,
             keep_ok=ratios[3] > float(c["pinky_tuck_ratio"]) * 0.9,
-            entry_ok=(
-                nearest == "pinky"
-                and ratios[3] > float(c["pinky_tuck_ratio"])
-                and d_pinky < d_ring * float(c["pinky_ring_dominance"])
-                and _d2(pts[RING_TIP], pts[PINKY_TIP]) > float(c["pinky_ring_min_gap"])
-                and (now - self._desktop_fired_at) >= exclusive
-            ),
+            entry_ok=entry["pinky"],
         )
 
         if not self._index_pinched or not index_active:
@@ -503,6 +538,7 @@ class PinchCore:
             held = next(f for f in ("middle", "ring", "pinky") if f in self._secondary_since)
             if (
                 held == "middle"
+                and held in self._secondary_confirmed
                 and c["long_press_drag"]
                 and (
                     self._long_fired.get("middle", False)

@@ -303,6 +303,7 @@ v0.3 `grab`의 실제 용도는 이식 때 확인하고 이 표에 추가한다.
 - 제어가 꺼진 main에서는 V 전환 기능만 실행한다. calibrating/enrolling/recording 중에는 V도 실행하지 않으며 전환 상태를 쌓지 않는다. V 유지 중에도 경쟁 클릭·모드 진입·이동을 억제한다.
 - 바탕화면 보기는 기본 0.6초 동안 손이 정지해야 하며 쿨다운은 3초다. 기존 `pinch.enable_thumb_tucked_open`으로 사용자가 끌 수 있다.
 - 기본 손 모양 속도는 켜짐을 유지하며 편 손은 2배, 주먹은 0.35배로 정밀 이동한다. 기존 `pinch.shape_dpi_min`은 편 손 배율, `pinch.fist_dpi_multiplier`는 주먹 배율이며 중간 모양은 두 값 사이를 보간한다. 이는 11/07 실사용 피드백에 따른 조정이며 측정된 최적값은 아니다.
+- 좌·우클릭 진입은 각각 중지·약지가 엄지에 가장 가깝고 엄지까지의 거리가 반대 클릭 손가락 거리 × `pinch.click_neighbor_ratio`(기본 0.85)보다 작고, 두 거리의 차이가 손목→중지 뿌리 길이의 2% 이상일 때만 허용한다. 영상에서 거의 겹친 손끝의 미세한 차이를 클릭 근거로 쓰지 않는다. 후보는 `click_confirm_time` 동안 진입 조건을 연속 유지해야 하며, 손 소실·거리 이탈·후보 변경·모호한 구간은 확인 시간을 초기화한다. 확정 후에는 기존 놓기 여유·유예를 유지하며, `side_pinch_exclusive`가 켜진 경우 기존 손가락이 놓이기 전에는 다른 손가락 클릭을 시작하지 않는다. 중지 길게 누르기 드래그는 클릭 자세 확인 후에만 시작하며 저장된 드래그 배율을 그대로 사용한다.
 
 출처: `qt_runtime.UiState.stage`(`splash | welcome | capture | tutorial | main`), `practice_output()`, `paused`, `calibrating`.
 
