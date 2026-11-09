@@ -66,7 +66,8 @@ def test_setup_flow_completes_with_upright_palm():
     assert setup.phase == "aim", setup.note
 
 
-CALIBRATED = dict(palm_left=.35, palm_right=.65, palm_up=115., palm_down=65., smoothing=.3)
+# palm_precision=1: these check the filter and angle mapping on their own (precision has its own tests)
+CALIBRATED = dict(palm_left=.35, palm_right=.65, palm_up=115., palm_down=65., smoothing=.3, palm_precision=1.)
 
 
 def run(mapper, xs, pitches, fps=30):
@@ -138,8 +139,45 @@ def test_zero_neutral_zone_never_parks():
     assert not mapper.parked
 
 
-def test_profiles_saved_before_neutral_zone_get_default():
+def test_profiles_saved_before_precision_get_default_and_lose_the_neutral_zone():
     values = dict(palm_left=.3, palm_right=.7, palm_up=110., palm_down=70., palm_x_gain=1.,
                   palm_y_gain=1., smoothing=.3)
     profiles = read_profiles(write_profiles({"b" * 64: values}))
-    assert profiles["b" * 64]["palm_hold"] == 0.
+    assert profiles["b" * 64]["palm_precision"] == .4
+    assert "palm_hold" not in read_profiles(write_profiles({"c" * 64: {**values, "palm_hold": .02}}))["c" * 64]
+
+
+PRECISE = {**CALIBRATED, "palm_precision": .4}
+
+
+def test_slow_drift_moves_the_cursor_less():
+    def wobble(precision):
+        mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**{**PRECISE, "palm_precision": precision}))
+        run(mapper, [.5] * 30, [90.] * 30)
+        # slow hand drift of about +-0.6 deg / +-0.4% frame width at 0.7 Hz (holding still on a menu row)
+        n = 60
+        xs = [.5 + .004 * math.sin(i / 30 * 2 * math.pi * .7) for i in range(n)]
+        ps = [90 + .6 * math.cos(i / 30 * 2 * math.pi * .7) for i in range(n)]
+        out = run(mapper, xs, ps)
+        return max(abs(a - b) for p in out for q in out for a, b in zip(p, q))
+    assert wobble(.4) <= .6 * wobble(1.)
+
+
+def test_fast_sweep_still_reaches_the_edge_and_resyncs():
+    mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**PRECISE))
+    run(mapper, [.5] * 30, [90.] * 30)
+    xs = [.5 + .15 * min(1., i / 9) for i in range(40)]      # 0.3 s sweep to the right edge, then hold
+    out = run(mapper, xs, [90.] * 40)
+    assert out[-1][0] >= 1919 - 10
+
+
+def test_fist_gain_scales_moves_and_keeps_the_cursor_there():
+    mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**PRECISE))
+    for i in range(30):
+        mapper.step_palm(.5, 90., 10 + i / 30, gain=.35)
+    start = mapper.pos
+    for i in range(60):                                      # hand moves right by 100 mapped px, then rests
+        x = .5 + 100 / 1919 * .3 * min(1., i / 15)
+        mapper.step_palm(x, 90., 11 + i / 30, gain=.35)
+    moved = mapper.pos[0] - start[0]
+    assert 25 <= moved <= 45, moved                           # ~0.35 x 100 px, and no re-sync towards 100

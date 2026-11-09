@@ -116,7 +116,7 @@ def test_setup_measures_tests_and_only_applies_on_confirmation(tmp_path):
 
 def test_windows_palm_mapping_uses_pitch_instead_of_image_y():
     screen = ScreenLayout.single(1920, 1080)
-    config = WindowsOutputConfig(palm_left=.35, palm_right=.65, palm_up=20, palm_down=-15)
+    config = WindowsOutputConfig(palm_left=.35, palm_right=.65, palm_up=20, palm_down=-15, palm_precision=1.)
     sink = WindowsOutputSink(FakeBackend(), screen, config=config, threaded=False)
 
     def move(start, x, y, pitch):

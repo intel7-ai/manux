@@ -10,8 +10,10 @@ from manux.data.tracking_test import Target, TrackingTest, view as tracking_view
 
 SETTING_KEY = "app.pointer_calibration"
 ADJUSTMENTS = {"palm_x_gain": (.65, 1.65), "palm_y_gain": (.65, 1.65), "smoothing": (.15, .75),
-               "palm_hold": (0., .05)}
+               "palm_precision": (.25, 1.)}
 DEFAULT_HOLD = 0.  # neutral zone radius as a share of screen height (0 = off; fine-round traces: any zone slows one-cell moves)
+# Cursor gain of a slow hand. Fine-round traces: 0.4 cut the wobble while holding from 20 to 8 px (max).
+DEFAULT_PRECISION = .4
 LIMITS = {**ADJUSTMENTS, "palm_left": (0., 1.), "palm_right": (0., 1.),
           "palm_up": (-180., 180.), "palm_down": (-180., 180.)}
 PHASES = ("rest", "horizontal", "up", "down")
@@ -44,7 +46,9 @@ def read_profiles(value: str) -> dict:
     if not isinstance(profiles, dict):
         return {}
     # Early v3 profiles were saved before the neutral zone existed: give them the default.
-    profiles = {key: {"palm_hold": DEFAULT_HOLD, **values} if isinstance(values, dict) else values
+    # Profiles saved before low-speed precision get the default; the retired neutral zone is dropped.
+    profiles = {key: {"palm_precision": DEFAULT_PRECISION,
+                      **{k: v for k, v in values.items() if k != "palm_hold"}} if isinstance(values, dict) else values
                 for key, values in profiles.items()}
     return {key: values for key, values in list(profiles.items())[-8:]
             if len(key) == 64 and isinstance(values, dict) and values.keys() == LIMITS.keys()
@@ -79,7 +83,7 @@ def recommend(samples):
                 (_percentile(rest_pitch, .9) - _percentile(rest_pitch, .1)) / abs(up - down))
     return dict(palm_left=left, palm_right=right, palm_up=up, palm_down=down,
                 palm_x_gain=1., palm_y_gain=1., smoothing=max(.20, .45 - 1.5 * noise),
-                palm_hold=DEFAULT_HOLD)  # opt-in only: parking the cursor blocked one-cell moves in fine traces
+                palm_precision=DEFAULT_PRECISION)
 
 
 def _zoom(data, monitor):
