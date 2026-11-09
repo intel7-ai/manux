@@ -13,7 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools"))
 import pointer_trace  # noqa: E402
 
 VALUES = dict(palm_left=.35, palm_right=.65, palm_up=115., palm_down=65., palm_x_gain=1., palm_y_gain=1.,
-              smoothing=.3, palm_hold=.015)
+              smoothing=.3, palm_hold=.015, palm_precision=1.)  # a scripted hand points exactly; it would not
+# move further the way a person does under low-speed precision
 
 
 def fine_round(tmp_path):

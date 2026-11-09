@@ -181,3 +181,12 @@ def test_fist_gain_scales_moves_and_keeps_the_cursor_there():
         mapper.step_palm(x, 90., 11 + i / 30, gain=.35)
     moved = mapper.pos[0] - start[0]
     assert 25 <= moved <= 45, moved                           # ~0.35 x 100 px, and no re-sync towards 100
+
+
+def test_cursor_does_not_slide_on_after_the_hand_stops():
+    mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**{**PRECISE, "smoothing": .42}))
+    run(mapper, [.5] * 30, [90.] * 30)
+    dx = 120 / 1919 * .3
+    xs = [.5 + dx * (lambda f: f * f * (3 - 2 * f))(min(1., i / 9)) for i in range(70)]   # 0.3 s move, then hold
+    out = [p[0] for p in run(mapper, xs, [90.] * 70)]
+    assert out[-1] - out[9] <= 10, out                     # was ~40 px of creep with the slow filter + rest re-sync

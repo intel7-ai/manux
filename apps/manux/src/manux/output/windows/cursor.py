@@ -65,15 +65,16 @@ PALM_RELEASE_CATCHUP = .5  # ...and moves this much extra per pixel of hand move
 PALM_RELEASE_SNAP = .25    # one-frame hand jumps beyond this share of screen height are followed directly
 
 
-PALM_PRECISION_SLOW = 150.0     # px/s of mapped hand speed: below this the precision gain applies fully
-PALM_PRECISION_FAST = 900.0     # ... above this the cursor moves 1:1 and re-syncs with the mapping
+PALM_PRECISION_SLOW = 120.0     # px/s of mapped hand speed: below this the precision gain applies fully
+PALM_PRECISION_FAST = 700.0     # ... above this the cursor moves 1:1 and re-syncs with the mapping
 PALM_PRECISION_RESYNC = .25     # s to close the gap to the mapping while moving fast
-PALM_PRECISION_REST_RESYNC = 1.5  # ... and while moving slowly or resting
 PALM_PRECISION_MAX_GAP = .12    # the cursor never sits further than this share of screen height off the mapping
 
 
 def palm_min_cutoff(smoothing: float) -> float:
-    return .2 + 1.5 * max(0.05, min(1.0, float(smoothing)))
+    # Snappy on purpose: low-speed precision (palm_precision) now absorbs the resting wobble, and a slow filter
+    # left the cursor sliding on after the hand stopped (felt like momentum).
+    return 1.0 + 3.0 * max(0.05, min(1.0, float(smoothing)))
 
 
 class CursorMapper:
@@ -266,9 +267,8 @@ class CursorMapper:
             u = u * u * (3 - 2 * u)                       # smoothstep: no kink when the gain changes
             k = g_low + (1.0 - g_low) * u
             x, y = self._prec_pos[0] + dx * k, self._prec_pos[1] + dy * k
-            # a fast hand re-syncs quickly; a resting one slowly, so the cursor ends where the hand points
-            # (hand drift is filtered by the long time constant instead of followed)
-            pull = min(1.0, max(u * dt / PALM_PRECISION_RESYNC, dt / PALM_PRECISION_REST_RESYNC))
+            # only a fast hand re-syncs: a slow or resting one never drags the cursor on after it stops
+            pull = min(1.0, u * dt / PALM_PRECISION_RESYNC)
             x, y = x + (target[0] - x) * pull, y + (target[1] - y) * pull
         gap = math.dist((x, y), target)
         limit = PALM_PRECISION_MAX_GAP * self.screens.primary.height
