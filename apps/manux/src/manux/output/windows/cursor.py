@@ -66,10 +66,13 @@ PALM_RELEASE_CATCHUP = .5  # ...and moves this much extra per pixel of hand move
 PALM_RELEASE_SNAP = .25    # one-frame hand jumps beyond this share of screen height are followed directly
 
 
-PALM_PRECISION_SLOW = 120.0     # px/s of mapped hand speed: below this the precision gain applies fully
-PALM_PRECISION_FAST = 700.0     # ... above this the cursor moves 1:1 and re-syncs with the mapping
+# Recorded peak hand speeds: menu rows / cells 250-650 px/s, large aims 1000-2700 px/s. Keeping every small move
+# below the ramp gives it one steady gain (a ramp across them made small flicks overshoot, then hunt).
+PALM_PRECISION_SLOW = 650.0     # px/s of mapped hand speed: below this the precision gain applies fully
+PALM_PRECISION_FAST = 1100.0    # ... above this the cursor moves 1:1 and re-syncs with the mapping
 PALM_PRECISION_RESYNC = .25     # s to close the gap to the mapping while moving fast
-PALM_PRECISION_MAX_GAP = .12    # the cursor never sits further than this share of screen height off the mapping
+PALM_PRECISION_EDGE_PX = 8.0    # a hand mapped this close to a screen edge puts the cursor on the mapping there
+PALM_PRECISION_MAX_GAP = .12   # the cursor never sits further than this share of screen height off the mapping
 
 
 def palm_min_cutoff(smoothing: float) -> float:
@@ -272,6 +275,14 @@ class CursorMapper:
             # only a fast hand re-syncs: a slow or resting one never drags the cursor on after it stops
             pull = min(1.0, u * dt / PALM_PRECISION_RESYNC)
             x, y = x + (target[0] - x) * pull, y + (target[1] - y) * pull
+        # The mapping clamps the hand at the screen edge, so pushing further gives no more movement: a hand at an
+        # edge puts the cursor on that edge, or an edge button (taskbar, close) could stay out of reach.
+        m = self.screens.primary
+        edge = PALM_PRECISION_EDGE_PX   # the filtered hand only approaches the range end, never quite reaches it
+        if target[0] <= m.left + edge or target[0] >= m.left + m.width - 1 - edge:
+            x = target[0]
+        if target[1] <= m.top + edge or target[1] >= m.top + m.height - 1 - edge:
+            y = target[1]
         gap = math.dist((x, y), target)
         limit = PALM_PRECISION_MAX_GAP * self.screens.primary.height
         if gap > limit:

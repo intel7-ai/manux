@@ -190,3 +190,16 @@ def test_cursor_does_not_slide_on_after_the_hand_stops():
     xs = [.5 + dx * (lambda f: f * f * (3 - 2 * f))(min(1., i / 9)) for i in range(70)]   # 0.3 s move, then hold
     out = [p[0] for p in run(mapper, xs, [90.] * 70)]
     assert out[-1] - out[9] <= 10, out                     # was ~40 px of creep with the slow filter + rest re-sync
+
+
+def test_small_moves_get_the_same_gain_fast_or_slow():
+    def moved(duration):
+        mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**PRECISE))
+        run(mapper, [.5] * 30, [90.] * 30)
+        start = mapper.pos[0]
+        n = round(duration * 30)
+        dx = 60 / 1919 * .3                                    # a 60 px (mapped) flick, like one menu row at 0.4x
+        xs = [.5 + dx * min(1., i / n) for i in range(n + 30)]
+        return run(mapper, xs, [90.] * (n + 30))[-1][0] - start
+    slow, quick = moved(.4), moved(.12)                        # 150 px/s and 500 px/s
+    assert abs(slow - quick) <= 3, (slow, quick)              # a ramp across these speeds made flicks overshoot
