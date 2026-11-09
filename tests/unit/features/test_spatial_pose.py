@@ -138,3 +138,82 @@ def test_direct_mlp_v_is_evidence_only_so_it_cannot_bypass_control_hold():
     assert feature.step(hand, ctx) == ()
     assert feature.evidence.action == "v_sign"
     assert CLASS_TO_GESTURE["v_sign"] == "control.v_sign"
+
+
+def test_guard_boost_clicks_once_for_a_confident_pose_the_rules_missed(trained_mlp: SpatialMlpModel):
+    feat = SpatialPoseFeature(trained_mlp, mode="assist")
+    guard = SpatialPoseGuard(feat, tau_boost=0.6, k_boost=3)
+    taps = []
+    for n in range(8):
+        frame = FrameInfo(n, 200.0 + n * 0.03, 640, 480, False)
+        hand = HandObservation(frame=frame, landmarks=tuple(_dummy_hand(12)), handedness="Right", score=0.9)
+        ctx = FrameContext(frame, "default", "none", "pinch")
+        guard.observe(hand, ctx)
+        taps += [i for i in guard.filter([], ctx) if i.phase == "tap"]
+    assert [i.gesture for i in taps] == ["pinch.thumb_middle"]
+    assert guard.boosted_count == 1
+
+
+def test_guard_boost_does_not_double_a_click_the_rules_already_fired(trained_mlp: SpatialMlpModel):
+    feat = SpatialPoseFeature(trained_mlp, mode="assist")
+    guard = SpatialPoseGuard(feat, tau_boost=0.6, k_boost=3)
+    taps = []
+    for n in range(8):
+        frame = FrameInfo(n, 300.0 + n * 0.03, 640, 480, False)
+        hand = HandObservation(frame=frame, landmarks=tuple(_dummy_hand(12)), handedness="Right", score=0.9)
+        ctx = FrameContext(frame, "default", "none", "pinch")
+        guard.observe(hand, ctx)
+        rule = [Intent(frame.t, "pinch", "pinch.thumb_middle", "tap")] if n == 1 else []
+        taps += [i for i in guard.filter(rule, ctx) if i.phase == "tap"]
+    assert len(taps) == 1 and guard.boosted_count == 0
+
+
+def test_guard_sustains_drag_when_heuristic_prematurely_ends_if_mlp_confirms_middle_pinch(
+    trained_mlp: SpatialMlpModel,
+):
+    feat = SpatialPoseFeature(trained_mlp, mode="assist")
+    guard = SpatialPoseGuard(feat, tau_boost=0.99)  # disable click boost
+
+    frame_drag = FrameInfo(1, 400.0, 640, 480, False)
+    hand_drag = HandObservation(frame=frame_drag, landmarks=tuple(_dummy_hand(12)), handedness="Right", score=0.95)
+    ctx_drag = FrameContext(frame_drag, "default", "none", "pinch")
+
+    # Step 1: Drag begins normally
+    guard.observe(hand_drag, ctx_drag)
+    out1 = guard.filter([Intent(400.0, "pinch", "pinch.drag", "begin", point=(0.5, 0.5))], ctx_drag)
+    assert len(out1) == 1 and out1[0].gesture == "pinch.drag" and out1[0].phase == "begin"
+    assert guard._dragging is True
+
+    # Step 2: Heuristic prematurely emits "end" (e.g. 1-frame distance noise),
+    # but MLP evidence still recognizes "thumb_middle"
+    frame_noise = FrameInfo(2, 400.03, 640, 480, False)
+    ctx_noise = FrameContext(frame_noise, "default", "none", "pinch")
+    guard.observe(hand_drag, ctx_noise)
+    out2 = guard.filter([Intent(400.03, "pinch", "pinch.drag", "end", point=(0.52, 0.51))], ctx_noise)
+    assert len(out2) == 1
+    assert out2[0].gesture == "pinch.drag" and out2[0].phase == "hold"
+    assert guard._dragging is True
+    assert "spatial_guard:drag_sustained_on_end" in guard.drain_events()
+
+    # Step 3: Next frame, heuristic drops back to "pinch.move" hold,
+    # but MLP is still holding thumb_middle -> converted to drag hold!
+    frame_move = FrameInfo(3, 400.06, 640, 480, False)
+    ctx_move = FrameContext(frame_move, "default", "none", "pinch")
+    guard.observe(hand_drag, ctx_move)
+    out3 = guard.filter([Intent(400.06, "pinch", "pinch.move", "hold", point=(0.54, 0.52))], ctx_move)
+    assert len(out3) == 1
+    assert out3[0].gesture == "pinch.drag" and out3[0].phase == "hold"
+    assert guard._dragging is True
+    assert "spatial_guard:move_converted_to_drag" in guard.drain_events()
+
+    # Step 4: User opens hand (none)
+    frame_open = FrameInfo(4, 400.09, 640, 480, False)
+    hand_open = HandObservation(frame=frame_open, landmarks=tuple(_dummy_hand(None)), handedness="Right", score=0.95)
+    ctx_open = FrameContext(frame_open, "default", "none", "pinch")
+    guard.observe(hand_open, ctx_open)
+    out4 = guard.filter([Intent(400.09, "pinch", "pinch.move", "hold", point=(0.55, 0.53))], ctx_open)
+    # Drag end must be emitted to release the mouse!
+    gestures_phases = [(i.gesture, i.phase) for i in out4]
+    assert ("pinch.drag", "end") in gestures_phases
+    assert guard._dragging is False
+

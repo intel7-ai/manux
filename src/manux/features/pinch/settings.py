@@ -30,7 +30,7 @@ THRESHOLDS: Dict[str, Any] = {
     "motion_fold_ratio": 1.2,
     "motion_thumb_out": .85,
     "motion_thumb_up": .15,
-    # fist (precision move; v0.5 feedback 2026-11-07)
+    # fist (precision move; v0.5 feedback)
     "fist_curl_enter": .95,
     "fist_curl_exit": 1.2,
     "fist_confirm_time": .12,
@@ -77,7 +77,7 @@ THRESHOLDS: Dict[str, Any] = {
     "click_lockout_after_grab": .35,
     "click_neighbor_ratio": .85,
     "click_release_margin": .02,
-    "click_release_grace": .03,
+    "click_release_grace": .18,
     "click_hold_joint_ratio": .75,
     "click_tuck_ratio": .8,
     "ring_tuck_ratio": .8,
@@ -85,12 +85,15 @@ THRESHOLDS: Dict[str, Any] = {
     "pinky_ring_dominance": .85,
     "pinky_ring_min_gap": .025,
     "side_pinch_exclusive": True,
-    "drag_clear_ratio": 1.3,
-    "drag_clear_grace": .11,
+    "drag_clear_ratio": 2.2,
+    "drag_clear_grace": .35,
     # long press on the left-click pinch -> drag
     "long_press_drag": True,
-    "long_press_time": 1.0,
-    "long_press_drag_multiplier": 15.0,
+    "long_press_time": 0.55,
+    "long_press_drag_multiplier": 1.0,
+    "drag_on_move": True,
+    "drag_move_distance": 0.006,
+    "drag_move_min_time": 0.0,
     # cursor
     "approach_freeze_distance": .045,
     "cursor_anchor_ratio": .5,

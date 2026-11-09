@@ -17,6 +17,7 @@ Contract:
 """
 from __future__ import annotations
 
+import math
 import threading
 import time
 from dataclasses import replace
@@ -28,6 +29,7 @@ from manux.output.windows.backend import InputBackend
 from manux.output.windows.buttons import KEY_CHORDS, Buttons, Keys
 from manux.output.windows.config import WindowsOutputConfig
 from manux.output.windows.cursor import CursorMapper
+from manux.output.windows.interp import CursorInterpolator
 from manux.output.windows.scroll import GrabScroll, ScrollPump
 from manux.platform.monitors import Monitor, ScreenLayout
 
@@ -84,6 +86,15 @@ class WindowsOutputSink:
         self._pump_thread: Optional[threading.Thread] = None
         self._pump_stop = threading.Event()
         self._last_sent: Optional[Tuple[int, int]] = start
+        self._interp: Optional[CursorInterpolator] = (
+            CursorInterpolator(set_pos=self.backend.set_cursor_pos, rate_hz=144.0)
+            if self._threaded else None
+        )
+        self._last_left_click_t: float = float("-inf")
+        self._last_left_click_pos: Optional[Tuple[int, int]] = None
+        self._drag_deferred_down: bool = False
+        self._drag_start_pos: Optional[Tuple[int, int]] = None
+        self._drag_start_t: float = float("-inf")
 
     # ------------------------------------------------------------------ public API
     def apply(self, cmd: ActionCommand) -> OutputResult:
@@ -125,6 +136,8 @@ class WindowsOutputSink:
                 except Exception as exc:  # noqa: BLE001
                     self.errors.append(f"release_all({reason}): {exc}")
             self.dragging = False
+            if self._interp is not None:
+                self._interp.snap(*self.cursor.pos)
             self.cursor.reset()
             self._move_gesture = None
             self._dbl_until = float("-inf")
@@ -133,6 +146,8 @@ class WindowsOutputSink:
         self.release_all("shutdown")
         with self._lock:
             self._closed = True
+        if self._interp is not None:
+            self._interp.close()
         self._pump_stop.set()
         t = self._pump_thread
         if t is not None and t is not threading.current_thread():
@@ -168,7 +183,10 @@ class WindowsOutputSink:
         """Move to the next monitor's centre (absolute mode maps onto it from now on)."""
         with self._lock:
             target = self.cursor.next_monitor()
-            self.backend.set_cursor_pos(*self.cursor.pos)
+            if self._interp is not None:
+                self._interp.snap(*self.cursor.pos)
+            else:
+                self.backend.set_cursor_pos(*self.cursor.pos)
             return target
 
     @property
@@ -222,7 +240,10 @@ class WindowsOutputSink:
 
     def _place(self, x: int, y: int) -> None:
         if (x, y) != self._last_sent:
-            self.backend.set_cursor_pos(x, y)
+            if self._interp is not None:
+                self._interp.set_target(x, y, time.perf_counter())
+            else:
+                self.backend.set_cursor_pos(x, y)
             self._last_sent = (x, y)
 
     def _move(self, cmd: ActionCommand, gain: float = 1.0) -> None:
@@ -248,7 +269,11 @@ class WindowsOutputSink:
         self._place(*position)
 
     def _uses_palm(self, cmd: ActionCommand) -> bool:
-        return getattr(self, "_palm_input", False) and cmd.gesture.startswith("pinch.")
+        return (
+            getattr(self, "_palm_input", False)
+            and self.config.palm_left != self.config.palm_right
+            and cmd.gesture.startswith("pinch.")
+        )
 
     def _gain(self, cmd: ActionCommand) -> float:
         g = cmd.params.get("gain", 1.0)
@@ -258,8 +283,13 @@ class WindowsOutputSink:
 
     def _end_drag(self) -> None:
         if self.dragging:
+            was_deferred = getattr(self, "_drag_deferred_down", False)
             self.dragging = False
-            self.buttons.release("left")
+            self._drag_deferred_down = False
+            if self._interp is not None:
+                self._interp.snap(*self.cursor.pos)
+            if not was_deferred:
+                self.buttons.release("left")
 
     def _double_click_hold(self, cmd: ActionCommand) -> bool:
         """True while the cursor should stay still after a left click (Windows wants both clicks within ~4 px)."""
@@ -296,6 +326,8 @@ class WindowsOutputSink:
         return OK
 
     def _click(self, cmd: ActionCommand, button: str) -> OutputResult:
+        if self._interp is not None:
+            self._interp.snap(*self.cursor.pos)
         self._end_drag()
         if self.scroll.active:
             self.scroll.end(cmd.t, launch=False)
@@ -306,6 +338,8 @@ class WindowsOutputSink:
         result = self._click(cmd, "left")
         self._dbl_until = cmd.t + max(0.0, self.config.double_click_window)
         self._dbl_hand = None if self._uses_palm(cmd) else cmd.point
+        self._last_left_click_t = cmd.t
+        self._last_left_click_pos = self.cursor.pos
         return result
 
     def _do_mouse_right_click(self, cmd: ActionCommand) -> OutputResult:
@@ -315,16 +349,53 @@ class WindowsOutputSink:
         if cmd.phase == "begin":
             if self.scroll.active:
                 self.scroll.end(cmd.t, launch=False)
+            self._dbl_until = float("-inf")
+            if self._interp is not None:
+                self._interp.snap(*self.cursor.pos)
+
+            cur_pos = self.cursor.pos
+            time_since_click = cmd.t - getattr(self, "_last_left_click_t", float("-inf"))
+            last_pos = getattr(self, "_last_left_click_pos", None)
+            near_click = (
+                last_pos is not None
+                and math.hypot(cur_pos[0] - last_pos[0], cur_pos[1] - last_pos[1]) < 12.0
+            )
+
+            # Prevent Windows double-click collision when dragging immediately follows click:
+            if time_since_click < 0.52 and near_click:
+                self.dragging = True
+                self._drag_deferred_down = True
+                self._drag_start_pos = cur_pos
+                self._drag_start_t = getattr(self, "_last_left_click_t", cmd.t)
+            else:
+                self._drag_deferred_down = False
+                self.buttons.press("left")
+                self.dragging = True
+
             if cmd.point is not None:
                 self._move(cmd, self._gain(cmd))
-            self.buttons.press("left")
-            self.dragging = True
+            if getattr(self, "_drag_deferred_down", False):
+                cur_pos = self.cursor.pos
+                start_pos = getattr(self, "_drag_start_pos", cur_pos)
+                dist = math.hypot(cur_pos[0] - start_pos[0], cur_pos[1] - start_pos[1])
+                dt = cmd.t - getattr(self, "_drag_start_t", cmd.t)
+                if dist >= 8.0 or dt >= 0.52:
+                    self._drag_deferred_down = False
+                    self.buttons.press("left")
             return OK
         if cmd.phase == "hold":
             if not self.dragging:
                 return BLOCKED
             if cmd.point is not None:
                 self._move(cmd, self._gain(cmd))
+            if getattr(self, "_drag_deferred_down", False):
+                cur_pos = self.cursor.pos
+                start_pos = getattr(self, "_drag_start_pos", cur_pos)
+                dist = math.hypot(cur_pos[0] - start_pos[0], cur_pos[1] - start_pos[1])
+                dt = cmd.t - getattr(self, "_drag_start_t", cmd.t)
+                if dist >= 8.0 or dt >= 0.52:
+                    self._drag_deferred_down = False
+                    self.buttons.press("left")
             return OK
         # end
         if self.dragging:

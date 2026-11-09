@@ -54,3 +54,4 @@ class ViewFrame:
     practice_events: Tuple[PracticeEvent, ...] = ()  # bounded events; UI consumes each sequence once
     practice_epoch: int = 0                    # persistent reset boundary; latest-only reads are safe
     rule_preview: Optional[Snapshot] = None    # practice-only rules during registration or recording
+    mlp_badge: str = ""                        # always-visible MLP state text, composed by the runtime

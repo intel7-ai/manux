@@ -133,6 +133,31 @@ def test_click_or_key_while_dragging_releases_the_drag_first():
                                      ("key", "d", False), ("key", "win", False)]
 
 
+def test_drag_after_recent_click_defers_press_until_moved():
+    s = sink()
+    s.apply(cmd("mouse.move", "hold", (.5, .5), 0.0))
+    s.apply(cmd("mouse.left_click", "tap", (.5, .5), 0.03))
+    assert s.backend.clicks() == ["left"]
+    assert s.backend.buttons_down == set()
+
+    # Drag begins right after click (< 0.52s) at same position: deferred to avoid double click
+    s.apply(cmd("mouse.drag", "begin", (.5, .5), 0.1))
+    assert s.dragging
+    assert s.backend.buttons_down == set()
+
+    # Micro-drift (< 8px) stays deferred
+    s.apply(cmd("mouse.drag", "hold", (.501, .5), 0.13))
+    assert s.backend.buttons_down == set()
+
+    # Clear movement (>= 8px) engages the left button
+    s.apply(cmd("mouse.drag", "hold", (.52, .5), 0.16))
+    assert s.backend.buttons_down == {"left"}
+
+    # Drag ends releases the button
+    s.apply(cmd("mouse.drag", "end", (.52, .5), 0.2))
+    assert s.backend.buttons_down == set() and not s.dragging
+
+
 # ------------------------------------------------------------------ keys
 @pytest.mark.parametrize(("action", "keys"), [
     ("window.task_switcher", ("ctrl", "alt", "tab")),

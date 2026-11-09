@@ -108,7 +108,7 @@ def test_long_press_on_thumb_middle_becomes_a_drag():
     out, t = run(f, [H.middle_pinch(shift=(0.002 * k, 0)) for k in range(45)])
     assert gestures(out, "tap") == [THUMB_MIDDLE]
     drag = [i for i in out if i.gesture == DRAG]
-    assert drag[0].phase == "begin" and drag[0].scale == 15.0
+    assert drag[0].phase == "begin" and drag[0].scale is None
     out2, _ = run(f, [H.open_hand()] * 10, t0=t)
     phases = [i.phase for i in out2 if i.gesture == DRAG]
     assert phases[-1] == "end" and phases.count("end") == 1   # after the release grace
@@ -157,6 +157,15 @@ def test_shape_speed_interpolates_toward_precision_and_user_can_disable_it():
     assert speed[0] > speed[1] > speed[2]
     assert speed[0] == 2.0 and speed[-1] == pytest.approx(.35)
     assert f.core.shape_dpi(1.2, resolve({"shape_dpi_enabled": False})) == 1.0
+
+
+def test_drag_starts_immediately_on_move():
+    f = PinchFeature()
+    # middle pinch held and hand moves significantly
+    pinches = [H.middle_pinch(shift=(0.01 * k, 0)) for k in range(8)]
+    out, _ = run(f, pinches)
+    drags = [i for i in out if i.gesture == DRAG]
+    assert drags, "drag_on_move should activate drag_hold quickly"
 
 
 def test_thumbs_up_freezes_the_cursor_and_can_be_switched_off():

@@ -193,6 +193,8 @@ class _NullPoseStudio:
         self.live_system_action = "none"
         self.live_ai_action = "none"
         self.live_ai_confidence = 0.0
+        self.live_hybrid_action = "none"
+        self.live_hybrid_confidence = 0.0
         self.model_summary: Dict[str, Any] = {"loaded": False}
 
     def set_capture_mode(self, mode: str) -> str:
@@ -539,6 +541,7 @@ class Bridge(QObject):
         self.state = ("입력 꺼짐", "카메라 연결 대기", "손을 카메라에 보여주세요.", "제어 시작", "")
         self.live_gesture = ""
         self.contact_text = ""
+        self.mlp_badge_text = ""
         self.metrics = ("", -1, False)
         self.reception = ("paused", "입력 꺼짐")
         self.motion_on = False
@@ -661,9 +664,13 @@ class Bridge(QObject):
 
     @Property("QVariantList", notify=trainingChanged)
     def studioTrainingRows(self):
+        category = getattr(self, "training_filter", "전체")
         files = self._training_summary.get("files", [])
         rows = []
-        for row in self.trainingRows:
+        for r in self.training_rows:
+            if category != "전체" and r["category"] != category:
+                continue
+            row = {**r, "selected": r["key"] in self.training_selected}
             info = self.tc.task_info(row["key"]) or {}
             count = sum(bool(f.get("coverage", {}).get(row["key"])) for f in files if "error" not in f)
             rows.append({**row, "free": info.get("free", False), "recordings": count,
@@ -1486,7 +1493,8 @@ class Bridge(QObject):
             else:
                 if s.get("kind") == "pose_train":
                     self.pose_studio.model_summary = self.pose_studio._load_saved_model_summary()
-                    self.pose_studio.status_note = "포즈 모델 준비 완료 · 프레임 참고 점수이며 실제 제어에는 자동 적용하지 않습니다."
+                    self.pose_studio._load_active_model_instance()
+                    self.pose_studio.status_note = "포즈 모델 준비 완료 · 실시간 제어에 적용되었습니다."
                     self.training_note = self.pose_studio.status_note
                     self.studioChanged.emit()
                 elif s.get("kind") == "import":
@@ -1505,7 +1513,8 @@ class Bridge(QObject):
         return [
             {**r, "selected": r["key"] in self.training_selected}
             for r in self.training_rows
-            if category == "전체" or r["category"] == category
+            if r["category"] not in ("클릭·드래그", "창·모드")
+            and (category == "전체" or r["category"] == category)
         ]
 
     @Property("QStringList", notify=trainingChanged)
@@ -1630,7 +1639,7 @@ class Bridge(QObject):
 
     @Property(str, notify=trainingChanged)
     def trainingCatalog(self):
-        return f"전체 {self.tc.total_tasks}개 녹화 항목 · {len(self.trainingRows)}개 표시 · 미학습 동작도 녹화 가능"
+        return f"TCN 시계열 모션 {len(self.trainingRows)}개 표시 (클릭·창 제어는 포즈 스튜디오 전담)"
 
     @Slot(str)
     def setTrainingFilter(self, category):
@@ -1894,8 +1903,10 @@ class Bridge(QObject):
             return "미학습 (수집 후 학습 클릭)"
         if not self.pose_studio.hand_tracked:
             return "손 대기 중"
-        lbl = self._studio_label(self.pose_studio.live_ai_action)
-        return f"{lbl} ({self.pose_studio.live_ai_confidence * 100:.0f}%)"
+        hybrid_act = getattr(self.pose_studio, "live_hybrid_action", self.pose_studio.live_ai_action)
+        hybrid_conf = getattr(self.pose_studio, "live_hybrid_confidence", self.pose_studio.live_ai_confidence)
+        lbl = self._studio_label(hybrid_act)
+        return f"{lbl} ({hybrid_conf * 100:.0f}%)"
 
     @Property(bool, notify=studioChanged)
     def studioLiveMatch(self):
@@ -2522,6 +2533,10 @@ class Bridge(QObject):
         return self.state[4]
 
     @Property(str, notify=liveChanged)
+    def mlpBadge(self):
+        return self.mlp_badge_text
+
+    @Property(str, notify=liveChanged)
     def detectedContacts(self):
         return self.contact_text
 
@@ -2580,7 +2595,8 @@ class Bridge(QObject):
         if key == KEY_SPACE and self.layout == "studio" and (
                 self._studio_center_open or self._progress_visible or self.rec_mode != "off"
                 or bool(self.window.property("learningDialogOpen"))):
-            return
+            if not self._pose_studio_visible:
+                return
         if key == 111 and self.layout == "studio":
             self._pause()
             self.settingsRequested.emit()
@@ -2596,7 +2612,7 @@ class Bridge(QObject):
             return
         if key == KEY_Q:
             self.closed = True
-        elif self.stage_name == "main" and self.page == "studio":
+        elif self.stage_name == "main" and (self.page == "studio" or self._pose_studio_visible):
             if key == KEY_SPACE:
                 self.triggerStudioCapture()
             elif key == KEY_ESC and self.pose_studio.is_streaming:
@@ -2861,6 +2877,9 @@ class Bridge(QObject):
             self.receptionChanged.emit()
         live = guide.active_key(self._cards(), view.actions if detected and not paused else (),
                                 motion_on=self.motion_on and not paused)
+        if view.mlp_badge != self.mlp_badge_text:
+            self.mlp_badge_text = view.mlp_badge
+            self.liveChanged.emit()
         if (state, live) != (self.state, self.live_gesture):
             self.state, self.live_gesture = state, live
             self.liveChanged.emit()

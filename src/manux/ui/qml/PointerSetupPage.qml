@@ -178,7 +178,7 @@ Rectangle {
             }
             Button {
                 visible: page.measuring
-                enabled: page.setup.hand && !page.setup.capturing
+                enabled: Boolean(page.setup.hand) && !page.setup.capturing
                 text: page.setup.capturing ? "측정 중…" : "이 단계 측정 (Space)"
                 onClicked: page.controller.pointerSetupAction("capture")
             }

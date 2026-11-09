@@ -37,6 +37,10 @@ class CursorMapper:
         self._palm_tracking = False
 
     @property
+    def screen_w(self) -> int:
+        return self.screens.primary.width
+
+    @property
     def anchored(self) -> bool:
         return self._anchor is not None or self._palm_pos is not None
 
@@ -152,12 +156,9 @@ class CursorMapper:
         speed = math.hypot(dx, dy) / dt
         t = max(0.0, min(1.0, (speed - v_lo) / (v_hi - v_lo)))
         g = (g_min + (g_max - g_min) * t) * gain
-        bounds = self.screens.bounds
-        primary = self.screens.primary
-        vertical_scale = primary.width * bounds.height / primary.height
-        self._rel_pos = bounds.clamp(self._rel_pos[0] + dx * bounds.width * g,
-                                     self._rel_pos[1] + dy * vertical_scale * g)
-        px, py = self.screens.clamp(*self._rel_pos)
+        px, py = self.screens.clamp(self._rel_pos[0] + dx * self.screen_w * g,
+                                    self._rel_pos[1] + dy * self.screen_w * g)
+        self._rel_pos = (px, py)
         return int(round(px)), int(round(py))
 
     def _absolute(self, point: Tuple[float, float], gain: float) -> Tuple[int, int]:

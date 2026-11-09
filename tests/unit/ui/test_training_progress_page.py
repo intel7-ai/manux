@@ -95,13 +95,13 @@ def test_studio_restores_per_gesture_actions_saved_plans_and_visible_progress(tm
     def summary():
         data, report, rows, storage = original_summary()
         for row in rows:
-            if row["key"] == "thumb_middle": row["reps"] = 30
+            if row["key"] == "swipe_left": row["reps"] = 30
         return data, report, rows, storage
     monkeypatch.setattr(service, "summary_and_rows", summary)
     requests = []
     def start(**kwargs):
         requests.append(kwargs)
-        service.job.state = {"running": True, "task_names": ["좌클릭"]}
+        service.job.state = {"running": True, "task_names": ["왼쪽 쓸기"]}
         return True
     monkeypatch.setattr(service.job, "start", start)
     bridge = Bridge(runtime, settings, tmp_path / "config", services={"training_center": service})
@@ -119,15 +119,16 @@ def test_studio_restores_per_gesture_actions_saved_plans_and_visible_progress(tm
             QTest.qWait(50)
             if not bridge.trainingBusy:
                 bridge.trainingChanged.emit(); QTest.qWait(50); break
-        assert len(bridge.trainingRows) == 18
+        assert len(bridge.trainingRows) == 8
         progress = bridge.window.findChild(QQuickItem, "openTrainingProgress")
         assert progress.isVisible() and progress.mapToScene(QPointF(0, 0)).y() < 140
         listing = bridge.window.findChild(QQuickItem, "trainingTasks")
-        focus = visual_child(bridge.window.contentItem(), "focusRecord_thumb_middle")
+        focus = visual_child(bridge.window.contentItem(), "focusRecord_swipe_left")
         assert focus is not None and focus.property("text") == "집중 녹화 설정"
         assert QMetaObject.invokeMethod(focus, "clicked")
         QTest.qWait(80)
-        assert bridge.recordingPlan.focus == "thumb_middle"
+        assert bridge.recordingPlan.focus == "swipe_left"
+        bridge.recordingPlan.open("thumb_middle")
         assert len(bridge.recordingPlan.plan["conditions"]) == 27 and bridge.recordingPlan.clickGesture
         bridge.recordingPlan.open("thumb_ring")
         assert len(bridge.recordingPlan.plan["conditions"]) == 9
@@ -140,11 +141,11 @@ def test_studio_restores_per_gesture_actions_saved_plans_and_visible_progress(tm
             QTest.qWait(50)
             if not bridge.trainingBusy:
                 bridge.trainingChanged.emit(); QTest.qWait(50); break
-        train = visual_child(bridge.window.contentItem(), "trainGesture_thumb_middle")
+        train = visual_child(bridge.window.contentItem(), "trainGesture_swipe_left")
         assert train is not None and train.property("enabled"), (bridge.training_busy, bridge.recActive, service.job.running, service.hub_job.running, bridge.trainingRows[0])
         assert QMetaObject.invokeMethod(train, "clicked")
         QTest.qWait(60)
-        assert requests == [{"gestures": ["thumb_middle"]}]
+        assert requests == [{"gestures": ["swipe_left"]}]
         assert bridge.window.findChild(QObject, "trainingProgressPage").property("visible")
     finally:
         service.job.state = {"running": False}

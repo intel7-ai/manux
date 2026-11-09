@@ -9,6 +9,13 @@ ScrollView {
     required property var controller
     readonly property bool idle: !controller.trainingRunning && !controller.hubRunning && !controller.recActive && !controller.learningStudio.busy
     contentWidth: availableWidth; clip: true
+
+    Shortcut {
+        sequence: "Space"
+        enabled: page.visible && page.idle && !shareConfirm.visible
+        autoRepeat: false
+        onActivated: page.controller.triggerStudioCapture()
+    }
     component Copy: Label { color: Theme.Studio.ink; font.family: Theme.Studio.font; font.pixelSize: Theme.Studio.body; wrapMode: Text.Wrap }
     ColumnLayout {
         width: page.availableWidth; spacing: Theme.Studio.gap

@@ -288,6 +288,9 @@ class PoseSnapshotStudio:
         self.live_system_action: str = "none"
         self.live_ai_action: str = "none"
         self.live_ai_confidence: float = 0.0
+        self.live_ai_probabilities: Dict[str, float] = {}
+        self.live_hybrid_action: str = "none"
+        self.live_hybrid_confidence: float = 0.0
 
         # Multi-model management
         self.active_model: Optional[Any] = None
@@ -609,21 +612,61 @@ class PoseSnapshotStudio:
             if pred is not None:
                 self.live_ai_action = str(pred.get("action", "none"))
                 self.live_ai_confidence = float(pred.get("confidence", 0.0))
+                self.live_ai_probabilities = dict(pred.get("probabilities", {}))
             else:
                 self.live_ai_action = "none"
                 self.live_ai_confidence = 0.0
+                self.live_ai_probabilities = {}
         else:
             self.live_ai_action = "none"
             self.live_ai_confidence = 0.0
+            self.live_ai_probabilities = {}
+
+        self.live_hybrid_action, self.live_hybrid_confidence = self._compute_hybrid_action()
 
         if self.is_streaming and self.capture_mode == "stream":
             return self.process_stream_frame(now_ms=now_ms)
         return None
 
+    def _compute_hybrid_action(self) -> Tuple[str, float]:
+        """Fuse physical pinch contact (circle anchor state) with Spatial MLP probabilities."""
+        if not self.hand_tracked:
+            return "none", 0.0
+        if not self.model_summary.get("loaded"):
+            return self.live_system_action, 1.0 if self.live_system_action != "none" else 0.0
+
+        sys_act = self.live_system_action
+        ai_act = self.live_ai_action
+        ai_conf = self.live_ai_confidence
+        probs = self.live_ai_probabilities
+
+        pinch_classes = {"thumb_middle", "thumb_ring", "thumb_index", "thumb_pinky", "thumb_middle_ring"}
+        static_classes = {"v_sign", "rock_sign", "thumbs_up", "palm_side"}
+
+        # 1. Physical pinch circle active (Left-click, Right-click, etc. triggered)
+        if sys_act in pinch_classes:
+            p_none = probs.get("none", 0.0)
+            if p_none >= 0.85:
+                return "none", p_none
+            p_sys = probs.get(sys_act, 0.0)
+            conf = min(1.0, max(ai_conf, 0.65 + 0.35 * p_sys)) if ai_act == sys_act else max(0.70, 0.50 + 0.50 * p_sys)
+            return sys_act, float(conf)
+
+        # 2. Whole-hand static posture (V-sign, Rock-sign, Thumbs-up, Palm-side)
+        if ai_act in static_classes and ai_conf >= 0.60:
+            return ai_act, ai_conf
+
+        # 3. Pinch gesture detected with high confidence by MLP alone
+        if ai_act in pinch_classes and ai_conf >= 0.70:
+            return ai_act, ai_conf
+
+        # 4. Neutral / idle / low confidence
+        return ai_act, ai_conf
+
     def effective_predicted_action(self) -> str:
-        """If a trained Spatial MLP is loaded, compare against AI prediction; otherwise Rule Engine."""
-        if self.model_summary.get("loaded") and self.live_ai_confidence > 0.0:
-            return self.live_ai_action
+        """If a trained Spatial MLP is loaded, compare against hybrid prediction; otherwise Rule Engine."""
+        if self.model_summary.get("loaded") and self.live_hybrid_confidence > 0.0:
+            return self.live_hybrid_action
         return self.live_system_action
 
     def is_live_match(self) -> bool:

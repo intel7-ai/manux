@@ -1,0 +1,923 @@
+{
+  "type": "manux_pose_snapshot_dataset",
+  "version": "1.0.0",
+  "exportedAt": "2026-11-05T05:21:56.268Z",
+  "summary": {
+    "total": 5,
+    "matches": 0,
+    "discrepancies": 5,
+    "accuracy": 0,
+    "byGroundTruth": {
+      "move": 0,
+      "left_click": 0,
+      "right_click": 5,
+      "both_click": 0,
+      "scroll": 0,
+      "idle": 0
+    },
+    "byPredicted": {
+      "move": 0,
+      "left_click": 0,
+      "right_click": 0,
+      "both_click": 5,
+      "scroll": 0,
+      "idle": 0
+    },
+    "modeCounts": {
+      "trigger": 5,
+      "index": 0
+    }
+  },
+  "samples": [
+    {
+      "sampleId": "snap_trigger_right_click_1793856063447_j3is",
+      "timestamp": 312056,
+      "isoTime": "2026-11-05T05:21:03.447Z",
+      "mode": "trigger",
+      "source": "stream",
+      "trackingValid": true,
+      "quality": {
+        "ok": true,
+        "handPresent": true,
+        "spanPx": 251.18240967174788,
+        "reason": null
+      },
+      "predictedAction": "both_click",
+      "groundTruthAction": "right_click",
+      "isMatch": false,
+      "isFailureSample": true,
+      "rawLandmarks": [
+        {
+          "x": 0.197297,
+          "y": 0.604837,
+          "z": -0.000001
+        },
+        {
+          "x": 0.202097,
+          "y": 0.470046,
+          "z": -0.037245
+        },
+        {
+          "x": 0.280745,
+          "y": 0.357967,
+          "z": -0.061726
+        },
+        {
+          "x": 0.374112,
+          "y": 0.328093,
+          "z": -0.073762
+        },
+        {
+          "x": 0.425175,
+          "y": 0.375662,
+          "z": -0.078259
+        },
+        {
+          "x": 0.263223,
+          "y": 0.478158,
+          "z": -0.121635
+        },
+        {
+          "x": 0.387888,
+          "y": 0.375022,
+          "z": -0.141348
+        },
+        {
+          "x": 0.350175,
+          "y": 0.374798,
+          "z": -0.122816
+        },
+        {
+          "x": 0.32126,
+          "y": 0.405774,
+          "z": -0.105466
+        },
+        {
+          "x": 0.300072,
+          "y": 0.560825,
+          "z": -0.107918
+        },
+        {
+          "x": 0.427041,
+          "y": 0.446431,
+          "z": -0.130265
+        },
+        {
+          "x": 0.389824,
+          "y": 0.436253,
+          "z": -0.109372
+        },
+        {
+          "x": 0.35273,
+          "y": 0.461754,
+          "z": -0.091476
+        },
+        {
+          "x": 0.334336,
+          "y": 0.620181,
+          "z": -0.090659
+        },
+        {
+          "x": 0.44585,
+          "y": 0.50369,
+          "z": -0.103104
+        },
+        {
+          "x": 0.411065,
+          "y": 0.493346,
+          "z": -0.080984
+        },
+        {
+          "x": 0.373388,
+          "y": 0.515623,
+          "z": -0.064497
+        },
+        {
+          "x": 0.364509,
+          "y": 0.65862,
+          "z": -0.074898
+        },
+        {
+          "x": 0.450976,
+          "y": 0.571407,
+          "z": -0.0843
+        },
+        {
+          "x": 0.481846,
+          "y": 0.512817,
+          "z": -0.083028
+        },
+        {
+          "x": 0.501571,
+          "y": 0.47831,
+          "z": -0.082846
+        }
+      ],
+      "controllerState": {
+        "mode": "both",
+        "phase": "active",
+        "activePos": {
+          "x": 0.6277,
+          "y": 0.1564
+        },
+        "gates": {
+          "isFist": false,
+          "isScrollGesture": false,
+          "openPalm": false,
+          "indexAiming": false,
+          "indexStraight": false,
+          "isIndexStraight": false,
+          "indexCos": 0.963,
+          "middleRaised": false,
+          "ringOpen": false,
+          "indexFolded": true,
+          "canPressLeft": true,
+          "canPressRight": true,
+          "thumbExtended": true,
+          "dThumbMCP": 0.853,
+          "dThumbWrist": 1.688,
+          "dThumbBase": 1.059,
+          "d3ThumbToKnuckles": 1.059,
+          "pinkyExtended": true,
+          "aiPose": {
+            "action": "both_click",
+            "confidence": 0.9823,
+            "probabilities": {
+              "move": 0,
+              "left_click": 0,
+              "right_click": 0.0045,
+              "both_click": 0.9823,
+              "scroll": 0,
+              "idle": 0.0132
+            }
+          },
+          "pinkyStraight": true,
+          "pkCos": -0.955,
+          "pkCosDIP": -0.999,
+          "dPinkyWrist": 1.884,
+          "dPinkyMCP": 1.13,
+          "pkVsRing": 2.179,
+          "dPinkyRingTip": 0.772,
+          "projV_pinky": 0.929
+        }
+      },
+      "screenshot": null,
+      "metadata": {
+        "source": "stream",
+        "discrepancyOnlyFilter": false
+      }
+    },
+    {
+      "sampleId": "snap_trigger_right_click_1793856063505_9owz",
+      "timestamp": 312113.5,
+      "isoTime": "2026-11-05T05:21:03.505Z",
+      "mode": "trigger",
+      "source": "stream",
+      "trackingValid": true,
+      "quality": {
+        "ok": true,
+        "handPresent": true,
+        "spanPx": 250.95224744382597,
+        "reason": null
+      },
+      "predictedAction": "both_click",
+      "groundTruthAction": "right_click",
+      "isMatch": false,
+      "isFailureSample": true,
+      "rawLandmarks": [
+        {
+          "x": 0.196752,
+          "y": 0.60464,
+          "z": -0.000001
+        },
+        {
+          "x": 0.200883,
+          "y": 0.471276,
+          "z": -0.037407
+        },
+        {
+          "x": 0.280705,
+          "y": 0.357968,
+          "z": -0.061604
+        },
+        {
+          "x": 0.374699,
+          "y": 0.328815,
+          "z": -0.072953
+        },
+        {
+          "x": 0.423821,
+          "y": 0.379288,
+          "z": -0.077266
+        },
+        {
+          "x": 0.26129,
+          "y": 0.479165,
+          "z": -0.123208
+        },
+        {
+          "x": 0.386679,
+          "y": 0.375351,
+          "z": -0.143001
+        },
+        {
+          "x": 0.35283,
+          "y": 0.373345,
+          "z": -0.125205
+        },
+        {
+          "x": 0.325016,
+          "y": 0.404868,
+          "z": -0.108408
+        },
+        {
+          "x": 0.298956,
+          "y": 0.5612,
+          "z": -0.108953
+        },
+        {
+          "x": 0.426577,
+          "y": 0.447277,
+          "z": -0.130744
+        },
+        {
+          "x": 0.390094,
+          "y": 0.435419,
+          "z": -0.109861
+        },
+        {
+          "x": 0.353467,
+          "y": 0.461671,
+          "z": -0.092202
+        },
+        {
+          "x": 0.334139,
+          "y": 0.619532,
+          "z": -0.09093
+        },
+        {
+          "x": 0.446234,
+          "y": 0.502914,
+          "z": -0.103051
+        },
+        {
+          "x": 0.41192,
+          "y": 0.49167,
+          "z": -0.081442
+        },
+        {
+          "x": 0.374327,
+          "y": 0.514886,
+          "z": -0.065417
+        },
+        {
+          "x": 0.365042,
+          "y": 0.656663,
+          "z": -0.074315
+        },
+        {
+          "x": 0.453261,
+          "y": 0.570724,
+          "z": -0.083576
+        },
+        {
+          "x": 0.483706,
+          "y": 0.511835,
+          "z": -0.082396
+        },
+        {
+          "x": 0.50219,
+          "y": 0.477139,
+          "z": -0.08226
+        }
+      ],
+      "controllerState": {
+        "mode": "both",
+        "phase": "active",
+        "activePos": {
+          "x": 0.6277,
+          "y": 0.1564
+        },
+        "gates": {
+          "isFist": false,
+          "isScrollGesture": false,
+          "openPalm": false,
+          "indexAiming": false,
+          "indexStraight": false,
+          "isIndexStraight": false,
+          "indexCos": 0.964,
+          "middleRaised": false,
+          "ringOpen": false,
+          "indexFolded": true,
+          "canPressLeft": true,
+          "canPressRight": true,
+          "thumbExtended": true,
+          "dThumbMCP": 0.847,
+          "dThumbWrist": 1.676,
+          "dThumbBase": 1.058,
+          "d3ThumbToKnuckles": 1.058,
+          "pinkyExtended": true,
+          "aiPose": {
+            "action": "both_click",
+            "confidence": 0.9779,
+            "probabilities": {
+              "move": 0,
+              "left_click": 0,
+              "right_click": 0.0073,
+              "both_click": 0.9779,
+              "scroll": 0,
+              "idle": 0.0149
+            }
+          },
+          "pinkyStraight": true,
+          "pkCos": -0.945,
+          "pkCosDIP": -1,
+          "dPinkyWrist": 1.893,
+          "dPinkyMCP": 1.129,
+          "pkVsRing": 2.162,
+          "dPinkyRingTip": 0.771,
+          "projV_pinky": 0.925
+        }
+      },
+      "screenshot": null,
+      "metadata": {
+        "source": "stream",
+        "discrepancyOnlyFilter": false
+      }
+    },
+    {
+      "sampleId": "snap_trigger_right_click_1793856063555_qdqj",
+      "timestamp": 312164.3,
+      "isoTime": "2026-11-05T05:21:03.555Z",
+      "mode": "trigger",
+      "source": "stream",
+      "trackingValid": true,
+      "quality": {
+        "ok": true,
+        "handPresent": true,
+        "spanPx": 249.94825902679165,
+        "reason": null
+      },
+      "predictedAction": "both_click",
+      "groundTruthAction": "right_click",
+      "isMatch": false,
+      "isFailureSample": true,
+      "rawLandmarks": [
+        {
+          "x": 0.200638,
+          "y": 0.607895,
+          "z": -0.000001
+        },
+        {
+          "x": 0.201639,
+          "y": 0.474968,
+          "z": -0.037114
+        },
+        {
+          "x": 0.280511,
+          "y": 0.359964,
+          "z": -0.061693
+        },
+        {
+          "x": 0.374383,
+          "y": 0.328185,
+          "z": -0.073465
+        },
+        {
+          "x": 0.424335,
+          "y": 0.376024,
+          "z": -0.077869
+        },
+        {
+          "x": 0.261811,
+          "y": 0.479665,
+          "z": -0.123745
+        },
+        {
+          "x": 0.389123,
+          "y": 0.373601,
+          "z": -0.142886
+        },
+        {
+          "x": 0.35236,
+          "y": 0.372204,
+          "z": -0.124284
+        },
+        {
+          "x": 0.323024,
+          "y": 0.40359,
+          "z": -0.10712
+        },
+        {
+          "x": 0.300176,
+          "y": 0.561882,
+          "z": -0.109816
+        },
+        {
+          "x": 0.428445,
+          "y": 0.446032,
+          "z": -0.130934
+        },
+        {
+          "x": 0.39299,
+          "y": 0.433426,
+          "z": -0.109546
+        },
+        {
+          "x": 0.355335,
+          "y": 0.459722,
+          "z": -0.091843
+        },
+        {
+          "x": 0.335365,
+          "y": 0.620411,
+          "z": -0.092202
+        },
+        {
+          "x": 0.448819,
+          "y": 0.503112,
+          "z": -0.102177
+        },
+        {
+          "x": 0.415422,
+          "y": 0.489624,
+          "z": -0.079576
+        },
+        {
+          "x": 0.376576,
+          "y": 0.511394,
+          "z": -0.063939
+        },
+        {
+          "x": 0.366385,
+          "y": 0.657634,
+          "z": -0.076296
+        },
+        {
+          "x": 0.452316,
+          "y": 0.572618,
+          "z": -0.084833
+        },
+        {
+          "x": 0.483683,
+          "y": 0.511906,
+          "z": -0.084474
+        },
+        {
+          "x": 0.503082,
+          "y": 0.476492,
+          "z": -0.085597
+        }
+      ],
+      "controllerState": {
+        "mode": "both",
+        "phase": "active",
+        "activePos": {
+          "x": 0.6277,
+          "y": 0.1564
+        },
+        "gates": {
+          "isFist": false,
+          "isScrollGesture": false,
+          "openPalm": false,
+          "indexAiming": false,
+          "indexStraight": false,
+          "isIndexStraight": false,
+          "indexCos": 0.96,
+          "middleRaised": false,
+          "ringOpen": false,
+          "indexFolded": true,
+          "canPressLeft": true,
+          "canPressRight": true,
+          "thumbExtended": true,
+          "dThumbMCP": 0.846,
+          "dThumbWrist": 1.671,
+          "dThumbBase": 1.061,
+          "d3ThumbToKnuckles": 1.061,
+          "pinkyExtended": true,
+          "aiPose": {
+            "action": "both_click",
+            "confidence": 0.9786,
+            "probabilities": {
+              "move": 0,
+              "left_click": 0,
+              "right_click": 0.0042,
+              "both_click": 0.9786,
+              "scroll": 0,
+              "idle": 0.0173
+            }
+          },
+          "pinkyStraight": true,
+          "pkCos": -0.949,
+          "pkCosDIP": -0.999,
+          "dPinkyWrist": 1.875,
+          "dPinkyMCP": 1.128,
+          "pkVsRing": 2.085,
+          "dPinkyRingTip": 0.758,
+          "projV_pinky": 0.93
+        }
+      },
+      "screenshot": null,
+      "metadata": {
+        "source": "stream",
+        "discrepancyOnlyFilter": false
+      }
+    },
+    {
+      "sampleId": "snap_trigger_right_click_1793856063614_nyq6",
+      "timestamp": 312222.8,
+      "isoTime": "2026-11-05T05:21:03.614Z",
+      "mode": "trigger",
+      "source": "stream",
+      "trackingValid": true,
+      "quality": {
+        "ok": true,
+        "handPresent": true,
+        "spanPx": 249.46805601654333,
+        "reason": null
+      },
+      "predictedAction": "both_click",
+      "groundTruthAction": "right_click",
+      "isMatch": false,
+      "isFailureSample": true,
+      "rawLandmarks": [
+        {
+          "x": 0.200908,
+          "y": 0.60725,
+          "z": -0.000001
+        },
+        {
+          "x": 0.202778,
+          "y": 0.472861,
+          "z": -0.037704
+        },
+        {
+          "x": 0.281932,
+          "y": 0.35753,
+          "z": -0.062009
+        },
+        {
+          "x": 0.376151,
+          "y": 0.328053,
+          "z": -0.073506
+        },
+        {
+          "x": 0.425152,
+          "y": 0.379009,
+          "z": -0.077534
+        },
+        {
+          "x": 0.262602,
+          "y": 0.479128,
+          "z": -0.123657
+        },
+        {
+          "x": 0.388019,
+          "y": 0.375737,
+          "z": -0.143029
+        },
+        {
+          "x": 0.349505,
+          "y": 0.375002,
+          "z": -0.124019
+        },
+        {
+          "x": 0.320889,
+          "y": 0.405418,
+          "z": -0.106638
+        },
+        {
+          "x": 0.30036,
+          "y": 0.561592,
+          "z": -0.109535
+        },
+        {
+          "x": 0.428234,
+          "y": 0.446483,
+          "z": -0.131713
+        },
+        {
+          "x": 0.389406,
+          "y": 0.43684,
+          "z": -0.110078
+        },
+        {
+          "x": 0.352307,
+          "y": 0.463416,
+          "z": -0.091792
+        },
+        {
+          "x": 0.335522,
+          "y": 0.62083,
+          "z": -0.091883
+        },
+        {
+          "x": 0.446784,
+          "y": 0.504869,
+          "z": -0.104103
+        },
+        {
+          "x": 0.410754,
+          "y": 0.495286,
+          "z": -0.081608
+        },
+        {
+          "x": 0.372663,
+          "y": 0.518851,
+          "z": -0.065133
+        },
+        {
+          "x": 0.366302,
+          "y": 0.658754,
+          "z": -0.075814
+        },
+        {
+          "x": 0.453033,
+          "y": 0.573456,
+          "z": -0.08541
+        },
+        {
+          "x": 0.482629,
+          "y": 0.514339,
+          "z": -0.08455
+        },
+        {
+          "x": 0.501611,
+          "y": 0.479828,
+          "z": -0.084867
+        }
+      ],
+      "controllerState": {
+        "mode": "both",
+        "phase": "active",
+        "activePos": {
+          "x": 0.6277,
+          "y": 0.1564
+        },
+        "gates": {
+          "isFist": false,
+          "isScrollGesture": false,
+          "openPalm": false,
+          "indexAiming": false,
+          "indexStraight": false,
+          "isIndexStraight": false,
+          "indexCos": 0.959,
+          "middleRaised": false,
+          "ringOpen": false,
+          "indexFolded": true,
+          "canPressLeft": true,
+          "canPressRight": true,
+          "thumbExtended": true,
+          "dThumbMCP": 0.842,
+          "dThumbWrist": 1.659,
+          "dThumbBase": 1.052,
+          "d3ThumbToKnuckles": 1.052,
+          "pinkyExtended": true,
+          "aiPose": {
+            "action": "both_click",
+            "confidence": 0.9866,
+            "probabilities": {
+              "move": 0,
+              "left_click": 0,
+              "right_click": 0.0052,
+              "both_click": 0.9866,
+              "scroll": 0,
+              "idle": 0.0082
+            }
+          },
+          "pinkyStraight": true,
+          "pkCos": -0.945,
+          "pkCosDIP": -0.999,
+          "dPinkyWrist": 1.855,
+          "dPinkyMCP": 1.112,
+          "pkVsRing": 2.22,
+          "dPinkyRingTip": 0.773,
+          "projV_pinky": 0.917
+        }
+      },
+      "screenshot": null,
+      "metadata": {
+        "source": "stream",
+        "discrepancyOnlyFilter": false
+      }
+    },
+    {
+      "sampleId": "snap_trigger_right_click_1793856063664_ks7l",
+      "timestamp": 312272.9,
+      "isoTime": "2026-11-05T05:21:03.664Z",
+      "mode": "trigger",
+      "source": "stream",
+      "trackingValid": true,
+      "quality": {
+        "ok": true,
+        "handPresent": true,
+        "spanPx": 250.6274334013672,
+        "reason": null
+      },
+      "predictedAction": "both_click",
+      "groundTruthAction": "right_click",
+      "isMatch": false,
+      "isFailureSample": true,
+      "rawLandmarks": [
+        {
+          "x": 0.200544,
+          "y": 0.605182,
+          "z": -0.000001
+        },
+        {
+          "x": 0.203041,
+          "y": 0.471569,
+          "z": -0.037265
+        },
+        {
+          "x": 0.283321,
+          "y": 0.35674,
+          "z": -0.06168
+        },
+        {
+          "x": 0.377546,
+          "y": 0.32736,
+          "z": -0.073267
+        },
+        {
+          "x": 0.425402,
+          "y": 0.378082,
+          "z": -0.077551
+        },
+        {
+          "x": 0.264465,
+          "y": 0.477269,
+          "z": -0.124081
+        },
+        {
+          "x": 0.390776,
+          "y": 0.373754,
+          "z": -0.143468
+        },
+        {
+          "x": 0.35284,
+          "y": 0.373206,
+          "z": -0.124802
+        },
+        {
+          "x": 0.323769,
+          "y": 0.403564,
+          "z": -0.107759
+        },
+        {
+          "x": 0.30192,
+          "y": 0.561049,
+          "z": -0.110374
+        },
+        {
+          "x": 0.430425,
+          "y": 0.446486,
+          "z": -0.131926
+        },
+        {
+          "x": 0.393661,
+          "y": 0.435629,
+          "z": -0.110464
+        },
+        {
+          "x": 0.355782,
+          "y": 0.461268,
+          "z": -0.09252
+        },
+        {
+          "x": 0.336465,
+          "y": 0.620535,
+          "z": -0.09279
+        },
+        {
+          "x": 0.448983,
+          "y": 0.504771,
+          "z": -0.103431
+        },
+        {
+          "x": 0.414901,
+          "y": 0.493555,
+          "z": -0.080977
+        },
+        {
+          "x": 0.376297,
+          "y": 0.515648,
+          "z": -0.065106
+        },
+        {
+          "x": 0.366472,
+          "y": 0.658637,
+          "z": -0.076964
+        },
+        {
+          "x": 0.451982,
+          "y": 0.5734,
+          "z": -0.086117
+        },
+        {
+          "x": 0.483342,
+          "y": 0.512954,
+          "z": -0.085892
+        },
+        {
+          "x": 0.503238,
+          "y": 0.476622,
+          "z": -0.086929
+        }
+      ],
+      "controllerState": {
+        "mode": "both",
+        "phase": "active",
+        "activePos": {
+          "x": 0.6277,
+          "y": 0.1564
+        },
+        "gates": {
+          "isFist": false,
+          "isScrollGesture": false,
+          "openPalm": false,
+          "indexAiming": false,
+          "indexStraight": false,
+          "isIndexStraight": false,
+          "indexCos": 0.961,
+          "middleRaised": false,
+          "ringOpen": false,
+          "indexFolded": true,
+          "canPressLeft": true,
+          "canPressRight": true,
+          "thumbExtended": true,
+          "dThumbMCP": 0.836,
+          "dThumbWrist": 1.659,
+          "dThumbBase": 1.042,
+          "d3ThumbToKnuckles": 1.042,
+          "pinkyExtended": true,
+          "aiPose": {
+            "action": "both_click",
+            "confidence": 0.9773,
+            "probabilities": {
+              "move": 0,
+              "left_click": 0,
+              "right_click": 0.0075,
+              "both_click": 0.9773,
+              "scroll": 0,
+              "idle": 0.0152
+            }
+          },
+          "pinkyStraight": true,
+          "pkCos": -0.951,
+          "pkCosDIP": -1,
+          "dPinkyWrist": 1.868,
+          "dPinkyMCP": 1.128,
+          "pkVsRing": 2.171,
+          "dPinkyRingTip": 0.762,
+          "projV_pinky": 0.923
+        }
+      },
+      "screenshot": null,
+      "metadata": {
+        "source": "stream",
+        "discrepancyOnlyFilter": false
+      }
+    }
+  ]
+}

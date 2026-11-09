@@ -110,6 +110,7 @@ class PinchCore:
         self._desktop_armed = True
         self._pinky_fired_at = -1e9
         self._desktop_fired_at = -1e9
+        self._press_anchor: Optional[Tuple[float, Tuple[float, float], Tuple[float, float]]] = None
 
     # ------------------------------------------------------------------ public state
     @property
@@ -147,6 +148,7 @@ class PinchCore:
         self._desktop_since = None
         self._desktop_armed = True
         self._curl_s = None
+        self._press_anchor = None
 
     # ------------------------------------------------------------------ helpers
     def _can_trigger(self, gesture_id: str, now: float, finger: Optional[str], cooldown: float = 0.35) -> bool:
@@ -165,14 +167,14 @@ class PinchCore:
 
     @staticmethod
     def _fist_mult(c: Mapping[str, Any]) -> float:
-        return max(0.1, float(c["fist_dpi_multiplier"]))
+        return max(0.05, float(c["fist_dpi_multiplier"]))
 
     def shape_dpi(self, curl: float, c: Mapping[str, Any]) -> float:
         """Cursor speed multiplier for a mean finger curl: shape_dpi_min (open) .. fist_dpi_multiplier (fist),
         log-linear in between."""
         if not c["shape_dpi_enabled"]:
             return 1.0
-        lo, hi = max(0.1, float(c["shape_dpi_min"])), self._fist_mult(c)
+        lo, hi = max(0.05, float(c["shape_dpi_min"])), self._fist_mult(c)
         c_open, c_fist = float(c["shape_curl_open"]), float(c["shape_curl_fist"])
         if c_open <= c_fist:
             return lo
@@ -246,7 +248,7 @@ class PinchCore:
             self._secondary_since.clear()
             return PinchFrame(active_gesture="fist", action="move_cursor", cursor_point=cursor_point_early,
                               pinch_distance=d_index, distances=distances, is_moving=True,
-                              dpi_multiplier=max(0.1, float(c["fist_dpi_multiplier"])), hand_shape="fist")
+                              dpi_multiplier=max(0.05, float(c["fist_dpi_multiplier"])), hand_shape="fist")
 
         # 0.5 Show desktop: thumb tucked across the palm, four fingers extended, held still
         palm_len = max(1e-6, _d2(pts[WRIST], pts[MIDDLE_MCP]))
@@ -301,10 +303,10 @@ class PinchCore:
         click_threshold = float(c["click_threshold"])
 
         mean_curl = sum(ratios) / 4.0
+        # hand-shape speed multiplier (shape_dpi_min for open hand, down to fist_dpi_multiplier for fist)
         k = max(0.05, min(1.0, float(c["shape_curl_smooth"])))
         self._curl_s = mean_curl if self._curl_s is None else self._curl_s + k * (mean_curl - self._curl_s)
         shape_mult = self.shape_dpi(self._curl_s, c)
-        # Shape is geometry, independent of whether curling makes the speed faster or slower.
         curled = mean_curl < float(c["shape_curl_open"]) - .05
 
         # Thumb + index hysteresis
@@ -370,13 +372,15 @@ class PinchCore:
             else:
                 self._drag_since = None
         else:
-            if not self._index_pinched or d_middle > release_threshold:
+            # 3-finger drag release hysteresis: allow up to drag_thr * 1.8 before releasing
+            if not self._index_pinched or d_middle > max(release_threshold, drag_thr * 1.8):
                 self._middle_hold_pinched = False
 
         cursor_point = palm_anchor_point(pts, c["cursor_anchor_ratio"])
         pinch_point = ((thumb[0] + index[0]) * 0.5, (thumb[1] + index[1]) * 0.5)
 
-        if self._index_pinched and index_active:
+        middle_active = "middle" in self._secondary_since or self._long_fired.get("middle", False)
+        if self._index_pinched and index_active and not middle_active:
             self._secondary_since.clear()
         for finger in [f for f in self._long_fired if f not in self._secondary_since]:
             self._long_fired.pop(finger, None)
@@ -387,7 +391,8 @@ class PinchCore:
                               cursor_point=cursor_point, pinch_distance=d_index, distances=distances, is_moving=True)
 
         # 2. Thumb + index -> scroll grab (page grabbed, the cursor stays put)
-        if self._index_pinched and scroll_on:
+        # Never hijack an active middle pinch/drag with an accidental index brush!
+        if self._index_pinched and scroll_on and not middle_active:
             return PinchFrame(
                 active_gesture="thumb_index_pinch", action="scroll_grab", cursor_point=cursor_point,
                 pinch_distance=d_index, distances=distances, is_moving=False, pinch_point=pinch_point,
@@ -431,13 +436,13 @@ class PinchCore:
                 limit = thr + margin
                 joint_ok = dip <= limit * float(c["click_hold_joint_ratio"])
                 held_dist = min(dist, dip) if joint_ok else dist
-                if held_dist > limit or not keep_ok:
+                is_dragging = self._long_fired.get(finger, False)
+                drop_limit = limit * 2.5 if is_dragging else limit * 1.5
+                if held_dist > drop_limit or (not keep_ok and not is_dragging and held_dist > limit * 1.2):
                     off = self._secondary_off.setdefault(finger, now)
-                    grace = click_grace
-                    if self._long_fired.get(finger, False):
-                        grace = max(click_grace, float(c["pinch_release_grace"]))
-                        if held_dist > limit * float(c["drag_clear_ratio"]):
-                            grace = min(grace, float(c["drag_clear_grace"]))
+                    grace = max(0.35, float(c.get("drag_clear_grace", 0.35))) if is_dragging else max(0.18, float(c.get("click_release_grace", 0.18)))
+                    if held_dist > limit * 2.2:
+                        grace = min(grace, 0.12)
                     if now - off >= grace:
                         self._secondary_since.pop(finger, None)
                         self._secondary_off.pop(finger, None)
@@ -482,7 +487,43 @@ class PinchCore:
             ),
         )
 
-        if not self._index_pinched or not index_active:
+        held_middle = "middle" in self._secondary_since
+        moved_far = False
+        if held_middle and c.get("drag_on_move", True) and cursor_point is not None:
+            # Track both palm anchor and pinch midpoint (thumb + middle tip) so either hand translation
+            # or wrist/finger movement immediately engages drag.
+            track = ((thumb[0] + middle[0]) * 0.5, (thumb[1] + middle[1]) * 0.5)
+            if self._press_anchor is None or self._press_anchor[0] != self._secondary_since["middle"]:
+                self._press_anchor = (self._secondary_since["middle"], cursor_point, track)
+            ref_palm, ref_pinch = self._press_anchor[1], self._press_anchor[2]
+            aspect = float(c.get("frame_aspect", 0.75))
+            moved_palm = math.hypot(cursor_point[0] - ref_palm[0], (cursor_point[1] - ref_palm[1]) * aspect)
+            moved_pinch = math.hypot(track[0] - ref_pinch[0], (track[1] - ref_pinch[1]) * aspect)
+            moved = max(moved_palm, moved_pinch)
+            moved_far = (moved >= float(c.get("drag_move_distance", 0.006))
+                         and now - self._secondary_since["middle"] >= float(c.get("drag_move_min_time", 0.0)))
+        else:
+            self._press_anchor = None
+
+        is_middle_dragging = (
+            held_middle
+            and c["long_press_drag"]
+            and (
+                self._long_fired.get("middle", False)
+                or (moved_far and (self._click_fresh.get("middle", True) or now - self._secondary_since["middle"] >= 0.10))
+                or now - self._secondary_since["middle"] >= float(c["long_press_time"])
+            )
+        )
+
+        if not self._index_pinched or not index_active or middle_active:
+            if is_middle_dragging and on("thumb_middle_pinch"):
+                self._long_fired["middle"] = True
+                self._click_fresh["middle"] = False
+                return PinchFrame(active_gesture="thumb_middle_pinch", action="drag_hold",
+                                  cursor_point=cursor_point, pinch_distance=d_index, distances=distances,
+                                  is_moving=True,
+                                  dpi_multiplier=max(0.1, float(c["long_press_drag_multiplier"])))
+
             if middle_ok and on("thumb_middle_pinch"):
                 if self._can_trigger("thumb_middle_pinch", now, "middle"):
                     return PinchFrame(active_gesture="thumb_middle_pinch", action="left_click",
@@ -499,17 +540,11 @@ class PinchCore:
                                       cursor_point=cursor_point, pinch_distance=d_index, distances=distances)
 
         # A middle / ring / pinky pinch is held: cursor frozen; long press on thumb+middle -> drag
-        if self._secondary_since and (not self._index_pinched or not index_active):
+        if self._secondary_since and (not self._index_pinched or not index_active or middle_active):
             held = next(f for f in ("middle", "ring", "pinky") if f in self._secondary_since)
-            if (
-                held == "middle"
-                and c["long_press_drag"]
-                and (
-                    self._long_fired.get("middle", False)
-                    or now - self._secondary_since["middle"] >= float(c["long_press_time"])
-                )
-            ):
+            if held == "middle" and is_middle_dragging:
                 self._long_fired["middle"] = True
+                self._click_fresh["middle"] = False
                 return PinchFrame(active_gesture="thumb_middle_pinch", action="drag_hold",
                                   cursor_point=cursor_point, pinch_distance=d_index, distances=distances,
                                   is_moving=True,
@@ -529,11 +564,12 @@ class PinchCore:
         near_pinch = min(d_index, d_middle, d_ring, d_pinky) <= approach
         holding = (now - self._scroll_released_at) < float(c["scroll_cursor_hold"])
         if not near_pinch and not holding and on("no_pinch"):
+            is_fist = mean_curl <= float(c["shape_curl_fist"]) + 0.1
             return PinchFrame(
                 active_gesture="no_pinch", action="move_cursor", cursor_point=cursor_point,
                 pinch_distance=d_index, distances=distances, is_moving=True,
                 dpi_multiplier=shape_mult if not self._index_pinched and not self._secondary_since else 1.0,
-                hand_shape=("half" if curled else "open"),
+                hand_shape=("fist" if is_fist else "half" if curled else "open"),
             )
 
         return PinchFrame(pinch_distance=d_index, distances=distances)

@@ -12,6 +12,7 @@ Provides two capabilities in one package:
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
@@ -45,6 +46,7 @@ GESTURE_TO_CLASS: Mapping[str, str] = {v: k for k, v in CLASS_TO_GESTURE.items()
 GESTURE_TO_CLASS = {**GESTURE_TO_CLASS, "pointer.left_click": "thumb_middle", "pointer.right_click": "thumb_ring"}
 BOTH_CLICK_GESTURES = frozenset({"pinch.thumb_middle", "pinch.thumb_ring", "pointer.left_click", "pointer.right_click"})
 DEFAULT_VETO_GESTURES = BOTH_CLICK_GESTURES
+BOOST_CLASSES = frozenset({"thumb_middle", "thumb_ring"})
 
 
 @dataclass(frozen=True)
@@ -159,15 +161,42 @@ class SpatialPoseGuard(IntentFilter):
     """Protects against heuristic misclassifications by consulting SpatialPoseFeature evidence."""
 
     def __init__(self, feature: SpatialPoseFeature, *, tau_veto: float = 0.80, k_frames: int = 2,
-                 enabled: bool = True) -> None:
+                 enabled: bool = True, boost: bool = True, tau_boost: float = 0.93, k_boost: int = 3) -> None:
         self.feature = feature
         self.tau_veto = tau_veto
         self.k_frames = k_frames
         self.enabled = enabled
+        self.boost = boost
+        self.tau_boost = tau_boost
+        self.k_boost = k_boost
         self.vetoed_count = 0
         self.passed_count = 0
+        self.boosted_count = 0
+        self._boost_class: Optional[str] = None
+        self._boost_run = 0
+        self._boost_fast = False
+        self._boost_done = False
+        self._boost_t = float("-inf")
         self._idle_run = 0
         self._events: List[str] = []
+        self._dragging: bool = False
+        self._drag_last_point: Optional[Tuple[float, float]] = None
+        self._drag_last_scale: Optional[float] = None
+
+    @staticmethod
+    def _circle_score(hand: Optional[HandObservation], cls: str) -> float:
+        """Proximity score (0..1) of the thumb-to-finger pinch circle (1.0 when pinched, >0 when circle is near)."""
+        if hand is None or hand.landmarks is None or len(hand.landmarks) < 17:
+            return 0.0
+        thumb = hand.landmarks[4]
+        tip = hand.landmarks[12 if cls == "thumb_middle" else 16]
+        thr = 0.052 if cls == "thumb_middle" else 0.044
+        dist = math.hypot(thumb[0] - tip[0], thumb[1] - tip[1])
+        if dist <= thr:
+            return 1.0
+        if dist >= thr * 1.6:
+            return 0.0
+        return max(0.0, min(1.0, 1.0 - (dist - thr) / (thr * 0.6)))
 
     @property
     def id(self) -> str:
@@ -187,6 +216,24 @@ class SpatialPoseGuard(IntentFilter):
         else:
             self._idle_run = 0
 
+        # boost: fuse physical pinch circle proximity with Spatial MLP confidence
+        cls = None
+        fast = False
+        if ev is not None and ev.action in BOOST_CLASSES:
+            c_score = self._circle_score(hand, ev.action)
+            hybrid_conf = 0.45 * c_score + 0.55 * ev.confidence if c_score > 0.0 else ev.confidence
+            if ev.confidence >= self.tau_boost or (c_score >= 0.35 and ev.confidence >= 0.68 and hybrid_conf >= 0.72):
+                cls = ev.action
+                fast = c_score >= 0.65 and ev.confidence >= 0.72
+        if cls is None or cls != self._boost_class:
+            self._boost_class = cls
+            self._boost_run = 0
+            self._boost_fast = False
+            self._boost_done = False
+        if cls is not None:
+            self._boost_run += 1
+            self._boost_fast = self._boost_fast or fast
+
     def filter(self, intents: Sequence[Intent], ctx: FrameContext) -> Sequence[Intent]:
         if not self.enabled or self.feature.model is None:
             return intents
@@ -194,8 +241,81 @@ class SpatialPoseGuard(IntentFilter):
         ev = self.feature.evidence
         if ev is None or ev.t != ctx.frame.t:
             return intents
+
+        pose_active = (ev.action in ("thumb_middle", "thumb_middle_ring") and ev.confidence >= 0.55)
         out: List[Intent] = []
+
+        if not intents and self._dragging:
+            if pose_active:
+                out.append(Intent(ctx.frame.t, "pinch", "pinch.drag", "hold",
+                                  point=self._drag_last_point, scale=self._drag_last_scale))
+                return tuple(out)
+            else:
+                out.append(Intent(ctx.frame.t, "pinch", "pinch.drag", "end",
+                                  point=self._drag_last_point, scale=self._drag_last_scale))
+                self._dragging = False
+                self._events.append("spatial_guard:drag_ended_on_release")
+                return tuple(out)
+
         for intent in intents:
+            # Handle drag intents
+            if intent.gesture == "pinch.drag":
+                if intent.phase in ("begin", "hold"):
+                    self._dragging = True
+                    if intent.point is not None:
+                        self._drag_last_point = intent.point
+                    if intent.scale is not None:
+                        self._drag_last_scale = intent.scale
+                    out.append(intent)
+                    continue
+                elif intent.phase == "end":
+                    if pose_active:
+                        sustained = Intent(
+                            intent.t, intent.source, "pinch.drag", "hold",
+                            point=intent.point or self._drag_last_point,
+                            scale=intent.scale or self._drag_last_scale,
+                        )
+                        self._dragging = True
+                        self._events.append("spatial_guard:drag_sustained_on_end")
+                        out.append(sustained)
+                        continue
+                    else:
+                        self._dragging = False
+                        self._events.append("spatial_guard:drag_ended")
+                        out.append(intent)
+                        continue
+
+            # If drag was active and MLP confirms pose is still held,
+            # convert accidental fallback to move into drag hold.
+            if self._dragging and intent.phase == "hold" and intent.gesture in ("pinch.move", "pinch.move_fist", "pointer.move"):
+                if pose_active:
+                    drag_intent = Intent(
+                        intent.t, "pinch", "pinch.drag", "hold",
+                        point=intent.point or self._drag_last_point,
+                        scale=intent.scale or self._drag_last_scale,
+                    )
+                    if intent.point is not None:
+                        self._drag_last_point = intent.point
+                    self._events.append("spatial_guard:move_converted_to_drag")
+                    out.append(drag_intent)
+                    continue
+                else:
+                    out.append(Intent(
+                        ctx.frame.t, "pinch", "pinch.drag", "end",
+                        point=self._drag_last_point,
+                        scale=self._drag_last_scale,
+                    ))
+                    self._dragging = False
+                    self._events.append("spatial_guard:drag_ended_on_release")
+
+            # A click the rules fire (or the MLP already fired) for the pose being held counts as done.
+            if intent.phase == "tap" and intent.gesture in BOTH_CLICK_GESTURES:
+                if (self._boost_class is not None and self._boost_done
+                        and GESTURE_TO_CLASS.get(intent.gesture) == self._boost_class):
+                    continue          # one click per pose episode (the MLP already clicked for it)
+                if GESTURE_TO_CLASS.get(intent.gesture) == self._boost_class:
+                    self._boost_done = True
+                self._boost_t = ctx.frame.t     # a click just happened: the boost stays quiet for a while
             # Mode arbiter transitions are protected and never vetoed
             if "." in intent.gesture and intent.gesture.split(".", 1)[1] in ("enter", "exit"):
                 out.append(intent)
@@ -222,6 +342,21 @@ class SpatialPoseGuard(IntentFilter):
             self.passed_count += 1
             out.append(intent)
 
+        # boost: confident, steady MLP + circle click pose that the rules have not fired yet -> click for it
+        need_k = min(self.k_boost, 2) if self._boost_fast else self.k_boost
+        if (self.boost and self._boost_class is not None and not self._boost_done
+                and self._boost_run >= need_k and ctx.mode == "pinch"
+                and ctx.frame.t - self._boost_t >= 0.35
+                and not self._dragging
+                and not any(i.gesture in ("pinch.scroll", "pinch.drag") and i.phase != "end" for i in out)
+                and not any(act.holding for act in ctx.others.values())):
+            gesture = CLASS_TO_GESTURE[self._boost_class]
+            out.append(Intent(ctx.frame.t, "pinch", gesture, "tap", confidence=ev.confidence))
+            self._boost_done = True
+            self._boost_t = ctx.frame.t
+            self.boosted_count += 1
+            self._events.append(f"spatial_guard:boosted:{gesture}")
+
         return tuple(out)
 
     def drain_events(self) -> List[str]:
@@ -230,4 +365,10 @@ class SpatialPoseGuard(IntentFilter):
 
     def reset(self, reason: str) -> None:
         self._idle_run = 0
+        self._boost_class = None
+        self._boost_run = 0
+        self._boost_done = False
         self._events.clear()
+        self._dragging = False
+        self._drag_last_point = None
+        self._drag_last_scale = None

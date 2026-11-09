@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 from collections import deque
 import copy
+import json
 import queue
 import sys
 import threading
@@ -719,7 +720,7 @@ class DesktopRuntime:
             practice_cursor=practice.cursor_position if snap.output is OutputTarget.PRACTICE else None,
             practice_precision=bool(practice.precision) if snap.output is OutputTarget.PRACTICE else False,
             practice_events=tuple(self._practice_events), practice_epoch=self._practice_epoch,
-            rule_preview=rule_preview,
+            rule_preview=rule_preview, mlp_badge=self._mlp_badge(),
             frame_age_ms=max(0.0, (time.perf_counter() - frame.t) * 1000.0)))
 
     def _pose_step(self, image, now):
@@ -745,7 +746,28 @@ class DesktopRuntime:
             self.pose_status = "팔·어깨 모델 사용 불가 · 손 관절 녹화는 계속합니다"
             return None
 
+    def _mlp_badge(self):
+        guard = self.spatial_guard
+        if guard is None or self.spatial_feature is None or self.spatial_feature.model is None:
+            return "MLP 미적용 (모델 없음)"
+        if not guard.enabled:
+            return "MLP 꺼짐"
+        ev = self.spatial_feature.evidence
+        now = f"{BY_KEY[ev.action].name if ev.action in BY_KEY else ev.action} {ev.confidence:.0%}" if ev else "대기"
+        return f"MLP 적용 중 · {now} · 오클릭 차단 {guard.vetoed_count} · 보강 클릭 {guard.boosted_count}"
+
     def _model_view_status(self):
+        mlp_status = ""
+        if self.spatial_guard and self.spatial_guard.enabled and self.spatial_feature and self.spatial_feature.model:
+            ev = self.spatial_feature.evidence
+            if ev is not None:
+                action_name = ev.action
+                title = BY_KEY[action_name].name if action_name in BY_KEY else action_name
+                veto_info = f" (오작동 차단 {self.spatial_guard.vetoed_count}회)" if self.spatial_guard.vetoed_count > 0 else ""
+                mlp_status = f" · MLP 보조: {title} {ev.confidence:.0%}{veto_info}"
+            else:
+                mlp_status = " · MLP 보조 가동 중"
+
         for feature in self.engine.features:
             prediction = getattr(feature, "last_prediction", None) if feature.id == "tcn" else None
             if prediction is not None:
@@ -753,8 +775,8 @@ class DesktopRuntime:
                 gesture = feature.card.gestures.get(name)
                 mode = {"rules": "규칙", "shadow": "시험", "apply": "적용"}.get(feature.policies.get(gesture), "중립")
                 title = BY_KEY[name].name if name in BY_KEY else name
-                return f"{self.model_status} · TCN {mode} 예측: {title} {confidence:.0%}"
-        return self.model_status
+                return f"{self.model_status} · TCN {mode} 예측: {title} {confidence:.0%}{mlp_status}"
+        return f"{self.model_status}{mlp_status}"
 
     def request(self, command: RuntimeRequest):
         if self._stop.is_set():
@@ -769,9 +791,11 @@ class DesktopRuntime:
                 self.engine.prepare_model_reload()
                 self.spatial_model_path = None
                 self.spatial_feature.set_model(model)
-                if model is None:
-                    self.spatial_guard.enabled = False
-                self.spatial_guard.reset("settings")
+                if self.spatial_guard is not None:
+                    self.spatial_guard.enabled = bool(model is not None)
+                    self.spatial_guard.reset("settings")
+                filters = [f for f in self.engine.filters if f.id != "spatial_pose_guard"] + list(self._aux_filters())
+                self.engine.replace_pipeline(self.engine.features, filters, self.engine.router, self.engine.gesture_sources)
         while not self._runtime_requests.empty():
             command = self._runtime_requests.get_nowait()
             if command.kind == "pointer_setup":
@@ -952,7 +976,7 @@ def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, t
             from manux.ml.backends import describe
             status += " · " + describe(gate.gate.predictor)["actual"]
     spatial_pose_feature = SpatialPoseFeature(spatial_pose_model, mode="assist")
-    spatial_guard = SpatialPoseGuard(spatial_pose_feature, enabled=False)
+    spatial_guard = SpatialPoseGuard(spatial_pose_feature, enabled=bool(spatial_pose_model is not None))
     filters = tuple(filters) + (spatial_guard,)
     engine = build_engine(settings, "pinch", filters, direct_model=direct, binding_overrides=binding_overrides,
                           policies=({g: "shadow" for g in direct.card.gestures.values()} if shadow_model is not None
@@ -1099,7 +1123,10 @@ def main(argv=None) -> int:
         print(exc, file=sys.stderr)
         return 1
     models_dir = paths.data_dir / "models" / "spatial_mlp"
+    bundled_models_dir = paths.app_dir / "models" / "spatial_mlp"
     active_cfg = models_dir / "active_model.json"
+    if not active_cfg.is_file() and (bundled_models_dir / "active_model.json").is_file():
+        active_cfg = bundled_models_dir / "active_model.json"
     active_model_file = "spatial_pose_mlp.json"
     if active_cfg.is_file():
         try:
@@ -1108,7 +1135,18 @@ def main(argv=None) -> int:
             pass
     spatial_model_path = models_dir / active_model_file
     if not spatial_model_path.is_file():
+        spatial_model_path = bundled_models_dir / active_model_file
+    if not spatial_model_path.is_file():
         spatial_model_path = models_dir / "spatial_pose_mlp.json"
+    if not spatial_model_path.is_file():
+        spatial_model_path = bundled_models_dir / "spatial_pose_mlp.json"
+    if not spatial_model_path.is_file():
+        for candidate_dir in (models_dir, bundled_models_dir):
+            if candidate_dir.is_dir():
+                candidates = sorted(f for f in candidate_dir.glob("*.json") if f.name != "active_model.json")
+                if candidates:
+                    spatial_model_path = candidates[0]
+                    break
 
     init_spatial_model: Optional[SpatialMlpModel] = None
     if spatial_model_path.is_file():

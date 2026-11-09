@@ -671,6 +671,13 @@ ApplicationWindow {
                                     Chip { visible: dashboard.motionBadgeOn; warn: true; text: "모션 모드" }
                                 }
                                 TextLabel {
+                                    Layout.fillWidth: true
+                                    text: dashboard.mlpBadge
+                                    color: dashboard.mlpBadge.indexOf("적용 중") >= 0 ? "#08775E" : window.muted
+                                    font.pixelSize: 12
+                                    wrapMode: Text.Wrap
+                                }
+                                TextLabel {
                                     text: "Space 또는 어디서든 " + (dashboard.shortcutLabels["toggle"] || "") + " 로 켜고 끕니다"
                                     color: window.muted
                                     font.pixelSize: 11

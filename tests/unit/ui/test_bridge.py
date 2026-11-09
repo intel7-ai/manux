@@ -321,17 +321,17 @@ def test_qml_checkbox_drives_selection_and_record_button(tmp_path):
             return None
 
         task_list = b.window.findChild(QQuickItem, "trainingTasks")
-        checkbox = visual_child(task_list, "taskCheck_thumb_middle")
+        checkbox = visual_child(task_list, "taskCheck_swipe_left")
         assert checkbox is not None
         position = checkbox.mapToScene(QPointF(checkbox.width() / 2, checkbox.height() / 2)).toPoint()
         QTest.mouseClick(b.window, Qt.MouseButton.LeftButton, pos=position)
-        assert b.selectedTrainingKeys == ["thumb_middle"]
+        assert b.selectedTrainingKeys == ["swipe_left"]
         assert record.property("enabled")
         assert b.window.findChild(QObject, "hubCredential") is None
         assert not b.window.findChild(QQuickItem, "uploadRecordings").property("enabled")
         assert QMetaObject.invokeMethod(record, "click")
         QTest.qWait(100)
-        assert b.recordingPlan.focus == ("thumb_middle",)
+        assert b.recordingPlan.focus == ("swipe_left",)
         assert not popup.property("visible")
         for width, height in ((780, 560), (1140, 720)):
             b.window.setWidth(width)

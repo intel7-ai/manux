@@ -88,6 +88,9 @@ RENAMES: Dict[str, str] = {
     "long_press_drag": "pinch.long_press_drag",
     "long_press_time": "pinch.long_press_time",
     "long_press_drag_multiplier": "pinch.long_press_drag_multiplier",
+    "drag_on_move": "pinch.drag_on_move",
+    "drag_move_distance": "pinch.drag_move_distance",
+    "drag_move_min_time": "pinch.drag_move_min_time",
     "approach_freeze_distance": "pinch.approach_freeze_distance",
     "cursor_anchor_ratio": "pinch.cursor_anchor_ratio",
     # S4 motion (features/motion/settings.py V03_KEYS). motion_actions stays v03.* (it is a binding now).
