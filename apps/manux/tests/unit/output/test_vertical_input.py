@@ -87,3 +87,44 @@ def test_index_pointer_still_uses_position_when_wrist_mode_is_selected():
     finally:
         for sink in sinks:
             sink.close()
+
+
+@pytest.mark.parametrize("mode", ["hand_position", "wrist_pitch"])
+def test_selected_input_with_calibrated_neutral_zone_and_120hz_glide(mode, monkeypatch):
+    """The testing cursor improvements must preserve both input choices and practice parity."""
+    layout = ScreenLayout.single(1920, 1080)
+    config = WindowsOutputConfig(vertical_input=mode, cursor_hz=120, smoothing=1.,
+                                 relative_gain_min=1., relative_gain_max=1.,
+                                 palm_left=.35, palm_right=.65, palm_up=115., palm_down=65.,
+                                 palm_hold=.035)
+    now = [100.]
+    sink = WindowsOutputSink(FakeBackend((960, 540)), layout, config, clock=lambda: now[0])
+    monkeypatch.setattr(sink, "_ensure_glide", lambda: None)
+    practice = PracticeSink(cursor=CursorMapper(layout, config, (960, 540)), config=config)
+
+    def move(y, pitch):
+        now[0] += 1 / 30
+        command = ActionCommand(now[0], "mouse.move", "hold", "pinch.move", point=(.5, y))
+        for output in (sink, practice):
+            output.set_palm_pitch(pitch)
+            assert output.apply(command).accepted
+        assert sink.cursor.pos == practice.cursor.pos
+
+    try:
+        for _ in range(60):
+            move(.5, 90.)
+            sink.glide_step(now[0] + 1 / 30)
+        assert sink.cursor.parked == (mode == "wrist_pitch")
+        start_y = sink.cursor.pos[1]
+        # A steady half-second movement leaves the parked zone without a first-frame jump.
+        for frame in range(1, 16):
+            move(.5 + .005 * frame, 90. - 2 * frame if mode == "wrist_pitch" else 90.)
+            sink.glide_step(now[0] + 1 / 120)
+        target = sink.cursor.pos
+        assert target[1] > start_y
+        assert start_y < sink.backend.pos[1] < target[1]
+        sink.apply(ActionCommand(now[0], "mouse.left_click", "tap", "pinch.thumb_middle"))
+        assert sink.backend.pos == target
+    finally:
+        sink.close()
+        practice.close()

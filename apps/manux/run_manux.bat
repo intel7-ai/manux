@@ -11,7 +11,8 @@ echo.
 cd /d "%~dp0"
 
 echo [1/2] Checking dependencies...
-call uv sync --extra vision --extra ui --extra ml
+rem Keep learning-center training, dataset access, and phone camera support installed.
+call uv sync --locked --python 3.12 --extra vision --extra ui --extra ml --extra train --extra hub --extra link
 if errorlevel 1 (
     echo [ERROR] Failed to sync packages with uv.
     pause
@@ -28,7 +29,7 @@ echo   - Space: Start/Stop continuous recording
 echo   - Train button: Instant 4s Spatial MLP training
 echo.
 
-call uv run python -m manux
+call ".venv\Scripts\python.exe" -m manux
 
 if errorlevel 1 (
     echo.
