@@ -2459,7 +2459,8 @@ class Bridge(QObject):
         if t.index != old_index:
             self._reset_practice()
         progress = round(t.progress, 2)
-        if changed or progress != self._tutorial_progress or t.step_key == "sensitivity":
+        # steps that draw the practice cursor refresh every frame so it follows the hand
+        if changed or progress != self._tutorial_progress or t.step_key in ("move", "vertical", "sensitivity"):
             self._tutorial_progress = progress
             self.tutorialChanged.emit()
 
