@@ -3,9 +3,8 @@
 Ported from v0.3 `MouseController.map_to_screen_absolute`, `_relative_step`, `_compute_target_screen_pos`,
 `absolute_monitor`, `cycle_monitor`, `warp_to`.
 
-- relative (default): trackpad-like deltas with pointer acceleration (slow hand = low gain, fast = high).
-  The speed scale is the PRIMARY monitor's width so a second monitor does not double the speed; the
-  cursor may cross onto every monitor.
+- relative (default): trackpad-like deltas with pointer acceleration. Scale each axis by the
+  extended desktop span relative to the primary monitor, preserving camera aspect correction.
 - absolute: the camera's active box maps onto one monitor (the one under the cursor until
   `next_monitor()` picks another). `gain` != 1 adds (gain - 1) x each hand delta to an offset so the
   cursor moves faster without a jump when the gain changes.
@@ -33,19 +32,19 @@ class CursorMapper:
         self._abs_offset: Tuple[float, float] = (0.0, 0.0)
         self._abs_prev: Optional[Tuple[float, float]] = None
         self._rebase = False
-
-    @property
-    def screen_w(self) -> int:
-        return self.screens.primary.width
+        self._palm_pos: Optional[Tuple[float, float]] = None
+        self._palm_pitch: Optional[float] = None
+        self._palm_tracking = False
 
     @property
     def anchored(self) -> bool:
-        return self._anchor is not None
+        return self._anchor is not None or self._palm_pos is not None
 
     # ------------------------------------------------------------------ state changes
     def pause(self) -> None:
         """The hand stopped driving the cursor: the next point starts fresh (no jump)."""
         self._anchor = None
+        self._palm_pos = None
         self._abs_prev = None
         if self.config.movement_mode != "absolute":
             self._smoothed = None
@@ -56,6 +55,7 @@ class CursorMapper:
         Absolute mode maps the hand straight back unless `rebase` shifts the mapping so the cursor stays here."""
         self.pos = (int(x), int(y))
         self._anchor = None
+        self._palm_pos = None
         self._abs_prev = None
         self._smoothed = None
         self._rebase = bool(rebase)
@@ -99,6 +99,33 @@ class CursorMapper:
             self.pos = self._relative(point, now, gain)
         return self.pos
 
+    def step_palm(self, x: float, pitch: Optional[float], now: float, gain: float = 1.0) -> Tuple[int, int]:
+        """Use hand X and wrist pitch for both the practice cursor and Windows output."""
+        c = self.config
+        if c.palm_left == c.palm_right:
+            tracked = pitch is not None
+            if tracked != self._palm_tracking:
+                self.pause()
+                self._palm_tracking = tracked
+            if pitch is not None:
+                self._palm_pitch = pitch
+            y = -(self._palm_pitch or 0.0) / (150 * c.frame_aspect)
+            return self.step((x, y), now, gain)
+
+        monitor = self.screens.primary
+        px, py = self._palm_pos if self._palm_pos is not None else monitor.clamp(*self.pos)
+        fx = (x - c.palm_left) / (c.palm_right - c.palm_left)
+        target_x = monitor.left + (.5 + (fx - .5) * c.palm_x_gain) * (monitor.width - 1)
+        target_y = py
+        if pitch is not None:
+            fy = (pitch - c.palm_up) / (c.palm_down - c.palm_up)
+            target_y = monitor.top + (.5 + (fy - .5) * c.palm_y_gain) * (monitor.height - 1)
+        target_x, target_y = monitor.clamp(target_x, target_y)
+        alpha = min(c.smoothing, .12) if self._palm_pos is None else c.smoothing
+        self._palm_pos = (px + alpha * (target_x - px), py + alpha * (target_y - py))
+        self.pos = tuple(round(value) for value in self._palm_pos)
+        return self.pos
+
     def _relative(self, point: Tuple[float, float], now: float, gain: float) -> Tuple[int, int]:
         c = self.config
         smoothing = max(0.05, min(1.0, float(c.smoothing)))
@@ -125,9 +152,12 @@ class CursorMapper:
         speed = math.hypot(dx, dy) / dt
         t = max(0.0, min(1.0, (speed - v_lo) / (v_hi - v_lo)))
         g = (g_min + (g_max - g_min) * t) * gain
-        px, py = self.screens.clamp(self._rel_pos[0] + dx * self.screen_w * g,
-                                    self._rel_pos[1] + dy * self.screen_w * g)
-        self._rel_pos = (px, py)
+        bounds = self.screens.bounds
+        primary = self.screens.primary
+        vertical_scale = primary.width * bounds.height / primary.height
+        self._rel_pos = bounds.clamp(self._rel_pos[0] + dx * bounds.width * g,
+                                     self._rel_pos[1] + dy * vertical_scale * g)
+        px, py = self.screens.clamp(*self._rel_pos)
         return int(round(px)), int(round(py))
 
     def _absolute(self, point: Tuple[float, float], gain: float) -> Tuple[int, int]:

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import time
 from pathlib import Path
@@ -166,6 +167,8 @@ GESTURE_TO_STUDIO_CLASS: Dict[str, str] = {
     "motion.enter": "thumbs_up",
     "motion.exit": "thumbs_up",
     "v_sign": "v_sign",
+    "control.v_sign": "v_sign",
+    "control.toggle": "v_sign",
     "rock_sign": "rock_sign",
     "window.close": "rock_sign",
     "mouse.move": "none",
@@ -206,6 +209,9 @@ def normalize_system_action(snapshot: Any, actions: Sequence[str] = ()) -> str:
             cls = GESTURE_TO_STUDIO_CLASS[act]
             if cls != "none":
                 return cls
+    for event in getattr(snapshot, "events", ()):
+        if event.startswith("mode:") and event.endswith(":intent") and "motion" in event:
+            return "thumbs_up"
     return "none"
 
 
@@ -805,7 +811,7 @@ class PoseSnapshotStudio:
         stamp = int(time.time() * 1000)
         model_id = self.active_model_id or "spatial_pose_mlp.json"
         model_stem = Path(model_id).stem
-        filename = f"manux_pose_snapshots_{model_stem}_{stamp}.json"
+        filename = f"manux_pose_snapshots_{model_stem}_{self.split}_{stamp}_{uuid4().hex}.json"
         out_path = self.snapshots_dir / filename
         stat = self.summary()
         saved_count = len(self.samples)
@@ -821,8 +827,24 @@ class PoseSnapshotStudio:
             "byAction": stat["byAction"],
             "samples": list(self.samples),
         }
-        from manux.data.studio import atomic_json
-        atomic_json(out_path, payload)
+        # Publish a complete new file without ever replacing another capture. A UUID avoids
+        # same-millisecond saves colliding; exclusive publication also protects existing
+        # files if a name does collide. Readers glob only *.json, never this staging file.
+        part = out_path.with_name(f".{filename}.part")
+        created = False
+        try:
+            with part.open("x", encoding="utf-8") as file:
+                created = True
+                json.dump(payload, file, ensure_ascii=False, allow_nan=False)
+                file.flush()
+                os.fsync(file.fileno())
+            if os.name == "nt":
+                os.rename(part, out_path)  # Windows rename refuses an existing destination.
+            else:
+                os.link(part, out_path)  # POSIX rename replaces; linking is exclusive instead.
+        finally:
+            if created:
+                part.unlink(missing_ok=True)
         self.samples.clear()
         self.invalidate_saved_cache()
         self.saved_dataset_counts(force=True)

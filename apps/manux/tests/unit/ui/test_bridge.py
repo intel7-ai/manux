@@ -65,6 +65,57 @@ def drained(runtime):
     return runtime.engine.commands.drain()
 
 
+@pytest.mark.parametrize("layout", ["standard", "studio"])
+def test_pointer_setup_page_opens_after_hand_choice_and_returns_to_tutorial(tmp_path, layout):
+    from PySide6.QtCore import QObject
+    from manux.ui.bridge import Bridge
+    settings = Settings(schema())
+    runtime = FakeRuntime(settings)
+    runtime.pointer_setup_dir = tmp_path
+    requests = []
+    runtime.request = lambda request: requests.append(request) is None
+    b = Bridge(runtime, settings, tmp_path, layout=layout)
+    try:
+        b._save_hand("Right")
+        b.application.processEvents()
+        page = b.window.findChild(QObject, "pointerSetupPage")
+        assert page is not None and page.property("visible")
+        assert b.pointerSetup == {"phase": "intro"}
+        b.pointerSetupAction("start")
+        assert requests[-1].path == "start"
+        b.apply_view(ViewFrame(None, pointer_setup={
+            "phase": "aim", "target": (.5, .39, .06), "cursor": (.5, .5),
+            "aspect": 16 / 9, "index": 0, "total": 6, "holding": False, "hand": True,
+        }))
+        b.application.processEvents()
+        target = page.findChild(QObject, "pointerSetupTarget")
+        cursor = page.findChild(QObject, "pointerSetupCursor")
+        arena = target.parentItem()
+        assert arena.width() > 100 and arena.height() > 50
+        assert target.property("visible") and cursor.property("visible")
+        assert target.width() == pytest.approx(.06 * arena.width())
+        assert target.x() + target.width() / 2 == pytest.approx(.5 * arena.width())
+        assert target.y() + target.height() / 2 == pytest.approx(.39 * arena.height())
+        assert cursor.x() + cursor.width() / 2 == pytest.approx(.5 * arena.width())
+        assert cursor.y() + cursor.height() / 2 == pytest.approx(.5 * arena.height())
+        b.apply_view(ViewFrame(None, pointer_setup={
+            "phase": "aim", "target": (.5, .39, .06), "cursor": (.62, .39),
+            "aspect": 16 / 9, "index": 0, "total": 6, "holding": False, "hand": False,
+        }))
+        b.application.processEvents()
+        assert target.property("visible")
+        assert cursor.x() + cursor.width() / 2 == pytest.approx(.62 * arena.width())
+        b.apply_view(ViewFrame(None, pointer_setup={"phase": "review", "note": "도달 6/6"}))
+        b.pointerSetupAction("apply")
+        assert requests[-1].path == "apply"
+        b.apply_view(ViewFrame(None, pointer_setup={"phase": "saved"}))
+        b.application.processEvents()
+        assert not page.property("visible") and b.stage_name == "tutorial"
+        assert b.tutorial is not None
+    finally:
+        b.close()
+
+
 def test_starts_on_the_splash_with_pinch_as_base_mode(bridge):
     b, rt = bridge
     cmds = drained(rt)

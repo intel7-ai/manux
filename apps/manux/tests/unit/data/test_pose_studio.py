@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from manux.data.pose_studio import (
     ACTION_IDS,
@@ -253,3 +254,79 @@ def test_eval_buffer_and_saved_eval_do_not_enter_pose_training(tmp_path):
     assert [s["sampleId"] for s in studio.load_all_samples()] == [train_id]
     studio.save_dataset()
     assert [s["sampleId"] for s in studio.load_all_samples()] == [train_id]
+
+
+def test_same_millisecond_saves_preserve_training_and_eval_datasets(tmp_path, monkeypatch):
+    monkeypatch.setattr("manux.data.pose_studio.time.time", lambda: 1234.567)
+    studio = make_pose_studio(tmp_path)
+    studio.profile = "synthetic"
+    hand = _synthetic_hand(16)
+    paths = []
+    train_ids = []
+    contents = []
+    for split in ("train", "eval", "train"):
+        studio.split = split
+        studio.capture_snapshot(ground_truth="thumb_ring", landmarks=hand)
+        if split == "train":
+            train_ids.append(studio.samples[0]["sampleId"])
+        paths.append(studio.save_dataset())
+        contents.append(paths[-1].read_bytes())
+    assert len(set(paths)) == 3
+    assert all(path.read_bytes() == data for path, data in zip(paths, contents))
+    assert len(list(studio.snapshots_dir.glob("*.json"))) == 3
+    assert {s["sampleId"] for s in studio.load_all_samples()} == set(train_ids)
+
+
+def test_failed_dataset_publication_preserves_saved_file_and_unsaved_buffer(tmp_path, monkeypatch):
+    studio = make_pose_studio(tmp_path)
+    hand = _synthetic_hand(16)
+    studio.capture_snapshot(ground_truth="thumb_ring", landmarks=hand)
+    original = studio.save_dataset()
+    original_bytes = original.read_bytes()
+    studio.capture_snapshot(ground_truth="thumb_middle", landmarks=hand)
+    buffered = list(studio.samples)
+    def fail_publication(*_):
+        raise OSError("synthetic publication failure")
+    import os
+    publish = "rename" if os.name == "nt" else "link"
+    monkeypatch.setattr(f"manux.data.pose_studio.os.{publish}", fail_publication)
+    with pytest.raises(OSError, match="synthetic publication failure"):
+        studio.save_dataset()
+    assert studio.samples == buffered
+    assert original.read_bytes() == original_bytes
+    assert list(studio.snapshots_dir.iterdir()) == [original]
+
+
+def test_colliding_dataset_name_never_replaces_existing_capture(tmp_path, monkeypatch):
+    from uuid import UUID
+    studio = make_pose_studio(tmp_path)
+    monkeypatch.setattr("manux.data.pose_studio.time.time", lambda: 1234.567)
+    hand = _synthetic_hand(16)
+    studio.capture_snapshot(ground_truth="thumb_ring", landmarks=hand)
+    original = studio.save_dataset()
+    original_bytes = original.read_bytes()
+    studio.capture_snapshot(ground_truth="thumb_middle", landmarks=hand)
+    buffered = list(studio.samples)
+    reused_id = UUID(hex=original.stem.rsplit("_", 1)[1])
+    monkeypatch.setattr("manux.data.pose_studio.uuid4", lambda: reused_id)
+    with pytest.raises(FileExistsError):
+        studio.save_dataset()
+    assert studio.samples == buffered
+    assert original.read_bytes() == original_bytes
+    assert list(studio.snapshots_dir.iterdir()) == [original]
+
+
+def test_existing_dataset_stage_is_not_removed_when_exclusive_open_fails(tmp_path, monkeypatch):
+    from uuid import UUID
+    studio = make_pose_studio(tmp_path)
+    studio.capture_snapshot(ground_truth="thumb_ring", landmarks=_synthetic_hand(16))
+    buffered = list(studio.samples)
+    monkeypatch.setattr("manux.data.pose_studio.time.time", lambda: 1234.567)
+    monkeypatch.setattr("manux.data.pose_studio.uuid4", lambda: UUID(int=0))
+    part = studio.snapshots_dir / ".manux_pose_snapshots_spatial_pose_mlp_train_1234567_00000000000000000000000000000000.json.part"
+    part.write_bytes(b"synthetic-other-save-in-progress")
+    with pytest.raises(FileExistsError):
+        studio.save_dataset()
+    assert studio.samples == buffered
+    assert part.read_bytes() == b"synthetic-other-save-in-progress"
+    assert list(studio.snapshots_dir.iterdir()) == [part]

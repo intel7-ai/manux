@@ -19,6 +19,7 @@ import numpy as np
 from manux.core.contracts import Activity, Feature, FrameContext, HandObservation, Intent, IntentFilter
 from manux.ml.spatial_mlp import SpatialMlpModel
 from manux.perception.spatial_features import extract_spatial_features
+from manux.perception.pose_angles import observation_pose_angles
 
 FEATURE_ID = "spatial_pose"
 GUARD_ID = "spatial_pose_guard"
@@ -28,11 +29,11 @@ CLASS_TO_GESTURE: Mapping[str, str] = {
     "none": "pointer.move",
     "thumb_middle": "pinch.thumb_middle",
     "thumb_ring": "pinch.thumb_ring",
-    "thumb_index": "pinch.thumb_index",
+    "thumb_index": "pinch.scroll",
     "thumb_pinky": "pinch.thumb_pinky",
-    "palm_side": "motion.palm_side",
-    "thumbs_up": "motion.thumbs_up",
-    "v_sign": "pointer.v_sign",
+    "palm_side": "pinch.thumb_tucked_open",
+    "thumbs_up": "motion.enter",
+    "v_sign": "control.v_sign",
     "thumb_middle_ring": "pinch.thumb_middle_ring",
     "rock_sign": "spatial_pose.rock_sign",
 }
@@ -41,8 +42,9 @@ DEFAULT_BINDINGS = {"spatial_pose.rock_sign": "window.close"}
 GESTURE_PHASES = {"spatial_pose.rock_sign": frozenset({"tap"})}
 
 GESTURE_TO_CLASS: Mapping[str, str] = {v: k for k, v in CLASS_TO_GESTURE.items()}
-BOTH_CLICK_GESTURES = frozenset({"pinch.thumb_middle", "pinch.thumb_ring"})
-DEFAULT_VETO_GESTURES = frozenset({"pinch.thumb_ring", "pinch.thumb_middle", "pointer.right_click", "pointer.click"})
+GESTURE_TO_CLASS = {**GESTURE_TO_CLASS, "pointer.left_click": "thumb_middle", "pointer.right_click": "thumb_ring"}
+BOTH_CLICK_GESTURES = frozenset({"pinch.thumb_middle", "pinch.thumb_ring", "pointer.left_click", "pointer.right_click"})
+DEFAULT_VETO_GESTURES = BOTH_CLICK_GESTURES
 
 
 @dataclass(frozen=True)
@@ -97,7 +99,8 @@ class SpatialPoseFeature(Feature):
                 return [Intent(ctx.frame.t, FEATURE_ID, g, "end")]
             return ()
 
-        feats = extract_spatial_features(hand.landmarks)
+        feats = (observation_pose_angles(hand) if self._model.feature_version == "pose-angles-v1"
+                 else extract_spatial_features(hand.landmarks))
         if feats is None:
             if self._active_gesture is not None and self._active_gesture != "spatial_pose.rock_sign":
                 g = self._active_gesture
@@ -120,7 +123,8 @@ class SpatialPoseFeature(Feature):
         if self._mode != "direct":
             return ()
 
-        target_gesture = CLASS_TO_GESTURE.get(act)
+        # The timed control recognizer consumes V evidence; direct pose mode cannot bypass its hold.
+        target_gesture = None if act == "v_sign" else CLASS_TO_GESTURE.get(act)
         intents: List[Intent] = []
         if target_gesture == "spatial_pose.rock_sign" and conf >= self._trigger_confidence:
             if self._active_gesture != target_gesture:
@@ -210,7 +214,7 @@ class SpatialPoseGuard(IntentFilter):
                     expected_gesture = CLASS_TO_GESTURE.get(ev.action)
                     # "Both click" = left and right fire independently; never veto either one.
                     both_click = ev.action == "thumb_middle_ring" and intent.gesture in BOTH_CLICK_GESTURES
-                    if expected_gesture and expected_gesture != intent.gesture and not both_click:
+                    if expected_gesture and GESTURE_TO_CLASS.get(intent.gesture) != ev.action and not both_click:
                         self.vetoed_count += 1
                         self._events.append(f"spatial_guard:vetoed_mismatch:{intent.gesture}_vs_{expected_gesture}")
                         continue
