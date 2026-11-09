@@ -10,6 +10,13 @@ ColumnLayout {
     property var speedRows: controller.sensitivityRows.filter(function(r) {
         return r.key === "cursor.relative_gain_min" || r.key === "cursor.relative_gain_max"
     })
+    // Light palette on the controls themselves: the standard window sets none, so a dark Windows theme
+    // would draw black handles and an unreadable check box (the studio window sets the same values).
+    component LightPalette: Palette {
+        window: "#FFFFFF"; windowText: "#112331"; base: "#F4F6F8"; text: "#112331"
+        button: "#EDF3F5"; buttonText: "#112331"; highlight: "#46E5BD"; highlightedText: "#112331"
+        mid: "#DEE5EA"; dark: "#526575"; light: "#FFFFFF"; midlight: "#F4F6F8"; shadow: "#526575"
+    }
     spacing: Theme.Studio.gap / 2
     Repeater {
         model: settings.speedRows
@@ -23,6 +30,7 @@ ColumnLayout {
             }
             Slider {
                 objectName: "quickSpeed_" + modelData.key
+                palette: LightPalette {}
                 Layout.fillWidth: true
                 from: modelData.minimum; to: modelData.maximum; stepSize: modelData.step
                 value: modelData.value
@@ -47,6 +55,7 @@ ColumnLayout {
     }
     CheckBox {
         visible: settings.showDesktopSwitch
+        palette: LightPalette {}
         text: "바탕화면 보기 동작 사용"
         enabled: !settings.controller.advancedPending
         checked: settings.controller.showDesktopEnabled

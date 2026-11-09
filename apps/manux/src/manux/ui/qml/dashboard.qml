@@ -501,7 +501,18 @@ ApplicationWindow {
                 }
             }
         }
-        QuickSpeedControls { Layout.fillWidth: true; Layout.leftMargin: 24; Layout.rightMargin: 24; controller: dashboard }
+        Rectangle {
+            // speed strip: a white band under the header so it reads as part of the toolbar
+            color: "white"
+            Layout.fillWidth: true
+            Layout.preferredHeight: quickSpeed.implicitHeight + 16
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: window.line }
+            QuickSpeedControls {
+                id: quickSpeed
+                anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: 24; rightMargin: 24; topMargin: 4 }
+                controller: dashboard
+            }
+        }
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
