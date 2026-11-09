@@ -20,9 +20,10 @@ def lan_address():
 
 
 class PhoneSession:
-    def __init__(self, data_dir, *, factory=PhoneLink, clock=time.monotonic):
+    def __init__(self, data_dir, *, factory=PhoneLink, clock=time.monotonic, screen=None):
         self.data_dir, self.factory, self.clock = data_dir, factory, clock
         self.link = None
+        self.screen = screen
         self.code, self.expires, self.note = "", 0., ""
 
     def _issue(self):
@@ -33,6 +34,8 @@ class PhoneSession:
         """Only the runtime thread calls this; construction leaves networking off."""
         if action == "start" and self.link is None:
             candidate = self.factory(self.data_dir, host=host.strip() or lan_address())
+            if self.screen is not None:
+                candidate.screen = self.screen
             try:
                 candidate.start()
                 code = candidate.issue_code()

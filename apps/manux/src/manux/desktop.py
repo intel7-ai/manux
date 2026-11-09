@@ -1178,7 +1178,8 @@ def main(argv=None) -> int:
             settings, args.hand_model or default_hand_model(paths), None if args.source == "phone" else args.source)
         if isinstance(source, CameraInput):
             from manux.link.session import PhoneSession
-            source.phone = PhoneSession(paths.data_dir)
+            from manux.link.screen import ScreenRequests
+            source.phone = PhoneSession(paths.data_dir, screen=ScreenRequests())
     except (OSError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 1
@@ -1229,6 +1230,7 @@ def main(argv=None) -> int:
     from manux.features.pointer.workspace import pointer_axes
     from manux.platform import hotkeys
     from manux.platform.tray import QtTray
+    from manux.platform.screen_preview import ScreenPreview
     from manux.ui.bridge import run
     tc = TrainingCenterService(paths.config_dir, paths.data_dir, paths.recordings_dir, model_path=args.tcn_model,
                                store_dir=args.tcn_store, policy_store=policy_store, on_policy=lambda: runtime.request(RuntimeRequest("tcn_policy")),
@@ -1250,6 +1252,8 @@ def main(argv=None) -> int:
                    "export_logs": lambda metrics: export_logs(paths, metrics, info.label),
                    "training_center": tc,
                    "phone_dialog": args.phone_web or args.source == "phone",
+                   "screen_preview": (lambda parent: ScreenPreview(parent, take=source.phone.screen.take,
+                                        complete=source.phone.screen.complete)) if isinstance(source, CameraInput) else None,
                    "pose_studio": studio,
                    "studio_categories": lambda: list(STUDIO_CATEGORIES),
                    "studio_actions": lambda: list(STUDIO_ACTIONS),

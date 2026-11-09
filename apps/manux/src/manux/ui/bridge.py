@@ -655,6 +655,8 @@ class Bridge(QObject):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
         self.timer.start(15)
+        make_screen_preview = self.services.get("screen_preview")
+        self.screen_preview = make_screen_preview(self) if make_screen_preview else None
         if self.services.get("phone_dialog"):
             QTimer.singleShot(200, self.phoneCameraRequested.emit)
 
@@ -2950,6 +2952,8 @@ class Bridge(QObject):
         self._closed_qml = True
         self.timer.stop()
         self.training_timer.stop()
+        if self.screen_preview is not None:
+            self.screen_preview.close()
         self.studio.close()
         self.tc.close()
         if self.hotkeys is not None:
