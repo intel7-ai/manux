@@ -24,7 +24,7 @@ class OpenHand:
     fps, source, seq = 30, "test camera", 0
 
     def __init__(self):
-        self.point, self.pitch = (.5, .55), 80.
+        self.point, self.pitch, self.click = (.5, .55), 80., False
 
     def read(self, *_):
         self.seq += 1
@@ -35,6 +35,8 @@ class OpenHand:
         for root, dx in {5: -.04, 9: -.013, 13: .013, 17: .04}.items():
             for k in range(4):
                 lm[root + k] = (x + dx, y - k * .035, 0.)
+        if self.click:                                   # thumb tip on the middle fingertip (left click)
+            lm[4] = lm[12]
         a = math.radians(self.pitch)
         world = ((0., 0., 0.),) + ((0., -.08 * math.sin(a), -.08 * math.cos(a)),) * 20
         return frame, None, HandObservation(frame, tuple(lm), "Right", .95, world=world), (), 2.0
@@ -87,7 +89,7 @@ def steer_through_positions(b, src, method, tick):
 
 
 @pytest.mark.parametrize("method", ["wrist_pitch", "hand_position"])
-def test_lesson_moves_chooses_up_down_and_reaches_positions(lesson, method):
+def test_lesson_moves_clicks_chooses_up_down_and_reaches_positions(lesson, method):
     b, src, settings, tick = lesson
     b.beginTutorial()
     assert b.tutorial.step_key == "move"
@@ -95,6 +97,16 @@ def test_lesson_moves_chooses_up_down_and_reaches_positions(lesson, method):
         src.point = (.5 + .1 * math.sin(i / 6), .55)
         tick()
     tick(45)
+    assert b.tutorial.step_key == "click"                    # 2. click: a real thumb+middle touch
+    for _ in range(3):
+        src.click = True
+        tick(6)
+        src.click = False
+        tick(12)
+        if b.tutorial.step_key != "click":
+            break
+    tick(45)
+    assert b.tutorial.done[1] and not b.tutorial.skipped[1]    # completed by an engine-confirmed click
     assert b.tutorial.step_key == "vertical" and len(b.tutorialCursor) == 2   # the cursor is drawn here too
     assert b.tutorial.vertical_chosen                                           # the selected method counts as is
     if method != b.tutorial.vertical_method:
