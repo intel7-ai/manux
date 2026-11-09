@@ -1715,13 +1715,35 @@ class Bridge(QObject):
             self.training_note = "별명은 영문·숫자·_·- 1~32자로 입력하세요."
         self.trainingChanged.emit()
 
+    @Property(str, notify=trainingChanged)
+    def hubScope(self):
+        return getattr(self, "_hub_scope", "selected")
+
     @Slot(str)
-    def runHub(self, action):
+    def setHubScope(self, scope):
+        if scope in ("selected", "all") and getattr(self, "_hub_scope", "selected") != scope:
+            self._hub_scope = scope
+            self.trainingChanged.emit()
+
+    @Slot(str)
+    @Slot(str, str)
+    def runHub(self, action, scope=None):
         if self.rec_mode != "off" or self.training_job.running or self.tc.hub_job.running or self.studio.busy:
             return
         if action not in ("status", "upload", "download"):
             return
-        self.tc.hub_action(action, classes=[row["label"] for row in self.training_rows if row["key"] in self.training_selected])
+        effective_scope = scope if scope in ("selected", "all") else getattr(self, "_hub_scope", "selected")
+        if action == "download" and effective_scope == "all":
+            classes = ()
+            all_presets = True
+        else:
+            classes = [row["label"] for row in self.training_rows if row["key"] in self.training_selected]
+            all_presets = False
+        self._last_hub_action = action
+        try:
+            self.tc.hub_action(action, classes=classes, scope=effective_scope, all_presets=all_presets)
+        except TypeError:
+            self.tc.hub_action(action, classes=classes)
         self.training_timer.start()
         self.trainingChanged.emit()
 
@@ -1733,6 +1755,19 @@ class Bridge(QObject):
     def hubStatus(self):
         state = self.tc.hub_job.snapshot()
         return str(state.get("error") or state.get("stage") or ".env 설정으로 연결합니다.")
+
+    @Property(str, notify=trainingChanged)
+    def hubActionStatus(self):
+        state = self.tc.hub_job.snapshot()
+        action = state.get("result", {}).get("action") or getattr(self, "_last_hub_action", "")
+        if action in ("upload", "download") or state.get("running"):
+            return str(state.get("error") or state.get("stage") or "")
+        return ""
+
+    @Property(bool, notify=trainingChanged)
+    def hubHasError(self):
+        state = self.tc.hub_job.snapshot()
+        return bool(state.get("error"))
 
     @Property(str, notify=trainingChanged)
     def trainingStage(self):

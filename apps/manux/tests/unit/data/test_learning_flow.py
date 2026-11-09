@@ -230,3 +230,47 @@ def test_missing_component_is_a_visible_job_error(tmp_path, monkeypatch):
     job = WorkerJob(tmp_path / "jobs")
     assert not job.start_request({"kind": "hub"})
     assert not job.running and job.snapshot()["error"]
+
+def test_hub_detailed_feedback_on_duplicates_and_all_scope(tmp_path, monkeypatch):
+    monkeypatch.setattr(hub, "load_dotenv", lambda *args, **kwargs: {})
+    root = tmp_path / "recordings"
+    recording(root / "profile-synthetic/pinch/train/r.jsonl.gz", "train")
+    remote = Remote()
+    request = {"profile": "synthetic", "repo": "team/data", "config_dir": str(tmp_path / "config"),
+               "recordings_dir": str(root), "action": "upload", "job_id": "test", "cancel_path": str(tmp_path / "cancel")}
+    events = []
+    app_worker.run_hub(request, lambda event, **values: events.append((event, values)), client=remote)
+    assert events[-1][0] == "done"
+    assert "새 녹화 1개" in events[-1][1]["stage"]
+
+    events.clear()
+    app_worker.run_hub(request, lambda event, **values: events.append((event, values)), client=remote)
+    assert events[-1][0] == "done"
+    assert "원격에 이미 보관 중입니다" in events[-1][1]["stage"]
+    assert "중복 1개 생략" in events[-1][1]["stage"]
+
+    events.clear()
+    # When filtering by an unrecorded class: reports target not found
+    dl_missing = {"profile": "", "repo": "team/data", "preset": "pinch", "classes": ["unmatched_class"],
+                  "recordings_dir": str(root), "action": "download", "job_id": "test2", "cancel_path": str(tmp_path / "cancel")}
+    app_worker.run_hub(dl_missing, lambda event, **values: events.append((event, values)), client=remote)
+    assert events[-1][0] == "done"
+    assert "다운로드 대상 없음" in events[-1][1]["stage"]
+
+    # When matching existing remote file: reports duplicate skip
+    events.clear()
+    dl_all = {"profile": "", "repo": "team/data", "preset": "pinch", "classes": (),
+              "recordings_dir": str(root), "action": "download", "job_id": "test3", "cancel_path": str(tmp_path / "cancel")}
+    app_worker.run_hub(dl_all, lambda event, **values: events.append((event, values)), client=remote)
+    assert events[-1][0] == "done"
+    assert "최신 상태 유지" in events[-1][1]["stage"]
+    assert "중복 1개 생략" in events[-1][1]["stage"]
+
+    # Download with scope='all' clears filters and preserves duplicate reporting
+    events.clear()
+    all_request = {"profile": "", "repo": "team/data", "preset": "pinch", "scope": "all",
+                   "recordings_dir": str(root), "action": "download", "job_id": "test4", "cancel_path": str(tmp_path / "cancel")}
+    app_worker.run_hub(all_request, lambda event, **values: events.append((event, values)), client=remote)
+    assert events[-1][0] == "done"
+    assert "최신 상태 유지" in events[-1][1]["stage"]
+

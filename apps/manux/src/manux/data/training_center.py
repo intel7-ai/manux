@@ -563,7 +563,7 @@ class TrainingCenterService:
         _atomic_text(self.preferences_path, json.dumps({"profile": identity.profile}))
         self.profile = identity.profile
 
-    def hub_action(self, action: str, classes=()):
+    def hub_action(self, action: str, classes=(), scope: str = "selected", all_presets: bool = False):
         try:
             if action not in ("status", "download", "upload"):
                 raise ValueError("알 수 없는 허브 작업입니다.")
@@ -571,7 +571,7 @@ class TrainingCenterService:
             if self.job.running or self.studio_job.running:
                 raise ValueError("학습·스튜디오 작업이 끝난 뒤 허브 작업을 시작하세요.")
             return self.hub_job.start_request({"kind": "hub", "action": action, "profile": profile,
-                "classes": list(classes),
+                "classes": list(classes), "scope": scope, "all_presets": all_presets,
                 "preset": self.preset_name, "repo": self.repo, "config_dir": str(self.config_dir),
                 "env_files": [str(path) for path in self.env_files], "recordings_dir": str(self.recordings_dir)})
         except (ValueError, OSError) as error:

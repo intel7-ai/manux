@@ -91,5 +91,7 @@ def pull(client, root, classes, cancelled=lambda:False):
             doc=validate(raw_doc)
             if raw_doc != doc: raise ValueError("공개 포즈 형식 외의 필드가 있습니다.")
             if doc["person"]!=row.get("person") or doc["split"]!=row.get("split"): raise ValueError("포즈 인덱스와 본문이 다릅니다.")
-            os.link(staged,dest);count+=1
+            try: os.link(staged,dest)
+            except OSError: os.replace(staged,dest)
+            count+=1
     return count

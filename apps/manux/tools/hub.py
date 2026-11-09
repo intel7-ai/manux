@@ -407,7 +407,10 @@ def pull_from_hub(hub: RemoteHub, recordings_dir: Path, *,
                         checked.entry[key] != row.get(key) for key in ("person", "preset", "split")):
                     raise HubError("remote recording does not match its manifest")
                 # Exclusive destination creation: a second downloader cannot overwrite local work.
-                os.link(candidate, dest)
+                try:
+                    os.link(candidate, dest)
+                except OSError:
+                    os.replace(candidate, dest)
             downloaded.append(dest)
 
     models_downloaded = 0

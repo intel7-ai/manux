@@ -161,6 +161,14 @@ def run_hub(request, send=emit, client=None):
     classes = request.get("classes", ())
     if not isinstance(classes, (list, tuple)) or any(not re.fullmatch(r"[a-z][a-z0-9_]*", c) for c in classes):
         raise ValueError("공유할 동작을 다시 선택하세요.")
+    scope = request.get("scope", "selected")
+    all_presets = bool(request.get("all_presets", False))
+    if action == "download" and scope == "all":
+        classes = ()
+        presets = ()
+    else:
+        presets = () if all_presets else [preset]
+
     can_upload = None
     if action == "upload":
         if hasattr(client, "check_upload_access"):
@@ -176,17 +184,35 @@ def run_hub(request, send=emit, client=None):
         if not valid:
             raise ValueError("내 별명으로 완료된 녹화가 없습니다.")
         result = hub.push_to_hub(client, own, classes=classes)
-        message = f"업로드 완료 · 새 녹화 {result['new_recordings']}개"
+        new_cnt = result.get("new_recordings", 0)
+        already_cnt = result.get("already_on_hub", 0)
+        scanned_cnt = result.get("scanned", 0)
+        if new_cnt == 0 and already_cnt > 0:
+            message = f"업로드 완료 · 로컬 {scanned_cnt}개 모두 원격에 이미 보관 중입니다 (중복 {already_cnt}개 생략)"
+        elif new_cnt > 0 and already_cnt > 0:
+            message = f"업로드 완료 · 신규 {new_cnt}개 업로드 (기존 {already_cnt}개 유지)"
+        else:
+            message = f"업로드 완료 · 새 녹화 {new_cnt}개"
     elif action == "download":
-        result = hub.pull_from_hub(client, root, presets=[preset], classes=classes)
-        message = f"팀 데이터 받기 완료 · {result['downloaded']}개"
+        result = hub.pull_from_hub(client, root, presets=presets, classes=classes)
+        matched = result.get("matched_remote", 0)
+        downloaded = result.get("downloaded", 0)
+        already = result.get("already_local", 0)
+        if matched == 0:
+            message = "다운로드 대상 없음 · 선택한 조건에 맞는 원격 녹화가 없습니다."
+        elif downloaded == 0 and already > 0:
+            message = f"최신 상태 유지 · 원격 {matched}개 모두 로컬에 이미 보관 중입니다 (중복 {already}개 생략)"
+        elif downloaded > 0 and already > 0:
+            message = f"팀 데이터 받기 완료 · 신규 {downloaded}개 (기존 {already}개 최신 유지)"
+        else:
+            message = f"팀 데이터 받기 완료 · {downloaded}개"
     elif action == "status":
         result = hub.summarize_entries(client.read_manifest())
         can_upload, permission_note = upload_access(client)
         message = f"읽기 연결 성공 · 팀 녹화 {result['files']}개 · {permission_note}"
     else:
         raise ValueError("알 수 없는 허브 작업입니다.")
-    send("done", stage=message, summary=result, repo=repo, read_access=True,
+    send("done", stage=message, summary=result, repo=repo, action=action, read_access=True,
          upload_access=can_upload, job_id=request["job_id"])
 
 
