@@ -110,3 +110,36 @@ def test_tilting_past_upright_moves_cursor_one_way():
     run(mapper, [.5] * 30, [worlds[0]] * 30)
     ys = [p[1] for p in run(mapper, [.5] * 60, worlds)]
     assert all(b <= a for a, b in zip(ys, ys[1:])), ys
+
+
+def test_resting_hand_parks_cursor_completely():
+    mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**CALIBRATED, palm_hold=.035))
+    rng = random.Random(3)  # 1° rms rest noise: calibration recommends ~.035 for it
+    out = run(mapper, [.5 + rng.gauss(0, .002) for _ in range(120)], [90 + rng.gauss(0, 1.) for _ in range(120)])
+    assert mapper.parked
+    assert len(set(out[45:])) == 1, sorted(set(out[45:]))
+
+
+def test_leaving_neutral_zone_moves_without_jump():
+    mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**CALIBRATED, palm_hold=.03))
+    run(mapper, [.5] * 30, [90.] * 30)
+    assert mapper.parked
+    # Slow steady tilt down: once it leaves the zone the cursor follows smoothly and ends on the hand.
+    ps = [90 - 10 * i / 44 for i in range(45)] + [80.] * 30
+    ys = [p[1] for p in run(mapper, [.5] * 75, ps)]
+    steps = [b - a for a, b in zip(ys, ys[1:])]
+    assert min(steps) >= 0 and max(steps) <= 15, steps
+    assert ys[-1] == round(540 + 10 / 50 * 1079) or mapper.parked
+
+
+def test_zero_neutral_zone_never_parks():
+    mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**CALIBRATED, palm_hold=0.))
+    run(mapper, [.5] * 60, [90.] * 60)
+    assert not mapper.parked
+
+
+def test_profiles_saved_before_neutral_zone_get_default():
+    values = dict(palm_left=.3, palm_right=.7, palm_up=110., palm_down=70., palm_x_gain=1.,
+                  palm_y_gain=1., smoothing=.3)
+    profiles = read_profiles(write_profiles({"b" * 64: values}))
+    assert profiles["b" * 64]["palm_hold"] == .015
