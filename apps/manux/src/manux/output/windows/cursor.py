@@ -57,7 +57,8 @@ PALM_PITCH_BETA = .07
 CLICK_GUARD_CLOSE = 1.3    # click contact ratio below this holds the palm cursor (no frame of real use went this low)
 CLICK_GUARD_CLOSING_DROP = .4   # ... or when it falls this much in one frame (the hand tilts while fingers close,
 CLICK_GUARD_CLOSING_BELOW = 3.  # 1-2 frames before they touch), counted only once it is this close
-CLICK_GUARD_SETTLE = .2   # ... and it keeps holding this long after the fingers part (the pitch jumps back)
+CLICK_GUARD_MAX_HOLD = .3       # recorded clicks touched 0.14-0.27 s; longer contact is a drag and moves again
+CLICK_GUARD_SETTLE = .2  # ... and it keeps holding this long after the fingers part (the pitch jumps back)
 PALM_PITCH_CUTOFF_SCALE =.5   # wrist pitch is ~2x noisier than hand X at rest (fine traces): filter it harder
 PALM_PITCH_JUMP = 90.0  # deg between frames: a wrap or a bad landmark frame, not a hand movement
 PALM_EASE_SECONDS = .2   # after a pause the calibrated cursor glides from where it was to the hand
@@ -107,6 +108,9 @@ class CursorMapper:
         self._palm_ease_until = 0.0
         self._guard_until = float("-inf")
         self._last_contact: Optional[float] = None
+        self._contact_since: Optional[float] = None
+        self._guard_rebase = False
+        self._contact_drag = False
         self._reset_hold()
         self._reset_precision()
 
@@ -213,10 +217,27 @@ class CursorMapper:
                    and self._last_contact - contact > CLICK_GUARD_CLOSING_DROP)
         self._last_contact = contact
         if contact is not None and (contact < CLICK_GUARD_CLOSE or closing):
-            self._guard_until = now + CLICK_GUARD_SETTLE
-            return self.pos
-        if now < self._guard_until:
-            return self.pos
+            if self._contact_since is None:
+                self._contact_since = now
+            if now - self._contact_since <= CLICK_GUARD_MAX_HOLD:
+                self._guard_until = now + CLICK_GUARD_SETTLE
+                self._guard_rebase = True
+                return self.pos
+            # Held longer than any recorded click: a drag. Follow the hand again from here (re-anchored, so the
+            # pinch tilt that happened during the hold is not applied as a jump), without re-syncing to the
+            # mapping, which still contains that tilt.
+            self._contact_drag = True
+        else:
+            self._contact_drag = False
+            if self._contact_since is not None:          # fingers just parted (click or drag end)
+                self._contact_since = None
+                self._guard_until = max(self._guard_until, now + CLICK_GUARD_SETTLE)
+                self._guard_rebase = True
+            if now < self._guard_until:
+                return self.pos
+        if self._guard_rebase:
+            self._guard_rebase = False
+            self.pause()       # continue from where the cursor is; the tilt that came with the pinch is dropped
         c = self.config
         if c.palm_left == c.palm_right:
             # Uncalibrated: relative movement, smoothed by `_relative`'s own EMA (not filtered twice).
@@ -292,7 +313,7 @@ class CursorMapper:
             k = g_low + (1.0 - g_low) * u
             x, y = self._prec_pos[0] + dx * k, self._prec_pos[1] + dy * k
             # only a fast hand re-syncs: a slow or resting one never drags the cursor on after it stops
-            pull = min(1.0, u * dt / PALM_PRECISION_RESYNC)
+            pull = 0.0 if self._contact_drag else min(1.0, u * dt / PALM_PRECISION_RESYNC)
             x, y = x + (target[0] - x) * pull, y + (target[1] - y) * pull
         # The mapping clamps the hand at the screen edge, so pushing further gives no more movement: a hand at an
         # edge puts the cursor on that edge, or an edge button (taskbar, close) could stay out of reach.
@@ -304,7 +325,7 @@ class CursorMapper:
             y = target[1]
         gap = math.dist((x, y), target)
         limit = PALM_PRECISION_MAX_GAP * self.screens.primary.height
-        if gap > limit:
+        if gap > limit and not self._contact_drag:   # a drag stays relative (the mapping holds the pinch tilt)
             x, y = target[0] + (x - target[0]) * limit / gap, target[1] + (y - target[1]) * limit / gap
         self._prec_pos = (x, y)
         return self._prec_pos

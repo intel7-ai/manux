@@ -239,3 +239,24 @@ def test_cursor_also_holds_while_click_fingers_close_fast():
     for contact, pitch in ((2.76, 92.6), (1.62, 95.), (.94, 93.)):
         t += 1 / 30
         assert mapper.step_palm(.5, pitch, t, contact=contact) == before
+
+
+def test_long_contact_is_a_drag_and_moves_without_the_tilt_jump():
+    mapper = CursorMapper(ScreenLayout.single(1920, 1080), WindowsOutputConfig(**PRECISE))   # default precision: the drag continues relatively
+    t = 10.
+    for _ in range(30):
+        t += 1 / 30
+        mapper.step_palm(.5, 90., t, contact=3.)
+    start = mapper.pos
+    xs = []
+    for i in range(45):                                       # hold thumb+middle 1.5 s (tilted 4 deg, ~90 px here) and drag right
+        t += 1 / 30
+        x = .5 + .1 * max(0., (i - 12) / 30)                  # starts moving after 0.4 s
+        xs.append(mapper.step_palm(x, 86., t, contact=.7))
+    assert xs[8] == start                                     # first 0.3 s: held like a click
+    assert xs[-1][0] > start[0] + 60                          # then the drag follows the hand
+    assert abs(xs[-1][1] - start[1]) <= 3                     # and the 4 deg pinch tilt never became a jump
+    for _ in range(15):                                       # release: pitch tilts back
+        t += 1 / 30
+        end = mapper.step_palm(.6, 90., t, contact=3.)
+    assert abs(end[1] - start[1]) <= 3                        # no jump at the drop either
