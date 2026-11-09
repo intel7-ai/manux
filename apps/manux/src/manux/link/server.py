@@ -256,7 +256,8 @@ class PhoneLink:
                         self._screen_front = meta.facing == "user"
                         if self.screen is not None:
                             self.screen.clear()
-                    await ws.send_json({"kind": "ack", "seq": meta.seq, "accepted": accepted})
+                    await ws.send_json({"kind": "ack", "seq": meta.seq, "accepted": accepted,
+                                        "distance": self.source.distance_hint()})
                 elif msg.type == WSMsgType.TEXT:
                     data = json.loads(msg.data)
                     sent = data.get("sent") if isinstance(data, dict) else None

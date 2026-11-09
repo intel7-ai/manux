@@ -121,6 +121,9 @@ Windows USB 카메라는 DirectShow를 먼저 시도하고 열기 실패 시 해
   한 손만 보이는 상태에서 추가 손을 찾는 비용이 늘 수 있다. 선택한 조작 손이 검출되지 않으면
   다른 손으로 대체하지 않고 `None`을 넘긴다.
 - 실패하면: 관절이 21개가 아니거나 숫자가 유한하지 않거나 `score`가 범위 밖이면 생성 시 `ValueError`. `tracking`은 이런 검출을 버리고 `None`을 넘긴다.
+- `tracking.auto_distance`(기본 켜짐)는 작은 손의 인식 영역 확대와 상대 손 이동 보정을 함께 켠다. 기존 `hand_crop` 수동 설정은 별도로 보존한다. 자동 모드에서는 이전 손 주변 ROI를 사용하고, 손이 없을 때 250ms마다 겹치는 영역 하나를 추가 검색한다. 한 프레임 최대 2회 검출이며 ROI 실패는 전체 영상으로 복귀한다. 해상도·반전·회전 변경은 이전 ROI를 폐기한다. `TrackResult.zoom`은 실제 사용한 ROI 확대 배율이고 반환 좌표는 항상 원본 전체 영상 기준이다.
+- 거리 보정은 미터 추정이 아니라 손목/손가락 뿌리 4개 구간의 영상 높이 대비 길이에 기반한다. world 좌표가 있으면 원근 투영으로 짧아진 구간을 보정하고 투영 비율 0.55 미만 구간은 버린다. 5개 유효 표본부터 최근 7개 중앙값과 0.45초 평활화를 사용한다. 기준 손바닥 비율 0.16, 이동 배율 1~2.5, 증가 초당 0.8/감소 초당 1.5로 제한한다. 손 소실 1초 후 초기화하며 손/프레임을 재사용하지 않는다.
+- `WindowsOutputConfig.distance_scale`은 저장하지 않는 현재 보정값이다. 상대 `hand_position`의 x/y 차이와 가속도 계산에만 곱하며 절대 좌표·손목 각도·클릭/스크롤 기준·설정 파일의 수동 감도·드래그 배율을 바꾸지 않는다. 배율만 변하고 손이 정지해 있으면 커서는 움직이지 않는다. Windows와 연습 출력에 같은 값을 전달한다. `ViewFrame.distance`는 UI에 실제 확대·이동 배율과 상태만 전달한다.
 
 ## 4. 특징 (`perception`)
 
@@ -615,15 +618,16 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 - POST /pair의 {code, device} 검증 후 256bit 이상 접속 토큰 응답. 메모리에서만 관리하고 IP에 묶으며 120초 안에 한 번 WebSocket 인증에 쓴다. /ws 첫 JSON {kind:"auth", token} 없이는 프레임을 받지 않고 5초 내 인증하지 않으면 닫는다. 코드·토큰을 URL/QR/로그에 넣지 않는다.
 - 한 기기만 접속. PC에 device(64자 이하 표시명, 권한 아님)·peer 표시. disconnect()는 연결·토큰·코드·프레임 폐기. block()은 전역 차단하고 끊는다. unblock() 후 새 코드 필요. 종료도 같은 정리.
 - 첫 명시 실행 때 사용자 데이터 폴더 link/certs에 자체 서명 인증서/키 생성. Git checkout/worktree 내부와 그 안을 가리키는 링크 경로 거절. TLS 1.2 이상 HTTPS만 제공. 인증서 경고 후 iOS Safari getUserMedia 가능 여부는 사람이 검증한다.
-- binary 프레임 하나 = 4byte big-endian JSON 길이 + UTF-8 JSON + JPEG. JSON ≤1024byte, 전체 ≤1MiB. JSON: {kind:"frame", seq, captured_at, width, height, mirrored, rotation, facing}. seq는 연결 내 증가 정수, captured_at은 PC epoch 초로 보정한 촬영 시각, JPEG 각 변 ≤1280·총 ≤1280×960, rotation은 적용할 시계방향 0/90/180/270, facing은 user|environment, mirrored는 적용할 좌우 반전이다. 캔버스는 회전 반영 픽셀이므로 기본 rotation=0, 전면만 mirrored=true. **480×360 상한·품질 0.55·목표 최대 30fps**는 원본 유지.
+- binary 프레임 하나 = 4byte big-endian JSON 길이 + UTF-8 JSON + JPEG. JSON ≤1024byte, 전체 ≤1MiB. JSON: {kind:"frame", seq, captured_at, width, height, mirrored, rotation, facing}. seq는 연결 내 증가 정수, captured_at은 PC epoch 초로 보정한 촬영 시각, JPEG 각 변 ≤1280·총 ≤1280×960, rotation은 적용할 시계방향 0/90/180/270, facing은 user|environment, mirrored는 적용할 좌우 반전이다. 캔버스는 회전 반영 픽셀이므로 기본 rotation=0, 전면만 mirrored=true. 기본 전송은 **480×360 상한·품질 0.55·목표 최대 30fps**이며 자동 거리 보정의 상세 전송은 아래를 따른다.
 - sync JSON {kind:"sync", sent:epoch_ms} → {kind:"sync", sent, server:epoch_ms} 왕복 중간점으로 시계 보정. 촬영 시각은 JPEG 인코딩 직전 추정치이고 센서 노출 시각이 아니다. 데모 지연은 추정 촬영→PC 수신 시간이며 오차가 있다.
 - 초당 프레임 36회(여유 포함) 제한. 서버 ack 전에 다음 프레임을 보내지 않고 건너뛴다. 잘못된 메시지는 닫고 이전 seq·750ms 초과/250ms 이상 미래 촬영 시각은 ack accepted=false로 버린다. audio 종류는 예약만 하고 현재 거절한다. 원격 명령·마이크·Bluetooth 없음.
 - RemoteCamera는 압축 최신 하나만 보관, 덮어쓴 수를 센다. read(timeout)은 소비 스레드에서 JPEG 해독·반전·회전 후 FrameInfo와 BGR image 반환. FrameInfo.t는 수신 perf_counter, seq는 소스 전체에서 증가. 해독 중 연결이 바뀌면 결과 폐기. fps·actual_mode·추정 수신 지연 제공.
 - 데스크톱 조립자는 휴대폰의 전면/후면 기본 반전과 `camera.mirror`가 다르면 추적 전에 영상과 `FrameInfo.mirrored`를 함께 보정한다. 반전 후 회전 순서와 기존 회전·크기를 유지한다. 전면 영상을 중복 반전하지 않으며 실제 손 선택·미리보기·관절·커서·녹화가 같은 보정된 좌표를 사용한다. PC 카메라는 이미 설정을 적용하므로 재보정하지 않는다.
 - 새 프레임이 없으면 read는 None. 마지막 수신/접속 뒤 2초 정체면 is_open=false. 끊기/정지 때 즉시 슬롯을 비우고 대기자를 깨운다. QR 대기 화면·이전 프레임은 판정기에 넣지 않는다. 조립자가 Engine.frame_missing(now)으로 손 소실·입력 해제를 처리한다. link는 엔진·Windows 입력을 호출하지 않는다.
+- 자동 거리 보정 시 조립자가 선택된 손의 상태를 `RemoteCamera`에 전송 크기 힌트로 게시한다. ACK의 선택적 `distance`는 enabled/detail/zoom/gain만 포함하며 750ms 이상 된 힌트나 종료 세션 것은 보내지 않는다. 폰은 원본 카메라를 최대 960×720 이상적으로 요청하고 작은 손/손 검색 시 전체 영상을 960×720 상한·20fps로 보내며 가까운 손 또는 보정 꺼짐은 기존 480×360·30fps로 복귀한다. 원본 픽셀보다 크게 늘리지 않고 비율과 전체 영상 좌표를 유지한다. 확대 인식은 PC ROI에서 수행하므로 휴대폰의 움직이는 crop이 커서 기준점을 바꾸지 않는다.
 - 전면 카메라 연결에서는 현재 OS 커서가 있는 모니터 전체를 휴대폰에 표시한다. `platform.screen_preview`가 Qt GUI 스레드에서 QScreen을 캡처하고 커서 위치를 표시한다. 최대 1280×720에 비율 유지, JPEG 품질 65, 512KiB 상한이다. PC 화면은 좌우반전하지 않는다. `desktop`이 `ScreenRequests`의 take/complete 콜백을 주입하고 UI는 수명만 관리한다. 후면·미연결·요청 없음에는 캡처하지 않고 화면을 저장하지 않는다.
 - 화면 전송은 손 영상 WebSocket과 별도의 `POST /screen` 요청이다. WS ready에서 메모리 전용 256bit 화면 토큰을 발급한다. 같은 Origin·IP·현재 인증된 WS·유효한 전면 카메라 프레임이 있어야 Authorization 헤더 토큰을 수락한다. URL·로그·저장소에 토큰을 넣지 않는다. 화면 HTTP는 초당 30회, 인증 후 요청은 초당 12회 제한하며 기존 일반 HTTP 분당 120회와 분리한다. 요청은 동시에 하나만 허용하고 캡처 대기는 0.8초로 제한한다. 전면/후면 전환·WS 종료·PC 차단은 진행 중 결과를 무효화한다. 응답도 인증과 세대를 재검사한다.
-- 휴대폰은 이전 화면 응답·JPEG 해독을 마친 뒤 100ms 뒤에 다음 화면을 요청한다. 숨김·카메라 전환·연결 종료 때 HTTP를 취소하고 이미지 URL을 해제한다. 짧은 화면 수신 지연은 이전 이미지를 유지하고 2초 이상 갱신되지 않으면 비운다. 화면 실패는 손 영상 전송을 끊지 않는다. 전체화면은 사용자가 버튼을 눌러 진입·종료하며 모니터 비율을 유지한다. 전체화면 미지원/거절도 카메라 연결을 유지한다.
+- 휴대폰은 이전 화면 응답·JPEG 해독을 마친 뒤 다음 화면을 요청하되 시작 시각 사이를 최소 100ms로 제한한다. 응답 뒤 100ms를 다시 더하지 않으며 동시에 하나만 진행한다. 실패에는 250ms 쉬고 재시도한다. 숨김·카메라 전환·연결 종료 때 HTTP를 취소하고 이미지 URL을 해제한다. 짧은 화면 수신 지연은 이전 이미지를 유지하고 2초 이상 갱신되지 않으면 비운다. 화면 실패는 손 영상 전송을 끊지 않는다. 전체화면은 사용자가 버튼을 눌러 진입·종료하며 모니터 비율을 유지한다. 전체화면 미지원/거절도 카메라 연결을 유지한다.
 
 ### v0.5 MLP·UI 감사 연결 계약
 

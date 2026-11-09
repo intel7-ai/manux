@@ -146,6 +146,37 @@ def test_idle_preview_has_motion_ring_without_control_recording_or_os_input(tmp_
         runtime.stop()
 
 
+def test_distance_assistance_reaches_windows_and_practice_without_saving_manual_gain(tmp_path):
+    from types import SimpleNamespace
+    from manux.core.contracts import OutputTarget
+    from manux.settings import store
+    settings = Settings(schema(), {"tracking.control_hand": "Right", "cursor.relative_gain_min": 1.25,
+                                   "pinch.long_press_drag_multiplier": 2.})
+    saved = store.save(settings, tmp_path / "config")
+    before = saved.read_bytes()
+    runtime, backend = windows_runtime(tmp_path, settings)
+    runtime.source.distance = SimpleNamespace(gain=2.)
+    runtime.engine.commands.put(SetStage(Stage.MAIN))
+    try:
+        run_frames(runtime, 2)
+        for target in (OutputTarget.WINDOWS, OutputTarget.PRACTICE):
+            assert runtime.engine.sinks[target].config.distance_scale == 2.
+        runtime.source.distance.gain = 1.
+        previous_sequence = runtime.latest()[0]
+        for _ in range(4):
+            runtime.step()
+            if runtime.latest()[0] > previous_sequence:
+                break
+        assert runtime.latest()[0] > previous_sequence
+        assert runtime.engine.sinks[OutputTarget.WINDOWS].config.distance_scale == 1.
+        assert not backend.events  # idle preview still cannot send Windows input
+        assert settings.get("cursor.relative_gain_min") == 1.25
+        assert settings.get("pinch.long_press_drag_multiplier") == 2.
+        assert saved.read_bytes() == before
+    finally:
+        runtime.stop()
+
+
 def test_sensitivity_apply_reaches_cursor_and_feature_and_survives_restart(tmp_path, monkeypatch):
     from manux.core.contracts import OutputTarget, RuntimeRequest
     from manux.settings.store import load

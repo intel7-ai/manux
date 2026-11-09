@@ -46,3 +46,19 @@ def test_phone_dialog_commands_qr_and_both_layouts(tmp_path,layout):
         assert any(getattr(c,"kind",None)=="connecting" and not c.on for c in runtime.engine.commands.drain())
     finally:
         bridge.close()
+
+
+def test_distance_setting_preserves_manual_sensitivity_and_reports_runtime_state(tmp_path):
+    settings=Settings(schema(), {"pinch.long_press_drag_multiplier":2., "cursor.relative_gain_min":1.25})
+    runtime=FakeRuntime(settings)
+    bridge=Bridge(runtime,settings,tmp_path)
+    try:
+        assert bridge.autoDistance
+        bridge.setAutoDistance(False)
+        assert not bridge.autoDistance and not settings.get("tracking.auto_distance")
+        assert settings.get("pinch.long_press_drag_multiplier")==2.
+        assert settings.get("cursor.relative_gain_min")==1.25
+        bridge.apply_view(ViewFrame(None,distance={"status":"손 인식 확대 2.5배 · 이동 보정 1.8배"}))
+        assert "2.5배" in bridge.distanceStatus
+    finally:
+        bridge.close()

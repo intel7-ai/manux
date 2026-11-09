@@ -254,6 +254,13 @@ ApplicationWindow {
                             current: dashboard.pointerAnchor
                             onPicked: function (value) { dashboard.setAnchor(value) }
                         }
+                        SectionLabel { text: "자동 거리 보정" }
+                        Segmented {
+                            options: [["off", "끔"], ["on", "켬"]]
+                            current: dashboard.autoDistance ? "on" : "off"
+                            onPicked: function (value) { dashboard.setAutoDistance(value === "on") }
+                        }
+                        Label { text: dashboard.distanceStatus; Layout.fillWidth: true; wrapMode: Text.Wrap; color: "#526575" }
                         SectionLabel { text: "손 주변 확대 (시험)" }
                         Segmented {
                             enabled: !dashboard.calibratingPointer && !dashboard.trackingActive

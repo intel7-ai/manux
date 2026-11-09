@@ -20,6 +20,7 @@ class WindowsOutputConfig:
     relative_accel_speed_low: float = 0.1    # frame widths / s where acceleration starts
     relative_accel_speed_high: float = 0.8   # ... and where it reaches the max gain
     frame_aspect: float = 0.75               # camera height / width: y motion is compared physically
+    distance_scale: float = 1.0             # transient distance assistance; never a saved sensitivity
     reanchor_gap: float = 0.1                # s without a movement command -> the next one starts fresh (new in v0.4)
     palm_left: float = 0.0
     palm_right: float = 0.0                  # same as palm_left until calibrated

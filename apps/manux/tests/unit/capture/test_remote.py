@@ -39,6 +39,20 @@ def test_only_newest_jpeg_is_decoded_and_transform_matches_metadata():
     assert source.read(0) is None
 
 
+def test_distance_feedback_is_bounded_fresh_and_cleared_between_sessions():
+    now = [0.]
+    source = RemoteCamera(clock=lambda: now[0])
+    source.connect()
+    source.set_distance_hint(True, 9, 30., 10.)
+    assert source.distance_hint() == dict(enabled=True, detail=2, zoom=8., gain=2.5)
+    now[0] += .76
+    assert source.distance_hint() is None
+    source.set_distance_hint(True, 1, 2., 1.5)
+    source.disconnect()
+    source.connect()
+    assert source.distance_hint() is None
+
+
 def test_stale_reordered_future_and_consumer_delayed_frames_are_dropped():
     now = [1000.0]
     source = RemoteCamera(clock=lambda: now[0], wall_clock=lambda: now[0])

@@ -276,6 +276,12 @@ class CursorMapper:
         self._rel_t = now
         dx = sx - ax
         dy = (sy - ay) * c.frame_aspect  # physical units (frame widths)
+        # Scale only deltas, never the absolute hand point: changing distance cannot
+        # move a stationary cursor. Wrist-angle mapping is already distance independent.
+        if c.vertical_input == "hand_position":
+            distance = max(1., min(2.5, float(c.distance_scale)))
+            dx *= distance
+            dy *= distance
         speed = math.hypot(dx, dy) / dt
         t = max(0.0, min(1.0, (speed - v_lo) / (v_hi - v_lo)))
         g = (g_min + (g_max - g_min) * t) * gain

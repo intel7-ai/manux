@@ -83,7 +83,7 @@ process.stdin.on('end', async () => {
   await socket.onmessage({data: JSON.stringify({kind:'ready', screen_token:'synthetic-screen'})});
   assert.equal(requests.length, 1);
   assert.equal(requests[0].audio, false);
-  assert.equal(requests[0].video.width.ideal, 480);
+  assert.equal(requests[0].video.width.ideal, 960);
   assert.equal(requests[0].video.facingMode.ideal, 'environment');
   assert.equal(screenRequests.length, 0); // rear camera does not request desktop pixels
   await socket.onmessage({data: JSON.stringify({kind:'sync', sent:Date.now(), server:Date.now()})});
@@ -95,6 +95,15 @@ process.stdin.on('end', async () => {
   const meta = JSON.parse(new TextDecoder().decode(firstPacket.slice(4, 4 + length)));
   assert.equal(meta.kind, 'frame'); assert.equal(meta.mirrored, false); assert.equal(meta.rotation, 0);
   assert.equal(meta.width, 480); assert.equal(meta.height, 360);
+  await socket.onmessage({data:JSON.stringify({kind:'ack',accepted:true,distance:{enabled:true,detail:2,zoom:3,gain:2}})});
+  element('video').videoWidth=1280; element('video').videoHeight=960;
+  clock+=100; element('video').currentTime+=1;
+  vm.runInContext('sendCurrentVideoFrame()',context);
+  await blobs.shift()({arrayBuffer:async()=>new Uint8Array([255,216,255,217]).buffer});
+  const detailed=socket.sent.filter(v=>typeof v!=='string').at(-1);
+  const detailedSize=new DataView(detailed.buffer).getUint32(0);
+  const detailedMeta=JSON.parse(new TextDecoder().decode(detailed.slice(4,4+detailedSize)));
+  assert.equal(detailedMeta.width,960); assert.equal(detailedMeta.height,720);
   const count = socket.sent.length;
   clock += 100; element('video').currentTime += 1;
   vm.runInContext('sendCurrentVideoFrame()', context);

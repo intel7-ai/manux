@@ -70,6 +70,32 @@ def test_first_point_anchors_without_moving():
     assert m.step((0.9, 0.9), 0.0) == (100, 200)
 
 
+def test_distance_compensates_small_motion_before_acceleration_without_stationary_jump():
+    from dataclasses import replace
+    config = replace(REL, vertical_input="hand_position", relative_gain_max=2.)
+    near = CursorMapper(ScreenLayout.single(1920, 1080), config, start=(400, 400))
+    far = CursorMapper(ScreenLayout.single(1920, 1080), replace(config, distance_scale=2.), start=(400, 400))
+    for i in range(6):
+        near.step((.5 + i * .01, .5 + i * .005), i * .05)
+        far.step((.5 + i * .005, .5 + i * .0025), i * .05)
+    assert far.pos == near.pos
+    still = far.pos
+    for i in range(6, 12):
+        far.config = replace(config, distance_scale=1. + i / 10)
+        assert far.step((.525, .5125), i * .05) == still
+
+
+def test_distance_assistance_does_not_change_absolute_or_wrist_mapping():
+    from dataclasses import replace
+    for mode, vertical in (("absolute", "hand_position"), ("relative", "wrist_pitch")):
+        config = replace(REL, movement_mode=mode, vertical_input=vertical)
+        first = CursorMapper(ScreenLayout.single(1920, 1080), config)
+        second = CursorMapper(ScreenLayout.single(1920, 1080), replace(config, distance_scale=2.5))
+        for i in range(10):
+            point = (.4 + .01 * i, .5 + .01 * i)
+            assert first.step(point, i / 30) == second.step(point, i / 30)
+
+
 def test_relative_motion_crosses_onto_the_left_monitor():
     m = CursorMapper(layout(), REL, start=(100, 500))
     x, y = _move(m, [.5, .45, .40, .35, .30])

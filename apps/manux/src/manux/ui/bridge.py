@@ -528,6 +528,7 @@ class Bridge(QObject):
         self.click_style = settings.get("pointer.click_style") if settings.get("pointer.click_style") in CLICK_STYLES else "pinch"
         self.pointer_anchor = settings.get("pointer.anchor") if settings.get("pointer.anchor") in ("index", "palm") else "index"
         self.hand_crop = bool(settings.get("tracking.hand_crop"))
+        self.distance_status = "자동 거리 보정 · 손 찾는 중" if settings.get("tracking.auto_distance") else "자동 거리 보정 꺼짐"
         self.finger_overlay = self.preferences.value("fingerOverlay", False, type=bool)
         self.overlay_visible = False
         self.overlay_corner = "top-right"
@@ -1080,6 +1081,21 @@ class Bridge(QObject):
     @Property(bool, notify=stateChanged)
     def handCrop(self):
         return self.hand_crop
+
+    @Property(bool, notify=stateChanged)
+    def autoDistance(self):
+        return bool(self.settings.get("tracking.auto_distance"))
+
+    @Property(str, notify=stateChanged)
+    def distanceStatus(self):
+        return self.distance_status
+
+    @Slot(bool)
+    def setAutoDistance(self, enabled):
+        if bool(enabled) != self.autoDistance:
+            self._pause()
+            self._set("tracking.auto_distance", bool(enabled))
+            self.stateChanged.emit()
 
     # ------------------------------------------------------------------ finger tracker HUD
     @Slot(bool)
@@ -2803,6 +2819,9 @@ class Bridge(QObject):
     def apply_view(self, view: ViewFrame) -> None:
         self._preview_view = view
         self._update_phone(view.phone)
+        if view.distance and view.distance.get("status") != self.distance_status:
+            self.distance_status = view.distance["status"]
+            self.stateChanged.emit()
         # Notify overlays even with no image so a lost hand cannot leave old joints behind.
         self.previewChanged.emit()
         if self._pointer_setup_view and view.pointer_setup is not None:

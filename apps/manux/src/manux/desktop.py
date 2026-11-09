@@ -75,6 +75,9 @@ class CameraInput:
         self._next_try = 0.0
         self._last_camera_frame = 0.0
         self.phone = None  # explicit opt-in; configured only by the desktop composition
+        from manux.tracking.distance import DistanceAssist
+        self.distance = DistanceAssist()
+        self.distance_zoom = 1.
 
     def phone_action(self, action, host=""):
         if self.phone is None:
@@ -85,11 +88,23 @@ class CameraInput:
                 self.camera.release()
             self.camera = None
             self._next_try = 0.
+            self.distance.reset()
             if self.tracker is not None:
                 self.tracker.reset()
 
     def phone_view(self):
         return self.phone.view() if self.phone is not None else None
+
+    def distance_view(self):
+        enabled = self.settings.get("tracking.auto_distance")
+        if not enabled:
+            status = "자동 거리 보정 꺼짐"
+        elif self.distance.last_valid is None:
+            status = "자동 거리 보정 · 손 찾는 중"
+        else:
+            status = f"손 인식 확대 {self.distance_zoom:.1f}배 · 이동 보정 {self.distance.gain:.1f}배"
+        return dict(enabled=enabled, zoom=self.distance_zoom, gain=self.distance.gain,
+                    palm_fraction=self.distance.fraction, status=status)
 
     def _open(self) -> bool:
         now = time.perf_counter()
@@ -123,6 +138,7 @@ class CameraInput:
         item = self.camera.read(timeout=0.05)
         if item is None:
             now = time.perf_counter()
+            self.distance.update(None, now, self.settings.get("tracking.auto_distance"))
             if self.phone is not None and self.phone.link is not None:
                 mode = self.camera.actual_mode()  # None before the first valid frame or after disconnection
                 if mode is not None and now - self._last_camera_frame < PHONE_PREVIEW_GRACE:
@@ -151,7 +167,14 @@ class CameraInput:
                 image = transform(image, True, frame.rotation)
                 frame = replace(frame, mirrored=mirror)
         self.tracker.use_crop = use_crop
+        enabled = self.settings.get("tracking.auto_distance")
+        self.tracker.auto_distance = enabled
         result = self.tracker.step(frame, image, control_hand or "Right")
+        self.distance.update(result.hand, frame.t, enabled)
+        self.distance_zoom = getattr(result, "zoom", 1.)
+        if hasattr(self.camera, "set_distance_hint"):
+            detail = (2 if self.distance.gain > 1.2 else 0) if result.hand is not None else 1
+            self.camera.set_distance_hint(enabled, detail, self.distance_zoom, self.distance.gain)
         from manux.tracking.selection import physical_side
         hands = tuple(SeenHand(physical_side(h, frame.mirrored, self.tracker.min_score), h.score) for h in result.hands)
         return frame, image, result.hand, hands, result.detect_ms
@@ -679,6 +702,9 @@ class DesktopRuntime:
         phone_view = getattr(self.source, "phone_view", None)
         if phone_view is not None:
             view = replace(view, phone=phone_view())
+        distance_view = getattr(self.source, "distance_view", None)
+        if distance_view is not None:
+            view = replace(view, distance=distance_view())
         with self._lock:
             self._latest = view
             self._seq += 1
@@ -720,9 +746,12 @@ class DesktopRuntime:
             if output is not None and hasattr(output, "set_palm_pitch"):
                 output.set_palm_pitch(pitch)
         self._configure_cursor_for_frame(frame, sink if sink is not None else practice_sink)
+        distance_scale = getattr(getattr(self.source, "distance", None), "gain", 1.)
+        if sink is not None and getattr(sink, "config", None) is not None:
+            sink.configure(replace(sink.config, distance_scale=distance_scale))
         if practice_sink is not None and practice_sink.config is not None:
             practice_sink.update_config(replace(getattr(sink, "config", None) or practice_sink.config,
-                                                frame_aspect=frame.aspect))
+                                                frame_aspect=frame.aspect, distance_scale=distance_scale))
         snap = self.engine.step(frame, hand)
         pointer_setup = self._pointer_setup_frame(frame, hand, pitch, snap.stage, sink)
         rule_preview = None

@@ -137,6 +137,7 @@
     let lastVideoTime = -1, lastAttempt = 0, offsetMs = 0, synced = false;
     let ackCount = 0, fpsStart = 0, fps = 0, ackDeadline = 0, syncTimer = null;
     let callbackId = null, videoCallback = false, cameraBusy = false;
+    let sendWidth = TARGET_W, sendHeight = TARGET_H, cameraRate = 30;
     let screenToken = null, screenTimer = null, screenAbort = null, screenEpoch = 0, screenUrl = null;
     let lastScreenAt = 0;
     let screenDisplayState = 'waiting';
@@ -184,6 +185,8 @@
       const controller = new AbortController();
       screenAbort = controller;
       const deadline = setTimeout(() => controller.abort(), 1500);
+      const started = performance.now();
+      let successful = false;
       let nextUrl = null;
       let stage = '서버 응답';
       let phase = 'fetch';
@@ -206,6 +209,7 @@
         if (previous) URL.revokeObjectURL(previous);
         lastScreenAt = performance.now();
         screenDisplayState = 'shown';
+        successful = true;
         screenStatus.textContent = 'PC 모니터 · 손 인식 카메라 연결 중';
       } catch (error) {
         if (epoch === screenEpoch) {
@@ -222,7 +226,9 @@
         if (nextUrl) URL.revokeObjectURL(nextUrl);
         if (epoch === screenEpoch) {
           screenAbort = null;
-          screenTimer = setTimeout(() => pullScreen(epoch), 100);
+          // Pace from request start, not after decoding: avoid adding 100ms to every
+          // capture/network round trip while still keeping only one request in flight.
+          screenTimer = setTimeout(() => pullScreen(epoch), successful ? Math.max(0, 100 - (performance.now() - started)) : 250);
         }
       }
     }
@@ -254,6 +260,7 @@
       if (wake) { wake.release().catch(() => {}); wake = null; }
       video.srcObject = null;
       sending = awaitingAck = synced = false;
+      sendWidth = TARGET_W; sendHeight = TARGET_H; cameraRate = 30;
       switchBtn.disabled = disconnectBtn.disabled = true;
       fullscreenBtn.disabled = true;
       connectBtn.disabled = false;
@@ -271,8 +278,8 @@
         if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia)
           throw new Error('HTTPS 신뢰/인증서와 카메라 권한을 확인하세요.');
         const next = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: facingMode }, width: { ideal: TARGET_W },
-                   height: { ideal: TARGET_H }, frameRate: { ideal: 30, max: 30 } }, audio: false
+          video: { facingMode: { ideal: facingMode }, width: { ideal: 960 },
+                   height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } }, audio: false
         });
         if (current !== generation) { next.getTracks().forEach(t => t.stop()); return; }
         stream = next;
@@ -306,11 +313,11 @@
       if (awaitingAck && performance.now() > ackDeadline) { stop('PC 수신 확인 시간 초과'); return; }
       if (synced && !document.hidden && !awaitingAck && !sending && ws?.readyState === WebSocket.OPEN &&
           ws.bufferedAmount === 0 && video.readyState >= 2 && video.currentTime !== lastVideoTime &&
-          performance.now() - lastAttempt >= 1000 / 30) {
+          performance.now() - lastAttempt >= 1000 / cameraRate) {
         lastVideoTime = video.currentTime; lastAttempt = performance.now();
         const capturedAt = (Date.now() + offsetMs) / 1000;
         const vw = video.videoWidth || TARGET_W, vh = video.videoHeight || TARGET_H;
-        const scale = Math.min(1.0, TARGET_W / vw, TARGET_H / vh);
+        const scale = Math.min(1.0, sendWidth / vw, sendHeight / vh);
         const cw = Math.max(1, Math.round(vw * scale)), ch = Math.max(1, Math.round(vh * scale));
         if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
         ctx.drawImage(video, 0, 0, cw, ch);
@@ -364,10 +371,16 @@
               offsetMs = data.server - (data.sent + Date.now()) / 2; synced = true;
             } else if (data.kind === 'ack') {
               awaitingAck = false;
+              const distance = data.distance;
+              const detailed = distance?.enabled && distance.detail > 0;
+              sendWidth = detailed ? 960 : TARGET_W;
+              sendHeight = detailed ? 720 : TARGET_H;
+              cameraRate = detailed ? 20 : 30;
               if (data.accepted) ++ackCount;
               const elapsed = performance.now() - fpsStart;
               if (elapsed >= 1000) { fps = ackCount * 1000 / elapsed; ackCount = 0; fpsStart = performance.now(); }
-              statusEl.textContent = `✅ PC 연결 · ${fps.toFixed(1)} fps` + (data.accepted ? '' : ' · 지연 프레임 건너뜀');
+              statusEl.textContent = `✅ PC 연결 · ${fps.toFixed(1)} fps` + (data.accepted ? '' : ' · 지연 프레임 건너뜀') +
+                (distance?.enabled ? ` · 자동 거리 보정 ${distance.gain.toFixed(1)}배` : '');
             }
           } catch (error) { stop('연결 오류: ' + error.message); }
         };
