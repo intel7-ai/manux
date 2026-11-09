@@ -17,8 +17,10 @@ Contract:
 """
 from __future__ import annotations
 
+import math
 import threading
 import time
+from collections import deque
 from dataclasses import replace
 from typing import Callable, List, Optional, Tuple
 
@@ -95,7 +97,8 @@ class WindowsOutputSink:
         self._shown: Optional[Tuple[float, float]] = None
         self._glide_thread: Optional[threading.Thread] = None
         self._glide_wake = threading.Event()
-        self.glide_sends = 0                   # cursor positions sent by the glide thread (diagnostics)
+        self._trail: deque = deque(maxlen=64)  # (clock time, position) of recent cursor sends, for click rollback
+        self.glide_sends = 0                  # cursor positions sent by the glide thread (diagnostics)
 
     # ------------------------------------------------------------------ public API
     def apply(self, cmd: ActionCommand) -> OutputResult:
@@ -238,8 +241,28 @@ class WindowsOutputSink:
     def _send(self, x: int, y: int) -> None:
         if (x, y) != self._last_sent:
             self.backend.set_cursor_pos(x, y)
+            self._trail.append((self._clock(), (x, y), self._last_sent))
             self._last_sent = (x, y)
         self._shown = (float(x), float(y))
+
+    def _rollback(self) -> None:
+        """Click where the cursor was just before the pinch: closing the fingers tilts the hand, and the
+        cursor follows that tilt for the last few frames. Small shifts only, so a moving click stays put."""
+        window = float(self.config.click_rollback_s)
+        if window <= 0 or self._last_sent is None:
+            return
+        cutoff = self._clock() - window
+        before = None                       # where the cursor was at `cutoff`
+        for t, pos, previous in reversed(self._trail):
+            if t <= cutoff:
+                before = pos
+                break
+            before = previous
+        if before is None or before == self._last_sent:
+            return
+        if math.dist(before, self._last_sent) <= float(self.config.click_rollback_px):
+            self._send(*before)
+            self.cursor.warp(*before)
 
     def _place(self, x: int, y: int) -> None:
         """New cursor target for this frame: glide there when the glide thread can run, else jump."""
@@ -386,6 +409,7 @@ class WindowsOutputSink:
 
     def _click(self, cmd: ActionCommand, button: str) -> OutputResult:
         self._settle()
+        self._rollback()
         self._end_drag()
         if self.scroll.active:
             self.scroll.end(cmd.t, launch=False)
@@ -408,6 +432,7 @@ class WindowsOutputSink:
             if cmd.point is not None:
                 self._move(cmd, self._gain(cmd))
             self._settle()
+            self._rollback()
             self.buttons.press("left")
             self.dragging = True
             return OK

@@ -65,6 +65,13 @@ PALM_RELEASE_CATCHUP = .5  # ...and moves this much extra per pixel of hand move
 PALM_RELEASE_SNAP = .25    # one-frame hand jumps beyond this share of screen height are followed directly
 
 
+PALM_PRECISION_SLOW = 150.0     # px/s of mapped hand speed: below this the precision gain applies fully
+PALM_PRECISION_FAST = 900.0     # ... above this the cursor moves 1:1 and re-syncs with the mapping
+PALM_PRECISION_RESYNC = .25     # s to close the gap to the mapping while moving fast
+PALM_PRECISION_REST_RESYNC = 1.5  # ... and while moving slowly or resting
+PALM_PRECISION_MAX_GAP = .12    # the cursor never sits further than this share of screen height off the mapping
+
+
 def palm_min_cutoff(smoothing: float) -> float:
     return .2 + 1.5 * max(0.05, min(1.0, float(smoothing)))
 
@@ -90,6 +97,12 @@ class CursorMapper:
         self._palm_y = OneEuro(1.0, PALM_PITCH_BETA)
         self._palm_ease_until = 0.0
         self._reset_hold()
+        self._reset_precision()
+
+    def _reset_precision(self, pos: Optional[Tuple[float, float]] = None) -> None:
+        self._prec_pos: Optional[Tuple[float, float]] = pos     # cursor under low-speed precision
+        self._prec_target: Optional[Tuple[float, float]] = None
+        self._prec_t = 0.0
 
     def _reset_hold(self) -> None:
         self._hold_pos: Optional[Tuple[float, float]] = None   # where the cursor is parked
@@ -116,6 +129,9 @@ class CursorMapper:
         self._palm_x.reset()
         self._palm_y.reset()
         self._reset_hold()
+        # keep where precision put the cursor (a click or a short pause must not snap it back to the mapping);
+        # only forget the last hand point so the gap in time is not read as one big move
+        self._prec_target = None
         self._abs_prev = None
         if self.config.movement_mode != "absolute":
             self._smoothed = None
@@ -130,12 +146,14 @@ class CursorMapper:
         self._palm_x.reset()
         self._palm_y.reset()
         self._reset_hold()
+        self._reset_precision((float(x), float(y)))
         self._abs_prev = None
         self._smoothed = None
         self._rebase = bool(rebase)
 
     def reset(self) -> None:
         self.pause()
+        self._reset_precision()
         self._abs_monitor = None  # absolute re-picks the monitor under the cursor
 
     @property
@@ -209,11 +227,55 @@ class CursorMapper:
             target_y = monitor.top + (.5 + (fy - .5) * c.palm_y_gain) * (monitor.height - 1)
         target_x, target_y = monitor.clamp(target_x, target_y)
         target_x, target_y = monitor.clamp(*self._palm_hold((target_x, target_y), now, monitor.height))
+        target_x, target_y = monitor.clamp(*self._precision((target_x, target_y), now, gain))
         # The filters already smooth the hand; only glide in after a restart so the cursor never jumps.
         alpha = .25 if now < self._palm_ease_until else 1.0
         self._palm_pos = (px + alpha * (target_x - px), py + alpha * (target_y - py))
         self.pos = tuple(round(value) for value in self._palm_pos)
         return self.pos
+
+    def _precision(self, target: Tuple[float, float], now: float, gain: float = 1.0) -> Tuple[float, float]:
+        """Precision at low speed on top of the calibrated (absolute) mapping.
+
+        A slow hand moves the cursor `palm_precision` x as far as the mapping says (drift, tremor and the small
+        tilt of a pinch shrink with it); a fast hand moves it 1:1 and pulls it back onto the mapping, so a
+        quick sweep still reaches every edge and the hand-to-screen relation never drifts away for long.
+        The gap to the mapping is capped at PALM_PRECISION_MAX_GAP x screen height.
+
+        A command gain below 1 is the fist (precision gesture): every move is scaled by it, whatever the
+        speed, and the cursor does not re-sync, so it stays where the fist put it. Gains above 1 belong to
+        the uncalibrated relative mode and are ignored here."""
+        fist = gain < 1.0
+        g_low = max(0.05, min(1.0, float(self.config.palm_precision)))
+        if fist:
+            g_low = max(0.05, min(g_low, float(gain)))
+        prev, prev_t = self._prec_target, self._prec_t
+        self._prec_target, self._prec_t = target, now
+        if self._prec_pos is None or (g_low >= 1.0 and not fist):
+            self._prec_pos = target
+            return target
+        if prev is None:                  # first point after a pause: continue from where the cursor is
+            return self._prec_pos
+        dt = max(1e-3, min(.1, now - prev_t))
+        dx, dy = target[0] - prev[0], target[1] - prev[1]
+        if fist:
+            x, y = self._prec_pos[0] + dx * g_low, self._prec_pos[1] + dy * g_low
+        else:
+            speed = math.hypot(dx, dy) / dt
+            u = max(0.0, min(1.0, (speed - PALM_PRECISION_SLOW) / (PALM_PRECISION_FAST - PALM_PRECISION_SLOW)))
+            u = u * u * (3 - 2 * u)                       # smoothstep: no kink when the gain changes
+            k = g_low + (1.0 - g_low) * u
+            x, y = self._prec_pos[0] + dx * k, self._prec_pos[1] + dy * k
+            # a fast hand re-syncs quickly; a resting one slowly, so the cursor ends where the hand points
+            # (hand drift is filtered by the long time constant instead of followed)
+            pull = min(1.0, max(u * dt / PALM_PRECISION_RESYNC, dt / PALM_PRECISION_REST_RESYNC))
+            x, y = x + (target[0] - x) * pull, y + (target[1] - y) * pull
+        gap = math.dist((x, y), target)
+        limit = PALM_PRECISION_MAX_GAP * self.screens.primary.height
+        if gap > limit:
+            x, y = target[0] + (x - target[0]) * limit / gap, target[1] + (y - target[1]) * limit / gap
+        self._prec_pos = (x, y)
+        return self._prec_pos
 
     def _palm_hold(self, target: Tuple[float, float], now: float, height: int) -> Tuple[float, float]:
         """Neutral zone: a hand that stays within `palm_hold` (share of screen height) parks the cursor.

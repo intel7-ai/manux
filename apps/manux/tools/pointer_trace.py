@@ -90,7 +90,7 @@ def score(trace: dict, positions: Iterable[Tuple[float, float]]) -> dict:
         rows.append({"target": index, "reached": reached_at is not None,
                      "time_s": None if reached_at is None else round(reached_at - points[0][0] - dwell, 3),
                      "overshoots": overshoots, "overshoot_px": round(peak, 1),
-                     "jitter_px": round(_spread(settled), 2)})
+                     "jitter_px": round(_spread(settled), 2), "wobble_px": round(_peak(settled), 1)})
     reached = [r for r in rows if r["reached"]]
     return {
         "targets": len(rows),
@@ -99,8 +99,18 @@ def score(trace: dict, positions: Iterable[Tuple[float, float]]) -> dict:
         "overshoots": sum(r["overshoots"] for r in rows),
         "max_overshoot_px": max((r["overshoot_px"] for r in rows), default=0.0),
         "mean_jitter_px": round(statistics.fmean(r["jitter_px"] for r in rows), 2) if rows else None,
+        "max_wobble_px": max((r["wobble_px"] for r in rows), default=0.0),
         "rows": rows,
     }
+
+
+def _peak(points: List[Tuple[float, float]]) -> float:
+    """Largest distance from the settled mean: what decides whether a 20 px menu row stays under the cursor."""
+    if len(points) < 2:
+        return 0.0
+    mx = statistics.fmean(p[0] for p in points)
+    my = statistics.fmean(p[1] for p in points)
+    return max(math.hypot(p[0] - mx, p[1] - my) for p in points)
 
 
 def _spread(points: List[Tuple[float, float]]) -> float:
