@@ -39,6 +39,7 @@ Dialog {
         spacing: 10
         TabBar {
             id: tabs
+            objectName: "sensitivityTabs"
             Layout.fillWidth: true
             TabButton { text: "동작 민감도"; objectName: "pinchSensitivityTab" }
             TabButton { text: "커서 민감도"; objectName: "cursorSensitivityTab" }
@@ -72,13 +73,23 @@ Dialog {
                                  || (tabs.currentIndex === 1 && modelData.group === "cursor")
                         spacing: 2
                         Label { text: modelData.label; font.bold: true; color: "#112331" }
+                        ComboBox {
+                            objectName: "sensitivity-choice-" + modelData.key
+                            Layout.fillWidth: true
+                            visible: modelData.kind === "choice"
+                            enabled: modelData.editable && !settings.controller.sensitivityPending
+                            model: modelData.choiceLabels
+                            currentIndex: modelData.choices.indexOf(settings.draft[modelData.key] ?? modelData.value)
+                            onActivated: settings.changeValue(modelData.key, modelData.choices[currentIndex])
+                        }
                         RowLayout {
                             Layout.fillWidth: true
+                            visible: modelData.kind !== "choice"
                             Slider {
                                 objectName: "sensitivity-slider-" + modelData.key
                                 Layout.fillWidth: true
                                 from: modelData.minimum; to: modelData.maximum; stepSize: modelData.step
-                                value: settings.draft[modelData.key] ?? modelData.value
+                                value: modelData.kind === "choice" ? 0 : (settings.draft[modelData.key] ?? modelData.value)
                                 enabled: modelData.editable && !settings.controller.sensitivityPending
                                 onMoved: settings.changeValue(modelData.key, Number(value.toFixed(6)))
                             }

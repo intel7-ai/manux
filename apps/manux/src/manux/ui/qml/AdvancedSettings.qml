@@ -99,9 +99,9 @@ Dialog {
                             ComboBox {
                                 visible: modelData.kind === "choice"
                                 enabled: modelData.editable && !advanced.controller.advancedPending
-                                model: modelData.choices
+                                model: modelData.choiceLabels
                                 currentIndex: modelData.choices.indexOf(String(rowItem.currentValue))
-                                onActivated: advanced.changeValue(modelData.key, currentText)
+                                onActivated: advanced.changeValue(modelData.key, modelData.choices[currentIndex])
                                 Layout.fillWidth: true
                             }
                             Slider {
