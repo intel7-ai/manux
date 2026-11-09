@@ -10,6 +10,7 @@ on:
     branches: [production]
     paths: ["hand-mouse/**", ".github/workflows/hand-mouse-release.yml"]
   pull_request:
+    branches-ignore: [testing, v0.5-testing] # CI-free integration branches
     paths: ["hand-mouse/**", ".github/workflows/hand-mouse-release.yml"]
 
 permissions: {}
