@@ -2866,6 +2866,10 @@ class Bridge(QObject):
         if (state, live) != (self.state, self.live_gesture):
             self.state, self.live_gesture = state, live
             self.liveChanged.emit()
+        if not view.camera_ok and not self.provider.image.isNull():
+            self.provider.image = QImage()
+            self.sequence += 1
+            self.previewChanged.emit()
         if view.image is None or not self.window.isVisible():
             return
         now = time.perf_counter()

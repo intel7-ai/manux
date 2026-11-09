@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import threading
 import time
+import sys
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, Tuple, Union
 
@@ -60,12 +61,22 @@ def _open_cv2(source: Source, cfg: CameraConfig) -> Any:
     import cv2  # only here: tests and the architecture check run without OpenCV
 
     if isinstance(source, int):
-        cap = cv2.VideoCapture(source)
-        if not cap or not cap.isOpened():
-            cap = cv2.VideoCapture(source, cv2.CAP_DSHOW)
+        # Prefer the Windows webcam backend explicitly. CAP_ANY can select MSMF
+        # even when it opens a device but never delivers a usable RGB frame.
+        backends = (cv2.CAP_DSHOW, cv2.CAP_MSMF) if sys.platform == "win32" else (cv2.CAP_ANY,)
+        cap = None
+        for backend in backends:
+            cap = cv2.VideoCapture(source, backend)
+            if cap is not None and cap.isOpened():
+                break
+            if cap is not None:
+                cap.release()
+            cap = None
     else:
         cap = cv2.VideoCapture(source)
-    if not cap or not cap.isOpened():
+    if cap is None or not cap.isOpened():
+        if cap is not None:
+            cap.release()
         return None
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, cfg.width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cfg.height)
@@ -104,10 +115,12 @@ class LatestFrameCamera:
         self._cap = self._opener(self.config.source, self.config)
         if self._cap is None:
             return False
-        self._stop.clear()
+        # A stalled driver's old read can finish after release(). Its stop event
+        # must stay set when the next capture generation starts.
+        self._stop = threading.Event()
         with self._cond:
             self._latest, self._latest_id, self._consumed_id, self._grab_ok = None, 0, 0, True
-        self._thread = threading.Thread(target=self._grab_loop, args=(self._cap,), name="camera-grab", daemon=True)
+        self._thread = threading.Thread(target=self._grab_loop, args=(self._cap, self._stop), name="camera-grab", daemon=True)
         self._thread.start()
         return True
 
@@ -132,9 +145,14 @@ class LatestFrameCamera:
         return isinstance(s, str) and s.startswith(("http://", "https://", "rtsp://", "rtmp://"))
 
     # ------------------------------------------------------------------ grab thread
-    def _grab_loop(self, cap: Any) -> None:
-        while not self._stop.is_set():
-            ok, frame = cap.read()
+    def _grab_loop(self, cap: Any, stop: threading.Event) -> None:
+        while not stop.is_set():
+            try:
+                ok, frame = cap.read()
+            except Exception:
+                ok, frame = False, None
+            if stop.is_set():
+                break
             with self._cond:
                 if ok and frame is not None:
                     if self._latest_id != self._consumed_id:

@@ -107,6 +107,19 @@ def test_main_header_uses_existing_manux_ci_at_both_window_sizes(studio):
         assert edge.x() <= width and edge.y() <= height
 
 
+def test_disconnected_camera_clears_the_previous_image(studio):
+    import numpy as np
+    bridge, service, runtime, messages = studio
+    bridge.timer.stop()
+    bridge.last_preview = 0
+    bridge.apply_view(ViewFrame(None, image=np.full((48, 64, 3), 120, dtype=np.uint8)))
+    assert not bridge.provider.image.isNull()
+    sequence = bridge.sequence
+    bridge.apply_view(ViewFrame(None, camera_ok=False, message="카메라 영상 다시 연결 중"))
+    assert bridge.provider.image.isNull() and bridge.sequence > sequence
+    assert bridge.previewLandmarks == []
+
+
 def test_idle_main_camera_renders_21_points_bones_and_clears_when_hand_leaves(studio):
     import numpy as np
     bridge, service, runtime, messages = studio

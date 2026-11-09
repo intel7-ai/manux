@@ -91,6 +91,29 @@ def test_a_missing_camera_is_a_message_not_a_crash(tmp_path):
     runtime.stop()
 
 
+def test_stalled_usb_camera_reconnects_and_recovers_preview(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    import numpy as np
+    import manux.desktop as module
+    from manux.core.contracts import FrameInfo
+    now = [10.0]
+    monkeypatch.setattr(module.time, "perf_counter", lambda: now[0])
+    source = CameraInput(Settings(schema()), tmp_path / "unused.task", source="1")
+    released = []
+    stalled = SimpleNamespace(read=lambda **kwargs: None, release=lambda: released.append(True))
+    source.camera, source._last_camera_frame = stalled, now[0]
+    assert source.read("Right", False) is None and source.camera is stalled
+    now[0] += 3.1
+    assert source.read("Right", False) is None and source.camera is None
+    assert released == [True] and "다시 연결" in source.error
+    # The normal open path observes its retry delay and does not spin on the driver.
+    assert not source._open()
+    source.camera = SimpleNamespace(read=lambda **kwargs: (FrameInfo(0, now[0], 6, 4, True), np.ones((4, 6, 3), dtype=np.uint8)))
+    source.tracker = SimpleNamespace(step=lambda *args: SimpleNamespace(hand=None, hands=(), detect_ms=1.0))
+    assert source.read("Right", False) is not None and not source.error
+    assert source._last_camera_frame == now[0]
+
+
 def windows_runtime(tmp_path, settings):
     from manux.core.contracts import OutputTarget
     from manux.output.windows import WindowsOutputSink
