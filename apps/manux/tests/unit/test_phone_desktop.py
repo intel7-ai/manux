@@ -9,7 +9,7 @@ import pytest
 
 from manux.app import schema
 from manux.capture.remote import RemoteCamera
-from manux.core.contracts import FrameInfo, RuntimeRequest, Stage
+from manux.core.contracts import FrameInfo, RemoteFrameMetadata, RuntimeRequest, Stage
 from manux.desktop import CameraInput, build
 from manux.engine.commands import SetBusy, SetControl, SetStage
 from manux.link.session import PhoneSession
@@ -182,3 +182,125 @@ def test_actual_tls_phone_frame_enters_desktop_and_disconnect_clears_image(tmp_p
 
 def test_runtime_rejects_unknown_phone_command():
     with pytest.raises(ValueError): RuntimeRequest("phone_camera","send_click")
+
+
+@pytest.fixture
+def phone_stream(tmp_path, monkeypatch):
+    """Real remote decode/metadata with an asymmetric synthetic image and controlled time."""
+    import manux.desktop as desktop
+    cv2 = pytest.importorskip("cv2")
+    now = [100.0]
+    monkeypatch.setattr(desktop.time, "perf_counter", lambda: now[0])
+    source = source_with_phone(tmp_path)
+    source.phone_action("start", "127.0.0.1")
+    remote = RemoteCamera(clock=lambda: now[0], wall_clock=lambda: now[0])
+    source.phone.link.source = remote
+    source.phone.link.device = {"name": "Synthetic Android"}
+    remote.connect()
+    pixels = np.arange(12 * 16 * 3, dtype=np.uint8).reshape(12, 16, 3)
+    jpeg = cv2.imencode(".jpg", pixels)[1].tobytes()
+    decoded = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    def send(seq, mirrored=False, rotation=0):
+        meta = RemoteFrameMetadata(seq, now[0], 16, 12, mirrored, rotation,
+                                   "user" if mirrored else "environment")
+        assert remote.submit(meta, jpeg)
+    yield source, remote, now, send, decoded
+    source.close()
+
+
+def test_phone_frame_gaps_keep_preview_but_still_release_missing_hand(phone_stream, monkeypatch):
+    source, remote, now, send, _ = phone_stream
+    runtime = build(source.settings, source, windows=False)
+    tracked, released = [], []
+    original_track, original_release = source.tracker.step, runtime.engine._release
+    def track(*args):
+        tracked.append(args[0].seq)
+        return original_track(*args)
+    def release(reason):
+        released.append(reason)
+        return original_release(reason)
+    monkeypatch.setattr(source.tracker, "step", track)
+    monkeypatch.setattr(runtime.engine, "_release", release)
+    try:
+        send(0)
+        runtime.step()
+        previous = runtime.latest()
+        assert previous[1].camera_ok and previous[1].image is not None
+        # 15-20fps Wi-Fi may exceed the 50ms read timeout. Do not flash black.
+        for gap in (.07, .10, .25, .45):
+            now[0] = 100.0 + gap
+            runtime.step()
+            assert source.error == ""
+            assert runtime.latest() == previous
+        assert "hand_lost" in released and tracked == [0]
+        now[0] = 100.5
+        send(1)
+        runtime.step()
+        assert runtime.latest()[1].camera_ok and tracked == [0, 1]
+        remote.disconnect()
+        runtime.step()
+        assert not runtime.latest()[1].camera_ok and runtime.latest()[1].image is None
+    finally:
+        runtime.stop()
+
+
+@pytest.mark.parametrize("failure", ["stall", "invalid_images", "reconnect"])
+def test_phone_preview_never_survives_loss_or_a_new_empty_session(phone_stream, monkeypatch, failure):
+    source, remote, now, send, _ = phone_stream
+    runtime = build(source.settings, source, windows=False)
+    try:
+        send(0)
+        runtime.step()
+        assert runtime.latest()[1].camera_ok
+        if failure == "reconnect":
+            remote.disconnect()
+            remote.connect()
+        else:
+            now[0] += 2.01
+            if failure == "invalid_images":
+                # Packets can keep arriving even when the decoder produces no usable images.
+                monkeypatch.setattr(remote, "_decoder", lambda _: None)
+                send(1)
+                assert remote.is_open
+        runtime.step()
+        view = runtime.latest()[1]
+        assert source.error and not view.camera_ok
+        assert view.image is None and view.landmarks is None
+    finally:
+        runtime.stop()
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+@pytest.mark.parametrize("front", [False, True])
+@pytest.mark.parametrize("desired", [False, True])
+def test_phone_front_and_rear_match_desktop_mirror_before_tracking(phone_stream, monkeypatch, rotation, front, desired):
+    from manux.capture.camera import transform
+    source, _, _, send, raw = phone_stream
+    source.settings.set("camera.mirror", desired)
+    tracked = []
+    def track(frame, image, side):
+        tracked.append((frame, image.copy(), side))
+        # The tracking label must be interpreted using the final image's mirror state.
+        hand = SimpleNamespace(label="Left" if desired else "Right", score=.99)
+        return SimpleNamespace(hand=None, hands=(hand,), detect_ms=1.)
+    monkeypatch.setattr(source.tracker, "step", track)
+    send(0, mirrored=front, rotation=rotation)
+    frame, image, _, hands, _ = source.read("Right", False)
+    expected = transform(raw, desired, rotation)
+    assert frame.mirrored is desired and frame.rotation == rotation
+    assert (frame.width, frame.height) == (expected.shape[1], expected.shape[0])
+    np.testing.assert_array_equal(image, expected)
+    np.testing.assert_array_equal(tracked[0][1], expected)
+    assert tracked[0][0] is frame and tracked[0][2] == "Right"
+    assert hands[0].side == "Right"
+
+
+def test_local_camera_pixels_and_metadata_are_not_transformed_again(tmp_path):
+    source = source_with_phone(tmp_path)
+    image = np.arange(36, dtype=np.uint8).reshape(3, 4, 3)
+    frame = FrameInfo(0, time.perf_counter(), 4, 3, True)
+    source.camera = SimpleNamespace(read=lambda **kwargs: (frame, image), release=lambda: None)
+    source.settings.set("camera.mirror", False)
+    result = source.read("Right", False)
+    assert result[0] is frame and result[1] is image
+    source.close()

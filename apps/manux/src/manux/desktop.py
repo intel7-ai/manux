@@ -25,7 +25,7 @@ from uuid import uuid4
 
 from manux.actions.bindings import Binding
 from manux.app import _FEATURES, _camera_config, build_engine, schema, pipeline_parts, read_bindings, training_specs
-from manux.capture.camera import LatestFrameCamera, brightness
+from manux.capture.camera import LatestFrameCamera, brightness, transform
 from manux.core.contracts import FrameInfo, HandObservation, OutputTarget, PracticeEvent, RecordingIdentity, RuntimeRequest, Stage
 from manux.data.catalog import BY_KEY, tasks_for
 from manux.data.guided import GuidedSession
@@ -58,6 +58,7 @@ from manux.ui.view import SeenHand, ViewFrame
 
 POINTER_MOVE = "pointer.move"
 CURSOR_BASE_KEYS = ("relative_gain_min", "relative_gain_max", "smoothing")
+PHONE_PREVIEW_GRACE = 2.0  # display only; Engine.frame_missing still runs on every empty read
 
 
 class CameraInput:
@@ -123,7 +124,14 @@ class CameraInput:
         if item is None:
             now = time.perf_counter()
             if self.phone is not None and self.phone.link is not None:
-                self.error = self.phone.view()["status"]
+                mode = self.camera.actual_mode()  # None before the first valid frame or after disconnection
+                if mode is not None and now - self._last_camera_frame < PHONE_PREVIEW_GRACE:
+                    # A normal Wi-Fi gap is not a lost camera. Keep the displayed image,
+                    # but return None so tracking never processes that image again.
+                    self.error = ""
+                else:
+                    self.error = ("휴대폰 영상이 멈췄습니다. 폰의 브라우저 화면을 확인하세요."
+                                  if mode is not None else self.phone.view()["status"])
                 return None
             if now - self._last_camera_frame >= 3.0:
                 self.camera.release()
@@ -134,6 +142,14 @@ class CameraInput:
         frame, image = item
         self._last_camera_frame = time.perf_counter()
         self.error = ""
+        if self.phone is not None and self.phone.link is not None:
+            mirror = self.settings.get("camera.mirror")
+            if frame.mirrored != mirror:
+                # RemoteCamera applied the phone's front/rear metadata. Normalize to
+                # the PC setting before tracking, preserving mirror-then-rotate order.
+                image = transform(image, False, (-frame.rotation) % 360)
+                image = transform(image, True, frame.rotation)
+                frame = replace(frame, mirrored=mirror)
         self.tracker.use_crop = use_crop
         result = self.tracker.step(frame, image, control_hand or "Right")
         from manux.tracking.selection import physical_side
