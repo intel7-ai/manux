@@ -1,6 +1,8 @@
 """The QML bridge with an offscreen Qt and a fake runtime. Skipped when PySide6 (the `ui` extra) is missing."""
 from __future__ import annotations
 
+import time
+
 import os
 
 import pytest
@@ -76,7 +78,18 @@ def test_pointer_setup_page_opens_after_hand_choice_and_returns_to_tutorial(tmp_
     runtime.request = lambda request: requests.append(request) is None
     b = Bridge(runtime, settings, tmp_path, layout=layout)
     try:
-        b._save_hand("Right")
+        b._save_hand("Right")                              # first run: the lesson starts at "1. move the cursor"
+        assert b.tutorial is not None and b.tutorial.step_key == "move"
+        lesson = b.tutorial
+        b.tutorialNext()
+        assert b.tutorial.step_key == "click"
+        b.tutorialNext()
+        assert b.tutorial.step_key == "vertical"
+        b.tutorialChooseVertical("wrist_pitch")
+        assert b.tutorialVertical == "wrist_pitch"          # already the default: nothing to save
+        b.tutorialNext()
+        assert b.tutorial.step_key == "pointer_setup"
+        b.tutorialOpenPointerSetup()                       # "3. cursor fit (optional)"
         b.application.processEvents()
         page = b.window.findChild(QObject, "pointerSetupPage")
         assert page is not None and page.property("visible")
@@ -111,7 +124,9 @@ def test_pointer_setup_page_opens_after_hand_choice_and_returns_to_tutorial(tmp_
         b.apply_view(ViewFrame(None, pointer_setup={"phase": "saved"}))
         b.application.processEvents()
         assert not page.property("visible") and b.stage_name == "tutorial"
-        assert b.tutorial is not None
+        assert b.tutorial is lesson and lesson.done[3]     # back in the same lesson, the fit step done
+        lesson.tick(time.perf_counter() + 1)
+        assert lesson.step_key == "sensitivity"
     finally:
         b.close()
 
@@ -414,3 +429,26 @@ def test_runtime_frame_latency_is_shown_without_relabeling_inference_time(bridge
     b.apply_view(ViewFrame(None, fps=30.0, detect_ms=7.0, frame_age_ms=22.0))
     assert "추론 7.0 ms" in b.state[-1]
     assert "앱 내 프레임 지연 22.0 ms" in b.state[-1]
+
+
+@pytest.mark.parametrize("layout", ["standard", "studio"])
+def test_relearn_motions_with_hand_position_skips_the_cursor_fit(tmp_path, layout):
+    from manux.ui.bridge import Bridge
+    settings = Settings(schema())
+    runtime = FakeRuntime(settings)
+    runtime.pointer_setup_dir = tmp_path
+    runtime.sensitivity_result = (0, True, "")
+    runtime.request = lambda request: True
+    b = Bridge(runtime, settings, tmp_path, layout=layout)
+    try:
+        b.control_hand = "Right"
+        b._set_stage("main")
+        b.beginTutorial()                                  # "learn motions": the hand is already chosen
+        assert b.stage_name == "tutorial" and not b.pointerSetup and b.tutorial.step_key == "move"
+        b.tutorialNext()
+        b.tutorialNext()                                   # past the click practice
+        b.tutorialChooseVertical("hand_position")
+        b.tutorialNext()                                   # the wrist-only cursor fit is passed over
+        assert b.tutorial.step_key == "sensitivity"
+    finally:
+        b.close()

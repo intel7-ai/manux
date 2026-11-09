@@ -12,6 +12,7 @@ from dataclasses import dataclass
 class WindowsOutputConfig:
     # cursor mapping
     movement_mode: str = "relative"          # "relative" (trackpad with acceleration) | "absolute"
+    vertical_input: str = "wrist_pitch"      # palm mode: "hand_position" | "wrist_pitch"
     smoothing: float = 0.35                  # EMA on the hand point (1.0 = none)
     active_margin: float = 0.3               # absolute: camera border that maps beyond the screen edge
     relative_gain_min: float = 0.35          # relative: gain at slow hand speed (screen widths per frame width)
@@ -27,7 +28,14 @@ class WindowsOutputConfig:
     palm_x_gain: float = 1.0
     palm_y_gain: float = 1.0
     cursor_hz: float = 120.0                 # cursor glides between camera frames at this rate (0 = jump per frame)
-    palm_hold: float = 0.015                # neutral zone radius (share of screen height) that parks the cursor
+    # Menu round with 18 real clicks: the pinch tilt moved the cursor median 11 px, up to 58 px, before the click
+    # fired; landing where it was 0.3 s earlier left median ~2 px (max ~10). The cap must cover those 58 px.
+    # Off by default: the snap back felt awkward, and the palm cursor now holds still while a click's fingers touch
+    # (the jump happens in that very frame), so there is nothing to roll back. 0.3 s was the recorded fit.
+    click_rollback_s: float = 0.0            # a click lands where the cursor was this long ago (pinch tilt)...
+    click_rollback_px: float = 60.0          # ...when that is at most this far away (0 s = off)
+    palm_precision: float = 0.7             # cursor gain of a slow hand (1 = off): smaller drift, tremor, click shift
+    palm_hold: float = 0.0                 # neutral zone radius (share of screen height) that parks the cursor; 0 = off
     # double-click assist: the cursor holds still after a left click so a second click lands on the same pixel
     double_click_window: float = 0.45
     double_click_move_tolerance: float = 0.03

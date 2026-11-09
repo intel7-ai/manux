@@ -216,7 +216,7 @@ class RuntimeRequest:
                 or not isinstance(self.path, str)
                 or self.kind in ("activate_model", "preview_model", "sensitivity", "advanced") and not self.path
                 or self.kind in ("tcn_toggle", "spatial_guard") and self.path not in ("on", "off")
-                or self.kind == "pointer_setup" and self.path not in ("start", "capture", "skip", "apply", "adjust", "retest")):
+                or self.kind == "pointer_setup" and self.path not in ("start", "capture", "skip", "apply", "adjust", "retest", "fine", "menu")):
             raise ValueError("invalid runtime request")
         object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
 

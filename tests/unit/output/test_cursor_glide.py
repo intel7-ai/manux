@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 
 from manux.core.contracts import ActionCommand
 from manux.output.windows.backend import FakeBackend
@@ -91,3 +92,32 @@ def test_real_thread_updates_at_least_60_hz():
         assert rate >= 60, (rate, frames)
     finally:
         sink.close()
+
+
+def test_click_rolls_back_a_small_last_moment_shift():
+    sink, clock = manual_sink(replace(ABS, click_rollback_s=.15))   # off by default; the guard replaced it
+    move(sink, 100, .5)
+    sink.glide_step(100.1)
+    steady = sink.backend.pos
+    clock.t = 101.0                          # the pinch tilts the hand: the cursor slides 12 px just before the click
+    move(sink, clock.t, .5 + 12 / 1920)
+    while sink.glide_step(clock.t):
+        clock.t += 1 / 120
+    assert sink.backend.pos != steady
+    clock.t += .05
+    sink.apply(ActionCommand(clock.t, "mouse.left_click", "tap", "pinch.click"))
+    assert moves(sink)[-1] == steady and sink.backend.events[-1][0] != "move"
+
+
+def test_click_after_a_real_move_is_not_rolled_back():
+    sink, clock = manual_sink(replace(ABS, click_rollback_s=.15))
+    move(sink, 100, .3)
+    sink.glide_step(100.1)
+    clock.t = 101.0
+    move(sink, clock.t, .5)                  # 384 px: a deliberate move, not a pinch tilt
+    while sink.glide_step(clock.t):
+        clock.t += 1 / 120
+    target = sink.backend.pos
+    clock.t += .05
+    sink.apply(ActionCommand(clock.t, "mouse.left_click", "tap", "pinch.click"))
+    assert moves(sink)[-1] == target

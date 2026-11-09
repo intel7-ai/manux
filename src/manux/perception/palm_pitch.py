@@ -14,11 +14,17 @@ from math import atan2, degrees, hypot
 MIN_PLANE_SHARE = .35
 
 
-def palm_pitch(world) -> float | None:
+ALL_KNUCKLES = (5, 9, 13, 17)
+# Index and pinky roots only: middle and ring fingers make the clicks, and bending them moved the estimated
+# middle/ring roots (the pitch jumped 5-7 deg in the frame a click closed).
+CLICK_FREE_KNUCKLES = (5, 17)
+
+
+def palm_pitch(world, knuckles=ALL_KNUCKLES) -> float | None:
     if world is None:
         return None
     wrist = world[0]
-    x, y, z = (sum(world[i][axis] - wrist[axis] for i in (5, 9, 13, 17)) / 4
+    x, y, z = (sum(world[i][axis] - wrist[axis] for i in knuckles) / len(knuckles)
                for axis in range(3))
     length = hypot(x, y, z)
     if length < 1e-4 or hypot(y, z) < MIN_PLANE_SHARE * length:
