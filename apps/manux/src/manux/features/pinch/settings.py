@@ -74,6 +74,7 @@ THRESHOLDS: Dict[str, Any] = {
     "ring_click_threshold": .044,
     "pinky_click_threshold": .05,
     "click_confirm_time": .06,
+    "pinky_confirm_time": .35,
     "click_lockout_after_grab": .35,
     "click_neighbor_ratio": .85,
     "click_release_margin": .02,
@@ -114,7 +115,8 @@ DEFAULTS: Mapping[str, Any] = MappingProxyType({**THRESHOLDS, **ENABLE})
 # which v0.3 `motion_mode` reads too and which go to the motion feature (one v0.3 key -> one row).
 SHARED_WITH_MOTION = ("motion_fold_ratio", "motion_thumb_out", "motion_thumb_up")
 V03_KEYS: Mapping[str, str] = MappingProxyType({
-    k: PREFIX + k for k in THRESHOLDS if k != "desktop_cooldown" and k not in SHARED_WITH_MOTION})
+    k: PREFIX + k for k in THRESHOLDS
+    if k not in ("desktop_cooldown", "pinky_confirm_time") and k not in SHARED_WITH_MOTION})
 
 
 # The feature's settings with their full keys (architecture.md section 5). `features` may not import
