@@ -213,6 +213,7 @@ class PinchCore:
         # 0. Fist (fast move); the thumbs-up (motion mode entry pose) freezes the cursor instead
         ratios = finger_curl_ratios(pts)
         curl = max(ratios)
+        mean_curl = sum(ratios) / 4.0
         if c["motion_pose_freeze"] and curl <= float(c["motion_fold_ratio"]):
             _palm = max(1e-6, _d2(pts[WRIST], pts[MIDDLE_MCP]))
             _tuck = min(_d2(thumb, pts[13]), _d2(thumb, pts[17])) / _palm
@@ -227,7 +228,7 @@ class PinchCore:
         index_tucked = ratios[0] <= float(c["index_tuck_ratio"])
         others_curled = max(ratios[1:]) <= 1.35
         if not self._fist:
-            if (not self._index_pinched or not index_active) and index_tucked and curl <= fist_enter:
+            if (not self._index_pinched or not index_active) and index_tucked and (curl <= fist_enter or mean_curl <= fist_enter):
                 if self._fist_candidate_since is None:
                     self._fist_candidate_since = now
                 if now - self._fist_candidate_since >= float(c["fist_confirm_time"]):
@@ -236,7 +237,7 @@ class PinchCore:
                     self._pinch_candidate_since = None
             else:
                 self._fist_candidate_since = None
-        elif curl > float(c["fist_curl_exit"]):
+        elif curl > float(c["fist_curl_exit"]) and mean_curl > float(c["fist_curl_exit"]):
             self._fist = False
             self._index_released_at = now
         if self._fist and on("fist"):

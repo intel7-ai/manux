@@ -158,7 +158,16 @@ class CursorMapper:
             t = max(0.0, min(1.0, (speed - v_lo) / (v_hi - v_lo)))
             g = (g_min + (g_max - g_min) * t) * gain
         else:
-            g = g_min * gain
+            if g_max > g_min:
+                # Hand shape controls speed: open hand (gain <= 1.0) -> g_min ("기본 속도")
+                # Fist/folded hand (gain >= 2.0) -> g_max ("빠른 이동 가속")
+                # Intermediate curling smoothly interpolates between g_min and g_max
+                t_shape = max(0.0, min(1.0, (gain - 1.0) / (2.0 - 1.0)))
+                g = g_min + (g_max - g_min) * t_shape
+                if gain > 2.0:
+                    g = g * (gain / 2.0)
+            else:
+                g = g_min * gain
         px, py = self.screens.clamp(self._rel_pos[0] + dx * self.screen_w * g,
                                     self._rel_pos[1] + dy * self.screen_w * g)
         self._rel_pos = (px, py)

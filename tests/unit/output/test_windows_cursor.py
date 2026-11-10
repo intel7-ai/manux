@@ -120,6 +120,20 @@ def test_relative_without_acceleration_has_constant_linear_gain():
     assert fast_px / (fast_hand * 1920) == pytest.approx(0.6, abs=0.05)
 
 
+def test_relative_hand_shape_scales_between_min_and_max_gain():
+    cfg = WindowsOutputConfig(movement_mode="relative", smoothing=1.0, relative_gain_min=0.55,
+                              relative_gain_max=6.0, relative_accel=False)
+    m_open = CursorMapper(ScreenLayout.single(1920, 1080), cfg, start=(500, 500))
+    m_fist = CursorMapper(ScreenLayout.single(1920, 1080), cfg, start=(500, 500))
+    for i, x in enumerate([.5, .51, .52]):
+        m_open.step((x, .5), i * FRAME, gain=1.0)
+        m_fist.step((x, .5), i * FRAME, gain=2.0)
+    dx_open = m_open.pos[0] - 500
+    dx_fist = m_fist.pos[0] - 500
+    assert dx_open / (0.02 * 1920) == pytest.approx(0.55, abs=0.05)
+    assert dx_fist / (0.02 * 1920) == pytest.approx(6.0, abs=0.05)
+
+
 def test_gain_multiplies_relative_movement():
     a = CursorMapper(ScreenLayout.single(1920, 1080), REL, start=(500, 500))
     b = CursorMapper(ScreenLayout.single(1920, 1080), REL, start=(500, 500))
