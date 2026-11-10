@@ -185,6 +185,8 @@ class GrabScroll:
         c = self.config
         if not (self._live and c.scroll_inertia and len(self._hist) >= 2):
             return None
+        if self._hist and (now - self._hist[-1][0]) > 0.08:
+            return None
         span = max(1e-3, self._hist[-1][0] - self._hist[0][0])
         vv = sum(r[1] for r in list(self._hist)[1:]) / span
         vh = sum(r[2] for r in list(self._hist)[1:]) / span

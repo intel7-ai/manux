@@ -37,6 +37,7 @@ CONTROLS = (
     Control("cursor.relative_gain_min", "이동 감도 (천천히)", .05, 3, .05, "cursor", "손을 천천히 움직일 때의 커서 이동 배율입니다."),
     Control("cursor.relative_gain_max", "이동 감도 (빠르게)", .5, 6, .1, "cursor", "손을 빠르게 움직일 때의 커서 이동 배율입니다."),
     Control("cursor.smoothing", "이동 부드러움", .05, 1, .01, "cursor", "낮을수록 부드럽고, 높을수록 손의 움직임에 빠르게 반응합니다."),
+    Control("cursor.scroll_gain", "스크롤 휠 속도", 1000, 30000, 500, "cursor", "엄지+검지 스크롤 속도입니다. 낮을수록 천천히, 정밀하게 스크롤됩니다."),
     Control("pinch.fist_curl_enter", "주먹 판정 기준", .5, 1.3, .05, "cursor", "주먹 이동으로 인식하는 손가락 굽힘 기준입니다."),
     Control("pinch.fist_confirm_time", "주먹 확인 시간 (초)", 0, .5, .01, "cursor", "주먹 이동으로 전환하기 전에 확인하는 시간입니다."),
     Control("pinch.fist_dpi_multiplier", "주먹 정밀 이동 배율", .05, 30, .05, "cursor", "1보다 작으면 주먹 이동이 느려져 세밀하게 조작할 수 있습니다."),
