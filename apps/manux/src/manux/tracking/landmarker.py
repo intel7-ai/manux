@@ -50,10 +50,10 @@ def _hands(result: Any, map_point) -> List[RawHand]:
     hands: List[RawHand] = []
     world_all = getattr(result, "hand_world_landmarks", None) or []
     for idx, lms in enumerate(result.hand_landmarks or []):
-        label, score = "Right", 1.0
+        label, score = "", 0.0
         if result.handedness and idx < len(result.handedness) and result.handedness[idx]:
-            label = result.handedness[idx][0].category_name or "Right"
-            score = float(result.handedness[idx][0].score or 1.0)
+            label = result.handedness[idx][0].category_name or ""
+            score = float(result.handedness[idx][0].score or 0.0)
         world = None
         if idx < len(world_all) and world_all[idx]:
             world = tuple((float(p.x), float(p.y), float(p.z)) for p in world_all[idx])
