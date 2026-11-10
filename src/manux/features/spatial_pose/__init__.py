@@ -45,7 +45,7 @@ GESTURE_PHASES = {"spatial_pose.rock_sign": frozenset({"tap"})}
 GESTURE_TO_CLASS: Mapping[str, str] = {v: k for k, v in CLASS_TO_GESTURE.items()}
 GESTURE_TO_CLASS = {**GESTURE_TO_CLASS, "pointer.left_click": "thumb_middle", "pointer.right_click": "thumb_ring"}
 BOTH_CLICK_GESTURES = frozenset({"pinch.thumb_middle", "pinch.thumb_ring", "pointer.left_click", "pointer.right_click"})
-DEFAULT_VETO_GESTURES = BOTH_CLICK_GESTURES
+DEFAULT_VETO_GESTURES = BOTH_CLICK_GESTURES | frozenset({"pinch.thumb_tucked_open"})
 BOOST_CLASSES = frozenset({"thumb_middle", "thumb_ring"})
 
 
@@ -189,6 +189,7 @@ class SpatialPoseGuard(IntentFilter):
         self._scroll_last_scale: Optional[float] = None
         self._scroll_run: int = 0
         self._desktop_run: int = 0
+        self._is_horiz: bool = False
         self._last_desktop_fired: float = -1e9
 
     @staticmethod
@@ -229,7 +230,14 @@ class SpatialPoseGuard(IntentFilter):
         else:
             self._scroll_run = 0
 
-        if ev is not None and ev.action == "palm_side" and ev.confidence >= 0.60:
+        is_horiz = False
+        if hand is not None and hand.landmarks and len(hand.landmarks) >= 10:
+            w, m = hand.landmarks[0], hand.landmarks[9]
+            # Hand is horizontal when dx >= 0.65 * dy (palm held sideways / horizontal)
+            is_horiz = abs(m[0] - w[0]) >= 0.65 * abs(m[1] - w[1])
+        self._is_horiz = is_horiz
+
+        if ev is not None and ev.action == "palm_side" and ev.confidence >= 0.75 and is_horiz:
             self._desktop_run += 1
         else:
             self._desktop_run = 0
@@ -264,10 +272,10 @@ class SpatialPoseGuard(IntentFilter):
         scroll_active = (ev.action == "thumb_index" and ev.confidence >= 0.55)
         out: List[Intent] = []
 
-        # Show desktop assist: when Spatial MLP steadily confirms palm_side (>= 3 frames ~ 100ms)
+        # Show desktop assist: when Spatial MLP steadily confirms horizontal palm_side (>= 5 frames ~ 160ms)
         desktop_enabled = True if self.settings is None else bool(self.settings.get("pinch.enable_thumb_tucked_open"))
         desktop_cooldown_ok = (ctx.frame.t - self._last_desktop_fired) >= 2.0
-        if desktop_enabled and self._desktop_run >= 3 and desktop_cooldown_ok and not self._dragging and not self._scrolling:
+        if desktop_enabled and self._desktop_run >= 5 and desktop_cooldown_ok and not self._dragging and not self._scrolling:
             self._last_desktop_fired = ctx.frame.t
             self._desktop_run = 0
             self._events.append("spatial_guard:desktop_fired")
@@ -440,6 +448,13 @@ class SpatialPoseGuard(IntentFilter):
 
             # Check if this click or pinch intent should be vetoed
             if intent.phase in ("tap", "begin") and intent.gesture in DEFAULT_VETO_GESTURES:
+                # Desktop special veto: strictly require horizontal palm_side pose
+                if intent.gesture == "pinch.thumb_tucked_open":
+                    if ev is None or ev.action != "palm_side" or not self._is_horiz:
+                        self.vetoed_count += 1
+                        self._events.append(f"spatial_guard:vetoed:{intent.gesture}:{intent.phase}")
+                        continue
+
                 # If MLP is confident that hand is 'none' (idle/moving) for k consecutive frames
                 if self._idle_run >= self.k_frames:
                     self.vetoed_count += 1

@@ -14,7 +14,7 @@ from manux.ml.spatial_mlp import SpatialMlpModel, train_spatial_mlp
 from manux.perception.spatial_features import SPATIAL_FEATURE_VERSION, extract_spatial_features
 
 
-def _dummy_hand(pinch_target: int | None = None) -> list[tuple[float, float, float]]:
+def _dummy_hand(pinch_target: int | None = None, horizontal: bool = False) -> list[tuple[float, float, float]]:
     pts = [
         (0.50, 0.80, 0.00),  # 0: WRIST
         (0.42, 0.74, -0.02), (0.36, 0.66, -0.03), (0.32, 0.58, -0.04), (0.28, 0.50, -0.04),  # 1..4: THUMB
@@ -26,6 +26,9 @@ def _dummy_hand(pinch_target: int | None = None) -> list[tuple[float, float, flo
     if pinch_target is not None:
         tx, ty, tz = pts[pinch_target]
         pts[4] = (tx + 0.004, ty + 0.004, tz)
+    if horizontal:
+        w = pts[0]
+        pts = [(w[0] - (y - w[1]), w[1] + (x - w[0]), z) for x, y, z in pts]
     return pts
 
 
@@ -36,7 +39,7 @@ def trained_mlp() -> SpatialMlpModel:
         "thumb_middle": _dummy_hand(12),
         "thumb_ring": _dummy_hand(16),
         "thumb_index": _dummy_hand(8),
-        "palm_side": _dummy_hand(20),
+        "palm_side": _dummy_hand(20, horizontal=True),
     }
     xs, ys, ws = [], [], []
     for name, pts in poses.items():
@@ -287,29 +290,28 @@ def test_guard_fires_desktop_on_palm_side_pose(trained_mlp: SpatialMlpModel):
 
     hand_palm = HandObservation(
         frame=FrameInfo(1, 600.0, 640, 480, False),
-        landmarks=tuple(_dummy_hand(20)),
+        landmarks=tuple(_dummy_hand(20, horizontal=True)),
         handedness="Right",
         score=0.95,
     )
     ctx1 = FrameContext(hand_palm.frame, "default", "none", "pinch")
 
-    # Frames 1, 2: run = 1, 2 (cooldown / steady check)
-    guard.observe(hand_palm, ctx1)
-    out1 = guard.filter([Intent(600.0, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], ctx1)
-    assert len(out1) == 1 and out1[0].gesture == "pinch.move"
+    # Frames 1..4: run = 1..4 (steady hold check, threshold is 5 frames)
+    for i in range(1, 5):
+        hp = HandObservation(frame=FrameInfo(i, 600.0 + (i - 1) * 0.033, 640, 480, False),
+                             landmarks=tuple(_dummy_hand(20, horizontal=True)), handedness="Right", score=0.95)
+        c = FrameContext(hp.frame, "default", "none", "pinch")
+        guard.observe(hp, c)
+        out = guard.filter([Intent(hp.frame.t, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], c)
+        assert len(out) == 1 and out[0].gesture == "pinch.move"
 
-    hand_palm2 = HandObservation(frame=FrameInfo(2, 600.03, 640, 480, False), landmarks=tuple(_dummy_hand(20)), handedness="Right", score=0.95)
-    ctx2 = FrameContext(hand_palm2.frame, "default", "none", "pinch")
-    guard.observe(hand_palm2, ctx2)
-    out2 = guard.filter([Intent(600.03, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], ctx2)
-    assert len(out2) == 1 and out2[0].gesture == "pinch.move"
-
-    # Frame 3: run = 3 -> fires desktop!
-    hand_palm3 = HandObservation(frame=FrameInfo(3, 600.06, 640, 480, False), landmarks=tuple(_dummy_hand(20)), handedness="Right", score=0.95)
-    ctx3 = FrameContext(hand_palm3.frame, "default", "none", "pinch")
-    guard.observe(hand_palm3, ctx3)
-    out3 = guard.filter([Intent(600.06, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], ctx3)
-    assert len(out3) == 1 and out3[0].gesture == "pinch.thumb_tucked_open" and out3[0].phase == "tap"
+    # Frame 5: run = 5 -> fires desktop!
+    hp5 = HandObservation(frame=FrameInfo(5, 600.133, 640, 480, False),
+                          landmarks=tuple(_dummy_hand(20, horizontal=True)), handedness="Right", score=0.95)
+    c5 = FrameContext(hp5.frame, "default", "none", "pinch")
+    guard.observe(hp5, c5)
+    out5 = guard.filter([Intent(600.133, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], c5)
+    assert len(out5) == 1 and out5[0].gesture == "pinch.thumb_tucked_open" and out5[0].phase == "tap"
     assert "spatial_guard:desktop_fired" in guard.drain_events()
 
 
@@ -325,16 +327,52 @@ def test_guard_respects_disabled_desktop_setting(trained_mlp: SpatialMlpModel):
 
     hand_palm = HandObservation(
         frame=FrameInfo(1, 600.0, 640, 480, False),
-        landmarks=tuple(_dummy_hand(20)),
+        landmarks=tuple(_dummy_hand(20, horizontal=True)),
         handedness="Right",
         score=0.95,
     )
     ctx = FrameContext(hand_palm.frame, "default", "none", "pinch")
-    for step in range(5):
+    for step in range(8):
         guard.observe(hand_palm, ctx)
         out = guard.filter([Intent(600.0 + step * 0.03, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], ctx)
         assert len(out) == 1 and out[0].gesture == "pinch.move"
     assert "spatial_guard:desktop_fired" not in guard.drain_events()
+
+
+def test_guard_vetoes_heuristic_desktop_when_hand_is_vertical_or_idle(trained_mlp: SpatialMlpModel):
+    feat = SpatialPoseFeature(trained_mlp, mode="assist")
+    guard = SpatialPoseGuard(feat)
+
+    # 1. Hand is vertical moving/idle (none): 2D heuristic falsely fires show_desktop
+    hand_idle = HandObservation(
+        frame=FrameInfo(1, 650.0, 640, 480, False),
+        landmarks=tuple(_dummy_hand(None)),
+        handedness="Right",
+        score=0.95,
+    )
+    ctx1 = FrameContext(hand_idle.frame, "default", "none", "pinch")
+    guard.observe(hand_idle, ctx1)
+    heuristic_desktop = [Intent(650.0, "pinch", "pinch.thumb_tucked_open", "tap")]
+    out1 = guard.filter(heuristic_desktop, ctx1)
+    # Intercepted and VETOED!
+    assert len(out1) == 0
+    assert guard.vetoed_count == 1
+    assert "spatial_guard:vetoed:pinch.thumb_tucked_open:tap" in guard.drain_events()
+
+    # 2. Hand is in tuck posture but held VERTICALLY (not horizontal): heuristic fires show_desktop
+    hand_vert_tuck = HandObservation(
+        frame=FrameInfo(2, 650.05, 640, 480, False),
+        landmarks=tuple(_dummy_hand(20, horizontal=False)),
+        handedness="Right",
+        score=0.95,
+    )
+    ctx2 = FrameContext(hand_vert_tuck.frame, "default", "none", "pinch")
+    guard.observe(hand_vert_tuck, ctx2)
+    out2 = guard.filter(heuristic_desktop, ctx2)
+    # Vetoed because user's desktop action strictly requires horizontal hand!
+    assert len(out2) == 0
+    assert guard.vetoed_count == 2
+    assert "spatial_guard:vetoed:pinch.thumb_tucked_open:tap" in guard.drain_events()
 
 
 def test_guard_ends_drag_immediately_when_hand_opens_even_if_heuristic_holds(trained_mlp: SpatialMlpModel):
