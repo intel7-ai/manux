@@ -182,6 +182,10 @@ class SpatialPoseGuard(IntentFilter):
         self._dragging: bool = False
         self._drag_last_point: Optional[Tuple[float, float]] = None
         self._drag_last_scale: Optional[float] = None
+        self._scrolling: bool = False
+        self._scroll_last_point: Optional[Tuple[float, float]] = None
+        self._scroll_last_scale: Optional[float] = None
+        self._scroll_run: int = 0
 
     @staticmethod
     def _circle_score(hand: Optional[HandObservation], cls: str) -> float:
@@ -216,6 +220,11 @@ class SpatialPoseGuard(IntentFilter):
         else:
             self._idle_run = 0
 
+        if ev is not None and ev.action == "thumb_index" and ev.confidence >= 0.55:
+            self._scroll_run += 1
+        else:
+            self._scroll_run = 0
+
         # boost: fuse physical pinch circle proximity with Spatial MLP confidence
         cls = None
         fast = False
@@ -243,7 +252,20 @@ class SpatialPoseGuard(IntentFilter):
             return intents
 
         pose_active = (ev.action in ("thumb_middle", "thumb_middle_ring") and ev.confidence >= 0.55)
+        scroll_active = (ev.action == "thumb_index" and ev.confidence >= 0.55)
         out: List[Intent] = []
+
+        if not intents and self._scrolling:
+            if scroll_active:
+                out.append(Intent(ctx.frame.t, "pinch", "pinch.scroll", "hold",
+                                  point=self._scroll_last_point, scale=self._scroll_last_scale))
+                return tuple(out)
+            else:
+                out.append(Intent(ctx.frame.t, "pinch", "pinch.scroll", "end",
+                                  point=self._scroll_last_point, scale=self._scroll_last_scale))
+                self._scrolling = False
+                self._events.append("spatial_guard:scroll_ended_on_release")
+                return tuple(out)
 
         if not intents and self._dragging:
             if pose_active:
@@ -258,6 +280,71 @@ class SpatialPoseGuard(IntentFilter):
                 return tuple(out)
 
         for intent in intents:
+            # Handle scroll intents
+            if intent.gesture == "pinch.scroll":
+                if intent.phase in ("begin", "hold"):
+                    self._scrolling = True
+                    if intent.point is not None:
+                        self._scroll_last_point = intent.point
+                    if intent.scale is not None:
+                        self._scroll_last_scale = intent.scale
+                    out.append(intent)
+                    continue
+                elif intent.phase == "end":
+                    if scroll_active:
+                        sustained = Intent(
+                            intent.t, intent.source, "pinch.scroll", "hold",
+                            point=intent.point or self._scroll_last_point,
+                            scale=intent.scale or self._scroll_last_scale,
+                        )
+                        self._scrolling = True
+                        self._events.append("spatial_guard:scroll_sustained_on_end")
+                        out.append(sustained)
+                        continue
+                    else:
+                        self._scrolling = False
+                        self._events.append("spatial_guard:scroll_ended")
+                        out.append(intent)
+                        continue
+
+            # If scroll was active and MLP confirms pose is still held,
+            # convert accidental fallback to move into scroll hold.
+            if self._scrolling and intent.phase == "hold" and intent.gesture in ("pinch.move", "pinch.move_fist", "pointer.move"):
+                if scroll_active:
+                    scroll_intent = Intent(
+                        intent.t, "pinch", "pinch.scroll", "hold",
+                        point=intent.point or self._scroll_last_point,
+                        scale=intent.scale or self._scroll_last_scale,
+                    )
+                    if intent.point is not None:
+                        self._scroll_last_point = intent.point
+                    self._events.append("spatial_guard:move_converted_to_scroll")
+                    out.append(scroll_intent)
+                    continue
+                else:
+                    out.append(Intent(
+                        ctx.frame.t, "pinch", "pinch.scroll", "end",
+                        point=self._scroll_last_point,
+                        scale=self._scroll_last_scale,
+                    ))
+                    self._scrolling = False
+                    self._events.append("spatial_guard:scroll_ended_on_release")
+
+            # If scroll was NOT active yet (e.g. horizontal posture blocked by 2D rule),
+            # but MLP detects thumb_index steadily (>= 2 frames), convert move into scroll begin!
+            if not self._scrolling and not self._dragging and intent.phase == "hold" and intent.gesture in ("pinch.move", "pinch.move_fist", "pointer.move"):
+                if scroll_active and self._scroll_run >= 2:
+                    self._scrolling = True
+                    self._scroll_last_point = intent.point
+                    self._scroll_last_scale = intent.scale
+                    self._events.append("spatial_guard:move_converted_to_scroll_begin")
+                    out.append(Intent(
+                        intent.t, "pinch", "pinch.scroll", "begin",
+                        point=intent.point,
+                        scale=intent.scale,
+                    ))
+                    continue
+
             # Handle drag intents
             if intent.gesture == "pinch.drag":
                 if intent.phase in ("begin", "hold"):
@@ -372,3 +459,7 @@ class SpatialPoseGuard(IntentFilter):
         self._dragging = False
         self._drag_last_point = None
         self._drag_last_scale = None
+        self._scrolling = False
+        self._scroll_last_point = None
+        self._scroll_last_scale = None
+        self._scroll_run = 0

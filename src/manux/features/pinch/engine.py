@@ -312,8 +312,9 @@ class PinchCore:
         # Thumb + index hysteresis
         if not self._index_pinched:
             self.last_hold = None
-            middle_clearly_closer = d_middle < d_index * float(c["click_neighbor_ratio"])
-            can_pinch = d_index <= pinch_threshold and not index_tucked and not middle_clearly_closer
+            middle_clearly_closer = d_middle < d_index * float(c["click_neighbor_ratio"]) and d_middle <= float(c["click_threshold"])
+            index_clear = (not index_tucked) or (d_index <= pinch_threshold)
+            can_pinch = d_index <= pinch_threshold and index_clear and not middle_clearly_closer
             if can_pinch and others_curled:
                 if self._pinch_candidate_since is None:
                     self._pinch_candidate_since = now

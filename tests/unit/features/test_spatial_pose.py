@@ -35,6 +35,7 @@ def trained_mlp() -> SpatialMlpModel:
         "none": _dummy_hand(None),
         "thumb_middle": _dummy_hand(12),
         "thumb_ring": _dummy_hand(16),
+        "thumb_index": _dummy_hand(8),
     }
     xs, ys, ws = [], [], []
     for name, pts in poses.items():
@@ -216,4 +217,64 @@ def test_guard_sustains_drag_when_heuristic_prematurely_ends_if_mlp_confirms_mid
     gestures_phases = [(i.gesture, i.phase) for i in out4]
     assert ("pinch.drag", "end") in gestures_phases
     assert guard._dragging is False
+
+
+def test_guard_assists_and_sustains_scroll_when_mlp_confirms_thumb_index(
+    trained_mlp: SpatialMlpModel,
+):
+    feat = SpatialPoseFeature(trained_mlp, mode="assist")
+    guard = SpatialPoseGuard(feat, tau_boost=0.99)
+
+    hand_index = HandObservation(
+        frame=FrameInfo(1, 500.0, 640, 480, False),
+        landmarks=tuple(_dummy_hand(8)),
+        handedness="Right",
+        score=0.95,
+    )
+    ctx_index = FrameContext(hand_index.frame, "default", "none", "pinch")
+
+    # Frame 1: MLP sees thumb_index, run = 1 (candidate)
+    guard.observe(hand_index, ctx_index)
+    out1 = guard.filter([Intent(500.0, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], ctx_index)
+    assert guard._scrolling is False
+
+    # Frame 2: MLP sees thumb_index again (run = 2) -> converts move into scroll begin!
+    hand_index2 = HandObservation(
+        frame=FrameInfo(2, 500.03, 640, 480, False),
+        landmarks=tuple(_dummy_hand(8)),
+        handedness="Right",
+        score=0.95,
+    )
+    ctx_index2 = FrameContext(hand_index2.frame, "default", "none", "pinch")
+    guard.observe(hand_index2, ctx_index2)
+    out2 = guard.filter([Intent(500.03, "pinch", "pinch.move", "hold", point=(0.5, 0.52))], ctx_index2)
+    assert len(out2) == 1 and out2[0].gesture == "pinch.scroll" and out2[0].phase == "begin"
+    assert guard._scrolling is True
+    assert "spatial_guard:move_converted_to_scroll_begin" in guard.drain_events()
+
+    # Frame 3: Move converted to scroll hold
+    hand_index3 = HandObservation(
+        frame=FrameInfo(3, 500.06, 640, 480, False),
+        landmarks=tuple(_dummy_hand(8)),
+        handedness="Right",
+        score=0.95,
+    )
+    ctx_index3 = FrameContext(hand_index3.frame, "default", "none", "pinch")
+    guard.observe(hand_index3, ctx_index3)
+    out3 = guard.filter([Intent(500.06, "pinch", "pinch.move", "hold", point=(0.5, 0.54))], ctx_index3)
+    assert len(out3) == 1 and out3[0].gesture == "pinch.scroll" and out3[0].phase == "hold"
+
+    # Frame 4: User opens hand (none) -> scroll cleanly ends
+    hand_open = HandObservation(
+        frame=FrameInfo(4, 500.09, 640, 480, False),
+        landmarks=tuple(_dummy_hand(None)),
+        handedness="Right",
+        score=0.95,
+    )
+    ctx_open = FrameContext(hand_open.frame, "default", "none", "pinch")
+    guard.observe(hand_open, ctx_open)
+    out4 = guard.filter([Intent(500.09, "pinch", "pinch.move", "hold", point=(0.5, 0.55))], ctx_open)
+    gestures_phases = [(i.gesture, i.phase) for i in out4]
+    assert ("pinch.scroll", "end") in gestures_phases
+    assert guard._scrolling is False
 
