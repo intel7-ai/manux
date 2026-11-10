@@ -275,11 +275,14 @@ class PinchCore:
                     world_contacts.add(finger)
 
         cursor_point_early = palm_anchor_point(pts, c["cursor_anchor_ratio"])
+        # Clear contact must reach the click confirmer even when the projected hand is
+        # still folded. Waiting for confirmation here deadlocks a click inside a latched fist.
+        contact_claiming = bool(world_contacts or self._secondary_confirmed)
 
         # 0. Fist (fast move); the thumbs-up (motion mode entry pose) freezes the cursor instead
         ratios = finger_curl_ratios(pts)
         curl = max(ratios)
-        if c["motion_pose_freeze"] and not self._secondary_confirmed and curl <= float(c["motion_fold_ratio"]):
+        if c["motion_pose_freeze"] and not contact_claiming and curl <= float(c["motion_fold_ratio"]):
             _palm = max(1e-6, _d2(pts[WRIST], pts[MIDDLE_MCP]))
             _tuck = min(_d2(thumb, pts[13]), _d2(thumb, pts[17])) / _palm
             _up = (pts[5][1] - thumb[1]) / _palm
@@ -292,8 +295,11 @@ class PinchCore:
         index_active = scroll_on
         index_tucked = ratios[0] <= float(c["index_tuck_ratio"])
         others_curled = max(ratios[1:]) <= 1.35
-        if not self._fist:
-            if (not self._index_pinched or not index_active) and not self._secondary_confirmed and index_tucked and curl <= fist_enter:
+        if contact_claiming:
+            self._fist = False
+            self._fist_candidate_since = None
+        elif not self._fist:
+            if (not self._index_pinched or not index_active) and index_tucked and curl <= fist_enter:
                 if self._fist_candidate_since is None:
                     self._fist_candidate_since = now
                 if now - self._fist_candidate_since >= float(c["fist_confirm_time"]):
@@ -304,7 +310,7 @@ class PinchCore:
                 self._fist_candidate_since = None
         elif curl > float(c["fist_curl_exit"]):
             self._fist = False
-            self._index_released_at = now
+            # Opening a moving fist is not a scroll release and must not lock out clicks.
         if self._fist and on("fist"):
             if self._index_pinched:
                 self._index_released_at = now
