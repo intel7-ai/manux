@@ -175,6 +175,7 @@ class SpatialPoseGuard(IntentFilter):
         self.passed_count = 0
         self.boosted_count = 0
         self._boost_class: Optional[str] = None
+        self._last_boosted_class: Optional[str] = None
         self._boost_run = 0
         self._boost_fast = False
         self._boost_done = False
@@ -264,8 +265,14 @@ class SpatialPoseGuard(IntentFilter):
             self._boost_class = cls
             self._boost_run = 0
             self._boost_fast = False
-            if self._idle_run >= 2 or (ev is not None and ev.action == "none"):
+            if (
+                self._idle_run >= 2
+                or (ev is not None and ev.action == "none")
+                or (cls is not None and cls != self._last_boosted_class)
+            ):
                 self._boost_done = False
+                if ev is not None and ev.action == "none":
+                    self._last_boosted_class = None
         if cls is not None:
             self._boost_run += 1
             self._boost_fast = self._boost_fast or fast
@@ -278,8 +285,10 @@ class SpatialPoseGuard(IntentFilter):
         if ev is None or ev.t != ctx.frame.t:
             return intents
 
-        pose_active = (ev.action in ("thumb_middle", "thumb_middle_ring") and ev.confidence >= 0.55)
-        right_pose_active = (ev.action in ("thumb_ring", "thumb_middle_ring") and ev.confidence >= 0.55)
+        left_pose_active = (ev.action == "thumb_middle" and ev.confidence >= 0.55)
+        right_pose_active = (ev.action == "thumb_ring" and ev.confidence >= 0.55)
+        both_pose_active = (ev.action == "thumb_middle_ring" and ev.confidence >= 0.55)
+        pose_active = left_pose_active
         scroll_active = (ev.action == "thumb_index" and ev.confidence >= 0.55)
         out: List[Intent] = []
 
@@ -397,6 +406,39 @@ class SpatialPoseGuard(IntentFilter):
             # Handle drag intents
             if intent.gesture == "pinch.drag":
                 if intent.phase in ("begin", "hold"):
+                    if right_pose_active and ev.confidence >= 0.65:
+                        if self._dragging:
+                            self._dragging = False
+                            out.append(Intent(
+                                intent.t, "pinch", "pinch.drag", "end",
+                                point=intent.point or self._drag_last_point,
+                                scale=intent.scale or self._drag_last_scale,
+                            ))
+                        phase = "hold" if self._right_dragging else "begin"
+                        self._right_dragging = True
+                        if intent.point is not None:
+                            self._right_drag_last_point = intent.point
+                        if intent.scale is not None:
+                            self._right_drag_last_scale = intent.scale
+                        self._boost_done = True
+                        self._last_boosted_class = "thumb_ring"
+                        self._events.append("spatial_guard:drag_converted_to_right_drag")
+                        out.append(Intent(
+                            intent.t, "pinch", "pinch.right_drag", phase,
+                            point=intent.point, scale=intent.scale,
+                        ))
+                        continue
+                    if both_pose_active and ev.confidence >= 0.65:
+                        if self._dragging:
+                            self._dragging = False
+                            out.append(Intent(
+                                intent.t, "pinch", "pinch.drag", "end",
+                                point=intent.point or self._drag_last_point,
+                                scale=intent.scale or self._drag_last_scale,
+                            ))
+                        self.vetoed_count += 1
+                        self._events.append("spatial_guard:vetoed_mismatch:pinch.drag_vs_both_click")
+                        continue
                     # If MLP strongly confirms hand is opened (action == 'none'),
                     # terminate drag immediately without waiting for 2D heuristic release lag!
                     if not pose_active and ev.action == "none" and ev.confidence >= 0.65:
@@ -459,6 +501,39 @@ class SpatialPoseGuard(IntentFilter):
             # Handle right drag intents
             if intent.gesture == "pinch.right_drag":
                 if intent.phase in ("begin", "hold"):
+                    if left_pose_active and ev.confidence >= 0.65:
+                        if self._right_dragging:
+                            self._right_dragging = False
+                            out.append(Intent(
+                                intent.t, "pinch", "pinch.right_drag", "end",
+                                point=intent.point or self._right_drag_last_point,
+                                scale=intent.scale or self._right_drag_last_scale,
+                            ))
+                        phase = "hold" if self._dragging else "begin"
+                        self._dragging = True
+                        if intent.point is not None:
+                            self._drag_last_point = intent.point
+                        if intent.scale is not None:
+                            self._drag_last_scale = intent.scale
+                        self._boost_done = True
+                        self._last_boosted_class = "thumb_middle"
+                        self._events.append("spatial_guard:right_drag_converted_to_drag")
+                        out.append(Intent(
+                            intent.t, "pinch", "pinch.drag", phase,
+                            point=intent.point, scale=intent.scale,
+                        ))
+                        continue
+                    if both_pose_active and ev.confidence >= 0.65:
+                        if self._right_dragging:
+                            self._right_dragging = False
+                            out.append(Intent(
+                                intent.t, "pinch", "pinch.right_drag", "end",
+                                point=intent.point or self._right_drag_last_point,
+                                scale=intent.scale or self._right_drag_last_scale,
+                            ))
+                        self.vetoed_count += 1
+                        self._events.append("spatial_guard:vetoed_mismatch:pinch.right_drag_vs_both_click")
+                        continue
                     if not right_pose_active and ev.action == "none" and ev.confidence >= 0.65:
                         self._right_dragging = False
                         self._events.append("spatial_guard:right_drag_ended_on_mlp_open")
@@ -516,13 +591,59 @@ class SpatialPoseGuard(IntentFilter):
                     self._right_dragging = False
                     self._events.append("spatial_guard:right_drag_ended_on_release")
 
+            # While a boosted/confirmed click posture is continuously held ("누르고 있는 중인 자세"),
+            # convert 2D fallback move intents into the held drag / both-click hold so mouse.move never releases the button early!
+            if self._boost_done and intent.phase == "hold" and intent.gesture in ("pinch.move", "pinch.move_fist", "pointer.move"):
+                if left_pose_active and self._last_boosted_class == "thumb_middle":
+                    phase = "hold" if self._dragging else "begin"
+                    self._dragging = True
+                    if intent.point is not None:
+                        self._drag_last_point = intent.point
+                    if intent.scale is not None:
+                        self._drag_last_scale = intent.scale
+                    self._events.append("spatial_guard:move_converted_to_drag")
+                    out.append(Intent(
+                        intent.t, "pinch", "pinch.drag", phase,
+                        point=intent.point or self._drag_last_point,
+                        scale=intent.scale or self._drag_last_scale,
+                    ))
+                    continue
+                if right_pose_active and self._last_boosted_class == "thumb_ring":
+                    phase = "hold" if self._right_dragging else "begin"
+                    self._right_dragging = True
+                    if intent.point is not None:
+                        self._right_drag_last_point = intent.point
+                    if intent.scale is not None:
+                        self._right_drag_last_scale = intent.scale
+                    self._events.append("spatial_guard:move_converted_to_right_drag")
+                    out.append(Intent(
+                        intent.t, "pinch", "pinch.right_drag", phase,
+                        point=intent.point or self._right_drag_last_point,
+                        scale=intent.scale or self._right_drag_last_scale,
+                    ))
+                    continue
+                if both_pose_active and self._last_boosted_class == "thumb_middle_ring":
+                    out.append(Intent(intent.t, "pinch", "pinch.thumb_middle", "tap", confidence=ev.confidence))
+                    out.append(Intent(intent.t, "pinch", "pinch.thumb_ring", "tap", confidence=ev.confidence))
+                    continue
+
             # A click the rules fire (or the MLP already fired) for the pose being held counts as done.
             if intent.phase == "tap" and intent.gesture in BOTH_CLICK_GESTURES:
-                match = (GESTURE_TO_CLASS.get(intent.gesture) == self._boost_class or self._boost_class == "thumb_middle_ring")
+                if both_pose_active and ev.confidence >= 0.65:
+                    if not self._boost_done or self._last_boosted_class != "thumb_middle_ring":
+                        out.append(Intent(intent.t, "pinch", "pinch.thumb_middle", "tap", confidence=ev.confidence))
+                        out.append(Intent(intent.t, "pinch", "pinch.thumb_ring", "tap", confidence=ev.confidence))
+                        self._boost_done = True
+                        self._last_boosted_class = "thumb_middle_ring"
+                        self._boost_t = ctx.frame.t
+                        self.passed_count += 1
+                    continue
+                match = (GESTURE_TO_CLASS.get(intent.gesture) == self._boost_class)
                 if self._boost_class is not None and self._boost_done and match:
                     continue          # one click per pose episode (the MLP already clicked for it)
                 if match:
                     self._boost_done = True
+                    self._last_boosted_class = self._boost_class
                 self._boost_t = ctx.frame.t     # a click just happened: the boost stays quiet for a while
             # Mode arbiter transitions are protected and never vetoed
             if "." in intent.gesture and intent.gesture.split(".", 1)[1] in ("enter", "exit"):
@@ -569,11 +690,12 @@ class SpatialPoseGuard(IntentFilter):
         need_k = min(self.k_boost, 2) if self._boost_fast else self.k_boost
         if (self.boost and self._boost_class is not None and not self._boost_done
                 and self._boost_run >= need_k and ctx.mode == "pinch"
-                and ctx.frame.t - self._boost_t >= 0.30
+                and (ctx.frame.t - self._boost_t >= 0.30 or self._boost_class != self._last_boosted_class)
                 and not self._dragging
                 and not self._right_dragging
                 and not any(i.gesture in ("pinch.scroll", "pinch.drag", "pinch.right_drag") and i.phase != "end" for i in out)
                 and not any(act.holding for act in ctx.others.values())):
+            out = [i for i in out if i.gesture not in ("pinch.move", "pinch.move_fist", "pointer.move")]
             if self._boost_class == "thumb_middle_ring":
                 out.append(Intent(ctx.frame.t, "pinch", "pinch.thumb_middle", "tap", confidence=ev.confidence))
                 out.append(Intent(ctx.frame.t, "pinch", "pinch.thumb_ring", "tap", confidence=ev.confidence))
@@ -583,6 +705,7 @@ class SpatialPoseGuard(IntentFilter):
                 out.append(Intent(ctx.frame.t, "pinch", gesture, "tap", confidence=ev.confidence))
                 self._events.append(f"spatial_guard:boosted:{gesture}")
             self._boost_done = True
+            self._last_boosted_class = self._boost_class
             self._boost_t = ctx.frame.t
             self.boosted_count += 1
 
@@ -595,6 +718,7 @@ class SpatialPoseGuard(IntentFilter):
     def reset(self, reason: str) -> None:
         self._idle_run = 0
         self._boost_class = None
+        self._last_boosted_class = None
         self._boost_run = 0
         self._boost_done = False
         self._events.clear()

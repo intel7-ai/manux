@@ -4,7 +4,7 @@ from manux.features.pinch.settings import resolve
 
 
 TIPS = {"index": 8, "middle": 12, "ring": 16, "pinky": 20}
-ACTION_FINGER = {"left_click": "middle", "right_click": "ring", "drag_hold": "middle",
+ACTION_FINGER = {"left_click": "middle", "right_click": "ring", "drag_hold": "middle", "right_drag_hold": "ring",
                  "task_switcher": "pinky", "scroll_grab": "index"}
 
 

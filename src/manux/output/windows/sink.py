@@ -385,12 +385,15 @@ class WindowsOutputSink:
 
     def _do_mouse_left_click(self, cmd: ActionCommand) -> OutputResult:
         if cmd.point is None and cmd.gesture in ("pinch.thumb_middle", "pointer.left_click"):
+            if getattr(self, "_holding_left", False) or (self.dragging and getattr(self, "_drag_button", "left") == "left"):
+                return OK
             # Contact debounce: ignore rapid re-contact within 200ms of release
             if cmd.t - getattr(self, "_last_left_release_t", float("-inf")) < 0.20:
                 return OK
             if self._interp is not None:
                 self._interp.snap(*self.cursor.pos)
-            self._end_drag()
+            if self.dragging:
+                self._end_drag()
             if self.scroll.active:
                 self.scroll.end(cmd.t, launch=False)
             self.buttons.press("left")
@@ -405,12 +408,15 @@ class WindowsOutputSink:
 
     def _do_mouse_right_click(self, cmd: ActionCommand) -> OutputResult:
         if cmd.point is None and cmd.gesture in ("pinch.thumb_ring", "pointer.right_click"):
+            if getattr(self, "_holding_right", False) or (self.dragging and getattr(self, "_drag_button", "left") == "right"):
+                return OK
             # Contact debounce: ignore rapid re-contact within 220ms of release
             if cmd.t - getattr(self, "_last_right_release_t", float("-inf")) < 0.22:
                 return OK
             if self._interp is not None:
                 self._interp.snap(*self.cursor.pos)
-            self._end_drag()
+            if self.dragging:
+                self._end_drag()
             if self.scroll.active:
                 self.scroll.end(cmd.t, launch=False)
             self.buttons.press("right")
@@ -496,9 +502,6 @@ class WindowsOutputSink:
         return OK
 
     def _do_mouse_scroll(self, cmd: ActionCommand) -> OutputResult:
-        self._pending_click = None
-        self._pending_click_pos = None
-        self._pending_click_gesture = None
         if cmd.phase == "begin":
             if cmd.point is None:
                 return _error("mouse.scroll begin needs a point")

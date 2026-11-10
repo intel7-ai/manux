@@ -2824,6 +2824,30 @@ class Bridge(QObject):
         if self.page == "studio" or self._pose_studio_visible:
             sys_act = (self._studio_sys_fn(view.rule_preview or snap, view.actions) if self._studio_sys_fn is not None
                        else ("none" if not view.actions else view.actions[0]))
+            if sys_act in ("none", "thumb_middle", "thumb_ring") and view.preview_guides:
+                pinched_tips = {tip for tip, state in view.preview_guides if state in ("pinched", "action")}
+                if (
+                    view.landmarks is not None
+                    and len(view.landmarks) >= 17
+                    and (12 in pinched_tips or 16 in pinched_tips or sys_act in ("thumb_middle", "thumb_ring"))
+                ):
+                    t_pt, m_pt, r_pt = view.landmarks[4], view.landmarks[12], view.landmarks[16]
+                    if (
+                        math.hypot(t_pt[0] - m_pt[0], t_pt[1] - m_pt[1]) <= 0.052
+                        and math.hypot(t_pt[0] - r_pt[0], t_pt[1] - r_pt[1]) <= 0.048
+                    ):
+                        pinched_tips.update((12, 16))
+                if 12 in pinched_tips and 16 in pinched_tips:
+                    sys_act = "thumb_middle_ring"
+                elif sys_act == "none":
+                    if 16 in pinched_tips:
+                        sys_act = "thumb_ring"
+                    elif 12 in pinched_tips:
+                        sys_act = "thumb_middle"
+                    elif 8 in pinched_tips:
+                        sys_act = "thumb_index"
+                    elif 20 in pinched_tips:
+                        sys_act = "thumb_pinky"
             prev_samples_len = len(self.pose_studio.samples)
             prev_hand = self.pose_studio.hand_tracked
             res = self.pose_studio.observe_frame(view.landmarks, view.world, sys_act)

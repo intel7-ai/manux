@@ -464,3 +464,44 @@ def test_guard_ends_drag_immediately_when_hand_opens_even_if_heuristic_holds(tra
     assert len(out2) == 1 and out2[0].gesture == "pinch.drag" and out2[0].phase == "end"
     assert guard._dragging is False
     assert "spatial_guard:drag_ended_on_mlp_open" in guard.drain_events()
+
+
+def test_guard_converts_false_left_drag_to_right_drag_when_mlp_confirms_thumb_ring(trained_mlp: SpatialMlpModel):
+    feat = SpatialPoseFeature(trained_mlp, mode="assist")
+    guard = SpatialPoseGuard(feat)
+
+    hand_ring = HandObservation(frame=FrameInfo(1, 900.0, 640, 480, False), landmarks=tuple(_dummy_hand(16)), handedness="Right", score=0.95)
+    ctx1 = FrameContext(hand_ring.frame, "default", "none", "pinch")
+    guard.observe(hand_ring, ctx1)
+
+    # 2D heuristic mistakenly emits pinch.drag (left drag) while MLP sees thumb_ring
+    out1 = guard.filter([Intent(900.0, "pinch", "pinch.drag", "begin", point=(0.5, 0.5))], ctx1)
+    assert len(out1) == 1
+    assert out1[0].gesture == "pinch.right_drag" and out1[0].phase == "begin"
+    assert guard._right_dragging is True
+    assert guard._dragging is False
+
+
+def test_guard_expands_single_click_and_sustains_both_click_for_thumb_middle_ring():
+    model = SpatialMlpModel(np.zeros((4, 96)), np.zeros(4), np.zeros((2, 4)), np.array([-10., 10.]),
+                            classes=("none", "thumb_middle_ring"))
+    feat = SpatialPoseFeature(model, mode="assist")
+    guard = SpatialPoseGuard(feat, tau_boost=0.70, k_boost=2)
+
+    hand = HandObservation(frame=FrameInfo(1, 950.0, 640, 480, False), landmarks=tuple(_dummy_hand(12)), handedness="Right", score=0.95)
+    ctx1 = FrameContext(hand.frame, "default", "none", "pinch")
+    guard.observe(hand, ctx1)
+
+    # Even if 2D heuristic only fires pinch.thumb_middle tap on frame 1, guard emits both left and right taps!
+    out1 = guard.filter([Intent(950.0, "pinch", "pinch.thumb_middle", "tap")], ctx1)
+    gestures1 = [i.gesture for i in out1 if i.phase == "tap"]
+    assert gestures1 == ["pinch.thumb_middle", "pinch.thumb_ring"]
+
+    # On frame 2 while still holding thumb_middle_ring, fallback pinch.move is converted to held both-click taps
+    hand2 = HandObservation(frame=FrameInfo(2, 950.033, 640, 480, False), landmarks=tuple(_dummy_hand(12)), handedness="Right", score=0.95)
+    ctx2 = FrameContext(hand2.frame, "default", "none", "pinch")
+    guard.observe(hand2, ctx2)
+    out2 = guard.filter([Intent(950.033, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], ctx2)
+    gestures2 = [i.gesture for i in out2 if i.phase == "tap"]
+    assert gestures2 == ["pinch.thumb_middle", "pinch.thumb_ring"]
+

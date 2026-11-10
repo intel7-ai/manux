@@ -377,3 +377,25 @@ def test_holding_reports_a_drag_or_an_active_scroll():
     assert s.holding()
     s.release_all("test")
     assert not s.holding()
+
+
+def test_both_click_holds_left_and_right_simultaneously_until_move_release():
+    s = sink()
+    # Frame 1: both left and right pinch taps arrive together (thumb_middle_ring posture)
+    assert s.apply(cmd("mouse.left_click", "tap", None, 1.0, gesture="pinch.thumb_middle")).accepted
+    assert s.apply(cmd("mouse.right_click", "tap", None, 1.0, gesture="pinch.thumb_ring")).accepted
+    assert s.backend.buttons_down == {"left", "right"}
+    assert s.backend.events == [("button", "left", True), ("button", "right", True)]
+
+    # Frame 2: holding both-click posture is idempotent (no duplicate press/release events)
+    assert s.apply(cmd("mouse.left_click", "tap", None, 1.03, gesture="pinch.thumb_middle")).accepted
+    assert s.apply(cmd("mouse.right_click", "tap", None, 1.03, gesture="pinch.thumb_ring")).accepted
+    assert s.backend.buttons_down == {"left", "right"}
+    assert s.backend.events == [("button", "left", True), ("button", "right", True)]
+
+    # Frame 3: releasing fingers back to move releases both buttons cleanly
+    assert s.apply(cmd("mouse.move", "hold", (.5, .5), 1.06, gesture="pinch.move")).accepted
+    assert s.backend.buttons_down == set()
+    assert ("button", "left", False) in s.backend.events
+    assert ("button", "right", False) in s.backend.events
+

@@ -330,3 +330,46 @@ def test_existing_dataset_stage_is_not_removed_when_exclusive_open_fails(tmp_pat
     assert studio.samples == buffered
     assert part.read_bytes() == b"synthetic-other-save-in-progress"
     assert list(studio.snapshots_dir.iterdir()) == [part]
+
+
+def test_normalize_system_action_and_mlp_prediction_preserve_right_and_both_click(tmp_path: Path):
+    class FakeSnap:
+        def __init__(self, intents, results):
+            self.intents = intents
+            self.results = results
+            self.events = ()
+
+    # 1. Right drag routed to mouse.drag must still normalize to thumb_ring (not thumb_middle!)
+    snap_rdrag = FakeSnap(intents=(("pinch.right_drag", "hold"),), results=(("mouse.drag", "hold", "ok"),))
+    assert normalize_system_action(snap_rdrag, ("mouse.drag",)) == "thumb_ring"
+
+    # 2. Both left and right click/drag intents normalize to thumb_middle_ring
+    snap_both = FakeSnap(
+        intents=(("pinch.thumb_middle", "tap"), ("pinch.thumb_ring", "tap")),
+        results=(("mouse.left_click", "tap", "ok"), ("mouse.right_click", "tap", "ok")),
+    )
+    assert normalize_system_action(snap_both) == "thumb_middle_ring"
+
+    # 3. Studio live_hybrid_action must preserve MLP's thumb_ring / thumb_middle_ring even if 2D rule says thumb_middle
+    studio = make_pose_studio(tmp_path)
+    studio.model_summary = {"loaded": True}
+    studio._predict_fn = lambda lm, wd: {
+        "action": "thumb_ring",
+        "confidence": 0.94,
+        "probabilities": {"thumb_ring": 0.94, "thumb_middle": 0.04, "none": 0.02},
+    }
+    studio.observe_frame(_synthetic_hand(16), None, "thumb_middle", now_ms=100.0)
+    assert studio.live_ai_action == "thumb_ring"
+    assert studio.live_hybrid_action == "thumb_ring"
+    assert studio.effective_predicted_action() == "thumb_ring"
+
+    studio._predict_fn = lambda lm, wd: {
+        "action": "thumb_middle_ring",
+        "confidence": 0.92,
+        "probabilities": {"thumb_middle_ring": 0.92, "thumb_middle": 0.05, "none": 0.03},
+    }
+    studio.observe_frame(_synthetic_hand(16), None, "thumb_middle", now_ms=200.0)
+    assert studio.live_ai_action == "thumb_middle_ring"
+    assert studio.live_hybrid_action == "thumb_middle_ring"
+    assert studio.effective_predicted_action() == "thumb_middle_ring"
+
