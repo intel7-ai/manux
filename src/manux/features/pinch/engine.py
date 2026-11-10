@@ -438,12 +438,12 @@ class PinchCore:
                 joint_ok = dip <= limit * float(c["click_hold_joint_ratio"])
                 held_dist = min(dist, dip) if joint_ok else dist
                 is_dragging = self._long_fired.get(finger, False)
-                drop_limit = limit * 2.5 if is_dragging else limit * 1.5
+                drop_limit = limit * 1.6 if is_dragging else limit * 1.3
                 if held_dist > drop_limit or (not keep_ok and not is_dragging and held_dist > limit * 1.2):
                     off = self._secondary_off.setdefault(finger, now)
-                    grace = max(0.35, float(c.get("drag_clear_grace", 0.35))) if is_dragging else max(0.18, float(c.get("click_release_grace", 0.18)))
-                    if held_dist > limit * 2.2:
-                        grace = min(grace, 0.12)
+                    grace = float(c.get("drag_clear_grace", 0.12)) if is_dragging else float(c.get("click_release_grace", 0.08))
+                    if held_dist > limit * 2.0:
+                        grace = min(grace, 0.05)
                     if now - off >= grace:
                         self._secondary_since.pop(finger, None)
                         self._secondary_off.pop(finger, None)

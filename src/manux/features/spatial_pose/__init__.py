@@ -186,6 +186,8 @@ class SpatialPoseGuard(IntentFilter):
         self._scroll_last_point: Optional[Tuple[float, float]] = None
         self._scroll_last_scale: Optional[float] = None
         self._scroll_run: int = 0
+        self._desktop_run: int = 0
+        self._last_desktop_fired: float = -1e9
 
     @staticmethod
     def _circle_score(hand: Optional[HandObservation], cls: str) -> float:
@@ -225,6 +227,11 @@ class SpatialPoseGuard(IntentFilter):
         else:
             self._scroll_run = 0
 
+        if ev is not None and ev.action == "palm_side" and ev.confidence >= 0.60:
+            self._desktop_run += 1
+        else:
+            self._desktop_run = 0
+
         # boost: fuse physical pinch circle proximity with Spatial MLP confidence
         cls = None
         fast = False
@@ -254,6 +261,14 @@ class SpatialPoseGuard(IntentFilter):
         pose_active = (ev.action in ("thumb_middle", "thumb_middle_ring") and ev.confidence >= 0.55)
         scroll_active = (ev.action == "thumb_index" and ev.confidence >= 0.55)
         out: List[Intent] = []
+
+        # Show desktop assist: when Spatial MLP steadily confirms palm_side (>= 3 frames ~ 100ms)
+        desktop_cooldown_ok = (ctx.frame.t - self._last_desktop_fired) >= 2.0
+        if self._desktop_run >= 3 and desktop_cooldown_ok and not self._dragging and not self._scrolling:
+            self._last_desktop_fired = ctx.frame.t
+            self._desktop_run = 0
+            self._events.append("spatial_guard:desktop_fired")
+            return (Intent(ctx.frame.t, "pinch", "pinch.thumb_tucked_open", "tap"),)
 
         if not intents and self._scrolling:
             if scroll_active:
@@ -348,6 +363,18 @@ class SpatialPoseGuard(IntentFilter):
             # Handle drag intents
             if intent.gesture == "pinch.drag":
                 if intent.phase in ("begin", "hold"):
+                    # If MLP strongly confirms hand is opened (action == 'none'),
+                    # terminate drag immediately without waiting for 2D heuristic release lag!
+                    if not pose_active and ev.action == "none" and ev.confidence >= 0.65:
+                        self._dragging = False
+                        self._events.append("spatial_guard:drag_ended_on_mlp_open")
+                        out.append(Intent(
+                            intent.t, "pinch", "pinch.drag", "end",
+                            point=intent.point or self._drag_last_point,
+                            scale=intent.scale or self._drag_last_scale,
+                        ))
+                        continue
+
                     self._dragging = True
                     if intent.point is not None:
                         self._drag_last_point = intent.point
@@ -463,3 +490,5 @@ class SpatialPoseGuard(IntentFilter):
         self._scroll_last_point = None
         self._scroll_last_scale = None
         self._scroll_run = 0
+        self._desktop_run = 0
+        self._last_desktop_fired = -1e9

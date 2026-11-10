@@ -85,8 +85,8 @@ THRESHOLDS: Dict[str, Any] = {
     "pinky_ring_dominance": .85,
     "pinky_ring_min_gap": .025,
     "side_pinch_exclusive": True,
-    "drag_clear_ratio": 2.2,
-    "drag_clear_grace": .35,
+    "drag_clear_ratio": 1.6,
+    "drag_clear_grace": .12,
     # long press on the left-click pinch -> drag
     "long_press_drag": True,
     "long_press_time": 0.55,

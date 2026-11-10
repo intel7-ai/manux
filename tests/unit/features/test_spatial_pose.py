@@ -36,6 +36,7 @@ def trained_mlp() -> SpatialMlpModel:
         "thumb_middle": _dummy_hand(12),
         "thumb_ring": _dummy_hand(16),
         "thumb_index": _dummy_hand(8),
+        "palm_side": _dummy_hand(20),
     }
     xs, ys, ws = [], [], []
     for name, pts in poses.items():
@@ -278,3 +279,57 @@ def test_guard_assists_and_sustains_scroll_when_mlp_confirms_thumb_index(
     assert ("pinch.scroll", "end") in gestures_phases
     assert guard._scrolling is False
 
+
+
+def test_guard_fires_desktop_on_palm_side_pose(trained_mlp: SpatialMlpModel):
+    feat = SpatialPoseFeature(trained_mlp, mode="assist")
+    guard = SpatialPoseGuard(feat)
+
+    hand_palm = HandObservation(
+        frame=FrameInfo(1, 600.0, 640, 480, False),
+        landmarks=tuple(_dummy_hand(20)),
+        handedness="Right",
+        score=0.95,
+    )
+    ctx1 = FrameContext(hand_palm.frame, "default", "none", "pinch")
+
+    # Frames 1, 2: run = 1, 2 (cooldown / steady check)
+    guard.observe(hand_palm, ctx1)
+    out1 = guard.filter([Intent(600.0, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], ctx1)
+    assert len(out1) == 1 and out1[0].gesture == "pinch.move"
+
+    hand_palm2 = HandObservation(frame=FrameInfo(2, 600.03, 640, 480, False), landmarks=tuple(_dummy_hand(20)), handedness="Right", score=0.95)
+    ctx2 = FrameContext(hand_palm2.frame, "default", "none", "pinch")
+    guard.observe(hand_palm2, ctx2)
+    out2 = guard.filter([Intent(600.03, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], ctx2)
+    assert len(out2) == 1 and out2[0].gesture == "pinch.move"
+
+    # Frame 3: run = 3 -> fires desktop!
+    hand_palm3 = HandObservation(frame=FrameInfo(3, 600.06, 640, 480, False), landmarks=tuple(_dummy_hand(20)), handedness="Right", score=0.95)
+    ctx3 = FrameContext(hand_palm3.frame, "default", "none", "pinch")
+    guard.observe(hand_palm3, ctx3)
+    out3 = guard.filter([Intent(600.06, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], ctx3)
+    assert len(out3) == 1 and out3[0].gesture == "pinch.thumb_tucked_open" and out3[0].phase == "tap"
+    assert "spatial_guard:desktop_fired" in guard.drain_events()
+
+
+def test_guard_ends_drag_immediately_when_hand_opens_even_if_heuristic_holds(trained_mlp: SpatialMlpModel):
+    feat = SpatialPoseFeature(trained_mlp, mode="assist")
+    guard = SpatialPoseGuard(feat)
+
+    # Frame 1: drag is holding
+    hand_drag = HandObservation(frame=FrameInfo(1, 700.0, 640, 480, False), landmarks=tuple(_dummy_hand(12)), handedness="Right", score=0.95)
+    ctx1 = FrameContext(hand_drag.frame, "default", "none", "pinch")
+    guard.observe(hand_drag, ctx1)
+    guard.filter([Intent(700.0, "pinch", "pinch.drag", "hold", point=(0.5, 0.5))], ctx1)
+    assert guard._dragging is True
+
+    # Frame 2: Hand physically opens (MLP sees 'none'), but heuristic still sends drag 'hold' due to lag
+    hand_open = HandObservation(frame=FrameInfo(2, 700.03, 640, 480, False), landmarks=tuple(_dummy_hand(None)), handedness="Right", score=0.95)
+    ctx2 = FrameContext(hand_open.frame, "default", "none", "pinch")
+    guard.observe(hand_open, ctx2)
+    out2 = guard.filter([Intent(700.03, "pinch", "pinch.drag", "hold", point=(0.52, 0.5))], ctx2)
+    # Guard intercepts and converts lingering drag hold into immediate drag end!
+    assert len(out2) == 1 and out2[0].gesture == "pinch.drag" and out2[0].phase == "end"
+    assert guard._dragging is False
+    assert "spatial_guard:drag_ended_on_mlp_open" in guard.drain_events()
