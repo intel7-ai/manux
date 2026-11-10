@@ -15,6 +15,7 @@ GESTURES = (V_SIGN,)
 GESTURE_PHASES = {V_SIGN: frozenset({"tap"})}
 DEFAULT_BINDINGS = {V_SIGN: "control.toggle"}
 CLAIM_SECONDS = .12
+V_TIP_SPREAD = 1.2  # Tips of a V are farther apart than the two knuckles.
 SETTINGS = {
     "control.hold": 0.7,
     "control.cooldown": 1.5,
@@ -47,8 +48,9 @@ def is_v_sign(hand: HandObservation, ctx: FrameContext) -> bool:
     ratios = [distance(0, tip) / max(1e-6, distance(0, mcp))
               for mcp, tip in ((5, 8), (9, 12), (13, 16), (17, 20))]
     v_geometry = (min(ratios[:2]) >= _value(ctx, "extended_ratio")
-            and max(ratios[2:]) <= _value(ctx, "folded_ratio")
-            and min(distance(4, 13), distance(4, 17)) / palm <= _value(ctx, "thumb_tuck"))
+                  and max(ratios[2:]) <= _value(ctx, "folded_ratio")
+                  and min(distance(4, 13), distance(4, 17)) / palm <= _value(ctx, "thumb_tuck")
+                  and distance(8, 12) >= V_TIP_SPREAD * max(distance(5, 9), 1e-6))
     if not v_geometry:
         return False
     # Pinky pinch and V can have the same projected outline. Check actual tip contact.

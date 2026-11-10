@@ -13,6 +13,8 @@ def v_hand():
     opened = H.open_hand()
     for i in (5, 6, 7, 8, 9, 10, 11, 12):
         pts[i] = opened[i]
+    pts[8] = (pts[8][0] - .02, pts[8][1], pts[8][2])
+    pts[12] = (pts[12][0] + .02, pts[12][1], pts[12][2])
     return pts
 
 
@@ -69,6 +71,16 @@ def test_v_outline_with_clear_depth_contact_at_pinky_does_not_claim_or_toggle():
         hand = HandObservation(frame, points, "Right", .9, world=tuple(world))
         assert not control.step(hand, ctx)
         assert not control.activity().holding
+
+
+def test_two_parallel_extended_fingers_do_not_claim_or_toggle():
+    points = v_hand()
+    opened = H.open_hand()
+    points[8], points[12] = opened[8], opened[12]
+    feature = ControlFeature()
+    for n in range(25):
+        assert not step(feature, n / 20, points)
+        assert not feature.activity().holding
 
 
 def test_camera_gap_and_no_hand_break_hold():

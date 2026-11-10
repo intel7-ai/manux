@@ -42,6 +42,8 @@ def pose(v=True):
     for mcp, tip, x in ((5,8,.44),(9,12,.48),(13,16,.52),(17,20,.56)):
         pts[mcp] = (x,.6,0)
         pts[tip] = (x,.4 if mcp in (5,9) or not v else .68,0)
+    if v:
+        pts[8], pts[12] = (.42, .4, 0), (.50, .4, 0)
     return tuple(pts)
 
 

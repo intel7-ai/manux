@@ -175,6 +175,7 @@ def test_v_cannot_enable_control_inside_capture_or_settings_dialogs(
     for mcp, tip, x in [(5, 8, 0.44), (9, 12, 0.48), (13, 16, 0.52), (17, 20, 0.56)]:
         points[mcp] = (x, 0.6, 0.0)
         points[tip] = (x, 0.4 if mcp in (5, 9) else 0.68, 0.0)
+    points[8], points[12] = (0.42, 0.4, 0.0), (0.50, 0.4, 0.0)
     for index in range(25):
         frame = FrameInfo(index, 1 + index * 0.05, 1280, 720, True)
         snap = runtime.engine.step(

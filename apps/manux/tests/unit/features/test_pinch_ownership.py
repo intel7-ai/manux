@@ -131,6 +131,19 @@ def test_a_clearly_released_click_does_not_swallow_the_other_finger(first, secon
     assert taps(feed(PinchFeature(), [pose(first)] * 5 + [pose(second)] * 2)) == wanted
 
 
+@pytest.mark.parametrize("finger,wanted", [("middle", THUMB_MIDDLE), ("ring", THUMB_RING)])
+def test_quick_repeat_click_after_both_image_and_depth_show_release(finger, wanted):
+    sequence = [pose(finger)] * 5 + [pose("open")] * 2 + [pose(finger)] * 5
+    assert taps(feed(PinchFeature(), sequence)) == [wanted, wanted]
+
+
+def test_depth_dropout_alone_does_not_rearm_a_held_click():
+    hand, touching = pose("middle")
+    ambiguous = (hand, world_contact(hand))
+    sequence = [(hand, touching)] * 5 + [ambiguous] * 3 + [(hand, touching)] * 5
+    assert taps(feed(PinchFeature(), sequence)) == [THUMB_MIDDLE]
+
+
 def test_windows_drag_survives_v_candidate_and_releases_on_tracking_loss():
     from manux.app import pipeline_parts
     from manux.core.contracts import OutputTarget, Stage

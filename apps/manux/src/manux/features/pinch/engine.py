@@ -113,6 +113,8 @@ class PinchCore:
         self._secondary_off: Dict[str, float] = {}
         self._secondary_confirmed: set[str] = set()
         self._corroborated_last: set[str] = set()
+        self._repeat_ready: set[str] = set()
+        self._side_open_last = False
         self._click_fresh: Dict[str, bool] = {}
         self._release_clear = False
         self._close_since: Optional[float] = None
@@ -168,6 +170,8 @@ class PinchCore:
         self._secondary_off.clear()
         self._secondary_confirmed.clear()
         self._corroborated_last.clear()
+        self._repeat_ready.clear()
+        self._side_open_last = False
         self._long_fired.clear()
         self._drag_since = None
         self._fist = False
@@ -184,6 +188,7 @@ class PinchCore:
         self._secondary_since.pop(finger, None)
         self._secondary_off.pop(finger, None)
         self._secondary_confirmed.discard(finger)
+        self._repeat_ready.discard(finger)
         self._long_fired.pop(finger, None)
 
     def _can_trigger(self, gesture_id: str, now: float, finger: Optional[str], cooldown: float = 0.35) -> bool:
@@ -223,7 +228,10 @@ class PinchCore:
         """One frame. `pts`: 21 (x, y, z) or None (no hand). `c`: resolved settings (settings.resolve)."""
         corroborated_last = self._corroborated_last
         self._corroborated_last = set()
+        side_open_last = self._side_open_last
+        self._side_open_last = False
         if pts is None or len(pts) < 21:
+            self._repeat_ready.clear()
             self._pinky_clear_since = None
             # A gap cannot count toward confirming a new click; an established hold keeps its grace.
             for finger in tuple(self._secondary_since):
@@ -530,6 +538,10 @@ class PinchCore:
                       and (now - self._desktop_fired_at) >= exclusive),
         }
         thresholds = {"middle": click_threshold, "ring": ring_thr, "pinky": pinky_thr}
+        all_side_fingers_open = (world_distances is not None and secondary_open
+                                 and all(distances[name] > threshold + margin
+                                         for name, threshold in thresholds.items()))
+        self._side_open_last = all_side_fingers_open
         corroborated = set()
         if world_distances is not None:
             for finger in world_contacts:
@@ -597,6 +609,14 @@ class PinchCore:
             if not on(f"thumb_{finger}_pinch"):
                 self._drop_secondary(finger)
                 return False
+            if (finger in self._repeat_ready and finger in self._secondary_confirmed
+                    and finger in corroborated):
+                # Allow a repeat of the same click without freeing its ownership
+                # early for a competing gesture during a brief opening.
+                self._drop_secondary(finger)
+                self._click_fresh[finger] = True
+            elif not all_side_fingers_open:
+                self._repeat_ready.discard(finger)
             if finger not in self._secondary_since:
                 if c["side_pinch_exclusive"] and any(
                         other != finger for other in self._secondary_since):
@@ -619,6 +639,12 @@ class PinchCore:
                 if (held_dist > limit and not contact_hold) or not keep_ok:
                     off = self._secondary_off.setdefault(finger, now)
                     grace = click_grace
+                    clearly_open = (all_side_fingers_open
+                                    and held_dist > limit * float(c["drag_clear_ratio"]))
+                    if (finger in ("middle", "ring") and finger in self._secondary_confirmed
+                            and not self._long_fired.get(finger, False) and clearly_open
+                            and side_open_last and now - off >= click_grace):
+                        self._repeat_ready.add(finger)
                     if world_distances is not None and finger in self._secondary_confirmed:
                         grace = max(grace, CONTACT_RELEASE_GRACE)
                     if self._long_fired.get(finger, False):
