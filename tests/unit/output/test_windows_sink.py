@@ -130,10 +130,12 @@ def test_right_drag_begin_hold_end_presses_moves_and_releases():
 def test_right_click_gesture_clicks_on_release():
     s = sink()
     assert s.apply(cmd("mouse.right_click", gesture="pinch.thumb_ring", t=1.0)).accepted
-    assert s.backend.clicks() == []  # contact does NOT prematurely click
+    # Pure 1:1 mouse: Contact presses right button down immediately
+    assert s.backend.buttons_down == {"right"}
+    assert s.backend.clicks() == []  # held down, not released yet
     assert s.holding()
     assert s.apply(cmd("mouse.move", "hold", (.5, .5), 1.2, gesture="pinch.move")).accepted
-    assert s.backend.clicks() == ["right"]  # fires on release
+    assert s.backend.clicks() == ["right"]  # release sends button UP -> 1 complete click cycle
     assert s.backend.buttons_down == set()
     assert not s.holding()
 
@@ -141,19 +143,22 @@ def test_right_click_gesture_clicks_on_release():
 def test_left_click_gesture_clicks_on_release():
     s = sink()
     assert s.apply(cmd("mouse.left_click", gesture="pinch.thumb_middle", t=1.0)).accepted
-    assert s.backend.clicks() == []  # contact does NOT prematurely click
+    # Pure 1:1 mouse: Contact presses left button down immediately
+    assert s.backend.buttons_down == {"left"}
+    assert s.backend.clicks() == []  # held down, not released yet
     assert s.holding()
     assert s.apply(cmd("mouse.move", "hold", (.5, .5), 1.2, gesture="pinch.move")).accepted
-    assert s.backend.clicks() == ["left"]  # fires on release
+    assert s.backend.clicks() == ["left"]  # release sends button UP -> 1 complete click cycle
     assert s.backend.buttons_down == set()
     assert not s.holding()
 
 
-def test_pinch_into_drag_discards_pending_click():
+def test_pinch_into_drag_seamless_button_hold():
     s = sink()
     assert s.apply(cmd("mouse.right_click", gesture="pinch.thumb_ring", t=1.0)).accepted
+    assert s.backend.buttons_down == {"right"}
     assert s.backend.clicks() == []
-    # Hand moves while pinching: right drag begins and discards pending click
+    # Hand moves while pinching: right drag begins seamlessly keeping button held down
     assert s.apply(cmd("mouse.drag", "begin", (.5, .5), 1.1, gesture="pinch.right_drag")).accepted
     assert s.backend.buttons_down == {"right"} and s.dragging
     assert s.apply(cmd("mouse.drag", "hold", (.55, .5), 1.2, gesture="pinch.right_drag")).accepted
