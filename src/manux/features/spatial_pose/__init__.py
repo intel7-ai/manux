@@ -161,8 +161,10 @@ class SpatialPoseGuard(IntentFilter):
     """Protects against heuristic misclassifications by consulting SpatialPoseFeature evidence."""
 
     def __init__(self, feature: SpatialPoseFeature, *, tau_veto: float = 0.80, k_frames: int = 2,
-                 enabled: bool = True, boost: bool = True, tau_boost: float = 0.93, k_boost: int = 3) -> None:
+                 enabled: bool = True, boost: bool = True, tau_boost: float = 0.93, k_boost: int = 3,
+                 settings: Any = None) -> None:
         self.feature = feature
+        self.settings = settings
         self.tau_veto = tau_veto
         self.k_frames = k_frames
         self.enabled = enabled
@@ -263,8 +265,9 @@ class SpatialPoseGuard(IntentFilter):
         out: List[Intent] = []
 
         # Show desktop assist: when Spatial MLP steadily confirms palm_side (>= 3 frames ~ 100ms)
+        desktop_enabled = True if self.settings is None else bool(self.settings.get("pinch.enable_thumb_tucked_open"))
         desktop_cooldown_ok = (ctx.frame.t - self._last_desktop_fired) >= 2.0
-        if self._desktop_run >= 3 and desktop_cooldown_ok and not self._dragging and not self._scrolling:
+        if desktop_enabled and self._desktop_run >= 3 and desktop_cooldown_ok and not self._dragging and not self._scrolling:
             self._last_desktop_fired = ctx.frame.t
             self._desktop_run = 0
             self._events.append("spatial_guard:desktop_fired")

@@ -976,7 +976,7 @@ def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, t
             from manux.ml.backends import describe
             status += " · " + describe(gate.gate.predictor)["actual"]
     spatial_pose_feature = SpatialPoseFeature(spatial_pose_model, mode="assist")
-    spatial_guard = SpatialPoseGuard(spatial_pose_feature, enabled=bool(spatial_pose_model is not None))
+    spatial_guard = SpatialPoseGuard(spatial_pose_feature, enabled=bool(spatial_pose_model is not None), settings=settings)
     filters = tuple(filters) + (spatial_guard,)
     engine = build_engine(settings, "pinch", filters, direct_model=direct, binding_overrides=binding_overrides,
                           policies=({g: "shadow" for g in direct.card.gestures.values()} if shadow_model is not None

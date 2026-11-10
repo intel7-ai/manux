@@ -313,6 +313,30 @@ def test_guard_fires_desktop_on_palm_side_pose(trained_mlp: SpatialMlpModel):
     assert "spatial_guard:desktop_fired" in guard.drain_events()
 
 
+def test_guard_respects_disabled_desktop_setting(trained_mlp: SpatialMlpModel):
+    class FakeSettings:
+        def get(self, key, default=True):
+            if key == "pinch.enable_thumb_tucked_open":
+                return False
+            return default
+
+    feat = SpatialPoseFeature(trained_mlp, mode="assist")
+    guard = SpatialPoseGuard(feat, settings=FakeSettings())
+
+    hand_palm = HandObservation(
+        frame=FrameInfo(1, 600.0, 640, 480, False),
+        landmarks=tuple(_dummy_hand(20)),
+        handedness="Right",
+        score=0.95,
+    )
+    ctx = FrameContext(hand_palm.frame, "default", "none", "pinch")
+    for step in range(5):
+        guard.observe(hand_palm, ctx)
+        out = guard.filter([Intent(600.0 + step * 0.03, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], ctx)
+        assert len(out) == 1 and out[0].gesture == "pinch.move"
+    assert "spatial_guard:desktop_fired" not in guard.drain_events()
+
+
 def test_guard_ends_drag_immediately_when_hand_opens_even_if_heuristic_holds(trained_mlp: SpatialMlpModel):
     feat = SpatialPoseFeature(trained_mlp, mode="assist")
     guard = SpatialPoseGuard(feat)
