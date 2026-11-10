@@ -132,8 +132,8 @@ Rectangle {
                      hint: "높일수록 작은 기울기로 더 멀리 갑니다."},
                     {key: "smoothing", label: "반응 속도", low: .15, high: .75, step: .05,
                      hint: "낮출수록 떨림을 더 줄입니다."},
-                    {key: "palm_hold", label: "정지 범위", low: 0, high: .05, step: .005,
-                     hint: "넓힐수록 손이 조금 흔들려도 커서가 멈춰 있습니다. 0이면 끕니다."}
+                    {key: "palm_precision", label: "정밀도", low: .25, high: 1, step: .05,
+                     hint: "낮출수록 천천히 움직일 때 커서가 덜 움직여 작은 칸·메뉴를 맞추기 쉽습니다. 1이면 끕니다."}
                 ]
                 delegate: ColumnLayout {
                     required property var modelData
@@ -152,6 +152,13 @@ Rectangle {
                     Label { Layout.fillWidth: true; wrapMode: Text.Wrap; text: modelData.hint; color: Theme.Studio.muted }
                 }
             }
+        }
+        Label {
+            Layout.fillWidth: true
+            visible: page.tuning
+            text: "작은 칸·메뉴를 맞출 때는 주먹을 쥔 채 움직이면 커서가 천천히 정밀하게 움직입니다. (시험 화면이 아닌 실제 제어에서 동작)"
+            color: Theme.Studio.ink
+            wrapMode: Text.Wrap
         }
         Label {
             Layout.fillWidth: true
@@ -188,6 +195,16 @@ Rectangle {
                 visible: page.tuning
                 text: "이 값으로 다시 시험"
                 onClicked: page.controller.pointerSetupAction("retest")
+            }
+            Button {
+                visible: page.tuning
+                text: "정밀 시험 (한 칸씩)"
+                onClicked: page.controller.pointerSetupAction("fine")
+            }
+            Button {
+                visible: page.tuning
+                text: "메뉴 시험 (1초 멈춤)"
+                onClicked: page.controller.pointerSetupAction("menu")
             }
         }
     }

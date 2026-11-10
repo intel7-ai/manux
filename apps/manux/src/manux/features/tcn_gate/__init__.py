@@ -44,6 +44,8 @@ import numpy as np
 from manux.core.contracts import FrameContext, HandObservation, Intent
 from manux.ml import REASON_TEXT, ModelCard, ModelError, Predictor, load_model
 from manux.perception.local3d import FEATURE_VERSION, FEATURES, Local3dStream
+from manux.perception.spatial_features import extract_spatial_features
+from manux.ml.spatial_hybrid import blend, instant_decision
 
 __all__ = ["ID", "SETTINGS", "LEGACY_GESTURES", "TcnGate", "GateLoad", "create_gate", "gestures_for"]
 
@@ -52,6 +54,7 @@ PREFIX = ID + "."
 DEFAULTS: Dict[str, Any] = {
     "wait": 0.3,        # s a held tap / begin may wait for the model (v0.3 gate_wait)
     "lookback": 0.5,    # s of model output a confirmation may come from (v0.3 gate_lookback)
+    "spatial_hybrid": False,  # Dan 00f8bda experiment; importing weights never enables it.
 }
 SETTINGS: Mapping[str, Any] = MappingProxyType({PREFIX + k: v for k, v in DEFAULTS.items()})
 # also accepted (default: the card): "tcn_gate.threshold" (v0.3 gate_threshold), "tcn_gate.frames" (gate_frames)
@@ -90,17 +93,27 @@ class TcnGate:
     id = ID
 
     def __init__(self, predictor: Predictor, card: ModelCard, settings: Optional[Mapping[str, Any]] = None,
-                 gestures: Optional[Mapping[str, str]] = None) -> None:
+                 gestures: Optional[Mapping[str, str]] = None, *, spatial_model=None) -> None:
         cfg = {**DEFAULTS, **_short(settings)}
         self.predictor = predictor
         self.card = card
+        self.spatial_model = spatial_model
+        if spatial_model is not None and spatial_model.feature_version != "spatial-mlp-v1":
+            raise ValueError("TCN hybrid requires image-coordinate spatial-mlp-v1")
+        self.last_tcn = self.last_spatial = None
+        self._observed_t = None
+        self.disabled_classes = set(card.raw.get("disabled_gestures", ())) - set(card.raw.get("independent_gestures", ()))
         self.threshold = float(cfg.get("threshold", card.threshold))
         self.k = int(cfg.get("frames", card.frames_in_a_row))
+        self._thresholds = {} if "threshold" in cfg else card.raw.get("gesture_thresholds", {})
+        self._counts = {} if "frames" in cfg else card.raw.get("gesture_frames", {})
         self.lookback = float(cfg["lookback"])
         self.wait = float(cfg["wait"])
         mapping = dict(gestures) if gestures is not None else gestures_for(card)
         self.checks: Dict[str, int] = {}
         for cls, gid in mapping.items():
+            if cls in self.disabled_classes:
+                continue  # Dan's disabled classifier keeps its original rule binding.
             if cls not in card.classes or cls == "none":
                 raise ValueError(f"gate cannot check class {cls!r} (classes {card.classes})")
             self.checks[gid] = card.index(cls)
@@ -121,11 +134,20 @@ class TcnGate:
     # ---------------------------------------------------------------- model
     def observe(self, hand: Optional[HandObservation], ctx: FrameContext) -> None:
         t = ctx.frame.t
+        self.last_tcn = self.last_spatial = None
+        self._observed_t = t
         window = self._stream.push(hand, t, ctx.frame.aspect)
         try:
             probs = np.asarray(self.predictor(window), dtype=np.float64).reshape(-1)
             if probs.shape != (len(self.card.classes),) or not np.isfinite(probs).all():
                 raise ValueError(f"bad output {probs.shape}")
+            self.last_tcn = probs.copy()
+            if self.spatial_model is not None and hand is not None:
+                features = extract_spatial_features(hand.landmarks)
+                if features is not None:
+                    spatial = self.spatial_model.predict_proba(features)
+                    probs = blend(probs, self.card.classes, spatial, self.spatial_model.classes)
+                    self.last_spatial = spatial
         except Exception:   # contracts section 6: an inference error = no probabilities this frame
             probs = None
             self.errors += 1
@@ -135,12 +157,21 @@ class TcnGate:
     def confirmed(self, gesture: str, now: float) -> bool:
         """The model saw the gesture's class for k frames in a row within the last `lookback` s."""
         c = self.checks[gesture]
+        label = self.card.classes[c]
+        threshold = self._thresholds.get(label, self.threshold)
+        required = self._counts.get(label, self.k)
+        if (self.spatial_model is not None and self._observed_t == now
+                and self.last_tcn is not None and self.last_spatial is not None):
+            decision = instant_decision(label, self.last_tcn, self.card.classes, self.last_spatial,
+                                        self.spatial_model.classes, threshold)
+            if decision is not None:
+                return decision
         run = 0
         for t, p in self._probs:
             if now - t > self.lookback:
                 continue
-            run = run + 1 if p is not None and p[c] >= self.threshold else 0
-            if run >= self.k:
+            run = run + 1 if p is not None and p[c] >= threshold else 0
+            if run >= required:
                 return True
         return False
 
@@ -217,6 +248,7 @@ class TcnGate:
         self._open.clear()
         self._dropped.clear()
         self.last = None
+        self.last_tcn = self.last_spatial = self._observed_t = None
 
     def status(self) -> Dict[str, Any]:
         """For the Snapshot (S6): counts and the last note. No probabilities history."""
@@ -238,7 +270,7 @@ class GateLoad:
 def create_gate(model_path: Path, settings: Optional[Mapping[str, Any]] = None,
                 gestures: Optional[Mapping[str, str]] = None,
                 session_factory: Optional[Callable[[Path], Any]] = None,
-                *, eligible: Optional[set[str]] = None) -> GateLoad:
+                *, eligible: Optional[set[str]] = None, spatial_model=None) -> GateLoad:
     """A gate for `<model>.onnx` + `<model>.json`, or no gate and why (never raises for a bad model)."""
     try:
         model = load_model(model_path, FEATURE_VERSION, FEATURES, session_factory=session_factory)
@@ -248,6 +280,6 @@ def create_gate(model_path: Path, settings: Optional[Mapping[str, Any]] = None,
         mapping = gestures_for(model.card) if gestures is None else gestures
         gestures = {name: gid for name, gid in mapping.items() if gid in eligible}
     try:
-        return GateLoad(TcnGate(model.predictor, model.card, settings, gestures))
+        return GateLoad(TcnGate(model.predictor, model.card, settings, gestures, spatial_model=spatial_model))
     except ValueError:
         return GateLoad(None, "no_gestures")

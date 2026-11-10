@@ -25,11 +25,11 @@ def atomic_json(path, value):
         temporary.unlink(missing_ok=True)
 
 
-def pending_model(data_dir):
+def pending_model(data_dir, *, kind="tcn"):
     root = Path(data_dir).resolve()
     try:
         report = json.loads((root / "imports" / "latest.json").read_text(encoding="utf-8"))
-        path = (root / report["candidate"]).resolve()
+        path = (root / report["spatial_candidate" if kind == "spatial" else "candidate"]).resolve()
         if path.is_relative_to(root / "imports") and path.is_file():
             return path
     except (OSError, ValueError, KeyError, TypeError):

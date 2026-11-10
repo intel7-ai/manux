@@ -9,6 +9,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from hashlib import sha256
 from typing import Any, Dict, List, Sequence, Tuple
 
 import pytest
@@ -204,3 +205,52 @@ def test_load_dotenv_reads_env_and_skips_placeholder(tmp_path: Path, monkeypatch
     env_file.write_text("HF_TOKEN='hf_real_test_token_123'\n", encoding="utf-8")
     loaded2 = load_dotenv([env_file])
     assert loaded2 == {"HF_TOKEN": "hf_real_test_token_123"}
+
+
+def legacy_hub(tmp_path, *, explicit=None, preset="thumb_middle", split="train"):
+    path = _make_recording(tmp_path / "source")
+    with gzip.open(path, "rt", encoding="utf-8") as f:
+        lines = f.readlines()
+    meta = json.loads(lines[0])
+    for key in ("person", "profile", "preset", "split"):
+        meta.pop(key, None)
+    meta.update(explicit or {})
+    lines[0] = json.dumps(meta) + "\n"
+    with gzip.open(path, "wt", encoding="utf-8") as f:
+        f.writelines(lines)
+    raw = path.read_bytes()
+    row = dict(validate_recording(path).entry, person="tester01", preset=preset, split=split)
+    remote = FakeRemoteHub()
+    remote.manifest = [row]
+    remote.files[row["path"]] = raw
+    return remote, raw, lines[1:]
+
+
+def test_legacy_hub_identity_migration_preserves_frames_original_and_incrementality(tmp_path):
+    remote, original, frames = legacy_hub(tmp_path)
+    destination = tmp_path / "app/recordings"
+    assert pull_from_hub(remote, destination)["downloaded"] == 1
+    recordings, errors = scan_local_recordings(destination)
+    assert not errors and len(recordings) == 1
+    row = recordings[0]
+    assert (row.entry["person"], row.entry["preset"], row.entry["split"]) == ("tester01", "pinch", "train")
+    with gzip.open(row.path, "rt", encoding="utf-8") as f:
+        assert f.readlines()[1:] == frames
+    assert (destination.parent / "imports/hub-originals" / (sha256(original).hexdigest() + ".jsonl.gz")).read_bytes() == original
+    assert pull_from_hub(remote, destination)["downloaded"] == 0
+    assert push_to_hub(remote, destination)["new_recordings"] == 0
+
+
+@pytest.mark.parametrize("explicit,preset,split", [
+    ({"person": "different"}, "pinch", "train"),
+    ({"preset": "pointer"}, "pinch", "train"),
+    ({"split": "eval"}, "pinch", "train"),
+    ({}, "pinch", "eval"),
+    ({}, "unknown_task", "train"),
+])
+def test_legacy_hub_migration_never_overrides_explicit_metadata_or_invents_eval(tmp_path, explicit, preset, split):
+    remote, _, _ = legacy_hub(tmp_path, explicit=explicit, preset=preset, split=split)
+    destination = tmp_path / "app/recordings"
+    with pytest.raises(HubError):
+        pull_from_hub(remote, destination)
+    assert not list(destination.rglob("*.jsonl.gz"))

@@ -260,6 +260,8 @@ class PinchCore:
         else:
             self._pinky_clear_since = None
         neighbor_ratio = max(0.0, min(1.0, float(c["click_neighbor_ratio"])))
+        palm_len = max(1e-6, _d2(pts[WRIST], pts[MIDDLE_MCP]))
+        ratios = finger_curl_ratios(pts)
         world_contacts = set()
         if world_distances is not None:
             for finger in ("middle", "ring"):
@@ -274,13 +276,32 @@ class PinchCore:
                         and other - distance >= CLICK_SEPARATION_PALM):
                     world_contacts.add(finger)
 
+        if world_distances is not None and not world_contacts:
+            # World landmarks can put the index closest even when the image clearly shows
+            # a different fingertip touching. Require a unique image contact AND a world
+            # gap inside the existing contact envelope; never override a clear world winner.
+            # This corroboration is for left/right only, not an easier window-switch trigger.
+            for finger, ratio, threshold_key, tuck_key in (
+                    ("middle", ratios[1], "click_threshold", "click_tuck_ratio"),
+                    ("ring", ratios[2], "ring_click_threshold", "ring_tuck_ratio")):
+                distance = distances[finger]
+                other = min(value for name, value in distances.items() if name != finger)
+                other_click = min(world_distances[name] for name in ("middle", "ring", "pinky") if name != finger)
+                if (on(f"thumb_{finger}_pinch") and ratio > float(c[tuck_key])
+                        and distance <= float(c[threshold_key])
+                        and distance < other * neighbor_ratio
+                        and other - distance >= palm_len * CLICK_SEPARATION_PALM
+                        and world_distances[finger] <= CLICK_WORLD_RELEASE
+                        and world_distances[finger] < other_click * neighbor_ratio
+                        and other_click - world_distances[finger] >= CLICK_SEPARATION_PALM):
+                    world_contacts.add(finger)
+
         cursor_point_early = palm_anchor_point(pts, c["cursor_anchor_ratio"])
         # Clear contact must reach the click confirmer even when the projected hand is
         # still folded. Waiting for confirmation here deadlocks a click inside a latched fist.
         contact_claiming = bool(world_contacts or self._secondary_confirmed)
 
         # 0. Fist (fast move); the thumbs-up (motion mode entry pose) freezes the cursor instead
-        ratios = finger_curl_ratios(pts)
         curl = max(ratios)
         if c["motion_pose_freeze"] and not contact_claiming and curl <= float(c["motion_fold_ratio"]):
             _palm = max(1e-6, _d2(pts[WRIST], pts[MIDDLE_MCP]))
@@ -325,7 +346,6 @@ class PinchCore:
                               dpi_multiplier=max(0.1, float(c["fist_dpi_multiplier"])), hand_shape="fist")
 
         # 0.5 Show desktop: thumb tucked across the palm, four fingers extended, held still
-        palm_len = max(1e-6, _d2(pts[WRIST], pts[MIDDLE_MCP]))
         thumb_tuck = min(_d2(thumb, pts[13]), _d2(thumb, pts[17])) / palm_len
         distances["thumb_tuck"] = thumb_tuck
         palm_width = _d2(pts[5], pts[17]) / palm_len
@@ -513,7 +533,7 @@ class PinchCore:
                 distance = world_distances[finger]
                 other = min(value for name, value in world_distances.items() if name != finger)
                 touching = finger in world_contacts
-                entry[finger] = (distance <= CLICK_WORLD_ENTER and distance < other * neighbor_ratio
+                entry[finger] = touching or (distance <= CLICK_WORLD_ENTER and distance < other * neighbor_ratio
                                  and other - distance >= CLICK_SEPARATION_PALM
                                  and (curl_ratio > tuck or touching))
                 keep[finger] = distance <= CLICK_WORLD_RELEASE

@@ -34,7 +34,7 @@ from manux.data.recording import read, replay
 from manux.data.tracking_test import TrackingTest, load_recent_results, result_line, view as tracking_view
 from manux.data.training_center import TrainingCenterService
 from manux.data.legacy_import import pending_model
-from manux.data.pointer_setup import DEFAULT_HOLD, LIMITS as POINTER_SETUP_LIMITS, SETTING_KEY, PointerSetup, read_profiles, write_profiles
+from manux.data.pointer_setup import DEFAULT_HOLD, DEFAULT_PRECISION,LIMITS as POINTER_SETUP_LIMITS, SETTING_KEY, PointerSetup, read_profiles, write_profiles
 from manux.data.pose_studio import ACTION_IDS, PoseSnapshotStudio, STUDIO_ACTIONS, STUDIO_CATEGORIES, normalize_system_action
 from manux.engine.commands import RequestMode, SetBaseMode, SetBusy, SetControl
 from manux.engine.pipeline import Engine
@@ -406,7 +406,8 @@ class DesktopRuntime:
         self._pointer_environment_key = sha256(repr(environment).encode("utf-8")).hexdigest()
         values = {} if locked or vertical_input == "hand_position" else read_profiles(raw).get(self._pointer_environment_key, {})
         config = {"palm_left": 0., "palm_right": 0., "palm_up": 0., "palm_down": 0.,
-                  "palm_x_gain": 1., "palm_y_gain": 1., "palm_hold": DEFAULT_HOLD, "frame_aspect": frame.aspect}
+                  "palm_x_gain": 1., "palm_y_gain": 1., "palm_hold": DEFAULT_HOLD,
+                  "palm_precision": DEFAULT_PRECISION, "frame_aspect": frame.aspect}
         config.update(self.settings.section("cursor"))
         config.update(values)
         candidate = replace(sink.config, **config)
@@ -436,6 +437,8 @@ class DesktopRuntime:
             layout = ScreenLayout([monitor])
             self._pointer_setup = PointerSetup(
                 monitor, frame.width, lambda values: CursorMapper(layout, replace(config, **values)))
+            if self.log_dir is not None:
+                self._pointer_setup.trace_dir = self.log_dir / "pointer-traces"
             self._pointer_setup_environment = self._pointer_environment(frame, monitor, mode)
         setup = self._pointer_setup
         if setup is None:
@@ -456,12 +459,24 @@ class DesktopRuntime:
             setup.capture()
         elif action == "adjust":
             setup.adjust(request.values)
-        elif action == "retest" and setup.phase in ("aim", "review", "preview"):
-            setup.begin_aim()
+        elif action in ("retest", "fine", "menu") and setup.phase in ("aim", "review", "preview"):
+            setup.begin_aim(kind="aim" if action == "retest" else action)
         elif action == "apply" and setup.phase == "review" and setup.can_apply:
             self._save_pointer_setup(environment, setup)
-        setup.step(frame.t, point)
+        setup.step(frame.t, point, self._click_contact(hand), world=None if hand is None else hand.world)
         return setup.view()
+
+    def _click_contact(self, hand):
+        """How close a click is: thumb tip to middle tip (left click) or ring tip (right click), as a share of
+        the pinch feature's own thresholds, so below 1 means the click closed."""
+        if hand is None:
+            return None
+        cfg = self.settings_for("pinch")
+        thumb = hand.landmarks[4]
+
+        def tip(i):
+            return ((thumb[0] - hand.landmarks[i][0]) ** 2 + (thumb[1] - hand.landmarks[i][1]) ** 2) ** .5
+        return min(tip(12) / float(cfg["click_threshold"]), tip(16) / float(cfg["ring_click_threshold"]))
 
     def _save_pointer_setup(self, environment, setup):
         key = sha256(repr(environment).encode("utf-8")).hexdigest()
@@ -742,9 +757,12 @@ class DesktopRuntime:
         sink = self.engine.sinks.get(OutputTarget.WINDOWS)
         pitch = palm_pitch(hand.world) if hand is not None else None
         practice_sink = self.engine.sinks.get(OutputTarget.PRACTICE)
+        contact = self._click_contact(hand)
         for output in (sink, practice_sink):
             if output is not None and hasattr(output, "set_palm_pitch"):
                 output.set_palm_pitch(pitch)
+            if output is not None and hasattr(output, "set_click_contact"):
+                output.set_click_contact(contact)
         self._configure_cursor_for_frame(frame, sink if sink is not None else practice_sink)
         distance_scale = getattr(getattr(self.source, "distance", None), "gain", 1.)
         if sink is not None and getattr(sink, "config", None) is not None:
@@ -1053,7 +1071,8 @@ def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, t
     elif tcn_model is not None:
         eligible = {gid for module, _ in _FEATURES for gid in module.DEFAULT_BINDINGS
                     if module.GESTURE_PHASES[gid] & {"tap", "begin"}}
-        gate = tcn_gate.create_gate(Path(tcn_model), settings.section("tcn_gate"), eligible=eligible)
+        gate = tcn_gate.create_gate(Path(tcn_model), settings.section("tcn_gate"), eligible=eligible,
+            spatial_model=spatial_pose_model if settings.get("tcn_gate.spatial_hybrid") else None)
         filters = (gate.gate,) if gate.gate is not None else ()
         status = "TCN 확인기" if filters else f"TCN 확인기 꺼짐 · {gate.text}"
         if filters:
@@ -1223,6 +1242,8 @@ def main(argv=None) -> int:
     spatial_model_path = models_dir / active_model_file
     if not spatial_model_path.is_file():
         spatial_model_path = models_dir / "spatial_pose_mlp.json"
+    if not spatial_model_path.is_file():
+        spatial_model_path = pending_model(paths.data_dir, kind="spatial") or spatial_model_path
 
     init_spatial_model: Optional[SpatialMlpModel] = None
     if spatial_model_path.is_file():

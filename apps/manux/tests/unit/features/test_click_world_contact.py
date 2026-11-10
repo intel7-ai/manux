@@ -51,6 +51,30 @@ def test_projected_middle_overlap_without_3d_contact_cannot_click_or_drag():
 
 
 @pytest.mark.parametrize("finger,wanted",[("middle",THUMB_MIDDLE),("ring",THUMB_RING)])
+def test_unique_image_contact_with_uncertain_world_neighbor_still_confirms(finger,wanted):
+    hand = H.middle_pinch() if finger == "middle" else H.ring_pinch()
+    world = list(world_contact(hand))
+    palm = math.dist(world[0],world[9])
+    # Estimated depth puts the index nearer, but neither estimate is a unique 3D contact.
+    for index,gap in ((8,.40),(12,.55 if finger=="middle" else .80),
+                      (16,.55 if finger=="ring" else .80),(20,.90)):
+        world[index]=(world[4][0]+palm*gap,world[4][1],world[4][2])
+    result=run(hand,tuple(world),frames=45)
+    assert taps(result)==[wanted]
+    if finger=="middle":
+        assert any(i.gesture==DRAG and i.phase=="begin" for i in result)
+
+
+def test_image_contact_cannot_choose_between_ambiguous_world_click_fingers():
+    hand=H.middle_pinch()
+    world=list(world_contact(hand))
+    palm=math.dist(world[0],world[9])
+    for index,gap in ((8,.40),(12,.55),(16,.55),(20,.90)):
+        world[index]=(world[4][0]+palm*gap,world[4][1],world[4][2])
+    assert taps(run(hand,tuple(world)))==[]
+
+
+@pytest.mark.parametrize("finger,wanted",[("middle",THUMB_MIDDLE),("ring",THUMB_RING)])
 def test_touching_folded_finger_is_not_rejected_by_2d_curl(finger,wanted):
     hand=folded(finger)
     assert taps(run(hand,None))==[]
