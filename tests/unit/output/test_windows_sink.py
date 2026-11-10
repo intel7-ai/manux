@@ -114,6 +114,19 @@ def test_drag_begin_hold_end_presses_moves_and_releases():
     assert downs == [("button", "left", True), ("button", "left", False)]
 
 
+def test_right_drag_begin_hold_end_presses_moves_and_releases():
+    s = sink()
+    assert s.apply(cmd("mouse.drag", "begin", (.5, .5), 0.0, gesture="pinch.right_drag")).accepted
+    assert s.backend.buttons_down == {"right"} and s.dragging
+    for i in range(1, 5):
+        assert s.apply(cmd("mouse.drag", "hold", (.5 + .02 * i, .5), i * FRAME, gesture="pinch.right_drag")).accepted
+    assert s.backend.pos[0] > 960
+    assert s.apply(cmd("mouse.drag", "end", None, 5 * FRAME, gesture="pinch.right_drag")).accepted
+    assert s.backend.buttons_down == set() and not s.dragging
+    downs = [e for e in s.backend.events if e[0] == "button"]
+    assert downs == [("button", "right", True), ("button", "right", False)]
+
+
 def test_drag_hold_without_begin_is_blocked_and_end_without_begin_is_harmless():
     s = sink()
     assert s.apply(cmd("mouse.drag", "hold", (.5, .5))).reason == "blocked"

@@ -95,6 +95,7 @@ class WindowsOutputSink:
         self._drag_deferred_down: bool = False
         self._drag_start_pos: Optional[Tuple[int, int]] = None
         self._drag_start_t: float = float("-inf")
+        self._drag_button: str = "left"
 
     # ------------------------------------------------------------------ public API
     def apply(self, cmd: ActionCommand) -> OutputResult:
@@ -136,6 +137,7 @@ class WindowsOutputSink:
                 except Exception as exc:  # noqa: BLE001
                     self.errors.append(f"release_all({reason}): {exc}")
             self.dragging = False
+            self._drag_button = "left"
             if self._interp is not None:
                 self._interp.snap(*self.cursor.pos)
             self.cursor.reset()
@@ -284,12 +286,14 @@ class WindowsOutputSink:
     def _end_drag(self) -> None:
         if self.dragging:
             was_deferred = getattr(self, "_drag_deferred_down", False)
+            btn = getattr(self, "_drag_button", "left")
             self.dragging = False
             self._drag_deferred_down = False
+            self._drag_button = "left"
             if self._interp is not None:
                 self._interp.snap(*self.cursor.pos)
             if not was_deferred:
-                self.buttons.release("left")
+                self.buttons.release(btn)
 
     def _double_click_hold(self, cmd: ActionCommand) -> bool:
         """True while the cursor should stay still after a left click (Windows wants both clicks within ~4 px)."""
@@ -346,6 +350,7 @@ class WindowsOutputSink:
         return self._click(cmd, "right")
 
     def _do_mouse_drag(self, cmd: ActionCommand) -> OutputResult:
+        btn = "right" if ("right" in cmd.gesture or cmd.params.get("button") == "right") else "left"
         if cmd.phase == "begin":
             if self.scroll.active:
                 self.scroll.end(cmd.t, launch=False)
@@ -353,23 +358,30 @@ class WindowsOutputSink:
             if self._interp is not None:
                 self._interp.snap(*self.cursor.pos)
 
-            cur_pos = self.cursor.pos
-            time_since_click = cmd.t - getattr(self, "_last_left_click_t", float("-inf"))
-            last_pos = getattr(self, "_last_left_click_pos", None)
-            near_click = (
-                last_pos is not None
-                and math.hypot(cur_pos[0] - last_pos[0], cur_pos[1] - last_pos[1]) < 12.0
-            )
+            self._drag_button = btn
 
-            # Prevent Windows double-click collision when dragging immediately follows click:
-            if time_since_click < 0.52 and near_click:
-                self.dragging = True
-                self._drag_deferred_down = True
-                self._drag_start_pos = cur_pos
-                self._drag_start_t = getattr(self, "_last_left_click_t", cmd.t)
+            if btn == "left":
+                cur_pos = self.cursor.pos
+                time_since_click = cmd.t - getattr(self, "_last_left_click_t", float("-inf"))
+                last_pos = getattr(self, "_last_left_click_pos", None)
+                near_click = (
+                    last_pos is not None
+                    and math.hypot(cur_pos[0] - last_pos[0], cur_pos[1] - last_pos[1]) < 12.0
+                )
+
+                # Prevent Windows double-click collision when dragging immediately follows click:
+                if time_since_click < 0.52 and near_click:
+                    self.dragging = True
+                    self._drag_deferred_down = True
+                    self._drag_start_pos = cur_pos
+                    self._drag_start_t = getattr(self, "_last_left_click_t", cmd.t)
+                else:
+                    self._drag_deferred_down = False
+                    self.buttons.press("left")
+                    self.dragging = True
             else:
                 self._drag_deferred_down = False
-                self.buttons.press("left")
+                self.buttons.press("right")
                 self.dragging = True
 
             if cmd.point is not None:

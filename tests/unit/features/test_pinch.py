@@ -8,7 +8,7 @@ import pytest
 from manux.actions.bindings import resolve_bindings
 from manux.core.contracts import Activity, Feature
 from manux.features.pinch import (
-    DEFAULT_BINDINGS, DRAG, GESTURE_PHASES, GESTURES, MOVE, MOVE_FIST, SCROLL, SETTINGS, THUMB_MIDDLE, THUMB_PINKY,
+    DEFAULT_BINDINGS, DRAG, GESTURE_PHASES, GESTURES, MOVE, MOVE_FIST, RIGHT_DRAG, SCROLL, SETTINGS, THUMB_MIDDLE, THUMB_PINKY,
     THUMB_RING, THUMB_TUCKED_OPEN, V03_KEYS, PinchFeature,
 )
 from manux.settings.migrate_v03 import RENAMES
@@ -112,6 +112,18 @@ def test_long_press_on_thumb_middle_becomes_a_drag():
     out2, _ = run(f, [H.open_hand()] * 10, t0=t)
     phases = [i.phase for i in out2 if i.gesture == DRAG]
     assert phases[-1] == "end" and phases.count("end") == 1   # after the release grace
+    check_pairs(out + out2)
+
+
+def test_long_press_on_thumb_ring_becomes_a_right_drag():
+    f = PinchFeature()
+    out, t = run(f, [H.ring_pinch(shift=(0.002 * k, 0)) for k in range(45)])
+    assert gestures(out, "tap") == [THUMB_RING]
+    drag = [i for i in out if i.gesture == RIGHT_DRAG]
+    assert drag[0].phase == "begin" and drag[0].scale is None
+    out2, _ = run(f, [H.open_hand()] * 10, t0=t)
+    phases = [i.phase for i in out2 if i.gesture == RIGHT_DRAG]
+    assert phases[-1] == "end" and phases.count("end") == 1
     check_pairs(out + out2)
 
 

@@ -17,6 +17,7 @@ Gestures (v0.3 frame action -> intent):
 | `pinch.thumb_tucked_open`| tap                | `show_desktop` (thumb tucked, four fingers open, held)  | None         | `window.show_desktop` |
 | `pinch.scroll`           | begin / hold / end | `scroll_grab` frames (thumb + index)                    | palm anchor  | `mouse.scroll` |
 | `pinch.drag`             | begin / hold / end | `drag_hold` (thumb+index+middle, or a long thumb+middle) | palm anchor | `mouse.drag` |
+| `pinch.right_drag`       | begin / hold / end | `right_drag_hold` (long thumb+ring or move while held)  | palm anchor  | `mouse.drag` |
 
 Phase rules:
 - A span (`pinch.scroll`, `pinch.drag`) ends on the first frame with a hand whose action is something else.
@@ -49,7 +50,7 @@ from manux.features.pinch.settings import DEFAULTS, SETTINGS, V03_KEYS, resolve
 from manux.perception.palm_axes import corrected_point
 
 __all__ = ["ID", "GESTURES", "GESTURE_PHASES", "DEFAULT_BINDINGS", "SETTINGS", "V03_KEYS", "PinchFeature",
-           "IntentMapper"]
+           "IntentMapper", "RIGHT_DRAG"]
 
 ID = "pinch"
 MODE = "pinch"
@@ -62,14 +63,15 @@ THUMB_PINKY = "pinch.thumb_pinky"
 THUMB_TUCKED_OPEN = "pinch.thumb_tucked_open"
 SCROLL = "pinch.scroll"
 DRAG = "pinch.drag"
+RIGHT_DRAG = "pinch.right_drag"
 
-GESTURES: Tuple[str, ...] = (MOVE, MOVE_FIST, THUMB_MIDDLE, THUMB_RING, THUMB_PINKY, THUMB_TUCKED_OPEN, SCROLL, DRAG)
+GESTURES: Tuple[str, ...] = (MOVE, MOVE_FIST, THUMB_MIDDLE, THUMB_RING, THUMB_PINKY, THUMB_TUCKED_OPEN, SCROLL, DRAG, RIGHT_DRAG)
 _SPAN = frozenset({"begin", "hold", "end"})
 _TAP = frozenset({"tap"})
 GESTURE_PHASES: Mapping[str, frozenset] = {
     MOVE: frozenset({"hold"}), MOVE_FIST: frozenset({"hold"}),
     THUMB_MIDDLE: _TAP, THUMB_RING: _TAP, THUMB_PINKY: _TAP, THUMB_TUCKED_OPEN: _TAP,
-    SCROLL: _SPAN, DRAG: _SPAN,
+    SCROLL: _SPAN, DRAG: _SPAN, RIGHT_DRAG: _SPAN,
 }
 DEFAULT_BINDINGS: Mapping[str, Any] = {
     MOVE: "mouse.move",
@@ -80,10 +82,11 @@ DEFAULT_BINDINGS: Mapping[str, Any] = {
     THUMB_TUCKED_OPEN: "window.show_desktop",
     SCROLL: "mouse.scroll",
     DRAG: "mouse.drag",
+    RIGHT_DRAG: "mouse.drag",
 }
 _TAPS = {"left_click": THUMB_MIDDLE, "right_click": THUMB_RING, "task_switcher": THUMB_PINKY,
          "show_desktop": THUMB_TUCKED_OPEN}
-_SPANS = {"scroll_grab": SCROLL, "drag_hold": DRAG}
+_SPANS = {"scroll_grab": SCROLL, "drag_hold": DRAG, "right_drag_hold": RIGHT_DRAG}
 
 
 def _scale(multiplier: Any) -> Optional[float]:
@@ -123,7 +126,7 @@ class IntentMapper:
         if span is not None:
             info: Dict[str, Any] = {"gesture": frame.active_gesture}
             # long-press drag moves at long_press_drag_multiplier (v0.3); scroll speed is the scroll's own gain
-            scale = _scale(frame.dpi_multiplier) if span == DRAG else None
+            scale = _scale(frame.dpi_multiplier) if span in (DRAG, RIGHT_DRAG) else None
             if self.open is None:
                 self.point = frame.cursor_point
                 self.open = span
@@ -163,7 +166,7 @@ class PinchFeature:
             self.last_frame = None
             return []
         frame = self.core.step(t, hand.landmarks, settings)
-        if frame.action in ("move_cursor", "drag_hold"):
+        if frame.action in ("move_cursor", "drag_hold", "right_drag_hold"):
             frame = replace(frame, cursor_point=corrected_point(frame.cursor_point, ctx.frame.aspect,
                                                               ctx.settings.get("palm_axes")))
         self.last_frame = frame

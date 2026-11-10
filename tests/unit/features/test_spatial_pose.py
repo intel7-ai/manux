@@ -283,6 +283,48 @@ def test_guard_assists_and_sustains_scroll_when_mlp_confirms_thumb_index(
     assert guard._scrolling is False
 
 
+def test_guard_sustains_and_ends_right_drag_with_spatial_mlp(trained_mlp: SpatialMlpModel):
+    feat = SpatialPoseFeature(trained_mlp, mode="assist")
+    guard = SpatialPoseGuard(feat)
+
+    hand_ring = HandObservation(
+        frame=FrameInfo(1, 550.0, 640, 480, False),
+        landmarks=tuple(_dummy_hand(16)),
+        handedness="Right",
+        score=0.95,
+    )
+    ctx_ring = FrameContext(hand_ring.frame, "default", "none", "pinch")
+    guard.observe(hand_ring, ctx_ring)
+    out1 = guard.filter([Intent(550.0, "pinch", "pinch.right_drag", "begin", point=(0.5, 0.5))], ctx_ring)
+    assert len(out1) == 1 and out1[0].gesture == "pinch.right_drag" and out1[0].phase == "begin"
+    assert guard._right_dragging is True
+
+    hand_ring2 = HandObservation(
+        frame=FrameInfo(2, 550.03, 640, 480, False),
+        landmarks=tuple(_dummy_hand(16)),
+        handedness="Right",
+        score=0.95,
+    )
+    ctx_ring2 = FrameContext(hand_ring2.frame, "default", "none", "pinch")
+    guard.observe(hand_ring2, ctx_ring2)
+    out2 = guard.filter([Intent(550.03, "pinch", "pinch.move", "hold", point=(0.52, 0.5))], ctx_ring2)
+    assert len(out2) == 1 and out2[0].gesture == "pinch.right_drag" and out2[0].phase == "hold"
+    assert "spatial_guard:move_converted_to_right_drag" in guard.drain_events()
+
+    hand_open = HandObservation(
+        frame=FrameInfo(3, 550.06, 640, 480, False),
+        landmarks=tuple(_dummy_hand(None)),
+        handedness="Right",
+        score=0.95,
+    )
+    ctx_open = FrameContext(hand_open.frame, "default", "none", "pinch")
+    guard.observe(hand_open, ctx_open)
+    out3 = guard.filter([Intent(550.06, "pinch", "pinch.move", "hold", point=(0.55, 0.5))], ctx_open)
+    gestures_phases = [(i.gesture, i.phase) for i in out3]
+    assert ("pinch.right_drag", "end") in gestures_phases
+    assert guard._right_dragging is False
+
+
 
 def test_guard_fires_desktop_on_palm_side_pose(trained_mlp: SpatialMlpModel):
     feat = SpatialPoseFeature(trained_mlp, mode="assist")

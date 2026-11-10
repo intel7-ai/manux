@@ -111,6 +111,7 @@ class PinchCore:
         self._pinky_fired_at = -1e9
         self._desktop_fired_at = -1e9
         self._press_anchor: Optional[Tuple[float, Tuple[float, float], Tuple[float, float]]] = None
+        self._ring_anchor: Optional[Tuple[float, Tuple[float, float], Tuple[float, float]]] = None
 
     # ------------------------------------------------------------------ public state
     @property
@@ -149,6 +150,7 @@ class PinchCore:
         self._desktop_armed = True
         self._curl_s = None
         self._press_anchor = None
+        self._ring_anchor = None
 
     # ------------------------------------------------------------------ helpers
     def _can_trigger(self, gesture_id: str, now: float, finger: Optional[str], cooldown: float = 0.35) -> bool:
@@ -382,7 +384,8 @@ class PinchCore:
         pinch_point = ((thumb[0] + index[0]) * 0.5, (thumb[1] + index[1]) * 0.5)
 
         middle_active = "middle" in self._secondary_since or self._long_fired.get("middle", False)
-        if self._index_pinched and index_active and not middle_active:
+        secondary_active = any(f in self._secondary_since or self._long_fired.get(f, False) for f in ("middle", "ring"))
+        if self._index_pinched and index_active and not secondary_active:
             self._secondary_since.clear()
         for finger in [f for f in self._long_fired if f not in self._secondary_since]:
             self._long_fired.pop(finger, None)
@@ -393,8 +396,8 @@ class PinchCore:
                               cursor_point=cursor_point, pinch_distance=d_index, distances=distances, is_moving=True)
 
         # 2. Thumb + index -> scroll grab (page grabbed, the cursor stays put)
-        # Never hijack an active middle pinch/drag with an accidental index brush!
-        if self._index_pinched and scroll_on and not middle_active:
+        # Never hijack an active middle/ring pinch/drag with an accidental index brush!
+        if self._index_pinched and scroll_on and not secondary_active:
             return PinchFrame(
                 active_gesture="thumb_index_pinch", action="scroll_grab", cursor_point=cursor_point,
                 pinch_distance=d_index, distances=distances, is_moving=False, pinch_point=pinch_point,
@@ -517,11 +520,45 @@ class PinchCore:
             )
         )
 
-        if not self._index_pinched or not index_active or middle_active:
+        held_ring = "ring" in self._secondary_since
+        moved_far_ring = False
+        if held_ring and c.get("drag_on_move", True) and cursor_point is not None:
+            track_ring = ((thumb[0] + ring[0]) * 0.5, (thumb[1] + ring[1]) * 0.5)
+            if self._ring_anchor is None or self._ring_anchor[0] != self._secondary_since["ring"]:
+                self._ring_anchor = (self._secondary_since["ring"], cursor_point, track_ring)
+            ref_palm, ref_pinch = self._ring_anchor[1], self._ring_anchor[2]
+            aspect = float(c.get("frame_aspect", 0.75))
+            moved_palm = math.hypot(cursor_point[0] - ref_palm[0], (cursor_point[1] - ref_palm[1]) * aspect)
+            moved_pinch = math.hypot(track_ring[0] - ref_pinch[0], (track_ring[1] - ref_pinch[1]) * aspect)
+            moved = max(moved_palm, moved_pinch)
+            moved_far_ring = (moved >= float(c.get("drag_move_distance", 0.006))
+                             and now - self._secondary_since["ring"] >= float(c.get("drag_move_min_time", 0.0)))
+        else:
+            self._ring_anchor = None
+
+        is_ring_dragging = (
+            held_ring
+            and c.get("long_press_drag", True)
+            and (
+                self._long_fired.get("ring", False)
+                or (moved_far_ring and (self._click_fresh.get("ring", True) or now - self._secondary_since["ring"] >= 0.10))
+                or now - self._secondary_since["ring"] >= float(c["long_press_time"])
+            )
+        )
+
+        if not self._index_pinched or not index_active or secondary_active:
             if is_middle_dragging and on("thumb_middle_pinch"):
                 self._long_fired["middle"] = True
                 self._click_fresh["middle"] = False
                 return PinchFrame(active_gesture="thumb_middle_pinch", action="drag_hold",
+                                  cursor_point=cursor_point, pinch_distance=d_index, distances=distances,
+                                  is_moving=True,
+                                  dpi_multiplier=max(0.1, float(c["long_press_drag_multiplier"])))
+
+            if is_ring_dragging and on("thumb_ring_pinch"):
+                self._long_fired["ring"] = True
+                self._click_fresh["ring"] = False
+                return PinchFrame(active_gesture="thumb_ring_pinch", action="right_drag_hold",
                                   cursor_point=cursor_point, pinch_distance=d_index, distances=distances,
                                   is_moving=True,
                                   dpi_multiplier=max(0.1, float(c["long_press_drag_multiplier"])))
@@ -541,13 +578,20 @@ class PinchCore:
                     return PinchFrame(active_gesture="thumb_pinky_pinch", action="task_switcher",
                                       cursor_point=cursor_point, pinch_distance=d_index, distances=distances)
 
-        # A middle / ring / pinky pinch is held: cursor frozen; long press on thumb+middle -> drag
-        if self._secondary_since and (not self._index_pinched or not index_active or middle_active):
+        # A middle / ring / pinky pinch is held: cursor frozen; long press on thumb+middle / thumb+ring -> drag
+        if self._secondary_since and (not self._index_pinched or not index_active or secondary_active):
             held = next(f for f in ("middle", "ring", "pinky") if f in self._secondary_since)
             if held == "middle" and is_middle_dragging:
                 self._long_fired["middle"] = True
                 self._click_fresh["middle"] = False
                 return PinchFrame(active_gesture="thumb_middle_pinch", action="drag_hold",
+                                  cursor_point=cursor_point, pinch_distance=d_index, distances=distances,
+                                  is_moving=True,
+                                  dpi_multiplier=max(0.1, float(c["long_press_drag_multiplier"])))
+            if held == "ring" and is_ring_dragging:
+                self._long_fired["ring"] = True
+                self._click_fresh["ring"] = False
+                return PinchFrame(active_gesture="thumb_ring_pinch", action="right_drag_hold",
                                   cursor_point=cursor_point, pinch_distance=d_index, distances=distances,
                                   is_moving=True,
                                   dpi_multiplier=max(0.1, float(c["long_press_drag_multiplier"])))

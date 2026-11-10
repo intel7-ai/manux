@@ -184,6 +184,9 @@ class SpatialPoseGuard(IntentFilter):
         self._dragging: bool = False
         self._drag_last_point: Optional[Tuple[float, float]] = None
         self._drag_last_scale: Optional[float] = None
+        self._right_dragging: bool = False
+        self._right_drag_last_point: Optional[Tuple[float, float]] = None
+        self._right_drag_last_scale: Optional[float] = None
         self._scrolling: bool = False
         self._scroll_last_point: Optional[Tuple[float, float]] = None
         self._scroll_last_scale: Optional[float] = None
@@ -275,13 +278,14 @@ class SpatialPoseGuard(IntentFilter):
             return intents
 
         pose_active = (ev.action in ("thumb_middle", "thumb_middle_ring") and ev.confidence >= 0.55)
+        right_pose_active = (ev.action in ("thumb_ring", "thumb_middle_ring") and ev.confidence >= 0.55)
         scroll_active = (ev.action == "thumb_index" and ev.confidence >= 0.55)
         out: List[Intent] = []
 
         # Show desktop assist: when Spatial MLP steadily confirms horizontal palm_side (>= 5 frames ~ 160ms)
         desktop_enabled = True if self.settings is None else bool(self.settings.get("pinch.enable_thumb_tucked_open"))
         desktop_cooldown_ok = (ctx.frame.t - self._last_desktop_fired) >= 2.0
-        if desktop_enabled and self._desktop_run >= 5 and desktop_cooldown_ok and not self._dragging and not self._scrolling:
+        if desktop_enabled and self._desktop_run >= 5 and desktop_cooldown_ok and not self._dragging and not self._right_dragging and not self._scrolling:
             self._last_desktop_fired = ctx.frame.t
             self._desktop_run = 0
             self._events.append("spatial_guard:desktop_fired")
@@ -309,6 +313,18 @@ class SpatialPoseGuard(IntentFilter):
                                   point=self._drag_last_point, scale=self._drag_last_scale))
                 self._dragging = False
                 self._events.append("spatial_guard:drag_ended_on_release")
+                return tuple(out)
+
+        if not intents and self._right_dragging:
+            if right_pose_active:
+                out.append(Intent(ctx.frame.t, "pinch", "pinch.right_drag", "hold",
+                                  point=self._right_drag_last_point, scale=self._right_drag_last_scale))
+                return tuple(out)
+            else:
+                out.append(Intent(ctx.frame.t, "pinch", "pinch.right_drag", "end",
+                                  point=self._right_drag_last_point, scale=self._right_drag_last_scale))
+                self._right_dragging = False
+                self._events.append("spatial_guard:right_drag_ended_on_release")
                 return tuple(out)
 
         for intent in intents:
@@ -439,6 +455,66 @@ class SpatialPoseGuard(IntentFilter):
                     self._dragging = False
                     self._events.append("spatial_guard:drag_ended_on_release")
 
+            # Handle right drag intents
+            if intent.gesture == "pinch.right_drag":
+                if intent.phase in ("begin", "hold"):
+                    if not right_pose_active and ev.action == "none" and ev.confidence >= 0.65:
+                        self._right_dragging = False
+                        self._events.append("spatial_guard:right_drag_ended_on_mlp_open")
+                        out.append(Intent(
+                            intent.t, "pinch", "pinch.right_drag", "end",
+                            point=intent.point or self._right_drag_last_point,
+                            scale=intent.scale or self._right_drag_last_scale,
+                        ))
+                        continue
+
+                    self._right_dragging = True
+                    if intent.point is not None:
+                        self._right_drag_last_point = intent.point
+                    if intent.scale is not None:
+                        self._right_drag_last_scale = intent.scale
+                    out.append(intent)
+                    continue
+                elif intent.phase == "end":
+                    if right_pose_active:
+                        sustained = Intent(
+                            intent.t, intent.source, "pinch.right_drag", "hold",
+                            point=intent.point or self._right_drag_last_point,
+                            scale=intent.scale or self._right_drag_last_scale,
+                        )
+                        self._right_dragging = True
+                        self._events.append("spatial_guard:right_drag_sustained_on_end")
+                        out.append(sustained)
+                        continue
+                    else:
+                        self._right_dragging = False
+                        self._events.append("spatial_guard:right_drag_ended")
+                        out.append(intent)
+                        continue
+
+            # If right drag was active and MLP confirms pose is still held,
+            # convert accidental fallback to move into right drag hold.
+            if self._right_dragging and intent.phase == "hold" and intent.gesture in ("pinch.move", "pinch.move_fist", "pointer.move"):
+                if right_pose_active:
+                    right_drag_intent = Intent(
+                        intent.t, "pinch", "pinch.right_drag", "hold",
+                        point=intent.point or self._right_drag_last_point,
+                        scale=intent.scale or self._right_drag_last_scale,
+                    )
+                    if intent.point is not None:
+                        self._right_drag_last_point = intent.point
+                    self._events.append("spatial_guard:move_converted_to_right_drag")
+                    out.append(right_drag_intent)
+                    continue
+                else:
+                    out.append(Intent(
+                        ctx.frame.t, "pinch", "pinch.right_drag", "end",
+                        point=self._right_drag_last_point,
+                        scale=self._right_drag_last_scale,
+                    ))
+                    self._right_dragging = False
+                    self._events.append("spatial_guard:right_drag_ended_on_release")
+
             # A click the rules fire (or the MLP already fired) for the pose being held counts as done.
             if intent.phase == "tap" and intent.gesture in BOTH_CLICK_GESTURES:
                 match = (GESTURE_TO_CLASS.get(intent.gesture) == self._boost_class or self._boost_class == "thumb_middle_ring")
@@ -494,7 +570,8 @@ class SpatialPoseGuard(IntentFilter):
                 and self._boost_run >= need_k and ctx.mode == "pinch"
                 and ctx.frame.t - self._boost_t >= 0.15
                 and not self._dragging
-                and not any(i.gesture in ("pinch.scroll", "pinch.drag") and i.phase != "end" for i in out)
+                and not self._right_dragging
+                and not any(i.gesture in ("pinch.scroll", "pinch.drag", "pinch.right_drag") and i.phase != "end" for i in out)
                 and not any(act.holding for act in ctx.others.values())):
             if self._boost_class == "thumb_middle_ring":
                 out.append(Intent(ctx.frame.t, "pinch", "pinch.thumb_middle", "tap", confidence=ev.confidence))
@@ -523,6 +600,9 @@ class SpatialPoseGuard(IntentFilter):
         self._dragging = False
         self._drag_last_point = None
         self._drag_last_scale = None
+        self._right_dragging = False
+        self._right_drag_last_point = None
+        self._right_drag_last_scale = None
         self._scrolling = False
         self._scroll_last_point = None
         self._scroll_last_scale = None

@@ -142,6 +142,8 @@ EXTRA_TASKS: Tuple[GestureSpec, ...] = (
        target="thumb_index", gesture="pinch.scroll", modes=_PINCH),
     _t("record_fling", "엄지+검지 튕기기 (관성 스크롤)", "엄지와 검지로 집어 길을 그리고, 튕기듯 놓으세요", CLICK,
        target="thumb_index", gesture="pinch.scroll", min_hold=2.4, modes=_PINCH),
+    _t("thumb_ring_drag", "엄지+약지 유지 (우클릭 드래그)", "엄지와 약지를 붙인 채 손을 옮기고 놓으세요", CLICK,
+       target="thumb_ring_drag", gesture="pinch.right_drag", min_hold=2.4, modes=_PINCH),
     _t("pointer_move", "검지로 가리키며 이동", "검지를 펴서 가리키고 작은 모양을 그리듯 움직이세요", MOVE,
        free=True, target=NONE, related="pointer.move", modes=("pointer", "trigger")),
     _t("pointer_left", "가리킨 채 엄지+중지 (좌클릭)", "커서를 멈추고 엄지와 중지를 붙였다 떼세요", CLICK,

@@ -254,7 +254,7 @@ def check_pairs(intents) -> None:
         elif i.phase == "end":
             assert open_.get(i.gesture), f"end without begin of {i.gesture} at {i.t}"
             open_[i.gesture] = False
-        elif i.phase == "hold" and i.gesture in ("pinch.scroll", "pinch.drag"):
+        elif i.phase == "hold" and i.gesture in ("pinch.scroll", "pinch.drag", "pinch.right_drag"):
             assert open_.get(i.gesture), f"hold without begin of {i.gesture} at {i.t}"
 
 
