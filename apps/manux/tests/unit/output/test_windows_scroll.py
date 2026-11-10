@@ -109,6 +109,15 @@ def test_no_inertia_when_the_hand_stopped_before_release():
     assert s.backend.wheel_total[0] == at_release and not s.scroll_coasting
 
 
+def test_no_inertia_when_release_arrives_after_a_gap_in_motion_commands():
+    s = sink(INERTIA)
+    s.apply(cmd("begin", (.5, .5), 0.))
+    for frame in range(1, 8):
+        s.apply(cmd("hold", (.5, .5 + frame * .035), frame / 30))
+    s.apply(cmd("end", None, 7 / 30 + .09))
+    assert not s.scroll_coasting
+
+
 def test_pinching_again_catches_a_coasting_page_and_clicks_stop_it():
     s = sink(INERTIA)
     t = _flick(s)
