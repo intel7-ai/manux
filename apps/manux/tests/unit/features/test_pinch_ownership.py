@@ -65,6 +65,15 @@ def test_confirmed_middle_is_not_stolen_by_an_overlapping_index_before_drag():
     assert drags and drags[0].phase == "begin" and all(i.scale == 2. for i in drags)
 
 
+def test_corroborated_right_click_can_follow_a_fully_released_scroll():
+    feature = PinchFeature()
+    scroll = H.scroll_pinch()
+    prior = feed(feature, [(scroll, world_contact(scroll, "index"))] * 10 + [pose("open")] * 10)
+    assert any(i.gesture == SCROLL and i.phase == "end" for i in prior)
+    click = feed(feature, [pose("ring")] * 2, start=1 + 20 / 30)
+    assert taps(click) == [THUMB_RING]
+
+
 def test_confirmed_middle_contact_can_curl_into_a_fist_without_losing_drag():
     curled = H.fist()
     out = feed(PinchFeature(), [pose("middle")] * 6 + [(curled, world_contact(curled, "middle"))] * 40)
@@ -82,3 +91,17 @@ def test_brief_contact_noise_keeps_long_press_but_real_release_ends_drag():
     assert taps(out) == [THUMB_MIDDLE]
     phases = [i.phase for i in out if i.gesture == DRAG]
     assert phases.count("begin") == 1 and phases.count("end") == 1
+
+
+def test_drag_holds_through_disagreeing_depth_then_releases_on_clear_open_hand():
+    hand, touching = pose("middle")
+    feature = PinchFeature()
+    initial = feed(feature, [(hand, touching)] * 40)
+    assert any(i.gesture == DRAG and i.phase == "begin" for i in initial)
+
+    noisy = world_contact(hand)
+    during = feed(feature, [(hand, noisy)] * 7 + [(hand, touching)] * 2, start=1 + 40 / 30)
+    assert len(during) == 9 and all(i.gesture == DRAG and i.phase == "hold" for i in during)
+
+    release = feed(feature, [pose("open")] * 6, start=1 + 49 / 30)
+    assert sum(i.gesture == DRAG and i.phase == "end" for i in release) == 1

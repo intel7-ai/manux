@@ -43,6 +43,13 @@ def taps(out):
     return [i.gesture for i in out if i.phase=="tap"]
 
 
+@pytest.mark.parametrize("finger,wanted", [("middle", THUMB_MIDDLE), ("ring", THUMB_RING)])
+def test_short_click_confirms_when_two_frames_agree_in_image_and_depth(finger, wanted):
+    hand = H.middle_pinch() if finger == "middle" else H.ring_pinch()
+    assert taps(run(hand, world_contact(hand, finger), frames=1)) == []
+    assert taps(run(hand, world_contact(hand, finger), frames=2)) == [wanted]
+
+
 def test_projected_middle_overlap_without_3d_contact_cannot_click_or_drag():
     hand=H.middle_pinch()
     out=run(hand,world_contact(hand),frames=45)
