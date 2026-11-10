@@ -13,6 +13,7 @@ V_SIGN = "control.v_sign"
 GESTURES = (V_SIGN,)
 GESTURE_PHASES = {V_SIGN: frozenset({"tap"})}
 DEFAULT_BINDINGS = {V_SIGN: "control.toggle"}
+CLAIM_SECONDS = .12
 SETTINGS = {
     "control.hold": 0.7,
     "control.cooldown": 1.5,
@@ -82,7 +83,7 @@ class ControlFeature:
             self._latched = False
             self._visible_v = False
             return ()
-        self._visible_v = True
+        self._visible_v = False
         if self._model is not None and "v_sign" in self._model.classes:
             # A selected model's failure/negative must never become a rule-only acceptance.
             features = (observation_pose_angles(hand) if self._model.feature_version == "pose-angles-v1"
@@ -96,10 +97,14 @@ class ControlFeature:
                 self._since = None
                 return ()
         if self._latched:
+            self._visible_v = True
             return ()
         if self._since is None:
             self._since = now
-        if now - self._since >= _value(ctx, "hold") and now - self._last_fire >= _value(ctx, "cooldown"):
+        elapsed = now - self._since
+        hold = _value(ctx, "hold")
+        self._visible_v = elapsed >= min(CLAIM_SECONDS, hold)
+        if elapsed >= hold and now - self._last_fire >= _value(ctx, "cooldown"):
             self._latched = True
             self._last_fire = now
             return (Intent(now, ID, V_SIGN, "tap"),)

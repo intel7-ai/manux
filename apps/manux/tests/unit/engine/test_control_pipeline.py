@@ -86,6 +86,24 @@ def test_tutorial_reports_success_without_changing_output_or_sending_os_commands
     assert not sinks[OutputTarget.WINDOWS].commands
 
 
+def test_brief_v_shape_does_not_release_current_windows_output():
+    e, _, sinks = build()
+    e.commands.put(SetStage(Stage.MAIN))
+    e.commands.put(SetControl(True))
+    step(e, 1, False)
+    sink = sinks[OutputTarget.WINDOWS]
+    sink.releases.clear()
+
+    step(e, 1.05, True)
+    step(e, 1.10, False)
+    assert not sink.releases
+    assert e.state.control_on
+
+    hold(e, 1.2)
+    assert "pause" in sink.releases
+    assert not e.state.control_on
+
+
 def test_busy_never_accumulates_a_toggle_and_needs_fresh_hold():
     e, p, sinks = build()
     e.commands.put(SetStage(Stage.MAIN))

@@ -105,3 +105,27 @@ def test_drag_holds_through_disagreeing_depth_then_releases_on_clear_open_hand()
 
     release = feed(feature, [pose("open")] * 6, start=1 + 49 / 30)
     assert sum(i.gesture == DRAG and i.phase == "end" for i in release) == 1
+
+
+def test_drag_can_roll_from_middle_tip_to_side_of_its_last_segment():
+    hand, touching = pose("middle")
+    rolled = list(world_contact(hand))
+    palm = math.dist(rolled[0], rolled[9])
+    thumb = rolled[4]
+    rolled[11] = (thumb[0] + .25 * palm, thumb[1], thumb[2])
+    rolled[12] = (thumb[0] + .69 * palm, thumb[1], thumb[2])
+    feature = PinchFeature()
+    start = feed(feature, [(hand, touching)] * 40)
+    assert any(i.gesture == DRAG and i.phase == "begin" for i in start)
+    during = feed(feature, [(hand, tuple(rolled))] * 12, start=1 + 40 / 30)
+    assert len(during) == 12 and all(i.gesture == DRAG and i.phase == "hold" for i in during)
+    end = feed(feature, [pose("open")] * 8, start=1 + 52 / 30)
+    assert sum(i.gesture == DRAG and i.phase == "end" for i in end) == 1
+
+
+@pytest.mark.parametrize("first,second,wanted", [
+    ("middle", "ring", [THUMB_MIDDLE, THUMB_RING]),
+    ("ring", "middle", [THUMB_RING, THUMB_MIDDLE]),
+])
+def test_a_clearly_released_click_does_not_swallow_the_other_finger(first, second, wanted):
+    assert taps(feed(PinchFeature(), [pose(first)] * 5 + [pose(second)] * 2)) == wanted

@@ -60,6 +60,19 @@ def world_tip_distances(world: Optional[Sequence[Pt]]) -> Optional[Dict[str, flo
                                 ("ring", RING_TIP), ("pinky", PINKY_TIP))}
 
 
+def _middle_distal_distance(world: Sequence[Pt]) -> float:
+    """Normalized thumb distance to the last segment of the middle finger."""
+    thumb, joint, tip = world[THUMB_TIP], world[MIDDLE_TIP - 1], world[MIDDLE_TIP]
+    segment = tuple(end - start for start, end in zip(joint, tip))
+    length_squared = sum(component * component for component in segment)
+    if length_squared <= 1e-12:
+        return math.inf
+    projection = sum((point - start) * axis for point, start, axis in zip(thumb, joint, segment))
+    fraction = min(1.0, max(0.0, projection / length_squared))
+    nearest = tuple(start + fraction * axis for start, axis in zip(joint, segment))
+    return math.dist(thumb, nearest) / math.dist(world[WRIST], world[MIDDLE_MCP])
+
+
 @dataclass
 class PinchFrame:
     """One frame's judgement. Same fields and meaning as v0.3 `GestureResult`."""
@@ -565,6 +578,21 @@ class PinchCore:
                                and pinky_distance < other_distance * min(neighbor_ratio, .75)
                                and other_distance - pinky_distance >= .05)
             keep["pinky"] = pinky_distance <= CLICK_WORLD_RELEASE
+        middle_distal_hold = False
+        if world_distances is not None and self._long_fired.get("middle", False) and not keep["middle"]:
+            distal = _middle_distal_distance(world)
+            other_tip = min(world_distances[name] for name in ("index", "ring", "pinky"))
+            middle_distal_hold = distal <= CLICK_WORLD_FOLDED and distal < other_tip * neighbor_ratio
+            keep["middle"] = middle_distal_hold
+
+        if corroborated and world_distances is not None and not self._long_fired.get("middle", False):
+            for finger in ("middle", "ring"):
+                other = "ring" if finger == "middle" else "middle"
+                if (finger in self._secondary_confirmed and other in corroborated
+                        and distances[finger] > thresholds[finger] + margin
+                        and world_distances[finger] > CLICK_WORLD_RELEASE):
+                    self._drop_secondary(finger)
+                    self._click_fresh[finger] = True
         # Drop stale candidates before testing any new finger: left/right evaluation order must not
         # decide which finger owns a pinch. Only a confirmed hold gets release hysteresis.
         for finger in tuple(self._secondary_since):
@@ -638,8 +666,8 @@ class PinchCore:
         middle_ok = confirmed("middle", d_middle, dip(MIDDLE_TIP), click_threshold,
                               entry_ok=entry["middle"],
                               keep_ok=keep["middle"], contact_entry="middle" in world_contacts,
-                              contact_hold=world_distances is not None
-                              and world_distances["middle"] <= (CLICK_WORLD_RELEASE if "middle" in self._secondary_confirmed else CLICK_WORLD_ENTER))
+                              contact_hold=middle_distal_hold or (world_distances is not None
+                              and world_distances["middle"] <= (CLICK_WORLD_RELEASE if "middle" in self._secondary_confirmed else CLICK_WORLD_ENTER)))
         ring_ok = confirmed("ring", d_ring, dip(RING_TIP), ring_thr,
                             entry_ok=entry["ring"],
                             keep_ok=keep["ring"], contact_entry="ring" in world_contacts,

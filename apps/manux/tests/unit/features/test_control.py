@@ -85,6 +85,7 @@ def test_selected_mlp_rejection_cannot_fall_back_to_rules():
     f = ControlFeature(Model(.1))
     for n in range(30):
         assert not step(f, n / 20)
+        assert not f.activity().holding
     f.set_model(Model(.95))
     results = [intent for n in range(30, 55) for intent in step(f, n / 20)]
     assert len(results) == 1 and results[0].gesture == V_SIGN
