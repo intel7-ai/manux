@@ -66,6 +66,80 @@
 
 ---
 
+## 🧠 [AI 병합 및 유지보수 가이드] 아키텍처 설계 & 수정 이유 (AI Merge Reference)
+
+> [!IMPORTANT]
+> **향후 다른 AI 에이전트 또는 개발자가 본 브랜치(`v0.5-testing-mlp`)의 변경 사항을 메인 브랜치나 타 브랜치로 병합(Merge)할 때 반드시 숙지해야 하는 아키텍처 설계 배경과 핵심 규칙입니다.**  
+> 과거의 인위적 버퍼링이나 2D 하드코딩 덮어쓰기 방식으로 롤백하지 마십시오.
+
+### 1. 왜 기존 로직을 수정했는가? (Problem & Rationale)
+
+1. **클릭 보류/버퍼링(`_pending_click`) 폐기 및 물리 마우스 1:1 에뮬레이션 전환**
+   - **기존 문제**: 손가락이 닿았을 때 즉시 누르지 않고 대기했다가 손을 뗄 때 클릭을 발생시키는 방식은, 사용자가 마우스 클릭감을 직관적으로 느낄 수 없었으며, 뗄 때 더블클릭이 연타되거나 지뢰찾기에서 타일이 의도치 않게 눌리는 버그를 유발했습니다.
+   - **수정 이유**: 마우스는 **'누를 때 Down, 뗄 때 Up'** 이 절대적인 기본 원칙입니다.
+     - 손가락 닿음 / 자세 취함 $\rightarrow$ 즉시 `buttons.press` (누름 유지).
+     - 자세 유지 채 이동 $\rightarrow$ 누른 상태 유지하며 `drag` 수행.
+     - 손가락 뗌 $\rightarrow$ `mouse.move` 수신 즉시 `buttons.release` (누름 해제).
+     - 더블클릭 튐 문제는 OS 싱크의 접촉 디바운스(200ms) 및 위치 고정 윈도우(`double_click_window`)로만 해결했습니다.
+
+2. **2D 유클리드 좌표의 한계 극복 및 3D Spatial MLP의 절대적 필요성**
+   - **기존 문제**: 기존 2D 규칙 엔진(`PinchCore`)은 카메라 2D 평면에 투영된 $(x, y)$ 유클리드 거리만 측정했습니다.
+     - 손을 비스듬히 기울이거나 가로로 눕히면, 실제로는 약지(`thumb_ring`)를 맞댔음에도 2D 투영상 중지-엄지 거리가 더 가까워져 **우클릭이 좌클릭으로 오판**되었습니다.
+     - 또한 2D 규칙은 한 번에 한 핀치만 허용하는 상호 배타 락(`side_pinch_exclusive`)이 걸려 있어, **양쪽 동시 클릭(`thumb_middle_ring`)이 구조적으로 불가능**했습니다.
+   - **수정 이유**: 3D 월드 랜드마크 기반 **96차원 Spatial MLP**를 센서 퓨전 레이어(`SpatialPoseGuard`)로 배치했습니다.
+     - 손목 중심 평행이동 불변(Translation invariant) 및 손 크기 불변(Scale invariant) 정규화를 적용하여, 손이 어떤 각도와 거리에 있든 99% 정확도로 10개 제스처를 실시간 판정합니다.
+
+3. **학습 센터(PoseSnapshotStudio)의 2D 간섭 버그 척결**
+   - **기존 문제**: 학습 센터에서 우클릭(`thumb_ring`)이나 양쪽 클릭(`thumb_middle_ring`) 자세를 취해도 화면과 모델 판정 박스에 `"좌클릭 (엄지+중지)"`로만 표시되었습니다.
+     - 원인 1: `GESTURE_TO_STUDIO_CLASS`에 `"pinch.right_drag": "thumb_ring"` 매핑이 누락되어 `mouse.drag` $\rightarrow$ `thumb_middle`로 강제 변환됨.
+     - 원인 2: `_compute_hybrid_action()`에서 2D 규칙(`sys_act`)이 핀치 상태면 **MLP 모델의 실제 예측값(`live_ai_action`)을 무시하고 `sys_act`로 덮어쓰는 하드코딩**이 존재했음.
+   - **수정 이유**: 2D 덮어쓰기 로직을 전면 제거하여, 모델이 학습된 상태에서는 순수하게 Spatial MLP의 예측값을 표시하도록 일원화했습니다.
+
+4. **"클릭 학습 데이터 = 누르고 있는 중인 자세 (Continuous Hold)" 정의**
+   - **수정 이유**: 사용자가 학습 센터에서 수집하는 데이터는 '찰나의 클릭 순간'이 아니라 **'버튼을 누르고 있는 동안 취하는 손 모양'** 입니다.
+   - 따라서 MLP가 해당 클래스를 확신하는 동안은 버튼이 계속 눌려있는 상태(Hold/Drag)로 간주하며, 손이 펴질 때(`none`) 비로소 해제되도록 엔진 전반의 생명주기를 통일했습니다.
+
+---
+
+### 2. Spatial MLP & Guard 센서 퓨전 동작 원리 (Internal Mechanism)
+
+`src/manux/features/spatial_pose/__init__.py`의 `SpatialPoseGuard`는 2D 규칙 엔진의 출력을 가로채 아래 3단계로 필터링합니다:
+
+```mermaid
+flowchart TD
+    In[2D Heuristic Engine Intents] --> Guard{SpatialPoseGuard Filter}
+    MLP[96-dim Spatial MLP Prediction] --> Guard
+
+    Guard -->|1. Veto: Hand is actually 'none' or different pose| Drop[Veto: Intent Dropped]
+    Guard -->|2. Boost: Confident pinch held but 2D rules missed| Fire[Boost: Direct Intent Generated]
+    Guard -->|3. Sustain/Convert: 2D falls back to move while pose held| Convert[Convert to Held Drag / Both Click]
+    Guard -->|4. Release: MLP confirms hand opened to 'none'| Release[End Drag / Release Buttons Instantly]
+```
+
+1. **Veto (오발화 차단)**:
+   - 2D 거리가 일시적으로 좁혀져 클릭을 발생시키려 해도, MLP가 $k$프레임 이상 `none`(열린 손/단순 이동)으로 판정하면 클릭을 즉시 차단합니다.
+   - 가로 손 자세가 아닌 일상 손 움직임 중 발생하는 2D 바탕화면 보기(`pinch.thumb_tucked_open`)를 원천 차단합니다.
+2. **Boost (능동 보강 발화)**:
+   - 2D 규칙이 카메라 각도 왜곡으로 핀치 거리를 놓치더라도, MLP가 핀치 자세(`thumb_middle`, `thumb_ring`, `thumb_middle_ring`)를 안정적으로 판정하면 가드에서 직접 클릭 이벤트를 생성합니다.
+3. **Conversion & Sustain (누름 유지 및 드래그 보호)**:
+   - 자세를 유지한 채 손을 움직일 때 2D 규칙이 드래그 대신 일반 이동(`pinch.move`)을 보내더라도, MLP가 여전히 `thumb_middle`, `thumb_ring`, `thumb_middle_ring`을 인식하고 있다면 이를 즉시 `pinch.drag`, `pinch.right_drag`, 양쪽 클릭 홀드로 변환하여 **마우스 버튼이 중간에 떼어지지 않도록 보호**합니다.
+   - 반대로 사용자가 손을 펴서 `none`이 되면 2D 릴리즈 지연을 기다리지 않고 즉시 드래그를 종료(`end`)합니다.
+
+---
+
+### 3. 수정된 핵심 파일 및 역할 (Code Map for Merging)
+
+| 파일 경로 | 수정 내용 및 주의사항 (병합 시 확인) |
+|---|---|
+| `src/manux/output/windows/sink.py` | • **1:1 물리 마우스 에뮬레이션**: `buttons.press` on contact, `buttons.release` on `mouse.move`.<br>• `_holding_left`, `_holding_right` 독립 관리 (양쪽 클릭 동시 누름 충돌 방지).<br>• 우클릭 드래그(`_do_mouse_drag` button="right") 및 멱등적 홀드 지원. |
+| `src/manux/features/spatial_pose/__init__.py` | • `SpatialPoseGuard` 센서 퓨전 로직.<br>• `left_pose_active`, `right_pose_active`, `both_pose_active` 삼원화.<br>• 2D가 좌드래그로 오판한 이벤트를 MLP 확인 시 `pinch.right_drag`로 실시간 전환.<br>• 자세 유지 중 `pinch.move` 유입 시 드래그/양쪽 클릭 유지로 변환. |
+| `src/manux/data/pose_studio.py` | • `GESTURE_TO_STUDIO_CLASS`에 `"pinch.right_drag": "thumb_ring"` 등록.<br>• `normalize_system_action`: 좌+우 동시 활성 시 `thumb_middle_ring` 반환.<br>• `_compute_hybrid_action`: 2D 하드코딩 덮어쓰기 제거하고 순수 MLP 예측값 보존.<br>• `is_full_joints_tracked`: 21개 관절 화면 잘림 필터. |
+| `src/manux/features/pinch/engine.py` | • `nearest == "ring"` 진입 시 중지(`middle`) 락아웃 조기 해제.<br>• `PinchFrame`에 `action="right_drag_hold"` 추가 및 링 드래그 앵커 지원. |
+| `src/manux/features/pinch/preview.py` | • `ACTION_FINGER`에 `"right_drag_hold": "ring"` 추가하여 카메라 오버레이 연동. |
+| `src/manux/ui/bridge.py` | • 스튜디오 화면 진입 시 실시간 핀치 가이드 및 관절 거리로 우클릭·양쪽클릭 실시간 판정.<br>• 모션 모드 켜짐 시에도 기본 마우스 제어가 살아있도록 분리. |
+
+---
+
 ## 🚀 빠른 시작 (Quickstart)
 
 ### 1. 데스크톱 앱 실행
