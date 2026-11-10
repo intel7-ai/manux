@@ -264,7 +264,8 @@ class SpatialPoseGuard(IntentFilter):
             self._boost_class = cls
             self._boost_run = 0
             self._boost_fast = False
-            self._boost_done = False
+            if self._idle_run >= 2 or (ev is not None and ev.action == "none"):
+                self._boost_done = False
         if cls is not None:
             self._boost_run += 1
             self._boost_fast = self._boost_fast or fast
@@ -568,7 +569,7 @@ class SpatialPoseGuard(IntentFilter):
         need_k = min(self.k_boost, 2) if self._boost_fast else self.k_boost
         if (self.boost and self._boost_class is not None and not self._boost_done
                 and self._boost_run >= need_k and ctx.mode == "pinch"
-                and ctx.frame.t - self._boost_t >= 0.15
+                and ctx.frame.t - self._boost_t >= 0.30
                 and not self._dragging
                 and not self._right_dragging
                 and not any(i.gesture in ("pinch.scroll", "pinch.drag", "pinch.right_drag") and i.phase != "end" for i in out)

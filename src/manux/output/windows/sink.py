@@ -96,8 +96,12 @@ class WindowsOutputSink:
         self._drag_start_pos: Optional[Tuple[int, int]] = None
         self._drag_start_t: float = float("-inf")
         self._drag_button: str = "left"
-        self._holding_right_click: bool = False
-        self._holding_right_t: float = float("-inf")
+        self._pending_click: Optional[str] = None
+        self._pending_click_pos: Optional[Tuple[int, int]] = None
+        self._pending_click_t: float = float("-inf")
+        self._pending_click_gesture: Optional[str] = None
+        self._last_right_click_t: float = float("-inf")
+        self._last_right_click_pos: Optional[Tuple[int, int]] = None
 
     # ------------------------------------------------------------------ public API
     def apply(self, cmd: ActionCommand) -> OutputResult:
@@ -127,7 +131,9 @@ class WindowsOutputSink:
     def release_all(self, reason: str = "") -> None:
         """Release everything that is held. Safe to call any number of times; never raises."""
         with self._lock:
-            self._holding_right_click = False
+            self._pending_click = None
+            self._pending_click_pos = None
+            self._pending_click_gesture = None
             steps = (
                 self.scroll.cancel,
                 self.pump.clear,
@@ -203,9 +209,14 @@ class WindowsOutputSink:
         return self.scroll.coasting
 
     def holding(self) -> bool:
-        """A drag button is down or a scroll is active / still coasting (the arbiter refuses mode entry then)."""
+        """A drag button is down, a click is pending release, or a scroll is active / still coasting."""
         with self._lock:
-            return bool(self.dragging or getattr(self, "_holding_right_click", False) or self.scroll.active or self.scroll.coasting)
+            return bool(
+                self.dragging
+                or getattr(self, "_pending_click", None) is not None
+                or self.scroll.active
+                or self.scroll.coasting
+            )
 
     # ------------------------------------------------------------------ helpers
     def _collect(self, errors: List[str]) -> None:
@@ -287,9 +298,9 @@ class WindowsOutputSink:
         return float(g)
 
     def _end_drag(self) -> None:
-        if getattr(self, "_holding_right_click", False):
-            self._holding_right_click = False
-            self.buttons.release("right")
+        self._pending_click = None
+        self._pending_click_pos = None
+        self._pending_click_gesture = None
         if self.dragging:
             was_deferred = getattr(self, "_drag_deferred_down", False)
             btn = getattr(self, "_drag_button", "left")
@@ -323,9 +334,31 @@ class WindowsOutputSink:
 
     # ------------------------------------------------------------------ actions
     def _do_mouse_move(self, cmd: ActionCommand) -> OutputResult:
-        if getattr(self, "_holding_right_click", False):
-            self._holding_right_click = False
-            self.buttons.release("right")
+        # A click from a pinch gesture fires upon release (when hand opens / moves away)
+        if getattr(self, "_pending_click", None) is not None:
+            btn = self._pending_click
+            click_pos = getattr(self, "_pending_click_pos", self.cursor.pos)
+            click_t = getattr(self, "_pending_click_t", cmd.t)
+            self._pending_click = None
+            self._pending_click_pos = None
+            self._pending_click_gesture = None
+            if cmd.t - click_t <= 3.0:
+                if self._interp is not None:
+                    self._interp.snap(*click_pos)
+                else:
+                    self.backend.set_cursor_pos(*click_pos)
+                self._last_sent = click_pos
+                self.cursor.warp(*click_pos)
+                self.buttons.click(btn)
+                if btn == "left":
+                    self._dbl_until = cmd.t + max(0.0, self.config.double_click_window)
+                    self._dbl_hand = None if self._uses_palm(cmd) else cmd.point
+                    self._last_left_click_t = cmd.t
+                    self._last_left_click_pos = click_pos
+                else:
+                    self._last_right_click_t = cmd.t
+                    self._last_right_click_pos = click_pos
+
         if cmd.point is None:
             return _error("mouse.move needs a point")
         gain = self._gain(cmd)
@@ -339,9 +372,9 @@ class WindowsOutputSink:
         return OK
 
     def _click(self, cmd: ActionCommand, button: str) -> OutputResult:
-        if getattr(self, "_holding_right_click", False):
-            self._holding_right_click = False
-            self.buttons.release("right")
+        self._pending_click = None
+        self._pending_click_pos = None
+        self._pending_click_gesture = None
         if self._interp is not None:
             self._interp.snap(*self.cursor.pos)
         self._end_drag()
@@ -351,6 +384,20 @@ class WindowsOutputSink:
         return OK
 
     def _do_mouse_left_click(self, cmd: ActionCommand) -> OutputResult:
+        if cmd.point is None and cmd.gesture in ("pinch.thumb_middle", "pointer.left_click"):
+            # Debounce bounce / duplicate clicks on rapid frame noise
+            if cmd.t - getattr(self, "_last_left_click_t", float("-inf")) < 0.18:
+                return OK
+            if self._interp is not None:
+                self._interp.snap(*self.cursor.pos)
+            self._end_drag()
+            if self.scroll.active:
+                self.scroll.end(cmd.t, launch=False)
+            self._pending_click = "left"
+            self._pending_click_pos = self.cursor.pos
+            self._pending_click_t = cmd.t
+            self._pending_click_gesture = cmd.gesture
+            return OK
         result = self._click(cmd, "left")
         self._dbl_until = cmd.t + max(0.0, self.config.double_click_window)
         self._dbl_hand = None if self._uses_palm(cmd) else cmd.point
@@ -359,23 +406,31 @@ class WindowsOutputSink:
         return result
 
     def _do_mouse_right_click(self, cmd: ActionCommand) -> OutputResult:
-        if cmd.gesture in ("pinch.thumb_ring", "pointer.right_click"):
+        if cmd.point is None and cmd.gesture in ("pinch.thumb_ring", "pointer.right_click"):
+            if cmd.t - getattr(self, "_last_right_click_t", float("-inf")) < 0.22:
+                return OK
             if self._interp is not None:
                 self._interp.snap(*self.cursor.pos)
             self._end_drag()
             if self.scroll.active:
                 self.scroll.end(cmd.t, launch=False)
-            self.buttons.press("right")
-            self._holding_right_click = True
-            self._holding_right_t = cmd.t
+            self._pending_click = "right"
+            self._pending_click_pos = self.cursor.pos
+            self._pending_click_t = cmd.t
+            self._pending_click_gesture = cmd.gesture
             return OK
-        return self._click(cmd, "right")
+        result = self._click(cmd, "right")
+        self._last_right_click_t = cmd.t
+        self._last_right_click_pos = self.cursor.pos
+        return result
 
     def _do_mouse_drag(self, cmd: ActionCommand) -> OutputResult:
         btn = "right" if ("right" in cmd.gesture or cmd.params.get("button") == "right") else "left"
         if cmd.phase == "begin":
-            if getattr(self, "_holding_right_click", False):
-                self._holding_right_click = False
+            # Hand movement while pinching enters drag: discard pending click
+            self._pending_click = None
+            self._pending_click_pos = None
+            self._pending_click_gesture = None
             if self.scroll.active:
                 self.scroll.end(cmd.t, launch=False)
             self._dbl_until = float("-inf")
@@ -441,9 +496,9 @@ class WindowsOutputSink:
         return OK
 
     def _do_mouse_scroll(self, cmd: ActionCommand) -> OutputResult:
-        if getattr(self, "_holding_right_click", False):
-            self._holding_right_click = False
-            self.buttons.release("right")
+        self._pending_click = None
+        self._pending_click_pos = None
+        self._pending_click_gesture = None
         if cmd.phase == "begin":
             if cmd.point is None:
                 return _error("mouse.scroll begin needs a point")
