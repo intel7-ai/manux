@@ -16,6 +16,7 @@ class WindowsOutputConfig:
     active_margin: float = 0.3               # absolute: camera border that maps beyond the screen edge
     relative_gain_min: float = 0.35          # relative: gain at slow hand speed (screen widths per frame width)
     relative_gain_max: float = 1.2           # ... at fast hand speed
+    relative_accel: bool = False             # pointer acceleration based on physical hand velocity
     relative_accel_speed_low: float = 0.1    # frame widths / s where acceleration starts
     relative_accel_speed_high: float = 0.8   # ... and where it reaches the max gain
     frame_aspect: float = 0.75               # camera height / width: y motion is compared physically

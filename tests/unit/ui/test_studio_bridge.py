@@ -129,7 +129,7 @@ def test_studio_worker_playback_curation_and_small_window_actions(tmp_path):
         assert not b.studio.selected["included"]
         assert recording_sets(tc.recordings_dir, RecordingIdentity("synthetic"))[0] == []
         b.studio.include(True)
-        wait_for(lambda: not b.studio.busy)
+        wait_for(lambda: not b.studio.busy and not b.training_busy)
         assert recording_sets(tc.recordings_dir, RecordingIdentity("synthetic"))[0] == [path]
         b.setTrainingSelected("thumb_ring", True)
         for width, height in ((780, 560), (1140, 720)):

@@ -17,6 +17,7 @@ from manux.settings.store import Settings
 EXTRA_SETTINGS = (
     Setting("cursor.movement_mode", "relative", kind="choice", choices=("relative", "absolute")),
     Setting("cursor.active_margin", .3, minimum=0, maximum=.45),
+    Setting("cursor.relative_accel", False, kind="bool"),
     Setting("cursor.relative_accel_speed_low", .1, minimum=0, maximum=5),
     Setting("cursor.relative_accel_speed_high", .8, minimum=.01, maximum=10),
     Setting("cursor.double_click_window", .45, minimum=.1, maximum=.8),
@@ -37,6 +38,7 @@ GROUPS = {"pinch": "손바닥 · 핀치", "pointer": "검지 · 트리거", "mot
 LABELS = {
     "movement_mode": "이동 좌표 방식", "active_margin": "절대좌표 가장자리 여백",
     "relative_gain_min": "기본 이동 속도", "relative_gain_max": "빠른 이동 속도",
+    "relative_accel": "손 속도 가속 사용",
     "relative_accel_speed_low": "가속 시작 손 속도", "relative_accel_speed_high": "최대 가속 손 속도",
     "smoothing": "커서 부드러움", "double_click_window": "더블클릭 커서 고정 시간 (초)",
     "double_click_move_tolerance": "더블클릭 고정 해제 거리",

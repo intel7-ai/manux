@@ -92,9 +92,10 @@ def test_relative_motion_crosses_an_offset_gap_without_outputting_offscreen_poin
     assert screens.monitors[1].contains(*m.pos)
 
 
-def _rel_move(speed, frames=10):
+def _rel_move(speed, frames=10, accel=True):
     cfg = WindowsOutputConfig(movement_mode="relative", smoothing=1.0, relative_gain_min=0.6,
-                              relative_gain_max=2.0, relative_accel_speed_low=0.1, relative_accel_speed_high=0.8)
+                              relative_gain_max=2.0, relative_accel=accel,
+                              relative_accel_speed_low=0.1, relative_accel_speed_high=0.8)
     m = CursorMapper(ScreenLayout.single(1920, 1080), cfg)
     t, x = 0.0, 0.5
     start = m.step((x, 0.5), t)
@@ -106,10 +107,17 @@ def _rel_move(speed, frames=10):
 
 
 def test_relative_fine_control_has_pointer_acceleration():
-    slow_px, slow_hand = _rel_move(0.05)
-    fast_px, fast_hand = _rel_move(1.5, frames=4)
+    slow_px, slow_hand = _rel_move(0.05, accel=True)
+    fast_px, fast_hand = _rel_move(1.5, frames=4, accel=True)
     assert slow_px / (slow_hand * 1920) == pytest.approx(0.6, abs=0.05)
     assert fast_px / (fast_hand * 1920) == pytest.approx(2.0, abs=0.1)
+
+
+def test_relative_without_acceleration_has_constant_linear_gain():
+    slow_px, slow_hand = _rel_move(0.05, accel=False)
+    fast_px, fast_hand = _rel_move(1.5, frames=4, accel=False)
+    assert slow_px / (slow_hand * 1920) == pytest.approx(0.6, abs=0.05)
+    assert fast_px / (fast_hand * 1920) == pytest.approx(0.6, abs=0.05)
 
 
 def test_gain_multiplies_relative_movement():
