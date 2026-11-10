@@ -99,7 +99,10 @@ def test_thumb_middle_clicks_once_per_pinch():
 def test_ring_and_pinky_taps():
     out, t = run(PinchFeature(), [H.ring_pinch()] * 6)
     assert gestures(out, "tap") == [THUMB_RING]
-    out, _ = run(PinchFeature(), [H.pinky_pinch()] * 6)
+    pinky = PinchFeature()
+    out, t = run(pinky, [H.pinky_pinch()] * 6)
+    assert gestures(out, "tap") == []                 # window switch has its own deliberate hold
+    out, _ = run(pinky, [H.pinky_pinch()] * 12, t0=t)
     assert gestures(out, "tap") == [THUMB_PINKY]
 
 

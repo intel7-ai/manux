@@ -54,3 +54,5 @@ class ViewFrame:
     practice_events: Tuple[PracticeEvent, ...] = ()  # bounded events; UI consumes each sequence once
     practice_epoch: int = 0                    # persistent reset boundary; latest-only reads are safe
     rule_preview: Optional[Snapshot] = None    # practice-only rules during registration or recording
+    phone: Optional[Mapping[str, Any]] = None  # ephemeral pairing/status; never persisted or exported
+    distance: Optional[Mapping[str, Any]] = None  # actual recognition magnification and temporary movement scale

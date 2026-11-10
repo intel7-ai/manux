@@ -35,6 +35,8 @@ class PracticeSink:
         self._palm_input = False
         self._palm_pitch = None
         self._click_contact: Optional[float] = None
+        self._move_gesture: Optional[str] = None
+        self._move_t = float("-inf")
 
     @property
     def screens(self):
@@ -82,6 +84,12 @@ class PracticeSink:
                 return OutputResult(False, f"error:not an ActionCommand ({type(cmd).__name__})")
             if self.cursor and cmd.action in ("mouse.move", "mouse.drag") and cmd.point is not None and cmd.phase in ("begin", "hold"):
                 gain = float(cmd.params.get("gain", 1.0))
+                # Match Windows re-anchoring, including the precision reference on the first move.
+                if cmd.gesture != self._move_gesture or cmd.t - self._move_t > self.config.reanchor_gap:
+                    self.cursor.pause()
+                self._move_gesture, self._move_t = cmd.gesture, cmd.t
+                if not self.cursor.anchored and self.config.movement_mode != "absolute":
+                    self.cursor.warp(*self.cursor.pos)
                 if self._palm_input and self.config.vertical_input == "wrist_pitch" and cmd.gesture.startswith("pinch."):
                     self.cursor.step_palm(cmd.point[0], self._palm_pitch, cmd.t, gain, contact=self._click_contact,
                                           fist=cmd.gesture == "pinch.move_fist")
@@ -103,7 +111,8 @@ class PracticeSink:
                 self.releases.append((str(reason), tuple(sorted(self._held))))
             self._held.clear()
             if self.cursor:
-                self.cursor.pause()
+                self.cursor.reset()
+            self._move_gesture, self._move_t = None, float("-inf")
             self.precision = False
         except Exception:
             pass

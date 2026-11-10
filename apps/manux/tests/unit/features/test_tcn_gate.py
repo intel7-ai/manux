@@ -79,7 +79,7 @@ class Runner:
 def test_protocol_and_settings():
     gate = Runner().gate
     assert isinstance(gate, IntentFilter) and gate.id == "tcn_gate"
-    assert dict(SETTINGS) == {"tcn_gate.wait": 0.3, "tcn_gate.lookback": 0.5}
+    assert dict(SETTINGS) == {"tcn_gate.wait": 0.3, "tcn_gate.lookback": 0.5, "tcn_gate.spatial_hybrid": False}
     assert gate.threshold == 0.7 and gate.k == 3
     g = TcnGate(FakeModel(), card(), {"tcn_gate.threshold": 0.9, "tcn_gate.frames": 2, "tcn_gate.wait": 0.5})
     assert (g.threshold, g.k, g.wait) == (0.9, 2, 0.5)

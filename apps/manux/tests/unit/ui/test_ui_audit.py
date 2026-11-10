@@ -175,6 +175,7 @@ def test_v_cannot_enable_control_inside_capture_or_settings_dialogs(
     for mcp, tip, x in [(5, 8, 0.44), (9, 12, 0.48), (13, 16, 0.52), (17, 20, 0.56)]:
         points[mcp] = (x, 0.6, 0.0)
         points[tip] = (x, 0.4 if mcp in (5, 9) else 0.68, 0.0)
+    points[8], points[12] = (0.42, 0.4, 0.0), (0.50, 0.4, 0.0)
     for index in range(25):
         frame = FrameInfo(index, 1 + index * 0.05, 1280, 720, True)
         snap = runtime.engine.step(
@@ -198,10 +199,6 @@ def test_studio_tracker_and_branded_tray_notice(studio):
     bridge, _, _, messages = studio
     tracker = bridge.window.findChild(QObject, "fingerTracker")
     assert tracker is not None and not tracker.isVisible()
-    bridge.setFingerOverlay(True)
-    assert tracker.isVisible()
-    bridge.setFingerOverlay(False)
-    assert not tracker.isVisible()
     assert bridge.application.applicationDisplayName() == "MANUX"
     assert not bridge.application.windowIcon().isNull()
     assert not bridge.window.icon().isNull()
@@ -217,6 +214,56 @@ def test_studio_tracker_and_branded_tray_notice(studio):
         assert not [message for message in messages if "ReferenceError" in message]
     finally:
         tray.hide()
+
+
+def test_virtual_hand_renders_and_clears_on_pause_or_camera_loss(studio):
+    from dataclasses import replace
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QCursor
+    from manux.core.contracts import FrameInfo, Stage
+    from manux.ui.view import ViewFrame
+    from test_ui_logic import HAND
+
+    bridge, _, runtime, messages = studio
+    bridge.timer.stop()
+    bridge._set_stage("main")
+    tracker = bridge.window.findChild(QObject, "fingerTracker")
+    canvas = tracker.findChild(QObject, "virtualHandCanvas")
+    bridge.setFingerOverlay(True)
+    assert not tracker.isVisible()
+    snap = runtime.engine.step(FrameInfo(0, 1., 640, 480, True), None)
+    active = ViewFrame(replace(snap, stage=Stage.MAIN, control_on=True), landmarks=HAND, aspect=0.75)
+    bridge.apply_view(active)
+    QTest.qWait(120)
+    assert tracker.isVisible()
+    assert tracker.flags() & Qt.WindowTransparentForInput
+    assert tracker.flags() & Qt.WindowDoesNotAcceptFocus
+    cursor = QCursor.pos()
+    assert (tracker.x() + tracker.width() // 2, tracker.y() + tracker.height() // 2) == (cursor.x(), cursor.y())
+    shot = tracker.grabWindow()
+    assert not shot.isNull()
+    x, y = bridge.fingerFrame["pts"][:2]
+    ratio = shot.devicePixelRatio()
+    color = shot.pixelColor(round((tracker.width() / 2 + x) * ratio), round((tracker.height() / 2 + y) * ratio))
+    assert color.name() == "#46e5bd"
+
+    bridge.apply_view(replace(active, landmarks=None))
+    assert tracker.isVisible() and canvas.opacity() < 1
+    QTest.qWait(480)
+    assert not tracker.isVisible()
+    bridge.apply_view(active)
+    assert tracker.isVisible()
+    bridge.apply_view(replace(active, camera_ok=False))
+    assert not tracker.isVisible()
+    bridge.apply_view(active)
+    assert tracker.isVisible()
+    bridge.command(32)
+    assert not tracker.isVisible()
+    bridge.setFingerOverlay(False)
+    bridge.apply_view(active)
+    assert not tracker.isVisible()
+    assert not [m for m in messages if "FingerTracker.qml:" in m], messages
 
 
 def test_control_badge_follows_engine_transitions_and_expires_without_frames(studio):

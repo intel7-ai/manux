@@ -1,6 +1,9 @@
 """UI logic without Qt: gesture cards, tutorial, finger HUD (ports of v0.3 gesture_guide/tutorial/finger_overlay)."""
 from __future__ import annotations
 
+import math
+import pytest
+
 from manux.actions import CATALOG
 from manux.ui import cards
 from manux.ui.finger import overlay_frame
@@ -61,8 +64,13 @@ def test_tutorial_motion_step_needs_motion_mode():
 
 
 def test_finger_overlay_frame():
-    frame = overlay_frame(HAND, mirrored=True, actions=["mouse.scroll"])
-    assert frame["mode"] == "scroll" and len(frame["tips"]) == 5 and frame["contact"] in (-1, 1, 2, 3, 4)
-    flipped = overlay_frame(HAND, mirrored=False)
-    assert flipped["tips"][1][0] == -frame["tips"][1][0] and flipped["mode"] == "idle"
-    assert overlay_frame(HAND[:20], True) is None
+    frame = overlay_frame(HAND, mirrored=True, aspect=0.75, guides=((12, "pinched"),))
+    assert len(frame["pts"]) == 42 and frame["guides"] == [[12, "pinched"]]
+    assert math.dist(frame["pts"][:2], frame["pts"][18:20]) == pytest.approx(110, abs=0.15)
+    smaller = tuple((x * 0.5, y * 0.5, z) for x, y, z in HAND)
+    assert overlay_frame(smaller, True, 0.75)["pts"] == frame["pts"]
+    flipped = overlay_frame(HAND, False, 0.75)["pts"]
+    assert flipped[::2] == [-x for x in frame["pts"][::2]]
+    assert flipped[1::2] == frame["pts"][1::2]
+    assert overlay_frame(HAND[:20], True, 0.75) is None
+    assert overlay_frame((HAND[0],) * 21, True, 0.75) is None

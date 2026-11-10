@@ -13,7 +13,7 @@ from typing import FrozenSet
 
 from manux.core.contracts import OutputTarget, Stage
 
-BUSY_KINDS = ("calibrating", "enrolling", "recording")
+BUSY_KINDS = ("calibrating", "enrolling", "recording", "connecting")
 
 
 @dataclass(frozen=True)

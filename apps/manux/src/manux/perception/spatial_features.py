@@ -37,6 +37,8 @@ def _to_pts(landmarks: Any) -> Optional[np.ndarray]:
     for i, pt in enumerate(landmarks):
         if isinstance(pt, dict):
             x, y, z = float(pt.get("x", 0.0)), float(pt.get("y", 0.0)), float(pt.get("z", 0.0))
+        elif hasattr(pt, "x") and hasattr(pt, "y"):
+            x, y, z = float(pt.x), float(pt.y), float(getattr(pt, "z", 0.0))
         elif isinstance(pt, Sequence) and len(pt) >= 2:
             x, y = float(pt[0]), float(pt[1])
             z = float(pt[2]) if len(pt) >= 3 else 0.0

@@ -7,12 +7,15 @@ from typing import Optional
 from manux.core.contracts import Activity, FrameContext, HandObservation, Intent, Stage
 from manux.perception.spatial_features import extract_spatial_features
 from manux.perception.pose_angles import observation_pose_angles
+from manux.perception.pinch_contact import clear_pinky_contact, world_tip_distances
 
 ID = "control"
 V_SIGN = "control.v_sign"
 GESTURES = (V_SIGN,)
 GESTURE_PHASES = {V_SIGN: frozenset({"tap"})}
 DEFAULT_BINDINGS = {V_SIGN: "control.toggle"}
+CLAIM_SECONDS = .12
+V_TIP_SPREAD = 1.2  # Tips of a V are farther apart than the two knuckles.
 SETTINGS = {
     "control.hold": 0.7,
     "control.cooldown": 1.5,
@@ -44,9 +47,15 @@ def is_v_sign(hand: HandObservation, ctx: FrameContext) -> bool:
         return False
     ratios = [distance(0, tip) / max(1e-6, distance(0, mcp))
               for mcp, tip in ((5, 8), (9, 12), (13, 16), (17, 20))]
-    return (min(ratios[:2]) >= _value(ctx, "extended_ratio")
-            and max(ratios[2:]) <= _value(ctx, "folded_ratio")
-            and min(distance(4, 13), distance(4, 17)) / palm <= _value(ctx, "thumb_tuck"))
+    v_geometry = (min(ratios[:2]) >= _value(ctx, "extended_ratio")
+                  and max(ratios[2:]) <= _value(ctx, "folded_ratio")
+                  and min(distance(4, 13), distance(4, 17)) / palm <= _value(ctx, "thumb_tuck")
+                  and distance(8, 12) >= V_TIP_SPREAD * max(distance(5, 9), 1e-6))
+    if not v_geometry:
+        return False
+    # Pinky pinch and V can have the same projected outline. Check actual tip contact.
+    contacts = world_tip_distances(hand.world)
+    return contacts is None or not clear_pinky_contact(contacts)
 
 
 class ControlFeature:
@@ -82,7 +91,7 @@ class ControlFeature:
             self._latched = False
             self._visible_v = False
             return ()
-        self._visible_v = True
+        self._visible_v = False
         if self._model is not None and "v_sign" in self._model.classes:
             # A selected model's failure/negative must never become a rule-only acceptance.
             features = (observation_pose_angles(hand) if self._model.feature_version == "pose-angles-v1"
@@ -96,10 +105,14 @@ class ControlFeature:
                 self._since = None
                 return ()
         if self._latched:
+            self._visible_v = True
             return ()
         if self._since is None:
             self._since = now
-        if now - self._since >= _value(ctx, "hold") and now - self._last_fire >= _value(ctx, "cooldown"):
+        elapsed = now - self._since
+        hold = _value(ctx, "hold")
+        self._visible_v = elapsed >= min(CLAIM_SECONDS, hold)
+        if elapsed >= hold and now - self._last_fire >= _value(ctx, "cooldown"):
             self._latched = True
             self._last_fire = now
             return (Intent(now, ID, V_SIGN, "tap"),)

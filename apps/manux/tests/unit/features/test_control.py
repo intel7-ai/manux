@@ -13,6 +13,8 @@ def v_hand():
     opened = H.open_hand()
     for i in (5, 6, 7, 8, 9, 10, 11, 12):
         pts[i] = opened[i]
+    pts[8] = (pts[8][0] - .02, pts[8][1], pts[8][2])
+    pts[12] = (pts[12][0] + .02, pts[12][1], pts[12][2])
     return pts
 
 
@@ -58,6 +60,29 @@ def test_other_shapes_do_not_toggle(shape):
         assert not step(f, n / 20, shape())
 
 
+def test_v_outline_with_clear_depth_contact_at_pinky_does_not_claim_or_toggle():
+    points = tuple(v_hand())
+    world = list(points)
+    world[20] = (world[4][0], world[4][1], world[4][2] + .005)
+    control = ControlFeature()
+    for n in range(25):
+        frame = FrameInfo(n, n / 20, 1280, 720, True)
+        ctx = FrameContext(frame, Stage.MAIN, OutputTarget.WINDOWS, "pinch")
+        hand = HandObservation(frame, points, "Right", .9, world=tuple(world))
+        assert not control.step(hand, ctx)
+        assert not control.activity().holding
+
+
+def test_two_parallel_extended_fingers_do_not_claim_or_toggle():
+    points = v_hand()
+    opened = H.open_hand()
+    points[8], points[12] = opened[8], opened[12]
+    feature = ControlFeature()
+    for n in range(25):
+        assert not step(feature, n / 20, points)
+        assert not feature.activity().holding
+
+
 def test_camera_gap_and_no_hand_break_hold():
     f = ControlFeature()
     step(f, 0)
@@ -85,6 +110,7 @@ def test_selected_mlp_rejection_cannot_fall_back_to_rules():
     f = ControlFeature(Model(.1))
     for n in range(30):
         assert not step(f, n / 20)
+        assert not f.activity().holding
     f.set_model(Model(.95))
     results = [intent for n in range(30, 55) for intent in step(f, n / 20)]
     assert len(results) == 1 and results[0].gesture == V_SIGN

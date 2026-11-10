@@ -1,82 +1,116 @@
 import QtQuick
-import QtQuick.Controls
 
+// Display port of virtualHandWindow from Dan's hand-mouse@49dfaea.
 Window {
-    id: fingerTracker
+    id: tracker
     objectName: "fingerTracker"
     required property var controller
-    title: "MANUX 손가락 표시"
+    title: "MANUX 가상 손"
     transientParent: null
-    visible: controller.fingerOverlay
+    visible: controller.fingerOverlay && shown !== null
     color: "transparent"
     flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
            | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus
-    width: 320
-    height: 320
+    width: 640
+    height: 640
     readonly property var frame: controller.fingerFrame
-    readonly property bool hasHand: frame.tips !== undefined
-    readonly property real palmPx: 46
-    readonly property var colors: ({ idle: "#94A3B8", move: "#46E5BD", left: "#10B981", right: "#3B82F6", scroll: "#C084FC", other: "#94A3B8" })
-    readonly property var labels: ({ idle: "쉬는 중", move: "커서 이동", left: "좌클릭 · 드래그", right: "우클릭", scroll: "스크롤", other: "손 인식 중" })
+    property var shown: null
+    property bool settling: false
+    readonly property var bones: [
+        [0,1],[1,2],[2,3],[3,4], [0,5],[5,6],[6,7],[7,8], [5,9],[9,10],[10,11],[11,12],
+        [9,13],[13,14],[14,15],[15,16], [13,17],[17,18],[18,19],[19,20], [0,17]
+    ]
+    readonly property var guideColors: ({near: "#F2B544", pinched: "#2FBF8F", action: "#E5484D"})
+
     onFrameChanged: {
-        if (hasHand) {
+        if (frame.pts !== undefined) {
+            handLoss.stop()
+            // Center the drawing on the existing OS cursor; never relocate input.
             x = frame.cursor[0] - width / 2
             y = frame.cursor[1] - height / 2
+            if (shown === null)
+                shown = frame.pts.slice()
+            settling = true
+        } else {
+            settling = false
+            if (frame.lost && shown !== null) {
+                handLoss.start()
+            } else {
+                handLoss.stop()
+                shown = null
+            }
+        }
+        handCanvas.requestPaint()
+    }
+    Timer {
+        id: handLoss
+        interval: 400
+        onTriggered: tracker.shown = null
+    }
+    FrameAnimation {
+        running: tracker.visible && tracker.settling
+        onTriggered: {
+            const target = tracker.frame.pts
+            const points = tracker.shown
+            if (!target || points === null)
+                return
+            // Dan's 40 ms glide between uneven camera frames, at the display refresh rate.
+            const blend = 1 - Math.exp(-Math.min(frameTime, 0.1) / 0.04)
+            let unsettled = false
+            for (let i = 0; i < points.length; ++i) {
+                const delta = target[i] - points[i]
+                if (Math.abs(delta) > 0.1) {
+                    points[i] += delta * blend
+                    unsettled = true
+                } else {
+                    points[i] = target[i]
+                }
+            }
+            tracker.settling = unsettled
+            handCanvas.requestPaint()
         }
     }
-    Item {
+    Canvas {
+        id: handCanvas
+        objectName: "virtualHandCanvas"
         anchors.fill: parent
-        opacity: fingerTracker.hasHand ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: fingerTracker.hasHand ? 80 : 500 } }
-        Canvas {
-            id: fingerCanvas
-            anchors.fill: parent
-            onPaint: {
-                var ctx = getContext("2d")
-                ctx.reset()
-                var f = fingerTracker.frame
-                if (!fingerTracker.hasHand) return
-                var color = fingerTracker.colors[f.mode] || fingerTracker.colors.other
-                var cx = width / 2, cy = height / 2, s = fingerTracker.palmPx
-                function at(i) { return [cx + f.tips[i][0] * s, cy + f.tips[i][1] * s] }
-                ctx.lineWidth = 3
-                ctx.strokeStyle = color
-                if (f.contact > 0) {
-                    var a = at(0), b = at(f.contact)
-                    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke()
+        opacity: tracker.frame.lost ? 0.35 : 1
+        onAvailableChanged: if (available) requestPaint()
+        onPaint: {
+            const ctx = getContext("2d")
+            ctx.reset()
+            const points = tracker.shown
+            if (points === null) return
+            const cx = width / 2, cy = height / 2
+            function at(i) { return [cx + points[2 * i], cy + points[2 * i + 1]] }
+            ctx.lineCap = "round"
+            // The outline keeps the joints legible on both light and dark apps.
+            for (let pass = 0; pass < 2; ++pass) {
+                ctx.strokeStyle = pass === 0 ? "rgba(17,35,49,0.55)" : "rgba(245,247,248,0.95)"
+                ctx.lineWidth = pass === 0 ? 7 : 3.5
+                ctx.beginPath()
+                for (const bone of tracker.bones) {
+                    const a = at(bone[0]), b = at(bone[1])
+                    ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1])
                 }
-                for (var i = 0; i < 5; i++) {
-                    var p = at(i)
-                    var active = i === 0 || i === f.contact
-                    ctx.beginPath()
-                    ctx.arc(p[0], p[1], i === 1 ? 7 : 5, 0, Math.PI * 2)
-                    ctx.fillStyle = active ? color : "rgba(255,255,255,0.85)"
-                    ctx.fill()
-                    ctx.lineWidth = 2
-                    ctx.stroke()
-                }
+                ctx.stroke()
             }
-            Connections {
-                target: fingerTracker.controller
-                function onFingerFrameChanged() { fingerCanvas.requestPaint() }
+            ctx.fillStyle = "#46E5BD"
+            for (let joint = 0; joint < 21; ++joint) {
+                const p = at(joint)
+                ctx.beginPath()
+                ctx.arc(p[0], p[1], joint > 0 && joint % 4 === 0 ? 5 : 3.5, 0, 2 * Math.PI)
+                ctx.fill()
             }
-        }
-        Rectangle {
-            x: parent.width / 2 + 18
-            y: parent.height / 2 + 26
-            width: trackerLabel.implicitWidth + 20
-            height: 24
-            radius: 12
-            color: "#E0112331"
-            Label {
-                id: trackerLabel
-                anchors.centerIn: parent
-                text: fingerTracker.hasHand ? (fingerTracker.labels[fingerTracker.frame.mode] || fingerTracker.labels.other) : ""
-                color: fingerTracker.hasHand ? (fingerTracker.colors[fingerTracker.frame.mode] || fingerTracker.colors.other) : "#94A3B8"
-                font.pixelSize: 13
-                font.bold: true
-                font.family: "Malgun Gothic"
+            for (const guide of tracker.frame.guides || []) {
+                const thumb = at(4), tip = at(guide[0])
+                ctx.strokeStyle = tracker.guideColors[guide[1]] || tracker.guideColors.near
+                ctx.lineWidth = guide[1] === "near" ? 3 : 5
+                ctx.beginPath(); ctx.moveTo(thumb[0], thumb[1]); ctx.lineTo(tip[0], tip[1]); ctx.stroke()
             }
+            ctx.lineWidth = 2
+            ctx.strokeStyle = "rgba(17,35,49,0.55)"
+            ctx.beginPath(); ctx.arc(cx, cy, 5, 0, 2 * Math.PI); ctx.stroke()
         }
     }
 }

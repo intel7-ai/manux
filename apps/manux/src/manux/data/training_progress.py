@@ -17,7 +17,7 @@ def view(state, now=None):
     running, success = bool(state.get("running")), bool(state.get("success"))
     status = ("stopping" if running and state.get("cancelled") else "running" if running else
               "success" if success else "cancelled" if state.get("cancelled") else
-              "error" if state.get("error") else "idle")
+              "needs_data" if state.get("needs_recordings") else "error" if state.get("error") else "idle")
     elapsed = max(0., (state.get("finished") or now) - state.get("started", now))
     progress = 1. if success else min(.99, max(0., state.get("progress", 0.)))
     epochs, epoch = int(state.get("epochs", 0)), int(state.get("epoch", 0))
@@ -43,7 +43,8 @@ def view(state, now=None):
         "phase": state.get("phase", "idle"), "skipped": state.get("skipped", 0),
         "log": "\n".join(map(str, state.get("log", []))) if isinstance(state.get("log"), list) else str(state.get("log") or ""),
         "status": status, "statusText": {"idle": "학습 대기", "running": "학습 진행 중", "stopping": "중단 중",
-            "success": "학습 완료", "cancelled": "학습 중단", "error": "학습 실패"}[status],
+            "success": "학습 완료", "cancelled": "학습 중단", "error": "학습 실패",
+            "needs_data": state.get("stage") or "녹화 자료 필요"}[status],
         "stage": state.get("stage") or "학습센터에서 동작을 선택하세요", "progress": progress,
         "percent": 100 if success else min(99, round(progress * 100)), "elapsed": duration(elapsed),
         "remaining": remaining, "finish": finish, "etaSeconds": eta, "etaHint": hint,

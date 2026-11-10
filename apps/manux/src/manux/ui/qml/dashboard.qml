@@ -55,6 +55,8 @@ ApplicationWindow {
     AdvancedSettings { id: advancedSettings; controller: dashboard }
 
     // Settings: everything that is not needed every day. Basic things first; engine options under "고급".
+    PhoneCameraDialog { id: phoneCameraDialog; controller: dashboard }
+
     Dialog {
         id: settingsDialog
         anchors.centerIn: parent
@@ -80,6 +82,7 @@ ApplicationWindow {
             ColumnLayout {
                 width: settingsScroll.availableWidth
                 spacing: 10
+                ActionButton { text: "휴대폰 카메라 연결"; onClicked: { settingsDialog.close(); phoneCameraDialog.open() } }
                 SectionLabel { text: "사용하는 손" }
                 RowLayout {
                     Layout.fillWidth: true
@@ -104,7 +107,7 @@ ApplicationWindow {
                 SectionLabel { text: "화면 표시" }
                 RowLayout {
                     Layout.fillWidth: true
-                    TextLabel { text: "커서 옆 손가락 표시"; Layout.fillWidth: true }
+                    TextLabel { text: "커서에 가상 손 표시"; Layout.fillWidth: true }
                     Segmented {
                         Layout.fillWidth: false
                         Layout.preferredWidth: 160
@@ -251,6 +254,13 @@ ApplicationWindow {
                             current: dashboard.pointerAnchor
                             onPicked: function (value) { dashboard.setAnchor(value) }
                         }
+                        SectionLabel { text: "자동 거리 보정" }
+                        Segmented {
+                            options: [["off", "끔"], ["on", "켬"]]
+                            current: dashboard.autoDistance ? "on" : "off"
+                            onPicked: function (value) { dashboard.setAutoDistance(value === "on") }
+                        }
+                        Label { text: dashboard.distanceStatus; Layout.fillWidth: true; wrapMode: Text.Wrap; color: "#526575" }
                         SectionLabel { text: "손 주변 확대 (시험)" }
                         Segmented {
                             enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
@@ -303,25 +313,25 @@ ApplicationWindow {
         }
     }
 
-    Shortcut { sequence: "Return"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
-    Shortcut { sequence: "Enter"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
-    Shortcut { sequence: "Esc"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(27) }
-    Shortcut { sequence: "Space"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && (!settingsDialog.visible) && !newModelField.activeFocus; onActivated: dashboard.command(32) }
-    Shortcut { sequence: "Q"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(81) }
-    Shortcut { sequence: "O"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(111) }
-    Shortcut { sequence: "M"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(109) }
-    Shortcut { sequence: "N"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(110) }
-    Shortcut { sequence: "F"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.markFailure() }
-    Shortcut { sequence: "C"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(99) }
-    Shortcut { sequence: "P"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(112) }
-    Shortcut { sequence: "1"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(49) }
-    Shortcut { sequence: "2"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(50) }
-    Shortcut { sequence: "3"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(51) }
-    Shortcut { sequence: "4"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(52) }
-    Shortcut { sequence: "5"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(53) }
-    Shortcut { sequence: "6"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(54) }
-    Shortcut { sequence: "7"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(55) }
-    Shortcut { sequence: "8"; enabled: !window.learningDialogOpen && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(56) }
+    Shortcut { sequence: "Return"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
+    Shortcut { sequence: "Enter"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
+    Shortcut { sequence: "Esc"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive; onActivated: dashboard.command(27) }
+    Shortcut { sequence: "Space"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive && (!settingsDialog.visible) && !newModelField.activeFocus; onActivated: dashboard.command(32) }
+    Shortcut { sequence: "Q"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(81) }
+    Shortcut { sequence: "O"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(111) }
+    Shortcut { sequence: "M"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(109) }
+    Shortcut { sequence: "N"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(110) }
+    Shortcut { sequence: "F"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.markFailure() }
+    Shortcut { sequence: "C"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(99) }
+    Shortcut { sequence: "P"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive && !newModelField.activeFocus; onActivated: dashboard.command(112) }
+    Shortcut { sequence: "1"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(49) }
+    Shortcut { sequence: "2"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(50) }
+    Shortcut { sequence: "3"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(51) }
+    Shortcut { sequence: "4"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(52) }
+    Shortcut { sequence: "5"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(53) }
+    Shortcut { sequence: "6"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(54) }
+    Shortcut { sequence: "7"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(55) }
+    Shortcut { sequence: "8"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && dashboard.currentPage === "studio" && !newModelField.activeFocus; onActivated: dashboard.command(56) }
 
     Timer { interval: 700; running: dashboard.stage === "splash"; onTriggered: dashboard.finishSplash() }
 

@@ -162,7 +162,7 @@ class PinchFeature:
             self.core.step(t, None, settings)
             self.last_frame = None
             return []
-        frame = self.core.step(t, hand.landmarks, settings)
+        frame = self.core.step(t, hand.landmarks, settings, world=hand.world)
         if frame.action in ("move_cursor", "drag_hold"):
             frame = replace(frame, cursor_point=corrected_point(frame.cursor_point, ctx.frame.aspect,
                                                               ctx.settings.get("palm_axes")))

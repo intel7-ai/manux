@@ -20,6 +20,7 @@ class WindowsOutputConfig:
     relative_accel_speed_low: float = 0.1    # frame widths / s where acceleration starts
     relative_accel_speed_high: float = 0.8   # ... and where it reaches the max gain
     frame_aspect: float = 0.75               # camera height / width: y motion is compared physically
+    distance_scale: float = 1.0             # transient distance assistance; never a saved sensitivity
     reanchor_gap: float = 0.1                # s without a movement command -> the next one starts fresh (new in v0.4)
     palm_left: float = 0.0
     palm_right: float = 0.0                  # same as palm_left until calibrated
@@ -40,12 +41,12 @@ class WindowsOutputConfig:
     double_click_window: float = 0.45
     double_click_move_tolerance: float = 0.03
     # grab scroll (touchscreen style) and inertia
-    scroll_gain: float = 36000.0             # wheel units per frame width of hand motion
+    scroll_gain: float = 8000.0              # wheel units per frame width of hand motion
     scroll_deadzone: float = 0.01
     scroll_invert: bool = False
     scroll_inertia: bool = True
-    scroll_inertia_time: float = 0.4         # s, exponential slow-down
+    scroll_inertia_time: float = 0.25        # s, exponential slow-down
     scroll_inertia_min_speed: float = 600.0  # wheel units / s needed to coast
-    scroll_inertia_max_speed: float = 3600.0
+    scroll_inertia_max_speed: float = 1200.0
     scroll_inertia_axis_lock: float = 0.5
     scroll_smooth_tau: float = 0.03          # ScrollPump spreading time (0 = send at once)

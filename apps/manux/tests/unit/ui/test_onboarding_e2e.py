@@ -38,7 +38,11 @@ class OpenHand:
         if self.click:                                   # thumb tip on the middle fingertip (left click)
             lm[4] = lm[12]
         a = math.radians(self.pitch)
-        world = ((0., 0., 0.),) + ((0., -.08 * math.sin(a), -.08 * math.cos(a)),) * 20
+        # Preserve each finger's geometry while tilting the palm. Collapsing all 20 joints
+        # to one point describes every fingertip touching, so it cannot test a left click.
+        wrist_x, wrist_y, _ = lm[0]
+        world = tuple(((px - wrist_x) * 4 / 3, (py - wrist_y) * math.sin(a) * 4 / 3,
+                       (py - wrist_y) * math.cos(a) * 4 / 3) for px, py, _ in lm)
         return frame, None, HandObservation(frame, tuple(lm), "Right", .95, world=world), (), 2.0
 
     def mode_text(self):

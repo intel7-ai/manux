@@ -70,6 +70,7 @@ def drained(runtime):
 @pytest.mark.parametrize("layout", ["standard", "studio"])
 def test_pointer_setup_page_opens_after_hand_choice_and_returns_to_tutorial(tmp_path, layout):
     from PySide6.QtCore import QObject
+    from PySide6.QtTest import QTest
     from manux.ui.bridge import Bridge
     settings = Settings(schema())
     runtime = FakeRuntime(settings)
@@ -104,6 +105,11 @@ def test_pointer_setup_page_opens_after_hand_choice_and_returns_to_tutorial(tmp_
         target = page.findChild(QObject, "pointerSetupTarget")
         cursor = page.findChild(QObject, "pointerSetupCursor")
         arena = target.parentItem()
+        # Qt Quick schedules layout polish separately; one processEvents() can still leave 0x0 geometry.
+        for _ in range(100):
+            if arena.width() > 100 and arena.height() > 50:
+                break
+            QTest.qWait(10)
         assert arena.width() > 100 and arena.height() > 50
         assert target.property("visible") and cursor.property("visible")
         assert target.width() == pytest.approx(.06 * arena.width())

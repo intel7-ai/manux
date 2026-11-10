@@ -109,6 +109,8 @@ class WorkerJob:
                     continue
                 if event["event"] == "error":
                     self.state["error"] = str(event.get("message", "작업 실패"))
+                    if event.get("code") == "recordings_required":
+                        self.state.update(needs_recordings=True, stage=str(event.get("stage") or "녹화 자료 필요"))
                 elif event["event"] == "done":
                     completed = event
                 else:

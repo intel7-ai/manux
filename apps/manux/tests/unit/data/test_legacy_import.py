@@ -170,3 +170,61 @@ def test_restore_resolves_destination_alias_before_writing_candidate_path(tmp_pa
     monkeypatch.chdir(tmp_path)
     report = restore(Path("old"), Path("new"))
     assert report["candidate"] and pending_model(tmp_path / "new").is_file()
+
+
+def test_dan_model_keeps_reserved_logits_disabled_class_and_spatial_preview(tmp_path):
+    from manux.ml.predictor import load_model
+    from manux.ml.spatial_mlp import SpatialMlpModel
+    from model_library import scan
+    source, dest = tmp_path / "old", tmp_path / "new"
+    recording = source_tree(source)
+    path = source / "models/gesture_tcn.onnx"
+    old_model(path, ["none", "thumb_middle", "thumb_ring", "thumbs_up"], recording, [0, 1, 2, 4])
+    doc = json.loads(path.with_suffix(".json").read_text())
+    doc.update(disabled_gestures=["thumb_middle"], gesture_thresholds={"thumb_ring": .83}, gesture_frames={"thumb_ring": 4})
+    path.with_suffix(".json").write_text(json.dumps(doc))
+    spatial = SpatialMlpModel(np.zeros((2, 96)), np.zeros(2), np.zeros((2, 2)), np.zeros(2), classes=("none", "thumb_ring"))
+    spatial.save(source / "models/spatial_mlp.json")
+    before = load_model(path, "local3d-v1", 133).predictor(np.zeros((15, 133), np.float32))
+    result = restore(source, dest)
+    restored = load_model(pending_model(dest), "local3d-v1", 133)
+    np.testing.assert_allclose(restored.predictor(np.zeros((15, 133), np.float32)), before)
+    assert restored.card.classes[-1] == "thumbs_up" and "thumbs_up" not in restored.card.gestures
+    assert restored.card.raw["class_default_modes"]["thumb_middle"] == "rules"
+    assert restored.card.decisions["thumb_ring"].threshold == .83
+    assert restored.card.decisions["thumb_ring"].frames_in_a_row == 4
+    assert pending_model(dest, kind="spatial").read_bytes() == (source / "models/spatial_mlp.json").read_bytes()
+    assert len(scan(dest / "models/library")) == 2
+    assert result["warnings"] and not (dest / "models/personal/active.json").exists()
+
+
+def test_restore_pad18_without_axes_preserves_original_probabilities(tmp_path):
+    import onnx
+    from manux.ml.predictor import load_model
+    source, dest = tmp_path / "old", tmp_path / "new"
+    recording = source_tree(source)
+    path = source / "models/gesture_tcn.onnx"
+    old_model(path, ["none", "thumb_ring"], recording, [0, 3])
+    graph = onnx.load(path)
+    del graph.graph.node[:]
+    graph.graph.node.append(onnx.helper.make_node("Pad", ["value", "pads"], ["logits"]))
+    graph.graph.initializer.append(onnx.numpy_helper.from_array(np.zeros(4, dtype=np.int64), "pads"))
+    onnx.save(graph, path)
+    expected = load_model(path, "local3d-v1", 133).predictor(np.zeros((15, 133), np.float32))
+    restore(source, dest)
+    candidate = pending_model(dest)
+    assert onnx.load(candidate).opset_import[0].version == 17
+    np.testing.assert_allclose(load_model(candidate, "local3d-v1", 133).predictor(np.zeros((15, 133), np.float32)), expected)
+
+
+def test_import_keeps_unstored_defaults_of_an_existing_profile(tmp_path):
+    source, dest=tmp_path/'old',tmp_path/'new'
+    source_tree(source)
+    (source/'config/gestures.json').write_text(json.dumps({'fist_dpi_multiplier':35.,'click_threshold':.2}))
+    current=Settings(schema(),{'camera.source':'1','pinch.long_press_drag_multiplier':2.})
+    save(current,dest/'config')
+    restore(source,dest,'synthetic')
+    from manux.settings.store import load
+    after=load(schema(),dest/'config')
+    assert after.stored()==current.stored()
+    assert after.get('pinch.fist_dpi_multiplier')==current.get('pinch.fist_dpi_multiplier')

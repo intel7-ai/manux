@@ -26,6 +26,25 @@ AXES = ("person", "posture", "condition")
 MIN_SWIPE_SPEED = 0.03   # palm speed (features 130:132) a swipe's "do" frame needs to count (rasp-jun)
 
 
+def compatible_frames(recording):
+    """Recover catalog gesture IDs in memory; never rewrite the original capture.
+
+    Early collectors recorded task/target but no gesture. Explicit declarations,
+    unknown tasks, other presets and transition/rest labels remain authoritative.
+    """
+    preset = recording.meta.get("preset", "pinch")
+    frames = []
+    for frame in recording.frames:
+        label = frame.get("label") or {}
+        task = BY_KEY.get(label.get("task") or label.get("target"))
+        if (not label.get("gesture") and task is not None and task.gesture
+                and task.label == label.get("target")
+                and (not task.modes or preset in task.modes)):
+            frame = {**frame, "label": {**label, "gesture": task.gesture}}
+        frames.append(frame)
+    return frames
+
+
 @dataclass(frozen=True)
 class Segment:
     """Consecutive frames of one recording with one posture and one physical condition.
@@ -81,7 +100,7 @@ def load(paths: list[Path], *, split: str | None = None, cache_dir: Path | None 
         group = hashlib.sha256(str(person).encode()).hexdigest()[:12] if person else ""
         width, height, _ = recording.frame_size()
         offset = 0
-        for (posture, condition), frames in groupby(recording.frames, _group):
+        for (posture, condition), frames in groupby(compatible_frames(recording), _group):
             batch = list(frames)
             features = (cache.get(batch, height / width, digest, offset) if cache is not None
                         else frame_features(batch, height / width))

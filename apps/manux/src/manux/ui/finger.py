@@ -1,52 +1,42 @@
-"""Finger tracker around the Windows cursor (port of hand-mouse/src/finger_overlay.py, same behaviour).
+"""Geometry for Dan's cursor hand (hand-mouse@49dfaea, src/virtual_hand.py).
 
-Where the fingertips are and what the hand is doing, drawn next to the real cursor so the user does
-not have to look at the camera preview. This module only describes the hand; dashboard.qml draws it.
+Only the display is normalized. The engine still decides cursor movement and gestures.
 """
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Iterable, Optional, Sequence
+from typing import Sequence
 
-TIPS = (4, 8, 12, 16, 20)            # thumb, index, middle, ring, pinky
+SIZE_PX = 110.0  # wrist to middle knuckle, in logical display pixels
 PALM = (0, 5, 9, 13, 17)
-TIP_LIMIT = 4.0                      # palm lengths; a wild landmark cannot fling a dot off screen
-CONTACT_RATIO = 0.35                 # thumb-to-fingertip distance / palm length that counts as a touch
-
-MODES = {"mouse.move": "move", "mouse.left_click": "left", "mouse.drag": "left",
-         "mouse.right_click": "right", "mouse.scroll": "scroll"}
+TIPS = (8, 12, 16, 20)
+OFFSET_LIMIT = 304.0  # keep projections of an edge-on hand inside the overlay
 
 
-def mode_of(actions: Iterable[str]) -> str:
-    for action in actions:
-        if action in MODES:
-            return MODES[action]
-    return "idle"
-
-
-def _clamp(value: float) -> float:
-    return max(-TIP_LIMIT, min(TIP_LIMIT, value))
-
-
-def overlay_frame(landmarks: Sequence[Sequence[float]], mirrored: bool, actions: Iterable[str] = ()
-                  ) -> Optional[Dict[str, Any]]:
-    """Fingertip offsets from the palm centre in palm lengths, the finger touching the thumb (1-4 into
-    `tips`, -1 for none) and a display mode. The user's right is the screen's right: a mirrored
-    preview already is, an unmirrored one is flipped. None when the hand is unusable."""
-    if len(landmarks) < 21:
+def overlay_frame(
+    landmarks: Sequence[Sequence[float]],
+    mirrored: bool,
+    aspect: float,
+    guides: Sequence[tuple[int, str]] = (),
+) -> dict | None:
+    """Project the 21 joints into logical pixels around the palm, like Dan's hand view."""
+    if len(landmarks) != 21 or not math.isfinite(aspect) or aspect <= 0:
         return None
-    try:
-        points = [(float(p[0]), float(p[1])) for p in landmarks[:21]]
-    except (TypeError, ValueError, IndexError):
-        return None
+    flip = 1 if mirrored else -1
+    points = [(flip * p[0], aspect * p[1]) for p in landmarks]
     if not all(math.isfinite(x) and math.isfinite(y) for x, y in points):
+        return None
+    size = math.dist(points[0], points[9])
+    if size < 1e-6:
         return None
     cx = sum(points[i][0] for i in PALM) / len(PALM)
     cy = sum(points[i][1] for i in PALM) / len(PALM)
-    palm = math.dist(points[0], points[9])
-    if palm < 1e-6:
-        return None
-    flip = 1.0 if mirrored else -1.0
-    tips = [[_clamp(flip * (points[i][0] - cx) / palm), _clamp((points[i][1] - cy) / palm)] for i in TIPS]
-    ratio, finger = min((math.dist(points[4], points[tip]) / palm, n) for n, tip in enumerate(TIPS[1:], start=1))
-    return {"tips": tips, "contact": finger if ratio < CONTACT_RATIO else -1, "mode": mode_of(actions)}
+    scale = SIZE_PX / size
+    return {
+        "pts": [
+            round(max(-OFFSET_LIMIT, min(OFFSET_LIMIT, offset * scale)), 1)
+            for x, y in points
+            for offset in (x - cx, y - cy)
+        ],
+        "guides": [[tip, state] for tip, state in guides if tip in TIPS],
+    }

@@ -7,6 +7,7 @@ Dialog {
     objectName: "studioSettings"
     required property var controller
     signal dataRequested()
+    signal phoneRequested()
     signal advancedRequested()
     property var settingRows: []
     property var draft: ({})
@@ -124,8 +125,15 @@ Dialog {
                 ColumnLayout {
                     Layout.fillWidth: true
                     visible: tabs.currentIndex === 2
+                    Button { text: "휴대폰 카메라 연결"; Layout.fillWidth: true; onClicked: settings.phoneRequested() }
                     CheckBox {
-                        text: "커서 옆 손가락 표시"
+                        text: "거리 따라 자동 손 확대 · 이동 보정"
+                        checked: settings.controller.autoDistance
+                        onClicked: settings.controller.setAutoDistance(checked)
+                    }
+                    Label { text: settings.controller.distanceStatus; Layout.fillWidth: true; wrapMode: Text.Wrap; color: "#526575" }
+                    CheckBox {
+                        text: "커서에 가상 손 표시"
                         checked: settings.controller.fingerOverlay
                         onClicked: settings.controller.setFingerOverlay(checked)
                     }

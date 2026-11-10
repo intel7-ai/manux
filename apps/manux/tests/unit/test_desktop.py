@@ -91,6 +91,29 @@ def test_a_missing_camera_is_a_message_not_a_crash(tmp_path):
     runtime.stop()
 
 
+def test_stalled_usb_camera_reconnects_and_recovers_preview(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    import numpy as np
+    import manux.desktop as module
+    from manux.core.contracts import FrameInfo
+    now = [10.0]
+    monkeypatch.setattr(module.time, "perf_counter", lambda: now[0])
+    source = CameraInput(Settings(schema()), tmp_path / "unused.task", source="1")
+    released = []
+    stalled = SimpleNamespace(read=lambda **kwargs: None, release=lambda: released.append(True))
+    source.camera, source._last_camera_frame = stalled, now[0]
+    assert source.read("Right", False) is None and source.camera is stalled
+    now[0] += 3.1
+    assert source.read("Right", False) is None and source.camera is None
+    assert released == [True] and "다시 연결" in source.error
+    # The normal open path observes its retry delay and does not spin on the driver.
+    assert not source._open()
+    source.camera = SimpleNamespace(read=lambda **kwargs: (FrameInfo(0, now[0], 6, 4, True), np.ones((4, 6, 3), dtype=np.uint8)))
+    source.tracker = SimpleNamespace(step=lambda *args: SimpleNamespace(hand=None, hands=(), detect_ms=1.0))
+    assert source.read("Right", False) is not None and not source.error
+    assert source._last_camera_frame == now[0]
+
+
 def windows_runtime(tmp_path, settings):
     from manux.core.contracts import OutputTarget
     from manux.output.windows import WindowsOutputSink
@@ -119,6 +142,37 @@ def test_idle_preview_has_motion_ring_without_control_recording_or_os_input(tmp_
         before, last = deepcopy(pinch.core.__dict__), pinch.last_frame
         runtime.pinch_preview.step(None, {})
         assert pinch.core.__dict__ == before and pinch.last_frame is last
+    finally:
+        runtime.stop()
+
+
+def test_distance_assistance_reaches_windows_and_practice_without_saving_manual_gain(tmp_path):
+    from types import SimpleNamespace
+    from manux.core.contracts import OutputTarget
+    from manux.settings import store
+    settings = Settings(schema(), {"tracking.control_hand": "Right", "cursor.relative_gain_min": 1.25,
+                                   "pinch.long_press_drag_multiplier": 2.})
+    saved = store.save(settings, tmp_path / "config")
+    before = saved.read_bytes()
+    runtime, backend = windows_runtime(tmp_path, settings)
+    runtime.source.distance = SimpleNamespace(gain=2.)
+    runtime.engine.commands.put(SetStage(Stage.MAIN))
+    try:
+        run_frames(runtime, 2)
+        for target in (OutputTarget.WINDOWS, OutputTarget.PRACTICE):
+            assert runtime.engine.sinks[target].config.distance_scale == 2.
+        runtime.source.distance.gain = 1.
+        previous_sequence = runtime.latest()[0]
+        for _ in range(4):
+            runtime.step()
+            if runtime.latest()[0] > previous_sequence:
+                break
+        assert runtime.latest()[0] > previous_sequence
+        assert runtime.engine.sinks[OutputTarget.WINDOWS].config.distance_scale == 1.
+        assert not backend.events  # idle preview still cannot send Windows input
+        assert settings.get("cursor.relative_gain_min") == 1.25
+        assert settings.get("pinch.long_press_drag_multiplier") == 2.
+        assert saved.read_bytes() == before
     finally:
         runtime.stop()
 

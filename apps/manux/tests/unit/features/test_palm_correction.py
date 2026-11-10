@@ -10,8 +10,8 @@ from manux.features.pinch.engine import PinchFrame
 def test_palm_axes_correct_move_and_drag_but_preserve_scroll(action, monkeypatch):
     feature = PinchFeature()
     point = (.6, .7)
-    monkeypatch.setattr(feature.core, "step", lambda *args: PinchFrame(action=action, cursor_point=point))
+    monkeypatch.setattr(feature.core, "step", lambda *args, **kwargs: PinchFrame(action=action, cursor_point=point))
     context = SimpleNamespace(frame=SimpleNamespace(t=1., aspect=.5), settings={"palm_axes": (1., -.5, 0., 1.)})
-    intents = feature.step(SimpleNamespace(landmarks=()), context)
+    intents = feature.step(SimpleNamespace(landmarks=(), world=None), context)
     assert len(intents) == 1
     assert intents[0].point == pytest.approx(point if action == "scroll_grab" else (.57, .7))

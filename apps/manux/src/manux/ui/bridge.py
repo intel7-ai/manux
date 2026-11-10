@@ -484,6 +484,8 @@ class Bridge(QObject):
     trainingStarted = Signal()
     settingsRequested = Signal()
     studioChanged = Signal()
+    phoneCameraChanged = Signal()
+    phoneCameraRequested = Signal()
 
     def __init__(self, runtime, settings: store.Settings, config_dir: Path, *,
                  services: Optional[Dict[str, Callable]] = None, hotkeys=None, hotkey_defaults=None,
@@ -495,6 +497,8 @@ class Bridge(QObject):
         self.config_dir = Path(config_dir)
         self.services = services or {}
         self.layout = layout
+        self._phone_view = {"available": False, "enabled": False, "status": "휴대폰 연결 준비 중"}
+        self._phone_qr_url = ""
         self._palm_cal = None
         self._palm_axes = None
         self._palm_hint = ""
@@ -524,6 +528,7 @@ class Bridge(QObject):
         self.click_style = settings.get("pointer.click_style") if settings.get("pointer.click_style") in CLICK_STYLES else "pinch"
         self.pointer_anchor = settings.get("pointer.anchor") if settings.get("pointer.anchor") in ("index", "palm") else "index"
         self.hand_crop = bool(settings.get("tracking.hand_crop"))
+        self.distance_status = "자동 거리 보정 · 손 찾는 중" if settings.get("tracking.auto_distance") else "자동 거리 보정 꺼짐"
         self.finger_overlay = self.preferences.value("fingerOverlay", False, type=bool)
         self.overlay_visible = False
         self.overlay_corner = "top-right"
@@ -638,6 +643,8 @@ class Bridge(QObject):
         self.engine = QQmlApplicationEngine()
         self.provider = CameraImage()
         self.engine.addImageProvider("vision", self.provider)
+        self.phone_qr_provider = CameraImage()
+        self.engine.addImageProvider("phoneqr", self.phone_qr_provider)
         self.engine.rootContext().setContextProperty("dashboard", self)
         qml = QML.parent / "studio" / "dashboard.qml" if self.layout == "studio" else QML
         self.engine.load(QUrl.fromLocalFile(str(qml)))
@@ -650,6 +657,59 @@ class Bridge(QObject):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
         self.timer.start(15)
+        make_screen_preview = self.services.get("screen_preview")
+        self.screen_preview = make_screen_preview(self) if make_screen_preview else None
+        if self.services.get("phone_dialog"):
+            QTimer.singleShot(200, self.phoneCameraRequested.emit)
+
+    @Property("QVariantMap", notify=phoneCameraChanged)
+    def phoneCamera(self):
+        return self._phone_view
+
+    @Property(str, notify=phoneCameraChanged)
+    def phoneQrUrl(self):
+        return self._phone_qr_url
+
+    @Slot(bool)
+    def setPhoneDialogOpen(self, opened):
+        self._pause()
+        self._send(SetBusy("connecting", opened))
+
+    @Slot(str, str)
+    def phoneCameraAction(self, action, host):
+        self._pause()
+        self.runtime.request(RuntimeRequest("phone_camera", action, {"host": host}))
+
+    @Slot()
+    def copyPhoneUrl(self):
+        self.application.clipboard().setText(self._phone_view.get("url", ""))
+
+    def _update_phone(self, value):
+        value = dict(value or {"available": False, "enabled": False, "status": "녹화 재생에서는 휴대폰 연결을 사용할 수 없습니다."})
+        if value == self._phone_view:
+            return
+        url = value.get("url", "")
+        if url != self._phone_view.get("url", ""):
+            self._phone_qr_url = ""
+            self.phone_qr_provider.image = QImage()
+            if url:
+                try:
+                    import qrcode
+                    qr = qrcode.QRCode(border=4)
+                    qr.add_data(url)  # URL only: pairing code/token never enter the QR.
+                    qr.make(fit=True)
+                    matrix = qr.get_matrix()
+                    size = len(matrix)
+                    image = QImage(size, size, QImage.Format.Format_RGB32)
+                    for y, row in enumerate(matrix):
+                        for x, black in enumerate(row):
+                            image.setPixel(x, y, 0xff000000 if black else 0xffffffff)
+                    self.phone_qr_provider.image = image.scaled(size*6, size*6)
+                    self._phone_qr_url = "image://phoneqr/" + str(time.monotonic_ns())
+                except ImportError:
+                    pass  # The selectable URL remains usable without the optional QR extra.
+        self._phone_view = value
+        self.phoneCameraChanged.emit()
 
     # Original Rasp-Jun studio presentation and calibration adapters.
     @Property(str, constant=True)
@@ -832,6 +892,7 @@ class Bridge(QObject):
         """v0.3 behaviour: a settings change pauses control; the user turns it on again."""
         # V may have enabled the engine before the next UI poll updates the display.
         self.paused = True
+        self._set_finger_frame(None)
         self._send(SetControl(False))
 
     @Slot(bool)
@@ -848,6 +909,7 @@ class Bridge(QObject):
         self._send(SetStage(STAGES[name]))
         if name != "main":
             self.paused = True
+            self._set_finger_frame(None)
         self.stateChanged.emit()
 
     def _apply_profile(self) -> None:
@@ -1023,12 +1085,29 @@ class Bridge(QObject):
     def handCrop(self):
         return self.hand_crop
 
+    @Property(bool, notify=stateChanged)
+    def autoDistance(self):
+        return bool(self.settings.get("tracking.auto_distance"))
+
+    @Property(str, notify=stateChanged)
+    def distanceStatus(self):
+        return self.distance_status
+
+    @Slot(bool)
+    def setAutoDistance(self, enabled):
+        if bool(enabled) != self.autoDistance:
+            self._pause()
+            self._set("tracking.auto_distance", bool(enabled))
+            self.stateChanged.emit()
+
     # ------------------------------------------------------------------ finger tracker HUD
     @Slot(bool)
     def setFingerOverlay(self, enabled):
         if bool(enabled) != self.finger_overlay:
             self.finger_overlay = bool(enabled)
             self.preferences.setValue("fingerOverlay", self.finger_overlay)
+            if not enabled:
+                self._set_finger_frame(None)
             self.stateChanged.emit()
 
     @Property(bool, notify=stateChanged)
@@ -1039,8 +1118,16 @@ class Bridge(QObject):
     def fingerFrame(self):
         if self.finger_frame is None:
             return {}
+        if self.finger_frame.get("lost"):
+            return self.finger_frame
         cursor = QCursor.pos()
         return dict(self.finger_frame, cursor=[cursor.x(), cursor.y()])
+
+    def _set_finger_frame(self, frame):
+        # Re-sample the cursor on live frames even when the joint offsets do not change.
+        if frame != self.finger_frame or (frame is not None and "pts" in frame):
+            self.finger_frame = frame
+            self.fingerFrameChanged.emit()
 
     # ------------------------------------------------------------------ "that was wrong" / logs
     @Slot()
@@ -2652,8 +2739,11 @@ class Bridge(QObject):
             elif 49 <= key <= 57:  # keys '1'..'9' (supports 9th class: both click)
                 self.selectStudioActionByNumber(key - 48)
         elif self.stage_name == "main" and key == KEY_SPACE:
-            self.paused = not self.paused
-            self._send(SetControl(not self.paused))
+            if self.paused:
+                self.paused = False
+                self._send(SetControl(True))
+            else:
+                self._pause()
         elif self.stage_name == "main" and key == KEY_ESC:
             self._pause()
 
@@ -2787,6 +2877,10 @@ class Bridge(QObject):
 
     def apply_view(self, view: ViewFrame) -> None:
         self._preview_view = view
+        self._update_phone(view.phone)
+        if view.distance and view.distance.get("status") != self.distance_status:
+            self.distance_status = view.distance["status"]
+            self.stateChanged.emit()
         # Notify overlays even with no image so a lost hand cannot leave old joints behind.
         self.previewChanged.emit()
         if self._pointer_setup_view and view.pointer_setup is not None:
@@ -2870,11 +2964,14 @@ class Bridge(QObject):
             elif now_t - getattr(self, "_last_studio_emit", 0.0) >= 0.033:
                 self._last_studio_emit = now_t
                 self.studioChanged.emit()
-        frame = (overlay_frame(view.landmarks, view.mirrored, view.actions)
-                 if self.finger_overlay and view.landmarks is not None and not self.paused else None)
-        if frame is not None or self.finger_frame is not None:
-            self.finger_frame = frame
-            self.fingerFrameChanged.emit()
+        frame = None
+        if (self.finger_overlay and self.stage_name == "main" and not self.paused and view.camera_ok
+                and snap is not None and snap.stage is Stage.MAIN and snap.control_on and not snap.busy):
+            if view.landmarks is not None:
+                frame = overlay_frame(view.landmarks, view.mirrored, view.aspect, view.preview_guides)
+            if frame is None and self.finger_frame is not None:
+                frame = {"lost": True}
+        self._set_finger_frame(frame)
         self._show(view)
 
     def _show(self, view: ViewFrame) -> None:
@@ -2910,6 +3007,10 @@ class Bridge(QObject):
         if (state, live) != (self.state, self.live_gesture):
             self.state, self.live_gesture = state, live
             self.liveChanged.emit()
+        if not view.camera_ok and not self.provider.image.isNull():
+            self.provider.image = QImage()
+            self.sequence += 1
+            self.previewChanged.emit()
         if view.image is None or not self.window.isVisible():
             return
         now = time.perf_counter()
@@ -2932,6 +3033,8 @@ class Bridge(QObject):
         self._closed_qml = True
         self.timer.stop()
         self.training_timer.stop()
+        if self.screen_preview is not None:
+            self.screen_preview.close()
         self.studio.close()
         self.tc.close()
         if self.hotkeys is not None:

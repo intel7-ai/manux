@@ -74,6 +74,7 @@ class RemoteCamera:
         self.dropped_frames = 0
         self.last_latency_ms = None
         self.facing = None
+        self._distance_hint = None
 
     def connect(self):
         with self._cond:
@@ -84,6 +85,7 @@ class RemoteCamera:
             self._last_receive = self._clock()
             self._last_read, self._fps, self._mode = None, 0.0, None
             self.last_latency_ms, self.facing = None, None
+            self._distance_hint = None
             self._cond.notify_all()
 
     def disconnect(self):
@@ -92,12 +94,24 @@ class RemoteCamera:
             self._connected = False
             self._latest = None
             self._mode, self._fps, self.last_latency_ms = None, 0.0, None
+            self._distance_hint = None
             self._cond.notify_all()
 
     def open(self):
         return self.is_open  # the authenticated link owns connect(), not the consumer
 
     release = disconnect
+
+    def set_distance_hint(self, enabled, detail, zoom, gain):
+        with self._cond:
+            self._distance_hint = (self._clock(), dict(enabled=bool(enabled),
+                detail=max(0, min(2, int(detail))), zoom=round(max(1., min(8., float(zoom))), 1),
+                gain=round(max(1., min(2.5, float(gain))), 1)))
+
+    def distance_hint(self):
+        with self._cond:
+            hint = self._distance_hint
+            return dict(hint[1]) if self._connected and hint and self._clock() - hint[0] < .75 else None
 
     @property
     def is_open(self):

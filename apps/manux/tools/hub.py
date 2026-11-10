@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -29,6 +30,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Protocol, Sequence, Tuple
 
 from manux.data.recorder import FORBIDDEN_META, public_source
+from manux.data.catalog import BY_KEY
 from manux.data.recording import Recording, RecordingError, read
 from manux.ml.card import ModelCard, ModelError, card_path, load_card
 from manux.perception.local3d import FEATURE_VERSION, FEATURES
@@ -192,6 +194,9 @@ def validate_recording(path: Path, root: Optional[Path] = None) -> ValidatedReco
         "tasks": tasks,
         "conditions": conditions,
     }
+    source_sha = (rec.meta.get("imported_from") or {}).get("sha256")
+    if isinstance(source_sha, str) and re.fullmatch(r"[0-9a-f]{64}", source_sha):
+        entry["source_sha256"] = source_sha
     return ValidatedRecording(path=path, remote_path=remote, sha256=sha, size_bytes=size, entry=entry)
 
 
@@ -342,7 +347,8 @@ def push_to_hub(hub: RemoteHub, recordings_dir: Path, *,
     remote_entries = hub.read_manifest()
     remote_shas = {str(r.get("sha256")) for r in remote_entries if r.get("sha256")}
 
-    new_recs = [r for r in valid_recs if r.sha256 not in remote_shas]
+    new_recs = [r for r in valid_recs if r.sha256 not in remote_shas
+                and r.entry.get("source_sha256") not in remote_shas]
     new_models = [m for m in valid_models if m.onnx_sha256 not in remote_shas]
     uploads: List[Tuple[Path, str]] = [(r.path, r.remote_path) for r in new_recs]
     for m in new_models:
@@ -367,6 +373,57 @@ def push_to_hub(hub: RemoteHub, recordings_dir: Path, *,
     }
 
 
+def prepare_download(candidate: Path, row: Mapping[str, Any], recordings_dir: Path) -> Path:
+    """Validate first; migrate only missing legacy identity fields, preserving exact originals.
+
+    Legacy focused captures used the task name as the manifest preset, while their meta
+    lacked person/preset/split. Never relabel an explicit role, identity, or gesture frame.
+    """
+    checked = validate_recording(candidate)
+    if checked.sha256 != row.get("sha256"):
+        raise HubError("remote recording does not match its manifest hash")
+    if all(checked.entry[key] == row.get(key) for key in ("person", "preset", "split")):
+        return candidate
+    rec = read(candidate)
+    meta = rec.meta
+    person = str(row.get("person") or "")
+    remote_preset = row.get("preset")
+    preset = remote_preset
+    if preset not in ("pinch", "pointer", "trigger"):
+        task = BY_KEY.get(preset)
+        if task is None:
+            raise HubError("unknown legacy recording preset")
+        preset = task.modes[0] if len(task.modes) == 1 else "pinch"
+    if (not re.fullmatch(r"[a-z0-9_-]{1,32}", person)
+            or (meta.get("person") or meta.get("profile")) and checked.entry["person"] != person
+            or meta.get("preset") and checked.entry["preset"] != remote_preset
+            or checked.entry["split"] != row.get("split")):
+        raise HubError("remote recording does not match its manifest metadata")
+    original = recordings_dir.parent / "imports/hub-originals" / (checked.sha256 + ".jsonl.gz")
+    original.parent.mkdir(parents=True, exist_ok=True)
+    if original.exists():
+        if file_sha256(original) != checked.sha256:
+            raise HubError("archived original has changed; keeping local files")
+    else:
+        # Exclusive creation keeps another downloader's original intact.
+        try:
+            with original.open("xb") as out:
+                out.write(candidate.read_bytes())
+        except FileExistsError:
+            if file_sha256(original) != checked.sha256:
+                raise HubError("archived original conflicts with download")
+    converted = candidate.with_name("imported-" + candidate.name)
+    with gzip.open(candidate, "rt", encoding="utf-8") as src, gzip.open(converted, "wt", encoding="utf-8") as dst:
+        first = json.loads(next(src))
+        first.update(person=person, profile=person, preset=preset, split=checked.entry["split"],
+                     imported_from={"sha256": checked.sha256, "file": candidate.name,
+                                    "manifest_preset": remote_preset, "role_assigned": not bool(meta.get("split"))})
+        dst.write(json.dumps(first, ensure_ascii=False) + "\n")
+        shutil.copyfileobj(src, dst)
+    validate_recording(converted)
+    return converted
+
+
 def pull_from_hub(hub: RemoteHub, recordings_dir: Path, *,
                   persons: Sequence[str] = (),
                   presets: Sequence[str] = (),
@@ -383,6 +440,7 @@ def pull_from_hub(hub: RemoteHub, recordings_dir: Path, *,
     )
     local_recs, _ = scan_local_recordings(recordings_dir)
     local_shas = {r.sha256 for r in local_recs}
+    local_shas.update(r.entry["source_sha256"] for r in local_recs if r.entry.get("source_sha256"))
 
     to_download = [r for r in remote_entries if str(r.get("sha256")) not in local_shas]
     downloaded: List[Path] = []
@@ -402,10 +460,7 @@ def pull_from_hub(hub: RemoteHub, recordings_dir: Path, *,
             with tempfile.TemporaryDirectory(prefix=".hub-", dir=dest.parent) as staging:
                 candidate = Path(staging) / dest.name
                 hub.download_file(remote_path, candidate)
-                checked = validate_recording(candidate)
-                if checked.sha256 != row.get("sha256") or any(
-                        checked.entry[key] != row.get(key) for key in ("person", "preset", "split")):
-                    raise HubError("remote recording does not match its manifest")
+                candidate = prepare_download(candidate, row, recordings_dir)
                 # Exclusive destination creation: a second downloader cannot overwrite local work.
                 os.link(candidate, dest)
             downloaded.append(dest)

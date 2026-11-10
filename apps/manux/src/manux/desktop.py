@@ -25,7 +25,7 @@ from uuid import uuid4
 
 from manux.actions.bindings import Binding
 from manux.app import _FEATURES, _camera_config, build_engine, schema, pipeline_parts, read_bindings, training_specs
-from manux.capture.camera import LatestFrameCamera, brightness
+from manux.capture.camera import LatestFrameCamera, brightness, transform
 from manux.core.contracts import FrameInfo, HandObservation, OutputTarget, PracticeEvent, RecordingIdentity, RuntimeRequest, Stage
 from manux.data.catalog import BY_KEY, tasks_for
 from manux.data.guided import GuidedSession
@@ -58,6 +58,7 @@ from manux.ui.view import SeenHand, ViewFrame
 
 POINTER_MOVE = "pointer.move"
 CURSOR_BASE_KEYS = ("relative_gain_min", "relative_gain_max", "smoothing")
+PHONE_PREVIEW_GRACE = 2.0  # display only; Engine.frame_missing still runs on every empty read
 
 
 class CameraInput:
@@ -72,6 +73,38 @@ class CameraInput:
         self.landmarker = None
         self.error = ""
         self._next_try = 0.0
+        self._last_camera_frame = 0.0
+        self.phone = None  # explicit opt-in; configured only by the desktop composition
+        from manux.tracking.distance import DistanceAssist
+        self.distance = DistanceAssist()
+        self.distance_zoom = 1.
+
+    def phone_action(self, action, host=""):
+        if self.phone is None:
+            raise ValueError("이 실행에서는 휴대폰 카메라를 사용할 수 없습니다.")
+        self.phone.command(action, host)
+        if action in ("start", "local"):
+            if self.camera is not None:
+                self.camera.release()
+            self.camera = None
+            self._next_try = 0.
+            self.distance.reset()
+            if self.tracker is not None:
+                self.tracker.reset()
+
+    def phone_view(self):
+        return self.phone.view() if self.phone is not None else None
+
+    def distance_view(self):
+        enabled = self.settings.get("tracking.auto_distance")
+        if not enabled:
+            status = "자동 거리 보정 꺼짐"
+        elif self.distance.last_valid is None:
+            status = "자동 거리 보정 · 손 찾는 중"
+        else:
+            status = f"손 인식 확대 {self.distance_zoom:.1f}배 · 이동 보정 {self.distance.gain:.1f}배"
+        return dict(enabled=enabled, zoom=self.distance_zoom, gain=self.distance.gain,
+                    palm_fraction=self.distance.fraction, status=status)
 
     def _open(self) -> bool:
         now = time.perf_counter()
@@ -85,11 +118,14 @@ class CameraInput:
             if self.landmarker is None:
                 self.landmarker = MediaPipeLandmarker(self.model_path, **options_from(track))
                 self.tracker = HandTracker(self.landmarker, use_crop=track["hand_crop"], min_score=track["min_hand_score"])
-            camera = LatestFrameCamera(_camera_config(self.settings, self.source))
-            if not camera.open():
+            remote = self.phone.link if self.phone is not None else None
+            camera = remote.source if remote is not None else LatestFrameCamera(_camera_config(self.settings, self.source))
+            if remote is None and not camera.open():
                 self.error = "카메라를 찾을 수 없습니다. 연결을 확인하세요."
                 return False
-            self.camera, self.error = camera, ""
+            self.camera = camera
+            self._last_camera_frame = time.perf_counter()
+            self.error = "카메라 영상을 연결하고 있습니다."
             return True
         except Exception as exc:                       # missing extras, model download failure ...
             self.error = f"카메라·손 인식을 시작하지 못했습니다: {exc}"
@@ -101,10 +137,44 @@ class CameraInput:
             return None
         item = self.camera.read(timeout=0.05)
         if item is None:
+            now = time.perf_counter()
+            self.distance.update(None, now, self.settings.get("tracking.auto_distance"))
+            if self.phone is not None and self.phone.link is not None:
+                mode = self.camera.actual_mode()  # None before the first valid frame or after disconnection
+                if mode is not None and now - self._last_camera_frame < PHONE_PREVIEW_GRACE:
+                    # A normal Wi-Fi gap is not a lost camera. Keep the displayed image,
+                    # but return None so tracking never processes that image again.
+                    self.error = ""
+                else:
+                    self.error = ("휴대폰 영상이 멈췄습니다. 폰의 브라우저 화면을 확인하세요."
+                                  if mode is not None else self.phone.view()["status"])
+                return None
+            if now - self._last_camera_frame >= 3.0:
+                self.camera.release()
+                self.camera = None
+                self._next_try = now + 1.0
+                self.error = "카메라 영상이 끊겨 다시 연결 중입니다. 다른 앱의 카메라 사용과 USB 연결을 확인하세요."
             return None
         frame, image = item
+        self._last_camera_frame = time.perf_counter()
+        self.error = ""
+        if self.phone is not None and self.phone.link is not None:
+            mirror = self.settings.get("camera.mirror")
+            if frame.mirrored != mirror:
+                # RemoteCamera applied the phone's front/rear metadata. Normalize to
+                # the PC setting before tracking, preserving mirror-then-rotate order.
+                image = transform(image, False, (-frame.rotation) % 360)
+                image = transform(image, True, frame.rotation)
+                frame = replace(frame, mirrored=mirror)
         self.tracker.use_crop = use_crop
+        enabled = self.settings.get("tracking.auto_distance")
+        self.tracker.auto_distance = enabled
         result = self.tracker.step(frame, image, control_hand or "Right")
+        self.distance.update(result.hand, frame.t, enabled)
+        self.distance_zoom = getattr(result, "zoom", 1.)
+        if hasattr(self.camera, "set_distance_hint"):
+            detail = (2 if self.distance.gain > 1.2 else 0) if result.hand is not None else 1
+            self.camera.set_distance_hint(enabled, detail, self.distance_zoom, self.distance.gain)
         from manux.tracking.selection import physical_side
         hands = tuple(SeenHand(physical_side(h, frame.mirrored, self.tracker.min_score), h.score) for h in result.hands)
         return frame, image, result.hand, hands, result.detect_ms
@@ -122,6 +192,8 @@ class CameraInput:
             self.camera.release()
         if self.landmarker is not None:
             self.landmarker.close()
+        if self.phone is not None:
+            self.phone.close()
 
 
 class ReplayInput:
@@ -618,7 +690,8 @@ class DesktopRuntime:
     def stop(self) -> None:
         self._stop.set()
         if self._thread is not None:
-            self._thread.join(timeout=2.0)
+            # A queued phone start/stop can wait for bounded HTTPS thread setup/cleanup.
+            self._thread.join(timeout=12.0 if getattr(self.source, "phone", None) is not None else 2.0)
         try:
             self._stop_recording(time.perf_counter())
         except Exception:
@@ -641,6 +714,12 @@ class DesktopRuntime:
             return self._seq, self._latest
 
     def _publish(self, view: ViewFrame) -> None:
+        phone_view = getattr(self.source, "phone_view", None)
+        if phone_view is not None:
+            view = replace(view, phone=phone_view())
+        distance_view = getattr(self.source, "distance_view", None)
+        if distance_view is not None:
+            view = replace(view, distance=distance_view())
         with self._lock:
             self._latest = view
             self._seq += 1
@@ -685,9 +764,12 @@ class DesktopRuntime:
             if output is not None and hasattr(output, "set_click_contact"):
                 output.set_click_contact(contact)
         self._configure_cursor_for_frame(frame, sink if sink is not None else practice_sink)
+        distance_scale = getattr(getattr(self.source, "distance", None), "gain", 1.)
+        if sink is not None and getattr(sink, "config", None) is not None:
+            sink.configure(replace(sink.config, distance_scale=distance_scale))
         if practice_sink is not None and practice_sink.config is not None:
             practice_sink.update_config(replace(getattr(sink, "config", None) or practice_sink.config,
-                                                frame_aspect=frame.aspect))
+                                                frame_aspect=frame.aspect, distance_scale=distance_scale))
         snap = self.engine.step(frame, hand)
         pointer_setup = self._pointer_setup_frame(frame, hand, pitch, snap.stage, sink)
         rule_preview = None
@@ -797,6 +879,8 @@ class DesktopRuntime:
                 self.spatial_guard.reset("settings")
         while not self._runtime_requests.empty():
             command = self._runtime_requests.get_nowait()
+            if command.kind == "phone_camera":
+                self._phone_request(command)
             if command.kind == "pointer_setup":
                 if command.path == "skip":
                     self._pointer_setup = self._pointer_setup_action = None
@@ -853,6 +937,25 @@ class DesktopRuntime:
                 self._model_token = None
                 if not self.reload_model(force=True):
                     self.model_store, self._model_token, self._attempted_model_token = previous
+
+    def _phone_request(self, command):
+        phone = getattr(self.source, "phone", None)
+        if phone is None:
+            return
+        # Source changes never mix two cameras into a recording/enrollment/calibration attempt.
+        self.engine.pause_for_settings()
+        if ((self._rec_want[0] != "off" or self.engine.state.busy - {"connecting"} or self._pointer_setup is not None)
+                and command.path in ("start", "local")):
+            phone.note = "녹화·등록·보정을 마친 뒤 카메라를 바꾸세요."
+            return
+        self.pinch_preview = PinchPreview()
+        try:
+            self.source.phone_action(command.path, str(command.values.get("host", "")))
+        except Exception as error:
+            phone.note = ("휴대폰 연결을 시작하지 못했습니다. link·qr 설치와 PC의 LAN 주소/8443 포트를 확인하세요. "
+                          + type(error).__name__)
+        self._metrics = ("", -1, False)
+        self._publish(ViewFrame(None, camera_ok=False, message=phone.view()["status"]))
 
     def _apply_sensitivity(self, command):
         from manux.settings.sensitivity import prepare
@@ -968,7 +1071,8 @@ def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, t
     elif tcn_model is not None:
         eligible = {gid for module, _ in _FEATURES for gid in module.DEFAULT_BINDINGS
                     if module.GESTURE_PHASES[gid] & {"tap", "begin"}}
-        gate = tcn_gate.create_gate(Path(tcn_model), settings.section("tcn_gate"), eligible=eligible)
+        gate = tcn_gate.create_gate(Path(tcn_model), settings.section("tcn_gate"), eligible=eligible,
+            spatial_model=spatial_pose_model if settings.get("tcn_gate.spatial_hybrid") else None)
         filters = (gate.gate,) if gate.gate is not None else ()
         status = "TCN 확인기" if filters else f"TCN 확인기 꺼짐 · {gate.text}"
         if filters:
@@ -1085,6 +1189,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="MANUX v0.4 desktop app")
     parser.add_argument("--replay", type=Path, help="play a recording instead of the camera")
     parser.add_argument("--source", help="camera index or stream URL")
+    parser.add_argument("--phone-web", action="store_true", help="open phone pairing in the desktop app")
+    parser.add_argument("--phone-host", default="", help="private LAN address for phone HTTPS (default: auto)")
     parser.add_argument("--hand-model", type=Path)
     parser.add_argument("--tcn-model", type=Path)
     parser.add_argument("--tcn-store", type=Path, help="verified personal model store (hot reload)")
@@ -1117,7 +1223,11 @@ def main(argv=None) -> int:
     preview = pending_model(paths.data_dir) if args.tcn_model is None and args.tcn_store is None else None
     try:
         source = ReplayInput(args.replay) if args.replay else CameraInput(
-            settings, args.hand_model or default_hand_model(paths), args.source)
+            settings, args.hand_model or default_hand_model(paths), None if args.source == "phone" else args.source)
+        if isinstance(source, CameraInput):
+            from manux.link.session import PhoneSession
+            from manux.link.screen import ScreenRequests
+            source.phone = PhoneSession(paths.data_dir, screen=ScreenRequests())
     except (OSError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 1
@@ -1132,6 +1242,8 @@ def main(argv=None) -> int:
     spatial_model_path = models_dir / active_model_file
     if not spatial_model_path.is_file():
         spatial_model_path = models_dir / "spatial_pose_mlp.json"
+    if not spatial_model_path.is_file():
+        spatial_model_path = pending_model(paths.data_dir, kind="spatial") or spatial_model_path
 
     init_spatial_model: Optional[SpatialMlpModel] = None
     if spatial_model_path.is_file():
@@ -1154,6 +1266,8 @@ def main(argv=None) -> int:
                         binding_overrides=read_bindings(args.bindings), policy_store=policy_store,
                         spatial_pose_model=init_spatial_model)
         runtime.model_status = "가져온 모델 읽기 실패 · 학습센터에서 복구 상태를 확인하세요"
+    if args.phone_web or args.source == "phone":
+        runtime.request(RuntimeRequest("phone_camera", "start", {"host": args.phone_host}))
     runtime.pose_model = paths.app_dir / "models" / "pose_landmarker_lite.task"
     runtime.pointer_setup_dir = paths.config_dir
     runtime.log_dir = paths.log_dir
@@ -1166,6 +1280,7 @@ def main(argv=None) -> int:
     from manux.features.pointer.workspace import pointer_axes
     from manux.platform import hotkeys
     from manux.platform.tray import QtTray
+    from manux.platform.screen_preview import ScreenPreview
     from manux.ui.bridge import run
     tc = TrainingCenterService(paths.config_dir, paths.data_dir, paths.recordings_dir, model_path=args.tcn_model,
                                store_dir=args.tcn_store, policy_store=policy_store, on_policy=lambda: runtime.request(RuntimeRequest("tcn_policy")),
@@ -1186,6 +1301,9 @@ def main(argv=None) -> int:
                    "pointer_axes": pointer_axes,
                    "export_logs": lambda metrics: export_logs(paths, metrics, info.label),
                    "training_center": tc,
+                   "phone_dialog": args.phone_web or args.source == "phone",
+                   "screen_preview": (lambda parent: ScreenPreview(parent, take=source.phone.screen.take,
+                                        complete=source.phone.screen.complete)) if isinstance(source, CameraInput) else None,
                    "pose_studio": studio,
                    "studio_categories": lambda: list(STUDIO_CATEGORIES),
                    "studio_actions": lambda: list(STUDIO_ACTIONS),
