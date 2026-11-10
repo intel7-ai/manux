@@ -24,6 +24,8 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
+from manux.perception.pinch_contact import clear_pinky_contact, world_tip_distances
+
 Pt = Tuple[float, float, float]
 
 WRIST = 0
@@ -44,20 +46,6 @@ SMALL_PALM_IMAGE_SPAN = .12  # Below this span, projected tip overlap can latch 
 CONTACT_RELEASE_GRACE = .12  # Confirmed 3D contact tolerates a brief estimate dropout.
 DRAG_DISAGREEMENT_GRACE = .22  # Allow a brief depth/image disagreement while dragging.
 PINKY_REARM_TIME = .15       # Window switching needs a fresh, fully released contact episode.
-
-
-def world_tip_distances(world: Optional[Sequence[Pt]]) -> Optional[Dict[str, float]]:
-    """Distance-only 3D evidence: translation, rotation and hand size do not change it."""
-    if world is None or len(world) != 21:
-        return None
-    if any(len(p) != 3 or not all(math.isfinite(v) for v in p) for p in world):
-        return None
-    scale = math.dist(world[WRIST], world[MIDDLE_MCP])
-    if scale <= 1e-6:
-        return None
-    return {name: math.dist(world[THUMB_TIP], world[index]) / scale
-            for name, index in (("index", INDEX_TIP), ("middle", MIDDLE_TIP),
-                                ("ring", RING_TIP), ("pinky", PINKY_TIP))}
 
 
 def _middle_distal_distance(world: Sequence[Pt]) -> float:
@@ -573,10 +561,7 @@ class PinchCore:
                                  and (curl_ratio > tuck or touching))
                 keep[finger] = distance <= CLICK_WORLD_RELEASE
             pinky_distance = world_distances["pinky"]
-            other_distance = min(world_distances[f] for f in ("index", "middle", "ring"))
-            entry["pinky"] = (entry["pinky"] and pinky_distance <= CLICK_WORLD_FOLDED
-                               and pinky_distance < other_distance * min(neighbor_ratio, .75)
-                               and other_distance - pinky_distance >= .05)
+            entry["pinky"] = entry["pinky"] and clear_pinky_contact(world_distances, neighbor_ratio)
             keep["pinky"] = pinky_distance <= CLICK_WORLD_RELEASE
         middle_distal_hold = False
         if world_distances is not None and self._long_fired.get("middle", False) and not keep["middle"]:

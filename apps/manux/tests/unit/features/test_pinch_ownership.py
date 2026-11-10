@@ -129,3 +129,37 @@ def test_drag_can_roll_from_middle_tip_to_side_of_its_last_segment():
 ])
 def test_a_clearly_released_click_does_not_swallow_the_other_finger(first, second, wanted):
     assert taps(feed(PinchFeature(), [pose(first)] * 5 + [pose(second)] * 2)) == wanted
+
+
+def test_windows_drag_survives_v_candidate_and_releases_on_tracking_loss():
+    from manux.app import pipeline_parts
+    from manux.core.contracts import OutputTarget, Stage
+    from manux.engine.commands import SetControl, SetStage
+    from manux.engine.pipeline import Engine, EngineConfig
+    from manux.output.null import NullSink
+    from manux.output.windows.backend import FakeBackend
+    from manux.output.windows.sink import WindowsOutputSink
+    from manux.platform.monitors import ScreenLayout
+    from test_control import v_hand
+
+    features, router, sources = pipeline_parts()
+    backend = FakeBackend()
+    sink = WindowsOutputSink(backend, ScreenLayout.single(1920, 1080), threaded=False)
+    engine = Engine(features, (), router, {OutputTarget.NONE: NullSink(), OutputTarget.WINDOWS: sink},
+                    lambda _: {}, EngineConfig(base_mode="pinch"), gesture_sources=sources)
+    engine.commands.put(SetStage(Stage.MAIN))
+    engine.commands.put(SetControl(True))
+    hand, world = pose("middle")
+    try:
+        for index in range(52):
+            image = hand if index < 40 else v_hand()
+            observation = replace(H.obs(1 + index / 30, image), world=world)
+            snapshot = engine.step(observation.frame, observation)
+            assert not snapshot.errors
+            if index >= 39:
+                assert backend.buttons_down == {"left"}
+        engine.frame_missing(2.75)
+        engine.frame_missing(3.10)
+        assert not backend.buttons_down
+    finally:
+        engine.shutdown()

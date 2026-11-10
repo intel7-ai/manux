@@ -7,6 +7,7 @@ from typing import Optional
 from manux.core.contracts import Activity, FrameContext, HandObservation, Intent, Stage
 from manux.perception.spatial_features import extract_spatial_features
 from manux.perception.pose_angles import observation_pose_angles
+from manux.perception.pinch_contact import clear_pinky_contact, world_tip_distances
 
 ID = "control"
 V_SIGN = "control.v_sign"
@@ -45,9 +46,14 @@ def is_v_sign(hand: HandObservation, ctx: FrameContext) -> bool:
         return False
     ratios = [distance(0, tip) / max(1e-6, distance(0, mcp))
               for mcp, tip in ((5, 8), (9, 12), (13, 16), (17, 20))]
-    return (min(ratios[:2]) >= _value(ctx, "extended_ratio")
+    v_geometry = (min(ratios[:2]) >= _value(ctx, "extended_ratio")
             and max(ratios[2:]) <= _value(ctx, "folded_ratio")
             and min(distance(4, 13), distance(4, 17)) / palm <= _value(ctx, "thumb_tuck"))
+    if not v_geometry:
+        return False
+    # Pinky pinch and V can have the same projected outline. Check actual tip contact.
+    contacts = world_tip_distances(hand.world)
+    return contacts is None or not clear_pinky_contact(contacts)
 
 
 class ControlFeature:

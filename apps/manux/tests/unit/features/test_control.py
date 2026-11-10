@@ -58,6 +58,19 @@ def test_other_shapes_do_not_toggle(shape):
         assert not step(f, n / 20, shape())
 
 
+def test_v_outline_with_clear_depth_contact_at_pinky_does_not_claim_or_toggle():
+    points = tuple(v_hand())
+    world = list(points)
+    world[20] = (world[4][0], world[4][1], world[4][2] + .005)
+    control = ControlFeature()
+    for n in range(25):
+        frame = FrameInfo(n, n / 20, 1280, 720, True)
+        ctx = FrameContext(frame, Stage.MAIN, OutputTarget.WINDOWS, "pinch")
+        hand = HandObservation(frame, points, "Right", .9, world=tuple(world))
+        assert not control.step(hand, ctx)
+        assert not control.activity().holding
+
+
 def test_camera_gap_and_no_hand_break_hold():
     f = ControlFeature()
     step(f, 0)

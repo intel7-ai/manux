@@ -10,11 +10,15 @@ from manux.features.control import ControlFeature, V_SIGN
 class Sink:
     def __init__(self, target):
         self.target, self.commands, self.releases = target, [], []
+        self.active_span = False
     def apply(self, cmd):
         self.commands.append(cmd)
         return OutputResult(True)
     def release_all(self, reason):
         self.releases.append(reason)
+        self.active_span = False
+    def holding(self):
+        return self.active_span
     def close(self):
         pass
 
@@ -102,6 +106,20 @@ def test_brief_v_shape_does_not_release_current_windows_output():
     hold(e, 1.2)
     assert "pause" in sink.releases
     assert not e.state.control_on
+
+
+def test_provisional_v_yields_to_held_output_but_confirmed_toggle_releases_it():
+    e, _, sinks = build()
+    e.commands.put(SetStage(Stage.MAIN))
+    e.commands.put(SetControl(True))
+    step(e, 1, False)
+    sink = sinks[OutputTarget.WINDOWS]
+    sink.releases.clear()
+    sink.active_span = True
+    hold(e, 1.05, count=10)
+    assert sink.active_span and not sink.releases and e.state.control_on
+    hold(e, 1.55, count=7)
+    assert not sink.active_span and "pause" in sink.releases and not e.state.control_on
 
 
 def test_busy_never_accumulates_a_toggle_and_needs_fresh_hold():

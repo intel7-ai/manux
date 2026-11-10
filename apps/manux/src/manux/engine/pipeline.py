@@ -225,7 +225,10 @@ class Engine:
                 self._release("error")
                 f.reset("error")
         control_activity = self._activities()
-        control_claiming = any(control_activity.get(f.id, Activity()).holding for f in control_features)
+        # A provisional V must not end an active drag/scroll. A confirmed toggle
+        # still suppresses this frame and releases output through its normal path.
+        control_claiming = (any(control_activity.get(f.id, Activity()).holding for f in control_features)
+                            and not self._output_holding())
         if control_claiming and not self._control_claiming:
             self._release("pause")
             self._reset([f for f in self.features if f.id != "control"], "pause")
