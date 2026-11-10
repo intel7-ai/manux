@@ -60,7 +60,7 @@ LABELS = {
     "side_pinch_exclusive": "옆 손가락 핀치 중복 방지", "drag_clear_ratio": "드래그 해제 비율",
     "drag_clear_grace": "드래그 끊김 보정 (초)", "long_press_drag": "길게 누르기 드래그 사용",
     "long_press_time": "길게 누르기 시간 (초)", "index_tuck_ratio": "검지 접힘 비율",
-    "shape_dpi_enabled": "손 모양에 따른 속도 사용", "shape_dpi_min": "손 모양 최소 속도 배율",
+    "shape_dpi_enabled": "손 모양에 따른 속도 사용", "shape_dpi_min": "편 손 기본 속도 배율",
     "shape_curl_open": "손 펴짐 기준", "shape_curl_fist": "손 쥠 기준",
     "shape_dpi_curve": "손 모양 속도 변화 곡선", "shape_curl_smooth": "손 모양 변화 부드러움",
     "shape_freeze_distance": "손 모양 변화 중 커서 고정 거리", "fist_curl_exit": "주먹 해제 기준",

@@ -40,7 +40,8 @@ CONTROLS = (
     Control("cursor.scroll_gain", "스크롤 휠 속도", 1000, 30000, 500, "cursor", "엄지+검지 스크롤 속도입니다. 낮을수록 천천히, 정밀하게 스크롤됩니다."),
     Control("pinch.fist_curl_enter", "주먹 판정 기준", .5, 1.3, .05, "cursor", "주먹 이동으로 인식하는 손가락 굽힘 기준입니다."),
     Control("pinch.fist_confirm_time", "주먹 확인 시간 (초)", 0, .5, .01, "cursor", "주먹 이동으로 전환하기 전에 확인하는 시간입니다."),
-    Control("pinch.fist_dpi_multiplier", "주먹 정밀 이동 배율", .05, 30, .05, "cursor", "1보다 작으면 주먹 이동이 느려져 세밀하게 조작할 수 있습니다."),
+    Control("pinch.fist_dpi_multiplier", "주먹/접은 손 고속 이동 배율", .1, 5, .05, "cursor", "주먹을 쥐거나 손을 접었을 때의 커서 이동 배율입니다. (기본 2.0)"),
+    Control("pinch.shape_dpi_min", "편 손 기본 이동 배율", .1, 3, .05, "cursor", "손을 폈을 때의 정밀/저속 커서 이동 배율입니다. (기본 0.6)"),
     Control("pinch.long_press_drag_multiplier", "길게 누르기 드래그 배율", .1, 5, .05, "cursor", "좌클릭 핀치를 유지해 드래그할 때의 이동 배율입니다. 기본 1.0은 일반 이동과 같습니다."),
 )
 BY_KEY = {c.key: c for c in CONTROLS}

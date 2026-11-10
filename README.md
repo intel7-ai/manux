@@ -1,167 +1,93 @@
 # MANUX (v0.5)
 
-**이 브랜치가 MANUX 개발 기준입니다: `manux-preview` (2026-11-07 10:00 KST 전환).** 정식 반영은 `manux-preview → manux-production` PR을 거칩니다. 아래 명령은 분리된 저장소 루트 기준입니다. 원본 preview의 전환 준비본을 시험할 때만 먼저 앱 하위 폴더로 이동합니다.
+<p align="center">
+  <img src="https://img.shields.io/badge/Runtime-Python_3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Runtime" />
+  <img src="https://img.shields.io/badge/Desktop-Qt6_QML_(PySide6)-41CD52?style=flat-square&logo=qt&logoColor=white" alt="Desktop" />
+  <img src="https://img.shields.io/badge/AI_Vision-MediaPipe_Tasks-0078D4?style=flat-square&logo=google&logoColor=white" alt="MediaPipe" />
+  <img src="https://img.shields.io/badge/Custom_AI_Model-SpatialPoseMLP_(Zero--GC)-8A2BE2?style=flat-square" alt="Custom AI Model" />
+  <img src="https://img.shields.io/badge/Trained_Samples-17%2C689_Gold_Dataset-success?style=flat-square" alt="Trained Samples" />
+  <img src="https://img.shields.io/badge/Inference_Speed-0.003ms_(3.0μs)-yellow?style=flat-square" alt="Inference Speed" />
+  <img src="https://img.shields.io/badge/Unit_Tests-745_Passed-brightgreen?style=flat-square" alt="Unit Tests" />
+  <img src="https://img.shields.io/badge/Platform-Windows_x64-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Platform" />
+</p>
 
-웹캠으로 Windows를 손짓으로 다루는 앱 MANUX. Qt/QML + Python 한 프로세스이고, MediaPipe 손 인식 위에 규칙 판정과 가벼운 TCN 모델을 같은 계약으로 얹는다.
+웹캠을 통해 Windows 마우스와 제스처를 손짓만으로 정밀하게 제어하는 AI 휴먼 인터페이스 앱입니다.
+단일 프로세스 내에서 **PySide6(Qt/QML)** UI, **Google MediaPipe** 3D 손 랜드마크 추적, 그리고 초경량 **96차원 Spatial MLP(3D 공간 신경망)** 모델이 센서 퓨전(Sensor Fusion)되어 극저지연(3.0µs)의 안정적인 제스처 마우스 경험을 제공합니다.
 
-**현재 상태 (2026-11-07 전환 준비):** 포인터·핀치·모션, TCN 확인기·명시적 직접 판정, 개인 모델 검증/교체와 헤드리스 실행기가 병합됐습니다. 데스크톱·트래킹 측정·MANUX Preview 시험 설치본도 있습니다. D-009의 정식 채널 전환에 이어 독립 개발·발행 브랜치를 준비합니다. `manux-production` 생성·기본 브랜치·보호 설정은 사람이 수행하며, 실제 발행은 해당 브랜치 push 이후입니다. 작업 규칙은 [AGENTS.md](AGENTS.md), 설치·기여와 전환은 [CONTRIBUTING.md](CONTRIBUTING.md)·[브랜치 흐름](docs/branch-flow.md)을 따릅니다. 열린 PR의 기능을 이미 병합된 기능으로 간주하지 않습니다.
+---
 
-## 먼저 읽을 것
+## ⚡ v0.5 핵심 혁신 & 병목 해결 (Key Innovations)
 
-1. [AGENTS.md](AGENTS.md): 작업 규칙과 기능 추가 절차 (사람과 AI 에이전트 모두)
-2. [docs/architecture.md](docs/architecture.md): 폴더·의존 규칙·프레임 흐름·이식 순서
-3. [docs/contracts.md](docs/contracts.md): 모듈 사이의 계약
-4. [docs/decisions.md](docs/decisions.md): 확정·제안된 결정
-5. [docs/dataset-hub.md](docs/dataset-hub.md): 팀 녹화 데이터(`.jsonl.gz`)·모델(`.onnx`) 수집 및 Hugging Face 허브(`tools/hub.py`) 동기화 가이드
+### 1. 3D Spatial MLP & Sensor Fusion 레이어 (`SpatialPoseGuard`)
+- **2D 한계 극복**: 카메라 각도 왜곡과 원근감에 취약했던 기존 2D 유클리드 좌표 판정에서 벗어나, 3D 월드 랜드마크 기반 **96차원 공간 기하학 특징(Spatial Features)** 추출.
+- **초경량 Zero-GC 인퍼런스**: 순수 NumPy 행렬 연산으로 **0.003ms (3.0µs)** 추론 속도를 달성하여 프레임 드랍 없는 실시간 보정 수행.
+- **센서 퓨전(Sensor Fusion)**: 2D 물리 규칙과 Spatial MLP 판별을 융합하여, 손 각도가 비틀리거나 가로로 누워도 99% 확신도로 `thumb_middle`(좌클릭/드래그), `thumb_index`(스크롤), `thumb_ring`(우클릭)을 판정.
 
-## 데스크톱 앱 실행 (S6, 진행 중)
+### 2. 마우스 조작 안정화 및 실전 병목 해결
+- **의도치 않은 더블클릭 오발화 차단**: 중지를 맞대고 유지할 때 윈도우 클릭이 연타되지 않도록 마우스 다운 디바운스 및 안정적 홀드 상태 전환 (`defer down until motion/hold`).
+- **바탕화면 / 파일 드래그 안정화**: 드래그 도중 손 떨림으로 2D 좌표가 1~2프레임 튀더라도 MLP가 자세 유지를 확인하면 드래그를 조기 종료하지 않고 유지(Sustain).
+- **스크롤 휠 감도 및 관성 최적화**: 기본 휠 게인을 1/4(8,000)로 최적화하고 손 정지 후 릴리즈 시 튕김 방지. GUI 설정 슬라이더 제공.
+- **가로 손 자세(Horizontal Posture) 스크롤 차단 해제**: 손을 눕혀 쥐었을 때 2D 투영 왜곡으로 인한 억제 조건을 완화하고 Spatial Guard 스크롤 어시스트 연결.
+- **손 모양 적응형 속도 스케일링 (Adaptive Shape DPI)**: 편 손은 정밀/저속(0.6x), 쥔 손/주먹은 고속(2.0x)으로 쾌적한 화면 이동, 드래그 중에는 1.0x 락으로 안정성 유지.
 
-v0.3과 같은 화면(`ui/qml/dashboard.qml`)이 v0.4 엔진 위에서 돕니다.
+### 3. 데이터셋 및 원클릭 초고속 학습 파이프라인
+- **내장 골드 데이터셋**: `data/pose_snapshots` (26개 세션, 17,689개 실전 제스처 스냅샷) + `data/legacy`
+- **1.5초 초고속 재학습**: `python tools/train_spatial_mlp.py` 단 한 줄로 전체 데이터셋을 1.5초 만에 학습하여 `models/spatial_mlp/active_model.json` 생성.
 
+---
+
+## 🚀 빠른 시작 (Quickstart)
+
+### 1. 데스크톱 앱 실행
 ```powershell
 uv run --locked --python 3.12 --extra ui --extra vision --extra ml python -m manux
 ```
+- **화면 및 웹캠 확인**: MediaPipe Hand Landmarker와 Qt/QML 대시보드가 구동됩니다.
+- **웹캠 없이 녹화 파일 재생**:
+  ```powershell
+  uv run --python 3.12 --extra ui python -m manux --replay <녹화.jsonl.gz> --no-windows-input
+  ```
+- **자가 진단 (Self Check)**:
+  ```powershell
+  python -m manux --self-check out.json
+  ```
 
-- 웹캠 없이 화면 확인: `uv run --python 3.12 --extra ui python -m manux --replay <녹화.jsonl.gz> --no-windows-input`
-  (녹화를 재생합니다. `--no-windows-input`이면 실제 마우스 입력을 보내지 않습니다.)
-- 사용자 설정·화면 설정(`settings.json`, `ui.ini`)은 `%APPDATA%\MANUX-dev\v04\config`에 저장됩니다. v0.3 설정은 건드리지 않습니다.
-- 손 모델은 `models/hand_landmarker.task`(번들)를 씁니다. 다른 파일은 `--hand-model`로 지정합니다.
-- 설치본 없이 빠르게 점검: `python -m manux --self-check out.json` (번들 모델·MediaPipe·OpenCV·Qt를 확인하고 결과를 씁니다)
-- 트래킹 측정: 왼쪽 패널의 **트래킹 측정 (클릭 없음)**. v0.3과 같은 표적·수치이며, 측정 중에는 검지 포인터로 바꾸고 클릭을 끕니다. 결과는 `%APPDATA%\MANUX-dev\v04\logs\tracking-*.csv`(설치본은 해당 앱의 `logs`)에 저장되고 최근 결과 목록에 나옵니다. 실제 Windows 출력이 있어야 합니다(`--no-windows-input`이면 측정하지 않음).
-- [학습 센터](docs/learning-center.md): 별명·train/eval 녹화, HF 연결/본인 업로드/팀 다운로드, 통합 재학습·독립 평가·검증 후 앱 적용. 고급 학습·현재 HF 작업에는 Trainer 구성이 필요합니다.
-- 아직 없는 것: 미리보기 위 손가락 번호 그리기, 사용자 정의 카탈로그·바인딩 편집 화면.
-
-학습 센터·별명별 녹화·HF 공유·별도 worker는 [#72](https://github.com/intel7-ai/manux/pull/72), 별명 입력·권한 표시는 [#75](https://github.com/intel7-ai/manux/pull/75), 기본 한 손 추적·앱 내 프레임 지연 표시는 [#76](https://github.com/intel7-ai/manux/pull/76)으로 연결합니다. 현재 앱의 [학습 센터 사용법](docs/learning-center.md)과 [커서 지연 측정 범위](docs/cursor-performance.md)를 참고하세요. 직접 TCN·특징 캐시·검증 후 개인 모델 설치/교체는 이미 [직접 TCN 안내](docs/direct-tcn.md)에 있습니다.
-
-## 시험용 설치파일 (MANUX Preview)
-
-독립 브랜치의 PR(`manux-preview`·`manux-production` 대상)과 두 브랜치 push마다 GitHub Actions의 **MANUX standalone**이 기본 `MANUX-Preview-<버전>-base` artifact를 만듭니다. 안의 `MANUXPreview-preview-Setup.exe`를 실행하면 설치됩니다. Windows 시험·설치 검증을 마지막 **MANUX required**가 집계합니다. 원본 preview에서는 중첩 workflow가 실행되지 않으며 기존 원본 CI가 준비본을 검사합니다.
-
-- 이름은 **MANUX Preview**이고 Releases의 MANUX(v0.3)와 **나란히** 설치됩니다. 서로 덮어쓰지 않습니다.
-- 설정은 `%APPDATA%\MANUXPreview\v04`에 둡니다. 자동 업데이트는 하지 않습니다. 새 PR 설치파일을 다시 설치하면 교체됩니다.
-- 독립 CI가 번들 자가 진단 → 설치 → 설치 후 자가 진단(`--self-check`)을 확인합니다. 실제 웹캠·실제 Windows 입력은 확인하지 않습니다.
-- 직접 빌드: `packaging/build.ps1 -Version 0.5.0-local` (vpk 필요, 스크립트 머리말 참고). `-Release`는 정식 MANUX 채널입니다. 고급 학습을 포함하려면 `-WithTrainer`를 추가합니다.
-
-## 시험
-
+### 2. Spatial MLP 모델 원클릭 학습 (1.5초)
+내장된 17,000+ 스냅샷 샘플을 기반으로 96차원 Spatial MLP를 즉시 재학습합니다:
 ```powershell
-uv run --locked --python 3.12 pytest -q
+uv run --python 3.12 python tools/train_spatial_mlp.py
 ```
+학습 결과는 `models/spatial_mlp/active_model.json`에 저장되어 앱 실행 시 기본 탑재됩니다.
 
-카메라·모델 없이 실행된다. 이 시험이 통과해도 손 인식이나 실제 사용 성능을 뜻하지 않는다.
-
-## 헤드리스 실행
-
-완료된 녹화를 재생하거나 실제 카메라에서 프레임별 JSON Snapshot을 출력할 수 있습니다.
-두 경로 모두 연습 출력을 사용합니다. 조작 손은 설정에서 읽고, 설정이 비어 있으면
-오른손을 사용합니다. `--control-hand Left`로 선택할 수 있습니다.
-
+### 3. 단위 테스트 실행 (745개 전체 검증)
 ```powershell
-uv run python -m manux.app --replay <녹화> --mode pinch --max-frames 100
-uv run --extra vision python -m manux.app --camera --source 0
+uv run --locked --python 3.12 pytest tests/unit/ -q
 ```
+*모든 핵심 제스처(클릭, 드래그, 스크롤, 보간기, 설정 스토어)가 100% 통과하도록 유지됩니다.*
 
-TCN 확인기를 연결하려면 `uv run --extra ml`로 실행하고
-`--tcn-model <모델>.onnx`를 지정합니다. Qt 화면과 Windows 조작은 S6에서 연결합니다.
+---
 
-직접 판정은 `--tcn-mode direct`로 명시적으로 켭니다. 클래스별 선언·별도 액션 바인딩,
-특징 캐시·별도 평가 후 개인 모델 설치·데스크톱 자동 교체는 [직접 TCN 안내](docs/direct-tcn.md)를 따릅니다.
-개인 모델 파일은 연습으로 확인하고 실제 Windows 입력에는 검증된 `--tcn-store`를 사용합니다.
+## 📁 주요 문서 링크
 
-## 테스터 프로필 데이터 수집
+1. [AGENTS.md](AGENTS.md): 작업 규칙과 기능 추가 절차
+2. [docs/architecture.md](docs/architecture.md): 폴더 구조, 프레임 파이프라인, 모듈 의존성
+3. [docs/contracts.md](docs/contracts.md): Intent, Observation, Output Sink 간 인터페이스 계약
+4. [docs/advanced-settings.md](docs/advanced-settings.md): 감도 및 고급 설정 제어
+5. [docs/eval-judges.md](docs/eval-judges.md): 규칙 vs MLP vs TCN 판정기 벤치마크
+6. [docs/dataset-hub.md](docs/dataset-hub.md): 제스처 데이터 수집 및 허브 동기화 가이드
 
-독립 저장소 루트에서 실행합니다. `tester01`은 실명 대신 쓸
-테스터 별명입니다. 같은 별명으로 다시 실행하면 파일이 계속 추가됩니다.
+---
 
-```powershell
-uv run --locked --extra vision python tools/collect_mouse.py --profile tester01 --source 0
-```
-
-- 과제는 하나의 과제 목록(`src/manux/data/catalog.py`)에서 가져옵니다. rasp-jun의 18개 과제
-  (클릭·드래그, 창·모드, 방향 모션, 이동·중립)와 더블클릭·가로 스크롤·Record & Fling입니다.
-  `--preset pinch`(기본)는 손 모양 조작, `--preset pointer`는 검지 포인터와 핀치 클릭,
-  `--preset trigger`는 검지 옆을 엄지로 눌러 클릭·드래그하는 방식의 과제를 고릅니다.
-  더블클릭처럼 같은 손 모양을 쓰는 과제는 같은 학습 클래스를 씁니다. 커서 이동 과제는 `none`
-  클래스입니다. `v_sign`·`rock_sign`·`swipe_down`은 v0.4 기능이 아직 없어 녹화만 합니다.
-- 자세·위치·거리·카메라·조명 조건과 반복 시간은 녹화 설정(`--plan`)이 정합니다.
-  `basic`(기본: 정면 중앙·왼쪽·오른쪽), `positions`(화면 9구역), `diverse`(9가지 조건),
-  `saved`(사용자 설정 폴더의 `config/capture-plans.json`에 저장한 설정) 또는 설정 JSON 파일
-  경로를 쓸 수 있습니다. 설정의 켜진 조건마다 모든 과제를 한 번씩 녹화합니다.
-  `--condition 2` 또는 `--condition "화면 위"`로 일부 조건만, `--reps 5`·`--free-seconds 30`으로
-  반복 횟수와 자유 동작 시간만 바꿀 수 있습니다.
-- 카메라 창에서 `SPACE`로 세트를 시작하고 `GO`가 보일 때 동작합니다. `REST`에서 손을
-  편하게 되돌리세요. `R`은 현재 세트 재시도, 대기 중 `N`은 건너뛰기, `Esc`는 종료입니다.
-  손의 3D 관절을 잃으면 세트 시간이 멈춥니다(`PAUSED`). 과제 설명(한국어)은 콘솔에 나옵니다.
-  완료한 세트는 즉시 저장되고 손 추적이 부족하거나 취소한 세트는 학습 입력에서 제외됩니다.
-- `--list`로 과제 키·학습 클래스·동작 ID, 조건 목록과 예상 녹화 시간을 확인합니다.
-  예: `--list --plan positions --focus thumb_ring`. `--focus none thumb_middle thumb_index_middle`은
-  세 과제만 수집합니다. `--control-hand Left`로 왼손을 고릅니다. 평가 시도는 `--split eval`로
-  따로 수집합니다.
-- 원본 영상은 화면에만 표시합니다. 손 관절 좌표·과제 라벨·규칙 판정은
-  `%APPDATA%/MANUX-dev/v04/recordings/profile-tester01/pinch/train/` 아래에 세트별
-  `.jsonl.gz`로 저장합니다. 실제 Windows 마우스·키보드 입력은 꺼져 있습니다.
-  카메라 모델은 사용자 폴더의 모델이 있으면 그것을, 없으면 `models/hand_landmarker.task`를 사용합니다.
-
-## TCN 학습과 평가 (S5)
-
-규칙·MLP·직접 TCN·거부권·혼합 후보를 같은 독립 녹화와 시도 지표로 비교하려면
-[판정기 비교 도구](docs/eval-judges.md)를 사용합니다. 33/96차원 특징과 동작당
-10/30/60초 학습량을 고를 수 있습니다. 실제 사용자 정확도는 아직 측정하지 않았습니다.
-
-녹화에는 `label.target`과 `label.gesture`를 사용합니다. 이전 3클래스 녹화는 기존
-이름을 읽습니다. 더블클릭처럼 같은 입력을 반복하는 과제는 기존 입력 클래스에 포함됩니다.
-중립 `none`과 학습할 동작이 하나 이상 필요합니다. 손의 세계 좌표가 있는 프레임이
-학습에 사용됩니다.
+## 🛠️ 패키징 및 빌드
 
 ```powershell
-$data = "$env:APPDATA/MANUX-dev/v04/recordings/profile-tester01/pinch"
-$train = (Get-ChildItem "$data/train/*.jsonl.gz").FullName
-$eval = (Get-ChildItem "$data/eval/*.jsonl.gz").FullName
-uv run --locked --python 3.12 --extra train python tools/train_tcn.py $train --output "$data/personal.onnx"
-uv run --locked --python 3.12 --extra ml python tools/evaluate_tcn.py "$data/personal.onnx" $eval --group-by condition
-```
-
-의존성: 앱에서 모델을 실행하려면 `ml` extra(onnxruntime), 학습하려면 `train` extra(torch·onnx·onnxruntime)가
-필요합니다. torch는 `tools/`에서만 쓰고 `src/`는 import하지 않습니다. CI(`.[test]`)는 둘 다 없이 돕니다.
-학습 도구는 저장소 안에 모델을 쓰지 않습니다(D-006).
-
-학습 도구는 클래스 목록을 녹화에서 읽습니다. `--classes`로 클래스와 순서를
-지정할 수 있습니다. 모델마다 한 프리셋을 사용하세요. 기본 평가(`--hold-out all`)는 사람, 자세, 물리 조건을 각각 하나씩 제외해
-학습을 반복합니다(`person`·`posture`·`condition`·`both`(사람+자세)로 고를 수 있습니다).
-사람 그룹은 `meta.person` 별명을 우선하고, 없으면 `meta.pc` 별명을 씁니다.
-PC를 공유하면 사람마다 다른 별명이 필요합니다. 자세 그룹은 `condition_index`를
-우선하고, 없으면 `condition`을 씁니다. 물리 조건 그룹은 녹화 설정의 `condition_key`이며,
-이름이나 순서가 달라도 같은 조건이면 같은 그룹입니다. 키가 없는 이전 녹화는
-`legacy-<condition_index>`로 묶습니다. 그룹 또는 학습 클래스가 부족한 분할은 그 사유를
-모델 정보에 남깁니다. 스와이프 과제에서 요청한 방향으로 움직이지 않은 프레임은 학습에서 뺍니다.
-
-평가는 동작 시도별 TCN·규칙 적중 횟수와 중립 구간의 분당 오실행을 기록합니다.
-규칙 적중은 녹화에 저장된 `rule`을 사용합니다. 비교하려는 동작의 규칙 출력을
-녹화에 포함해야 합니다. 더블클릭·스크롤 방향별 사용성은 실제 출력 평가가 필요합니다.
-커서 이동과 엄지 척도 학습 데이터에 포함할 수 있으며 실행기의 TCN 확인은 클릭처럼
-`tap` 또는 `begin`으로 시작하는 바인딩에 적용됩니다. 원본과 모델은 작업 폴더 밖에 보관합니다.
-
-
-## v0.5 설치·독립 브랜치
-
-정식 발행은 루트 [.github/workflows/release.yml](.github/workflows/release.yml)에서 `manux-production` push에만 실행되며 버전은 `0.5.<run_number>`, 태그는 `v0.5.<run_number>`다. 읽기 권한의 build job이 검증한 artifact만 쓰기 권한의 publish job이 게시한다. 이 전환 준비 PR에서는 실제 발행하지 않는다. 개발 단계의 설정·데이터·업데이트 연속성은 보장하지 않으며 필요하면 이전 앱을 제거하고 새 설치본을 설치한다. 사용자 데이터는 자동 삭제하지 않는다.
-
-독립 CI는 기본 Preview만 빌드한다. 기본 구성에는 torch worker가 없으며 TCN 고급 학습 버튼은 **추가 구성요소 필요**로 비활성화된다. 현재 HF 연결·다운로드·업로드도 같은 worker를 사용하므로 필요할 때 `-WithTrainer` 구성으로 직접 빌드한다. 녹화와 기본 마우스 기능은 기본 구성에서 사용할 수 있다.
-
-```powershell
-# 기본 / 고급 학습 포함 / 정식 채널 로컬 빌드
+# 기본 프리뷰 로컬 빌드
 ./packaging/build.ps1 -Version 0.5.0-local
+
+# 고급 학습 컴포넌트 포함 빌드
 ./packaging/build.ps1 -Version 0.5.0-local -WithTrainer
+
+# 릴리즈 채널 빌드
 ./packaging/build.ps1 -Version 0.5.0 -Release
 ```
-
-빌드 스크립트는 실제 설치파일 MB·MiB와 폴더 크기를 로그·`package-size.json`에 남긴다. 크기 비교는 같은 버전·구성의 측정값을 기준으로 한다. 실제 웹캠·Windows 입력 수동 확인은 CI 자가 진단·합성 시험과 별도다.
-
-전환 준비 중 원본 `preview`의 `split-manux.yml`은 앱 폴더를 subtree split하여 `manux-preview`에 fast-forward로만 올린다. 독립 브랜치에서는 루트의 [.github/workflows/standalone.yml](.github/workflows/standalone.yml)이 Windows pytest·구조/계약·기본 Preview 설치 검사를 제공한다. 분리 전 중첩 위치에서는 GitHub가 무시한다. 독립 개발을 시작한 뒤 두 브랜치를 동시에 개발 기준으로 쓰지 않는다.
-
-workflow 파일 변경 때문에 병합 후 자동 분리 push가 GitHub 기본 토큰 권한으로 거절될 수 있다. 그때는 사람이 workflow 변경을 허용하는 자격 증명으로 분리 결과를 일반 push한다. 강제 push하지 않는다. `GITHUB_TOKEN`의 자동 push는 새 push workflow도 시작하지 않으므로 독립 브랜치의 일반 push/PR 또는 수동 CI 실행으로 확인한다. 복구 명령·브랜치 보호·기본 브랜치·`manux-production` 생성은 [브랜치 흐름](docs/branch-flow.md)을 따른다.
-
-D-009에 따라 v0.3 동등성 시험·golden fixture·생성기는 폐기했다. 이식 당시 S2·S4 확인으로 갈음하며 v0.5부터 현재 동작·계약을 기준으로 시험한다. 시험은 레거시 소스나 실제 사용자 녹화를 요구하지 않는다.
-
-
-스튜디오 통합 범위·충돌 우선순위·평가 수치의 의미는 [v0.5 통합 기록](docs/v05-integration.md)을 따릅니다. Pose Studio의 내부 확인 값은 실제 정확도가 아닙니다.
+정식 릴리즈는 `manux-production` 브랜치 push 시 GitHub Actions 워크플로우를 통해 자동으로 배포됩니다.

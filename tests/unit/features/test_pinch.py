@@ -50,21 +50,21 @@ def test_v03_renames_are_in_the_settings_converter():
 
 
 # ----------------------------------------------------------------------------- v0.3 behaviours
-def test_open_hand_moves_fast_and_a_fist_moves_precisely():
+def test_open_hand_moves_slow_and_a_fist_moves_fast():
     f = PinchFeature()
     out, t = run(f, [H.open_hand()] * 3)
     assert gestures(out) == [MOVE] * 3
     assert out[0].phase == "hold" and out[0].point == pytest.approx((0.49, 0.7))
-    assert out[0].scale == 2.0
+    assert out[0].scale == pytest.approx(0.6)
     out, _ = run(f, [H.fist()] * 10, t0=t)
     assert MOVE_FIST in gestures(out)                  # after fist_confirm_time (0.12 s)
-    assert out[-1].info["hand_shape"] == "fist" and out[-1].scale == .35
+    assert out[-1].info["hand_shape"] == "fist" and out[-1].scale == pytest.approx(2.0)
 
 
 def test_curled_hand_reports_the_hand_shape_gain():
     out, _ = run(PinchFeature(), [H.half_fist()] * 10)
     moves = [i for i in out if i.gesture == MOVE]
-    assert moves and moves[-1].scale > 1.15 and moves[-1].info["hand_shape"] in ("half", "fist")
+    assert moves and moves[-1].scale > 0.65 and moves[-1].info["hand_shape"] in ("half", "fist")
 
 
 def test_a_finger_approaching_the_thumb_freezes_the_cursor():
@@ -154,8 +154,8 @@ def test_shape_speed_interpolates_toward_precision_and_user_can_disable_it():
     f = PinchFeature()
     settings = resolve({})
     speed = [f.core.shape_dpi(curl, settings) for curl in (1.5, 1.2, .85)]
-    assert speed[0] > speed[1] > speed[2]
-    assert speed[0] == 2.0 and speed[-1] == pytest.approx(.35)
+    assert speed[0] < speed[1] < speed[2]
+    assert speed[0] == pytest.approx(.6) and speed[-1] == pytest.approx(2.0)
     assert f.core.shape_dpi(1.2, resolve({"shape_dpi_enabled": False})) == 1.0
 
 

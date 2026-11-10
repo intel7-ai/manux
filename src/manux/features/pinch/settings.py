@@ -30,15 +30,15 @@ THRESHOLDS: Dict[str, Any] = {
     "motion_fold_ratio": 1.2,
     "motion_thumb_out": .85,
     "motion_thumb_up": .15,
-    # fist (precision move; v0.5 feedback)
+    # fist (fast move; v0.5)
     "fist_curl_enter": .95,
     "fist_curl_exit": 1.2,
     "fist_confirm_time": .12,
-    "fist_dpi_multiplier": .35,
+    "fist_dpi_multiplier": 2.0,
     "index_tuck_ratio": 1.15,
     # hand-shape speed (docs: hand-mouse/docs/hand-shape-speed.md)
     "shape_dpi_enabled": True,
-    "shape_dpi_min": 2.0,
+    "shape_dpi_min": .6,
     "shape_curl_open": 1.45,
     "shape_curl_fist": .85,
     "shape_dpi_curve": 1.0,
