@@ -253,16 +253,16 @@ def test_undeclared_gestures_are_refused():
 
 # ---------------------------------------------------------------- arbiter
 
-def test_motion_enter_switches_mode_and_resets_the_base_feature():
+def test_motion_enter_switches_mode_and_keeps_base_feature_active():
     eng, pointer, motion, sinks = build()
     go_main(eng)
     motion.queue = [("motion.enter", "tap")]
     snap = eng.step(frame(0, 5.0), hand(frame(0, 5.0)))
-    assert snap.mode == "motion" and pointer.resets == ["mode_change"]
+    assert snap.mode == "motion" and pointer.resets == []
     assert "mode_change" in sinks[OutputTarget.WINDOWS].releases
     assert not snap.unrouted                          # mode intents are never routed
     eng.step(frame(1, 5.03), hand(frame(1, 5.03)))
-    assert len(pointer.seen) == 1                     # pointer is not stepped in motion mode
+    assert len(pointer.seen) == 2                     # pointer continues to be stepped in motion mode
     motion.queue = [("motion.exit", "tap")]
     assert eng.step(frame(2, 5.06), hand(frame(2, 5.06))).mode == "pointer"
 

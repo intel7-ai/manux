@@ -130,7 +130,8 @@ class Engine:
             return False
 
     def _active(self) -> List[Feature]:
-        return [f for f in self.features if self.arbiter.mode in f.modes]
+        active_modes = {self.arbiter.mode, self.arbiter.base_mode}
+        return [f for f in self.features if active_modes & f.modes]
 
     def _activities(self) -> Dict[str, Activity]:
         out: Dict[str, Activity] = {}
@@ -237,7 +238,8 @@ class Engine:
         for f in self._active():
             if f.id == "control" or suppress:
                 continue
-            ctx = FrameContext(frame, self.state.stage, self.state.output, self.arbiter.mode,
+            mode_for_ctx = self.arbiter.base_mode if self.arbiter.mode == "motion" and f.id != "motion" else self.arbiter.mode
+            ctx = FrameContext(frame, self.state.stage, self.state.output, mode_for_ctx,
                                settings=self.settings_for(f.id),
                                others={k: v for k, v in activities.items() if k != f.id})
             try:
@@ -277,7 +279,8 @@ class Engine:
             events.append(f"mode:{change.old}->{change.new}:{change.why}")
 
         # filters (e.g. the TCN gate)
-        ctx = FrameContext(frame, self.state.stage, self.state.output, self.arbiter.mode)
+        filter_mode = self.arbiter.base_mode if self.arbiter.mode == "motion" else self.arbiter.mode
+        ctx = FrameContext(frame, self.state.stage, self.state.output, filter_mode)
         for flt in self.filters:
             if suppress:
                 continue
