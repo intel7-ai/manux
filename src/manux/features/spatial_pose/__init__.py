@@ -46,7 +46,7 @@ GESTURE_TO_CLASS: Mapping[str, str] = {v: k for k, v in CLASS_TO_GESTURE.items()
 GESTURE_TO_CLASS = {**GESTURE_TO_CLASS, "pointer.left_click": "thumb_middle", "pointer.right_click": "thumb_ring"}
 BOTH_CLICK_GESTURES = frozenset({"pinch.thumb_middle", "pinch.thumb_ring", "pointer.left_click", "pointer.right_click"})
 DEFAULT_VETO_GESTURES = BOTH_CLICK_GESTURES | frozenset({"pinch.thumb_tucked_open"})
-BOOST_CLASSES = frozenset({"thumb_middle", "thumb_ring"})
+BOOST_CLASSES = frozenset({"thumb_middle", "thumb_ring", "thumb_middle_ring"})
 
 
 @dataclass(frozen=True)
@@ -161,7 +161,7 @@ class SpatialPoseGuard(IntentFilter):
     """Protects against heuristic misclassifications by consulting SpatialPoseFeature evidence."""
 
     def __init__(self, feature: SpatialPoseFeature, *, tau_veto: float = 0.80, k_frames: int = 2,
-                 enabled: bool = True, boost: bool = True, tau_boost: float = 0.93, k_boost: int = 3,
+                 enabled: bool = True, boost: bool = True, tau_boost: float = 0.70, k_boost: int = 2,
                  settings: Any = None) -> None:
         self.feature = feature
         self.settings = settings
@@ -198,9 +198,15 @@ class SpatialPoseGuard(IntentFilter):
         if hand is None or hand.landmarks is None or len(hand.landmarks) < 17:
             return 0.0
         thumb = hand.landmarks[4]
-        tip = hand.landmarks[12 if cls == "thumb_middle" else 16]
-        thr = 0.052 if cls == "thumb_middle" else 0.044
-        dist = math.hypot(thumb[0] - tip[0], thumb[1] - tip[1])
+        if cls == "thumb_middle_ring":
+            d_mid = math.hypot(thumb[0] - hand.landmarks[12][0], thumb[1] - hand.landmarks[12][1])
+            d_ring = math.hypot(thumb[0] - hand.landmarks[16][0], thumb[1] - hand.landmarks[16][1])
+            dist = max(d_mid, d_ring)
+            thr = 0.052
+        else:
+            tip = hand.landmarks[12 if cls == "thumb_middle" else 16]
+            thr = 0.052 if cls == "thumb_middle" else 0.044
+            dist = math.hypot(thumb[0] - tip[0], thumb[1] - tip[1])
         if dist <= thr:
             return 1.0
         if dist >= thr * 1.6:
@@ -248,9 +254,9 @@ class SpatialPoseGuard(IntentFilter):
         if ev is not None and ev.action in BOOST_CLASSES:
             c_score = self._circle_score(hand, ev.action)
             hybrid_conf = 0.45 * c_score + 0.55 * ev.confidence if c_score > 0.0 else ev.confidence
-            if ev.confidence >= self.tau_boost or (c_score >= 0.35 and ev.confidence >= 0.68 and hybrid_conf >= 0.72):
+            if ev.confidence >= self.tau_boost or (c_score >= 0.35 and ev.confidence >= 0.65 and hybrid_conf >= 0.68):
                 cls = ev.action
-                fast = c_score >= 0.65 and ev.confidence >= 0.72
+                fast = c_score >= 0.60 or ev.confidence >= 0.85
         if cls is None or cls != self._boost_class:
             self._boost_class = cls
             self._boost_run = 0
@@ -435,10 +441,10 @@ class SpatialPoseGuard(IntentFilter):
 
             # A click the rules fire (or the MLP already fired) for the pose being held counts as done.
             if intent.phase == "tap" and intent.gesture in BOTH_CLICK_GESTURES:
-                if (self._boost_class is not None and self._boost_done
-                        and GESTURE_TO_CLASS.get(intent.gesture) == self._boost_class):
+                match = (GESTURE_TO_CLASS.get(intent.gesture) == self._boost_class or self._boost_class == "thumb_middle_ring")
+                if self._boost_class is not None and self._boost_done and match:
                     continue          # one click per pose episode (the MLP already clicked for it)
-                if GESTURE_TO_CLASS.get(intent.gesture) == self._boost_class:
+                if match:
                     self._boost_done = True
                 self._boost_t = ctx.frame.t     # a click just happened: the boost stays quiet for a while
             # Mode arbiter transitions are protected and never vetoed
@@ -453,6 +459,14 @@ class SpatialPoseGuard(IntentFilter):
                     if ev is None or ev.action != "palm_side" or not self._is_horiz:
                         self.vetoed_count += 1
                         self._events.append(f"spatial_guard:vetoed:{intent.gesture}:{intent.phase}")
+                        continue
+
+                # Never veto click if MLP confirms this click class!
+                if intent.gesture in BOTH_CLICK_GESTURES and ev is not None and ev.confidence >= 0.65:
+                    expected_class = GESTURE_TO_CLASS.get(intent.gesture)
+                    if ev.action == expected_class or ev.action == "thumb_middle_ring":
+                        self.passed_count += 1
+                        out.append(intent)
                         continue
 
                 # If MLP is confident that hand is 'none' (idle/moving) for k consecutive frames
@@ -474,20 +488,25 @@ class SpatialPoseGuard(IntentFilter):
             self.passed_count += 1
             out.append(intent)
 
-        # boost: confident, steady MLP + circle click pose that the rules have not fired yet -> click for it
+        # boost: confident, steady MLP click pose that the rules have not fired yet -> click for it
         need_k = min(self.k_boost, 2) if self._boost_fast else self.k_boost
         if (self.boost and self._boost_class is not None and not self._boost_done
                 and self._boost_run >= need_k and ctx.mode == "pinch"
-                and ctx.frame.t - self._boost_t >= 0.35
+                and ctx.frame.t - self._boost_t >= 0.15
                 and not self._dragging
                 and not any(i.gesture in ("pinch.scroll", "pinch.drag") and i.phase != "end" for i in out)
                 and not any(act.holding for act in ctx.others.values())):
-            gesture = CLASS_TO_GESTURE[self._boost_class]
-            out.append(Intent(ctx.frame.t, "pinch", gesture, "tap", confidence=ev.confidence))
+            if self._boost_class == "thumb_middle_ring":
+                out.append(Intent(ctx.frame.t, "pinch", "pinch.thumb_middle", "tap", confidence=ev.confidence))
+                out.append(Intent(ctx.frame.t, "pinch", "pinch.thumb_ring", "tap", confidence=ev.confidence))
+                self._events.append("spatial_guard:boosted:both_click")
+            else:
+                gesture = CLASS_TO_GESTURE[self._boost_class]
+                out.append(Intent(ctx.frame.t, "pinch", gesture, "tap", confidence=ev.confidence))
+                self._events.append(f"spatial_guard:boosted:{gesture}")
             self._boost_done = True
             self._boost_t = ctx.frame.t
             self.boosted_count += 1
-            self._events.append(f"spatial_guard:boosted:{gesture}")
 
         return tuple(out)
 

@@ -370,9 +370,36 @@ def test_guard_vetoes_heuristic_desktop_when_hand_is_vertical_or_idle(trained_ml
     guard.observe(hand_vert_tuck, ctx2)
     out2 = guard.filter(heuristic_desktop, ctx2)
     # Vetoed because user's desktop action strictly requires horizontal hand!
-    assert len(out2) == 0
+    assert not any(i.gesture == "pinch.thumb_tucked_open" for i in out2)
     assert guard.vetoed_count == 2
     assert "spatial_guard:vetoed:pinch.thumb_tucked_open:tap" in guard.drain_events()
+
+
+def test_guard_boost_fires_both_clicks_for_thumb_middle_ring():
+    model = SpatialMlpModel(np.zeros((4, 96)), np.zeros(4), np.zeros((2, 4)), np.array([-10., 10.]),
+                            classes=("none", "thumb_middle_ring"))
+    feat = SpatialPoseFeature(model, mode="assist")
+    guard = SpatialPoseGuard(feat, tau_boost=0.70, k_boost=2)
+
+    frame1 = FrameInfo(1, 800.0, 640, 480, False)
+    frame2 = FrameInfo(2, 800.033, 640, 480, False)
+    hand = HandObservation(frame=frame1, landmarks=tuple(_dummy_hand(12)), handedness="Right", score=0.95)
+    ctx1 = FrameContext(frame1, "default", "none", "pinch")
+    ctx2 = FrameContext(frame2, "default", "none", "pinch")
+
+    # Frame 1: run = 1
+    guard.observe(hand, ctx1)
+    out1 = guard.filter([], ctx1)
+    assert len(out1) == 0
+
+    # Frame 2: run = 2 -> fires both left and right clicks!
+    guard.observe(hand, ctx2)
+    out2 = guard.filter([], ctx2)
+    gestures = [i.gesture for i in out2 if i.phase == "tap"]
+    assert "pinch.thumb_middle" in gestures
+    assert "pinch.thumb_ring" in gestures
+    assert guard.boosted_count == 1
+    assert "spatial_guard:boosted:both_click" in guard.drain_events()
 
 
 def test_guard_ends_drag_immediately_when_hand_opens_even_if_heuristic_holds(trained_mlp: SpatialMlpModel):

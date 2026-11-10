@@ -93,7 +93,7 @@ THRESHOLDS: Dict[str, Any] = {
     "long_press_drag_multiplier": 1.0,
     "drag_on_move": True,
     "drag_move_distance": 0.006,
-    "drag_move_min_time": 0.0,
+    "drag_move_min_time": 0.12,
     # cursor
     "approach_freeze_distance": .045,
     "cursor_anchor_ratio": .5,
