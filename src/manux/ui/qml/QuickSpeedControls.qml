@@ -42,7 +42,7 @@ ColumnLayout {
     }
     Label {
         Layout.fillWidth: true; wrapMode: Text.Wrap
-        text: "편 손은 빠르게 · 주먹은 정밀하게"
+        text: "편 손은 기본 속도 · 주먹/접은 손은 고속 가속"
         color: Theme.Studio.muted; font.pixelSize: Theme.Studio.small
     }
     CheckBox {

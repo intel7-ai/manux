@@ -22,7 +22,7 @@ def onboarding_steps(cards: Sequence[Card]) -> list[Card]:
                "actions": ()}]
     if "click" in by_key:
         result.append({"key": "sensitivity", "title": "2. 내 손에 맞는 속도",
-                       "how": "편 손은 빠르게, 주먹은 느리고 정밀하게 움직입니다. 속도를 조절하고 화면의 목표 3개를 손짓으로 클릭하세요. 실제 PC에는 입력하지 않습니다.",
+                       "how": "편 손은 기본 속도, 주먹은 빠르게 가속해 움직입니다. 속도를 조절하고 화면의 목표 3개를 손짓으로 클릭하세요. 실제 PC에는 입력하지 않습니다.",
                        "actions": ("mouse.move", "mouse.left_click"), "require_precision": "scroll" in by_key})
         click = dict(by_key["click"])
         click.update(title="3. 클릭 연습")
@@ -88,7 +88,7 @@ class Tutorial:
     @property
     def help_text(self) -> str:
         if self.step_key == "sensitivity" and all(self._target_done) and self.current.get("require_precision") and not self.precision_seen:
-            return "목표 3개를 클릭했습니다. 주먹을 쥐고 짧게 움직여 느린 정밀 이동도 확인하세요."
+            return "목표 3개를 클릭했습니다. 주먹을 쥐고 짧게 움직여 빠른 가속(정밀) 이동도 확인하세요."
         if self.failures >= MAX_FAILURES:
             return "3번의 연습 시간 안에 성공을 확인하지 못했습니다. 손이 관절 표시 안에 있는지, 손가락을 완전히 떼었는지 확인하세요. 다시 시도하거나 이 단계만 건너뛸 수 있습니다."
         if self.failures:
