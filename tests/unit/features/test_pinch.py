@@ -180,6 +180,14 @@ def test_drag_starts_immediately_on_move():
     assert drags, "drag_on_move should activate drag_hold quickly"
 
 
+def test_right_drag_starts_immediately_on_move():
+    f = PinchFeature()
+    pinches = [H.ring_pinch(shift=(0.01 * k, 0)) for k in range(8)]
+    out, _ = run(f, pinches)
+    drags = [i for i in out if i.gesture == RIGHT_DRAG]
+    assert drags, "drag_on_move should activate right_drag_hold quickly"
+
+
 def test_thumbs_up_freezes_the_cursor_and_can_be_switched_off():
     assert run(PinchFeature(), [H.thumbs_up()] * 10)[0] == []
     out, _ = run(PinchFeature(), [H.thumbs_up()] * 10, settings={"motion_pose_freeze": False})

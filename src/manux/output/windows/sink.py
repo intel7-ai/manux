@@ -96,6 +96,8 @@ class WindowsOutputSink:
         self._drag_start_pos: Optional[Tuple[int, int]] = None
         self._drag_start_t: float = float("-inf")
         self._drag_button: str = "left"
+        self._holding_right_click: bool = False
+        self._holding_right_t: float = float("-inf")
 
     # ------------------------------------------------------------------ public API
     def apply(self, cmd: ActionCommand) -> OutputResult:
@@ -125,6 +127,7 @@ class WindowsOutputSink:
     def release_all(self, reason: str = "") -> None:
         """Release everything that is held. Safe to call any number of times; never raises."""
         with self._lock:
+            self._holding_right_click = False
             steps = (
                 self.scroll.cancel,
                 self.pump.clear,
@@ -202,7 +205,7 @@ class WindowsOutputSink:
     def holding(self) -> bool:
         """A drag button is down or a scroll is active / still coasting (the arbiter refuses mode entry then)."""
         with self._lock:
-            return bool(self.dragging or self.scroll.active or self.scroll.coasting)
+            return bool(self.dragging or getattr(self, "_holding_right_click", False) or self.scroll.active or self.scroll.coasting)
 
     # ------------------------------------------------------------------ helpers
     def _collect(self, errors: List[str]) -> None:
@@ -284,6 +287,9 @@ class WindowsOutputSink:
         return float(g)
 
     def _end_drag(self) -> None:
+        if getattr(self, "_holding_right_click", False):
+            self._holding_right_click = False
+            self.buttons.release("right")
         if self.dragging:
             was_deferred = getattr(self, "_drag_deferred_down", False)
             btn = getattr(self, "_drag_button", "left")
@@ -317,6 +323,9 @@ class WindowsOutputSink:
 
     # ------------------------------------------------------------------ actions
     def _do_mouse_move(self, cmd: ActionCommand) -> OutputResult:
+        if getattr(self, "_holding_right_click", False):
+            self._holding_right_click = False
+            self.buttons.release("right")
         if cmd.point is None:
             return _error("mouse.move needs a point")
         gain = self._gain(cmd)
@@ -330,6 +339,9 @@ class WindowsOutputSink:
         return OK
 
     def _click(self, cmd: ActionCommand, button: str) -> OutputResult:
+        if getattr(self, "_holding_right_click", False):
+            self._holding_right_click = False
+            self.buttons.release("right")
         if self._interp is not None:
             self._interp.snap(*self.cursor.pos)
         self._end_drag()
@@ -347,11 +359,23 @@ class WindowsOutputSink:
         return result
 
     def _do_mouse_right_click(self, cmd: ActionCommand) -> OutputResult:
+        if cmd.gesture in ("pinch.thumb_ring", "pointer.right_click"):
+            if self._interp is not None:
+                self._interp.snap(*self.cursor.pos)
+            self._end_drag()
+            if self.scroll.active:
+                self.scroll.end(cmd.t, launch=False)
+            self.buttons.press("right")
+            self._holding_right_click = True
+            self._holding_right_t = cmd.t
+            return OK
         return self._click(cmd, "right")
 
     def _do_mouse_drag(self, cmd: ActionCommand) -> OutputResult:
         btn = "right" if ("right" in cmd.gesture or cmd.params.get("button") == "right") else "left"
         if cmd.phase == "begin":
+            if getattr(self, "_holding_right_click", False):
+                self._holding_right_click = False
             if self.scroll.active:
                 self.scroll.end(cmd.t, launch=False)
             self._dbl_until = float("-inf")
@@ -417,6 +441,9 @@ class WindowsOutputSink:
         return OK
 
     def _do_mouse_scroll(self, cmd: ActionCommand) -> OutputResult:
+        if getattr(self, "_holding_right_click", False):
+            self._holding_right_click = False
+            self.buttons.release("right")
         if cmd.phase == "begin":
             if cmd.point is None:
                 return _error("mouse.scroll begin needs a point")

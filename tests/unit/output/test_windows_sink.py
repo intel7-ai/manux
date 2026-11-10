@@ -127,6 +127,33 @@ def test_right_drag_begin_hold_end_presses_moves_and_releases():
     assert downs == [("button", "right", True), ("button", "right", False)]
 
 
+def test_right_click_gesture_holds_down_until_move():
+    s = sink()
+    assert s.apply(cmd("mouse.right_click", gesture="pinch.thumb_ring", t=1.0)).accepted
+    assert s.backend.buttons_down == {"right"}
+    assert s.holding()
+    # While holding fingers together without move, button stays down
+    assert s.apply(cmd("mouse.move", "hold", (.5, .5), 1.2, gesture="pinch.move")).accepted
+    assert s.backend.buttons_down == set()
+    assert not s.holding()
+    button_events = [e for e in s.backend.events if e[0] == "button"]
+    assert button_events == [("button", "right", True), ("button", "right", False)]
+
+
+def test_right_click_gesture_transitions_into_right_drag_seamlessly():
+    s = sink()
+    assert s.apply(cmd("mouse.right_click", gesture="pinch.thumb_ring", t=1.0)).accepted
+    assert s.backend.buttons_down == {"right"}
+    assert s.apply(cmd("mouse.drag", "begin", (.5, .5), 1.1, gesture="pinch.right_drag")).accepted
+    assert s.backend.buttons_down == {"right"} and s.dragging
+    assert s.apply(cmd("mouse.drag", "hold", (.55, .5), 1.2, gesture="pinch.right_drag")).accepted
+    assert s.backend.buttons_down == {"right"}
+    assert s.apply(cmd("mouse.drag", "end", None, 1.3, gesture="pinch.right_drag")).accepted
+    assert s.backend.buttons_down == set() and not s.dragging
+    button_events = [e for e in s.backend.events if e[0] == "button"]
+    assert button_events == [("button", "right", True), ("button", "right", False)]
+
+
 def test_drag_hold_without_begin_is_blocked_and_end_without_begin_is_harmless():
     s = sink()
     assert s.apply(cmd("mouse.drag", "hold", (.5, .5))).reason == "blocked"

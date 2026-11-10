@@ -532,7 +532,7 @@ class PinchCore:
             moved_pinch = math.hypot(track_ring[0] - ref_pinch[0], (track_ring[1] - ref_pinch[1]) * aspect)
             moved = max(moved_palm, moved_pinch)
             moved_far_ring = (moved >= float(c.get("drag_move_distance", 0.006))
-                             and now - self._secondary_since["ring"] >= float(c.get("drag_move_min_time", 0.0)))
+                             and now - self._secondary_since["ring"] >= min(float(c.get("drag_move_min_time", 0.0)), float(c.get("click_confirm_time", 0.06))))
         else:
             self._ring_anchor = None
 
@@ -541,7 +541,7 @@ class PinchCore:
             and c.get("long_press_drag", True)
             and (
                 self._long_fired.get("ring", False)
-                or (moved_far_ring and (self._click_fresh.get("ring", True) or now - self._secondary_since["ring"] >= 0.10))
+                or (moved_far_ring and (self._click_fresh.get("ring", True) or now - self._secondary_since["ring"] >= float(c.get("click_confirm_time", 0.06))))
                 or now - self._secondary_since["ring"] >= float(c["long_press_time"])
             )
         )
