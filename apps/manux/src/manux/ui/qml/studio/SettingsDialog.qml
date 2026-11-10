@@ -133,7 +133,7 @@ Dialog {
                     }
                     Label { text: settings.controller.distanceStatus; Layout.fillWidth: true; wrapMode: Text.Wrap; color: "#526575" }
                     CheckBox {
-                        text: "커서 옆 손가락 표시"
+                        text: "커서에 가상 손 표시"
                         checked: settings.controller.fingerOverlay
                         onClicked: settings.controller.setFingerOverlay(checked)
                     }

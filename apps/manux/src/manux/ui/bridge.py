@@ -892,6 +892,7 @@ class Bridge(QObject):
         """v0.3 behaviour: a settings change pauses control; the user turns it on again."""
         # V may have enabled the engine before the next UI poll updates the display.
         self.paused = True
+        self._set_finger_frame(None)
         self._send(SetControl(False))
 
     @Slot(bool)
@@ -908,6 +909,7 @@ class Bridge(QObject):
         self._send(SetStage(STAGES[name]))
         if name != "main":
             self.paused = True
+            self._set_finger_frame(None)
         self.stateChanged.emit()
 
     def _apply_profile(self) -> None:
@@ -1104,6 +1106,8 @@ class Bridge(QObject):
         if bool(enabled) != self.finger_overlay:
             self.finger_overlay = bool(enabled)
             self.preferences.setValue("fingerOverlay", self.finger_overlay)
+            if not enabled:
+                self._set_finger_frame(None)
             self.stateChanged.emit()
 
     @Property(bool, notify=stateChanged)
@@ -1114,8 +1118,16 @@ class Bridge(QObject):
     def fingerFrame(self):
         if self.finger_frame is None:
             return {}
+        if self.finger_frame.get("lost"):
+            return self.finger_frame
         cursor = QCursor.pos()
         return dict(self.finger_frame, cursor=[cursor.x(), cursor.y()])
+
+    def _set_finger_frame(self, frame):
+        # Re-sample the cursor on live frames even when the joint offsets do not change.
+        if frame != self.finger_frame or (frame is not None and "pts" in frame):
+            self.finger_frame = frame
+            self.fingerFrameChanged.emit()
 
     # ------------------------------------------------------------------ "that was wrong" / logs
     @Slot()
@@ -2727,8 +2739,11 @@ class Bridge(QObject):
             elif 49 <= key <= 57:  # keys '1'..'9' (supports 9th class: both click)
                 self.selectStudioActionByNumber(key - 48)
         elif self.stage_name == "main" and key == KEY_SPACE:
-            self.paused = not self.paused
-            self._send(SetControl(not self.paused))
+            if self.paused:
+                self.paused = False
+                self._send(SetControl(True))
+            else:
+                self._pause()
         elif self.stage_name == "main" and key == KEY_ESC:
             self._pause()
 
@@ -2949,11 +2964,14 @@ class Bridge(QObject):
             elif now_t - getattr(self, "_last_studio_emit", 0.0) >= 0.033:
                 self._last_studio_emit = now_t
                 self.studioChanged.emit()
-        frame = (overlay_frame(view.landmarks, view.mirrored, view.actions)
-                 if self.finger_overlay and view.landmarks is not None and not self.paused else None)
-        if frame is not None or self.finger_frame is not None:
-            self.finger_frame = frame
-            self.fingerFrameChanged.emit()
+        frame = None
+        if (self.finger_overlay and self.stage_name == "main" and not self.paused and view.camera_ok
+                and snap is not None and snap.stage is Stage.MAIN and snap.control_on and not snap.busy):
+            if view.landmarks is not None:
+                frame = overlay_frame(view.landmarks, view.mirrored, view.aspect, view.preview_guides)
+            if frame is None and self.finger_frame is not None:
+                frame = {"lost": True}
+        self._set_finger_frame(frame)
         self._show(view)
 
     def _show(self, view: ViewFrame) -> None:

@@ -107,7 +107,7 @@ ApplicationWindow {
                 SectionLabel { text: "화면 표시" }
                 RowLayout {
                     Layout.fillWidth: true
-                    TextLabel { text: "커서 옆 손가락 표시"; Layout.fillWidth: true }
+                    TextLabel { text: "커서에 가상 손 표시"; Layout.fillWidth: true }
                     Segmented {
                         Layout.fillWidth: false
                         Layout.preferredWidth: 160
