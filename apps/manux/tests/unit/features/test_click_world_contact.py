@@ -176,3 +176,54 @@ def test_absent_or_invalid_world_preserves_image_only_compatibility(world):
             run(H.middle_pinch(),world)  # The observation contract rejects malformed coordinates first.
     else:
         assert taps(run(H.middle_pinch(),world))==[THUMB_MIDDLE]
+
+
+@pytest.mark.parametrize("scale", [1., .4, .25])
+@pytest.mark.parametrize("finger,wanted", [("middle", THUMB_MIDDLE), ("ring", THUMB_RING)])
+def test_far_approach_does_not_latch_scroll_and_block_following_click(scale, finger, wanted):
+    feature = PinchFeature()
+    out = []
+    poses = [H.approach()] * 5 + [(H.middle_pinch if finger == "middle" else H.ring_pinch)()] * 8
+    for i, original in enumerate(poses):
+        points = tuple((.5 + (x - .5) * scale, .5 + (y - .5) * scale, z * scale)
+                       for x, y, z in original)
+        world = world_contact(original, finger if i >= 5 else None)
+        t = 1 + i / 14  # actual phone cadence, with the same physical 3D pose at each distance
+        out.extend(feature.step(replace(H.obs(t, points), world=world), H.ctx(t)))
+    assert taps(out) == [wanted]
+    assert all(i.gesture != "pinch.scroll" for i in out)
+
+
+def test_far_real_scroll_releases_in_3d_and_does_not_become_a_projected_drag():
+    feature = PinchFeature()
+    original = H.scroll_pinch()
+    points = tuple((.5 + (x - .5) * .25, .5 + (y - .5) * .25, z * .25)
+                   for x, y, z in original)
+    out = []
+    for i in range(36):
+        world = world_contact(original, "index" if i < 10 or i >= 25 else None)
+        t = 1 + i / 14
+        out.extend(feature.step(replace(H.obs(t, points), world=world), H.ctx(t)))
+    scroll = [i for i in out if i.gesture == "pinch.scroll"]
+    assert [i.phase for i in scroll].count("begin") == 2
+    assert [i.phase for i in scroll].count("end") == 1
+    assert not taps(out) and all(i.gesture != DRAG for i in out)
+
+
+@pytest.mark.parametrize("scale", [.4, .25])
+def test_far_three_finger_contact_still_drags_and_releases(scale):
+    feature = PinchFeature()
+    original = H.drag_pinch()
+    points = tuple((.5 + (x - .5) * scale, .5 + (y - .5) * scale, z * scale)
+                   for x, y, z in original)
+    out = []
+    for i in range(20):
+        world = list(world_contact(original, "index" if i < 10 else None))
+        if i < 10:
+            world[12] = (world[4][0] + .006, world[4][1], world[4][2])
+        t = 1 + i / 14
+        out.extend(feature.step(replace(H.obs(t, points), world=tuple(world)), H.ctx(t)))
+    drags = [i for i in out if i.gesture == DRAG]
+    assert [i.phase for i in drags].count("begin") == 1
+    assert [i.phase for i in drags].count("end") == 1
+    assert not taps(out)

@@ -40,6 +40,7 @@ CLICK_SEPARATION_PALM = .02  # A tiny projected gap between overlapping tips is 
 CLICK_WORLD_ENTER = .45     # Thumb-tip gap, normalized by wrist -> middle MCP length.
 CLICK_WORLD_FOLDED = .30    # A clearly touching fingertip may be folded toward the camera.
 CLICK_WORLD_RELEASE = .65
+SMALL_PALM_IMAGE_SPAN = .12  # Below this span, projected tip overlap can latch a false scroll.
 
 
 def world_tip_distances(world: Optional[Sequence[Pt]]) -> Optional[Dict[str, float]]:
@@ -348,6 +349,7 @@ class PinchCore:
         pinch_threshold = float(c["pinch_threshold"])
         release_threshold = float(c["release_threshold"])
         click_threshold = float(c["click_threshold"])
+        small_world_hand = world_distances is not None and palm_len < SMALL_PALM_IMAGE_SPAN
 
         mean_curl = sum(ratios) / 4.0
         k = max(0.05, min(1.0, float(c["shape_curl_smooth"])))
@@ -361,7 +363,8 @@ class PinchCore:
             self.last_hold = None
             middle_clearly_closer = d_middle < d_index * float(c["click_neighbor_ratio"])
             can_pinch = (d_index <= pinch_threshold and not index_tucked and not middle_clearly_closer
-                         and not world_contacts)
+                         and not world_contacts
+                         and (not small_world_hand or world_distances["index"] <= CLICK_WORLD_ENTER))
             if can_pinch and others_curled:
                 if self._pinch_candidate_since is None:
                     self._pinch_candidate_since = now
@@ -381,12 +384,13 @@ class PinchCore:
             # A nearby joint can still look pinched after the tips separate.
             d_hold = d_index if scrolling else min([d_index] + joints)
             self.last_hold = (round(d_hold, 4), round(rel_thr, 4), round(d_index, 4))
-            if d_hold > rel_thr:
+            world_released = small_world_hand and world_distances["index"] > CLICK_WORLD_RELEASE
+            if d_hold > rel_thr or world_released:
                 self._close_since = None
                 if self._index_release_since is None:
                     self._index_release_since = now
                     self._release_clear = False
-                if d_hold > rel_thr * float(c["scroll_freeze_ratio"]):
+                if world_released or d_hold > rel_thr * float(c["scroll_freeze_ratio"]):
                     self._release_clear = True
                 grace = max(0.0, float(c["pinch_release_grace"]))
                 if scrolling:
@@ -412,7 +416,8 @@ class PinchCore:
         drag_window = float(c["drag_hold_entry_window"])
         in_entry_window = (now - self._index_pinched_since) <= drag_window
         if not self._middle_hold_pinched:
-            if self._index_pinched and in_entry_window and d_middle <= drag_thr and d_index <= drag_thr:
+            if (self._index_pinched and in_entry_window and d_middle <= drag_thr and d_index <= drag_thr
+                    and (not small_world_hand or world_distances["middle"] <= CLICK_WORLD_ENTER)):
                 if self._drag_since is None:
                     self._drag_since = now
                 if (now - self._drag_since) >= drag_confirm:
@@ -420,7 +425,8 @@ class PinchCore:
             else:
                 self._drag_since = None
         else:
-            if not self._index_pinched or d_middle > release_threshold:
+            if (not self._index_pinched or d_middle > release_threshold
+                    or small_world_hand and world_distances["middle"] > CLICK_WORLD_RELEASE):
                 self._middle_hold_pinched = False
 
         cursor_point = palm_anchor_point(pts, c["cursor_anchor_ratio"])
