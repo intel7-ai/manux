@@ -42,7 +42,7 @@ THRESHOLDS: Dict[str, Any] = {
     "shape_curl_open": 1.45,
     "shape_curl_fist": .85,
     "shape_dpi_curve": 1.0,
-    "shape_curl_smooth": .4,
+    "shape_curl_smooth": .65,
     "shape_freeze_distance": .03,
     # show desktop (thumb tucked, four fingers open, held)
     "desktop_thumb_tuck": .45,

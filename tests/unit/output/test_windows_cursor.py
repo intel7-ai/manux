@@ -191,3 +191,32 @@ def test_absolute_warp_with_rebase_keeps_the_cursor_put():
     m.warp(100, 100, rebase=True)
     assert m.step((.5, .5), .05) == (100, 100)
     assert m.step((.6, .5), .10)[0] == pytest.approx(100 + 0.1 * 1919, abs=1)
+
+
+def test_relative_deadband_suppresses_micro_jitter_when_smoothing_active():
+    cfg = WindowsOutputConfig(movement_mode="relative", smoothing=0.35, relative_gain_min=1.0,
+                              relative_gain_max=1.0, relative_accel=False)
+    m = CursorMapper(ScreenLayout.single(1920, 1080), cfg, start=(500, 500))
+    m.step((0.5, 0.5), 0.0)
+    # Tiny sensor noise fluctuations within deadband (0.0004 frame width)
+    p1 = m.step((0.5004, 0.5), 0.033)
+    p2 = m.step((0.5002, 0.5003), 0.066)
+    p3 = m.step((0.5005, 0.4998), 0.099)
+    # Cursor stays completely rock-solid on (500, 500)
+    assert p1 == (500, 500)
+    assert p2 == (500, 500)
+    assert p3 == (500, 500)
+
+
+def test_relative_snappy_ramp_tracks_swift_hand_motion_without_lag():
+    cfg = WindowsOutputConfig(movement_mode="relative", smoothing=0.35, relative_gain_min=1.0,
+                              relative_gain_max=1.0, relative_accel=False)
+    m = CursorMapper(ScreenLayout.single(1920, 1080), cfg, start=(500, 500))
+    m.step((0.5, 0.5), 0.0)
+    # Swift intentional movement: 0.05 units per frame (speed = 1.5 frame widths / s)
+    p1 = m.step((0.55, 0.5), 0.033)
+    # At speed 1.5, alpha ramps to ~1.0, tracking instantly: 0.05 * 1920 = 96 px
+    assert p1[0] - 500 == pytest.approx(96, abs=6)
+    # Stop hand on next frame: cursor must stop immediately without trailing drift
+    p2 = m.step((0.55, 0.5), 0.066)
+    assert p2 == p1

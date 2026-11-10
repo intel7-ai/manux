@@ -146,11 +146,36 @@ class CursorMapper:
             self._rebase = False
             return self.pos
         ax, ay = self._anchor
-        sx = ax + smoothing * (hx - ax)  # EMA on the hand point suppresses landmark jitter
-        sy = ay + smoothing * (hy - ay)
-        self._anchor = (sx, sy)
+        raw_dx = hx - ax
+        raw_dy = (hy - ay) * c.frame_aspect
+        raw_dist = math.hypot(raw_dx, raw_dy)
         dt = max(1e-3, min(0.1, now - self._rel_t))
         self._rel_t = now
+
+        if smoothing < 1.0:
+            # 1. Micro-jitter suppression: dampen camera sensor noise & physiological tremor (< ~0.0024)
+            deadband_min = 0.0006
+            deadband_max = 0.0024
+            if raw_dist <= deadband_min:
+                jitter_factor = 0.0
+            elif raw_dist >= deadband_max:
+                jitter_factor = 1.0
+            else:
+                u = (raw_dist - deadband_min) / (deadband_max - deadband_min)
+                jitter_factor = u * u * (3.0 - 2.0 * u)
+
+            # 2. Dynamic snappy responsiveness: at higher speeds, dynamically ramp up alpha to 1.0
+            # for instant zero-lag tracking without sluggish rubber-banding
+            speed = raw_dist / dt
+            speed_ramp = max(0.0, min(1.0, (speed - 0.04) / 0.20))
+            eff_smoothing = smoothing + (1.0 - smoothing) * (speed_ramp ** 1.2)
+            alpha = eff_smoothing * jitter_factor
+        else:
+            alpha = 1.0
+
+        sx = ax + alpha * (hx - ax)  # Adaptive filter suppresses landmark jitter & delivers snappy 1:1 motion
+        sy = ay + alpha * (hy - ay)
+        self._anchor = (sx, sy)
         dx = sx - ax
         dy = (sy - ay) * c.frame_aspect  # physical units (frame widths)
         if getattr(c, "relative_accel", False):
@@ -191,8 +216,15 @@ class CursorMapper:
         if self._smoothed is None:
             sm_x, sm_y = raw_x, raw_y
         else:
-            sm_x = self._smoothed[0] + smoothing * (raw_x - self._smoothed[0])
-            sm_y = self._smoothed[1] + smoothing * (raw_y - self._smoothed[1])
+            if smoothing < 1.0:
+                dist_px = math.hypot(raw_x - self._smoothed[0], raw_y - self._smoothed[1])
+                j_factor = 0.0 if dist_px <= 1.0 else (1.0 if dist_px >= 4.0 else (dist_px - 1.0) / 3.0)
+                speed_ramp = max(0.0, min(1.0, (dist_px - 4.0) / 30.0))
+                eff = (smoothing + (1.0 - smoothing) * speed_ramp) * j_factor
+            else:
+                eff = 1.0
+            sm_x = self._smoothed[0] + eff * (raw_x - self._smoothed[0])
+            sm_y = self._smoothed[1] + eff * (raw_y - self._smoothed[1])
         self._smoothed = (sm_x, sm_y)
         fx, fy = mon.clamp(sm_x, sm_y)
         return int(round(fx)), int(round(fy))
