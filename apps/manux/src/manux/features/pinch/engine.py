@@ -43,7 +43,7 @@ CLICK_WORLD_ENTER = .45     # Thumb-tip gap, normalized by wrist -> middle MCP l
 CLICK_WORLD_FOLDED = .30    # A clearly touching fingertip may be folded toward the camera.
 CLICK_WORLD_RELEASE = .65
 SMALL_PALM_IMAGE_SPAN = .12  # Below this span, projected tip overlap can latch a false scroll.
-CONTACT_RELEASE_GRACE = .12  # Confirmed 3D contact tolerates a brief estimate dropout.
+PINKY_RELEASE_GRACE = .12   # Window switching tolerates a brief 3D estimate dropout.
 DRAG_DISAGREEMENT_GRACE = .22  # Allow a brief depth/image disagreement while dragging.
 PINKY_REARM_TIME = .15       # Window switching needs a fresh, fully released contact episode.
 
@@ -112,9 +112,6 @@ class PinchCore:
         self._secondary_since: Dict[str, float] = {}
         self._secondary_off: Dict[str, float] = {}
         self._secondary_confirmed: set[str] = set()
-        self._corroborated_last: set[str] = set()
-        self._repeat_ready: set[str] = set()
-        self._side_open_last = False
         self._click_fresh: Dict[str, bool] = {}
         self._release_clear = False
         self._close_since: Optional[float] = None
@@ -169,9 +166,6 @@ class PinchCore:
         self._secondary_since.clear()
         self._secondary_off.clear()
         self._secondary_confirmed.clear()
-        self._corroborated_last.clear()
-        self._repeat_ready.clear()
-        self._side_open_last = False
         self._long_fired.clear()
         self._drag_since = None
         self._fist = False
@@ -188,7 +182,6 @@ class PinchCore:
         self._secondary_since.pop(finger, None)
         self._secondary_off.pop(finger, None)
         self._secondary_confirmed.discard(finger)
-        self._repeat_ready.discard(finger)
         self._long_fired.pop(finger, None)
 
     def _can_trigger(self, gesture_id: str, now: float, finger: Optional[str], cooldown: float = 0.35) -> bool:
@@ -226,12 +219,7 @@ class PinchCore:
     def step(self, now: float, pts: Optional[Sequence[Pt]], c: Mapping[str, Any],
              *, world: Optional[Sequence[Pt]] = None) -> PinchFrame:
         """One frame. `pts`: 21 (x, y, z) or None (no hand). `c`: resolved settings (settings.resolve)."""
-        corroborated_last = self._corroborated_last
-        self._corroborated_last = set()
-        side_open_last = self._side_open_last
-        self._side_open_last = False
         if pts is None or len(pts) < 21:
-            self._repeat_ready.clear()
             self._pinky_clear_since = None
             # A gap cannot count toward confirming a new click; an established hold keeps its grace.
             for finger in tuple(self._secondary_since):
@@ -288,26 +276,6 @@ class PinchCore:
                 limit = CLICK_WORLD_ENTER if finger in self._secondary_since else CLICK_WORLD_FOLDED
                 if (distance <= limit and distance < other * neighbor_ratio
                         and other - distance >= CLICK_SEPARATION_PALM):
-                    world_contacts.add(finger)
-
-        if world_distances is not None and not world_contacts:
-            # World landmarks can put the index closest even when the image clearly shows
-            # a different fingertip touching. Require a unique image contact AND a world
-            # gap inside the existing contact envelope; never override a clear world winner.
-            # This corroboration is for left/right only, not an easier window-switch trigger.
-            for finger, ratio, threshold_key, tuck_key in (
-                    ("middle", ratios[1], "click_threshold", "click_tuck_ratio"),
-                    ("ring", ratios[2], "ring_click_threshold", "ring_tuck_ratio")):
-                distance = distances[finger]
-                other = min(value for name, value in distances.items() if name != finger)
-                other_click = min(world_distances[name] for name in ("middle", "ring", "pinky") if name != finger)
-                if (on(f"thumb_{finger}_pinch") and ratio > float(c[tuck_key])
-                        and distance <= float(c[threshold_key])
-                        and distance < other * neighbor_ratio
-                        and other - distance >= palm_len * CLICK_SEPARATION_PALM
-                        and world_distances[finger] <= CLICK_WORLD_RELEASE
-                        and world_distances[finger] < other_click * neighbor_ratio
-                        and other_click - world_distances[finger] >= CLICK_SEPARATION_PALM):
                     world_contacts.add(finger)
 
         cursor_point_early = palm_anchor_point(pts, c["cursor_anchor_ratio"])
@@ -538,27 +506,6 @@ class PinchCore:
                       and (now - self._desktop_fired_at) >= exclusive),
         }
         thresholds = {"middle": click_threshold, "ring": ring_thr, "pinky": pinky_thr}
-        all_side_fingers_open = (world_distances is not None and secondary_open
-                                 and all(distances[name] > threshold + margin
-                                         for name, threshold in thresholds.items()))
-        self._side_open_last = all_side_fingers_open
-        corroborated = set()
-        if world_distances is not None:
-            for finger in world_contacts:
-                distance = distances[finger]
-                next_tip = min(distances[name] for name in ("index", "middle", "ring", "pinky") if name != finger)
-                if (distance <= thresholds[finger] and distance < next_tip * neighbor_ratio
-                        and next_tip - distance >= separation
-                        and world_distances[finger] <= CLICK_WORLD_FOLDED):
-                    corroborated.add(finger)
-        index_open = (world_distances is not None
-                      and world_distances["index"] > CLICK_WORLD_RELEASE
-                      and d_index > release_threshold)
-
-        def blocked_by_scroll(finger: str) -> bool:
-            # An ended scroll cannot swallow a distinct click with an open index.
-            return locked and not (index_open and finger in corroborated)
-
         keep = {"middle": ratios[1] > click_tuck * .9, "ring": ratios[2] > ring_tuck * .9,
                 "pinky": ratios[3] > float(c["pinky_tuck_ratio"]) * .9}
         if world_distances is not None:
@@ -568,28 +515,22 @@ class PinchCore:
                 distance = world_distances[finger]
                 other = min(value for name, value in world_distances.items() if name != finger)
                 touching = finger in world_contacts
-                entry[finger] = touching or (distance <= CLICK_WORLD_ENTER and distance < other * neighbor_ratio
+                entry[finger] = (distance <= CLICK_WORLD_ENTER and distance < other * neighbor_ratio
                                  and other - distance >= CLICK_SEPARATION_PALM
                                  and (curl_ratio > tuck or touching))
-                keep[finger] = distance <= CLICK_WORLD_RELEASE
+                keep[finger] = (distance <= CLICK_WORLD_RELEASE
+                                and (curl_ratio > tuck * .9 or distance <= CLICK_WORLD_ENTER))
             pinky_distance = world_distances["pinky"]
             entry["pinky"] = entry["pinky"] and clear_pinky_contact(world_distances, neighbor_ratio)
             keep["pinky"] = pinky_distance <= CLICK_WORLD_RELEASE
-        middle_distal_hold = False
-        if world_distances is not None and self._long_fired.get("middle", False) and not keep["middle"]:
-            distal = _middle_distal_distance(world)
-            other_tip = min(world_distances[name] for name in ("index", "ring", "pinky"))
-            middle_distal_hold = distal <= CLICK_WORLD_FOLDED and distal < other_tip * neighbor_ratio
-            keep["middle"] = middle_distal_hold
-
-        if corroborated and world_distances is not None and not self._long_fired.get("middle", False):
-            for finger in ("middle", "ring"):
-                other = "ring" if finger == "middle" else "middle"
-                if (finger in self._secondary_confirmed and other in corroborated
-                        and distances[finger] > thresholds[finger] + margin
-                        and world_distances[finger] > CLICK_WORLD_RELEASE):
-                    self._drop_secondary(finger)
-                    self._click_fresh[finger] = True
+        # Only a drag that has already started gets the wider depth hold and distal contact.
+        drag_has_depth = world_distances is not None and self._long_fired.get("middle", False)
+        if drag_has_depth:
+            keep["middle"] = world_distances["middle"] <= CLICK_WORLD_RELEASE
+            if not keep["middle"]:
+                distal = _middle_distal_distance(world)
+                other_tip = min(world_distances[name] for name in ("index", "ring", "pinky"))
+                keep["middle"] = distal <= CLICK_WORLD_FOLDED and distal < other_tip * neighbor_ratio
         # Drop stale candidates before testing any new finger: left/right evaluation order must not
         # decide which finger owns a pinch. Only a confirmed hold gets release hysteresis.
         for finger in tuple(self._secondary_since):
@@ -599,7 +540,7 @@ class PinchCore:
             clear_of_index = finger in world_contacts or not index_active or not (d_index < dist * neighbor_ratio)
             distance_ok = dist <= thresholds[finger] or finger in world_contacts
             if not (on(f"thumb_{finger}_pinch") and entry[finger] and distance_ok
-                    and clear_of_index and not blocked_by_scroll(finger)):
+                    and clear_of_index and not locked):
                 self._drop_secondary(finger)
 
         def confirmed(finger: str, dist: float, dip: float, thr: float,
@@ -609,14 +550,6 @@ class PinchCore:
             if not on(f"thumb_{finger}_pinch"):
                 self._drop_secondary(finger)
                 return False
-            if (finger in self._repeat_ready and finger in self._secondary_confirmed
-                    and finger in corroborated):
-                # Allow a repeat of the same click without freeing its ownership
-                # early for a competing gesture during a brief opening.
-                self._drop_secondary(finger)
-                self._click_fresh[finger] = True
-            elif not all_side_fingers_open:
-                self._repeat_ready.discard(finger)
             if finger not in self._secondary_since:
                 if c["side_pinch_exclusive"] and any(
                         other != finger for other in self._secondary_since):
@@ -625,7 +558,7 @@ class PinchCore:
                     clear_of_index = not (d_index < dist * float(c["click_neighbor_ratio"]))
                 else:
                     clear_of_index = True
-                if (dist <= thr or contact_entry) and clear_of_index and entry_ok and not blocked_by_scroll(finger):
+                if (dist <= thr or contact_entry) and clear_of_index and entry_ok and not locked:
                     self._secondary_since[finger] = now
                     self._secondary_off.pop(finger, None)
                 else:
@@ -639,14 +572,8 @@ class PinchCore:
                 if (held_dist > limit and not contact_hold) or not keep_ok:
                     off = self._secondary_off.setdefault(finger, now)
                     grace = click_grace
-                    clearly_open = (all_side_fingers_open
-                                    and held_dist > limit * float(c["drag_clear_ratio"]))
-                    if (finger in ("middle", "ring") and finger in self._secondary_confirmed
-                            and not self._long_fired.get(finger, False) and clearly_open
-                            and side_open_last and now - off >= click_grace):
-                        self._repeat_ready.add(finger)
-                    if world_distances is not None and finger in self._secondary_confirmed:
-                        grace = max(grace, CONTACT_RELEASE_GRACE)
+                    if finger == "pinky" and world_distances is not None and finger in self._secondary_confirmed:
+                        grace = max(grace, PINKY_RELEASE_GRACE)
                     if self._long_fired.get(finger, False):
                         grace = max(click_grace, float(c["pinch_release_grace"]))
                         image_open = held_dist > limit * float(c["drag_clear_ratio"])
@@ -661,12 +588,7 @@ class PinchCore:
                         return False
                 else:
                     self._secondary_off.pop(finger, None)
-            required_time = confirm if confirm_time is None else confirm_time
-            # Shorten confirmation only with consecutive agreement and no nearby pinky.
-            if (finger in corroborated and finger in corroborated_last
-                    and world_distances["pinky"] > CLICK_WORLD_RELEASE):
-                required_time *= .5
-            if (now - self._secondary_since[finger]) >= required_time:
+            if (now - self._secondary_since[finger]) >= (confirm if confirm_time is None else confirm_time):
                 self._secondary_confirmed.add(finger)
                 return True
             return False
@@ -677,14 +599,13 @@ class PinchCore:
         middle_ok = confirmed("middle", d_middle, dip(MIDDLE_TIP), click_threshold,
                               entry_ok=entry["middle"],
                               keep_ok=keep["middle"], contact_entry="middle" in world_contacts,
-                              contact_hold=middle_distal_hold or (world_distances is not None
-                              and world_distances["middle"] <= (CLICK_WORLD_RELEASE if "middle" in self._secondary_confirmed else CLICK_WORLD_ENTER)))
+                              contact_hold=(drag_has_depth and keep["middle"]) or (world_distances is not None
+                              and world_distances["middle"] <= CLICK_WORLD_ENTER))
         ring_ok = confirmed("ring", d_ring, dip(RING_TIP), ring_thr,
                             entry_ok=entry["ring"],
                             keep_ok=keep["ring"], contact_entry="ring" in world_contacts,
                             contact_hold=world_distances is not None
-                            and world_distances["ring"] <= (CLICK_WORLD_RELEASE if "ring" in self._secondary_confirmed else CLICK_WORLD_ENTER))
-        self._corroborated_last = corroborated
+                            and world_distances["ring"] <= CLICK_WORLD_ENTER)
         if any(f in self._secondary_since for f in ("middle", "ring")):
             self._pinky_armed = False
             self._pinky_clear_since = None

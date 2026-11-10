@@ -44,10 +44,10 @@ def taps(out):
 
 
 @pytest.mark.parametrize("finger,wanted", [("middle", THUMB_MIDDLE), ("ring", THUMB_RING)])
-def test_short_click_confirms_when_two_frames_agree_in_image_and_depth(finger, wanted):
+def test_click_waits_for_full_confirmation_even_when_image_and_depth_agree(finger, wanted):
     hand = H.middle_pinch() if finger == "middle" else H.ring_pinch()
-    assert taps(run(hand, world_contact(hand, finger), frames=1)) == []
-    assert taps(run(hand, world_contact(hand, finger), frames=2)) == [wanted]
+    assert taps(run(hand, world_contact(hand, finger), frames=2)) == []
+    assert taps(run(hand, world_contact(hand, finger), frames=3)) == [wanted]
 
 
 def test_projected_middle_overlap_without_3d_contact_cannot_click_or_drag():
@@ -57,8 +57,8 @@ def test_projected_middle_overlap_without_3d_contact_cannot_click_or_drag():
     assert all(i.gesture!=DRAG for i in out)
 
 
-@pytest.mark.parametrize("finger,wanted",[("middle",THUMB_MIDDLE),("ring",THUMB_RING)])
-def test_unique_image_contact_with_uncertain_world_neighbor_still_confirms(finger,wanted):
+@pytest.mark.parametrize("finger", ["middle", "ring"])
+def test_unique_image_contact_does_not_override_valid_world_distances(finger):
     hand = H.middle_pinch() if finger == "middle" else H.ring_pinch()
     world = list(world_contact(hand))
     palm = math.dist(world[0],world[9])
@@ -66,10 +66,9 @@ def test_unique_image_contact_with_uncertain_world_neighbor_still_confirms(finge
     for index,gap in ((8,.40),(12,.55 if finger=="middle" else .80),
                       (16,.55 if finger=="ring" else .80),(20,.90)):
         world[index]=(world[4][0]+palm*gap,world[4][1],world[4][2])
-    result=run(hand,tuple(world),frames=45)
-    assert taps(result)==[wanted]
-    if finger=="middle":
-        assert any(i.gesture==DRAG and i.phase=="begin" for i in result)
+    result = run(hand, tuple(world), frames=45)
+    assert not taps(result)
+    assert not any(i.gesture == DRAG for i in result)
 
 
 def test_image_contact_cannot_choose_between_ambiguous_world_click_fingers():

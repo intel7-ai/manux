@@ -65,13 +65,14 @@ def test_confirmed_middle_is_not_stolen_by_an_overlapping_index_before_drag():
     assert drags and drags[0].phase == "begin" and all(i.scale == 2. for i in drags)
 
 
-def test_corroborated_right_click_can_follow_a_fully_released_scroll():
+def test_right_click_waits_out_post_scroll_lockout():
     feature = PinchFeature()
     scroll = H.scroll_pinch()
     prior = feed(feature, [(scroll, world_contact(scroll, "index"))] * 10 + [pose("open")] * 10)
     assert any(i.gesture == SCROLL and i.phase == "end" for i in prior)
     click = feed(feature, [pose("ring")] * 2, start=1 + 20 / 30)
-    assert taps(click) == [THUMB_RING]
+    assert taps(click) == []
+    assert taps(feed(feature, [pose("ring")] * 4, start=2.2)) == [THUMB_RING]
 
 
 def test_confirmed_middle_contact_can_curl_into_a_fist_without_losing_drag():
@@ -81,12 +82,12 @@ def test_confirmed_middle_contact_can_curl_into_a_fist_without_losing_drag():
     assert any(i.gesture == DRAG and i.phase == "begin" for i in out)
 
 
-def test_brief_contact_noise_keeps_long_press_but_real_release_ends_drag():
+def test_single_frame_contact_noise_keeps_long_press_but_real_release_ends_drag():
     hand, touching = pose("middle")
     separated = list(touching)
     palm = math.dist(separated[0], separated[9])
     separated[12] = (separated[4][0] + .75 * palm, separated[4][1], separated[4][2])
-    poses = [(hand, tuple(separated) if i % 12 in (10, 11) else touching) for i in range(48)]
+    poses = [(hand, tuple(separated) if i % 12 == 10 else touching) for i in range(48)]
     out = feed(PinchFeature(), poses + [pose("open")] * 10)
     assert taps(out) == [THUMB_MIDDLE]
     phases = [i.phase for i in out if i.gesture == DRAG]
@@ -127,8 +128,12 @@ def test_drag_can_roll_from_middle_tip_to_side_of_its_last_segment():
     ("middle", "ring", [THUMB_MIDDLE, THUMB_RING]),
     ("ring", "middle", [THUMB_RING, THUMB_MIDDLE]),
 ])
-def test_a_clearly_released_click_does_not_swallow_the_other_finger(first, second, wanted):
-    assert taps(feed(PinchFeature(), [pose(first)] * 5 + [pose(second)] * 2)) == wanted
+def test_alternating_clicks_wait_for_release_and_confirmation(first, second, wanted):
+    first_and_second = [pose(first)] * 5 + [pose(second)] * 2
+    feature = PinchFeature()
+    assert taps(feed(feature, first_and_second)) == wanted[:1]
+    later = feed(feature, [pose(second)] * 5, start=1 + len(first_and_second) / 30)
+    assert taps(later) == wanted[1:]
 
 
 @pytest.mark.parametrize("finger,wanted", [("middle", THUMB_MIDDLE), ("ring", THUMB_RING)])
@@ -137,10 +142,10 @@ def test_quick_repeat_click_after_both_image_and_depth_show_release(finger, want
     assert taps(feed(PinchFeature(), sequence)) == [wanted, wanted]
 
 
-def test_depth_dropout_alone_does_not_rearm_a_held_click():
+def test_one_frame_depth_dropout_does_not_rearm_a_held_click():
     hand, touching = pose("middle")
     ambiguous = (hand, world_contact(hand))
-    sequence = [(hand, touching)] * 5 + [ambiguous] * 3 + [(hand, touching)] * 5
+    sequence = [(hand, touching)] * 5 + [ambiguous] + [(hand, touching)] * 5
     assert taps(feed(PinchFeature(), sequence)) == [THUMB_MIDDLE]
 
 
