@@ -36,14 +36,14 @@ def test_common_tabs_keep_header_and_named_model_actions(tmp_path,monkeypatch,la
             if not b.studio.busy and not b.training_busy:break
         for width,height in ((780,560),(1140,720)):
             b.window.setWidth(width);b.window.setHeight(height)
-            for index in range(6):
+            for index in range(3):
                 popup.setProperty("pageIndex",index);QTest.qWait(30)
                 alias=b.window.findChild(QQuickItem,"trainingAlias")
                 point=alias.mapToScene(QPointF(0,0))
                 assert alias.isVisible() and 0<=point.y()<180
                 assert b.paused
         assert b._pose_studio_visible
-        popup.setProperty("pageIndex",3);QTest.qWait(30)
+        popup.setProperty("pageIndex",1);QTest.qWait(30)
         assert not b._pose_studio_visible
         calls=[]
         monkeypatch.setattr(b.studio,"_run",lambda action,**values:calls.append((action,values)))

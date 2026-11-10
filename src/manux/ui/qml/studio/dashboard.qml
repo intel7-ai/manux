@@ -283,7 +283,7 @@ ApplicationWindow {
                 TextLabel { visible: window.width >= 1000; text: "INPUT STUDIO"; font.pixelSize: 11; font.letterSpacing: 1.4; color: window.muted }
                 Item { Layout.fillWidth: true }
                 ActionButton { objectName: "openLearningCenter"; text: window.width < 1000 ? "학습" : "학습 센터"; onClicked: {dataCenter.pageIndex=0;dataCenter.open()} }
-                ActionButton { objectName: "openDataStudio"; text: window.width < 1000 ? "녹화" : "녹화·시뮬레이터"; onClicked: {dataCenter.pageIndex=1;dataCenter.open()} }
+                ActionButton { objectName: "openDataStudio"; text: window.width < 1000 ? "녹화" : "녹화 보관함"; onClicked: {dataCenter.pageIndex=0;dataCenter.recordingSubTab=1;dataCenter.open()} }
                 ActionButton {
                     text: window.width < 1000 ? (dashboard.chosenHand || "손 설정") : dashboard.chosenHand ? dashboard.chosenHand + " · 다시 설정" : "사용할 손 설정"
                     onClicked: dashboard.beginHandSetup()

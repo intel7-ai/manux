@@ -19,12 +19,11 @@ ScrollView {
         width: page.availableWidth; spacing: Theme.Studio.gap
         Copy { text: "내 모델 보관함"; font.pixelSize: Theme.Studio.title; font.bold: true }
         Copy { Layout.fillWidth: true; text: page.controller.trainingModel; color: Theme.Studio.mintDark }
-        Copy { Layout.fillWidth: true; text: "이름을 붙여 보관하고 공유하세요. 다운로드는 사용 모델을 바꾸지 않습니다. TCN은 먼저 시험하고, 별도 평가를 통과한 뒤 적용합니다."; color: Theme.Studio.muted }
+        Copy { Layout.fillWidth: true; text: "로컬에서 학습한 제어 모델을 보관하고 시험/적용합니다. 이전 버전으로 복원할 수도 있습니다."; color: Theme.Studio.muted }
         Flow {
             Layout.fillWidth: true; spacing: 6
             StudioButton { text: "로컬 새로고침"; enabled: page.idle; onClicked: page.library.refresh() }
             StudioButton { text: "모델 파일 가져오기"; enabled: page.idle; onClicked: page.library.importModel() }
-            StudioButton { objectName: "fetchRemoteModels"; text: "공유 모델 불러오기"; enabled: page.idle; onClicked: page.library.modelAction("remote", "", "") }
             StudioButton { text: "진단"; enabled: page.idle; onClicked: page.library.diagnose() }
         }
         Repeater {
@@ -44,26 +43,13 @@ ScrollView {
                 }
             }
         }
-        Copy { Layout.fillWidth: true; visible: page.library.localModels.length===0; text: "아직 보관 모델이 없습니다. 동작을 학습하거나 공유 모델을 다운로드하세요."; color: Theme.Studio.muted }
+        Copy { Layout.fillWidth: true; visible: page.library.localModels.length===0; text: "아직 보관 모델이 없습니다. 동작 탭에서 학습을 실행하세요."; color: Theme.Studio.muted }
         StudioField { objectName: "modelDisplayName"; Layout.fillWidth: true; text: page.draftName; onTextEdited: page.draftName=text; maximumLength: 80; placeholderText: "모델 이름 · 예: 책상 오른손 v2"; Accessible.name: "모델 표시 이름"; enabled: page.selectedId!=="" && page.idle }
         Flow {
             Layout.fillWidth: true; spacing: 6
             StudioButton { text: "이름 저장"; enabled: page.idle && page.selectedId!=="" && page.draftName.trim()!==""; onClicked: page.library.modelAction("rename",page.selectedId,page.draftName) }
-            StudioButton { objectName: "uploadNamedModel"; text: "모델 업로드"; enabled: page.idle && page.selectedId!=="" && page.draftName.trim()!==""; onClicked: {page.pendingId=page.selectedId;page.pendingAction="upload";confirmation.open()} }
             StudioButton { objectName: "previewNamedModel"; text: page.selectedModel.format==="spatial" ? "포즈 미리보기로 선택" : "이 모델로 시험"; enabled: page.idle && page.selectedId!==""; onClicked: page.library.modelAction("preview",page.selectedId,"") }
             StudioButton { objectName: "applyNamedModel"; text: "검증 후 이 모델 사용"; primary: true; visible: page.selectedModel.format!=="spatial"; enabled: page.idle && page.selectedId!==""; onClicked: {page.pendingId=page.selectedId;page.pendingAction="apply";confirmation.open()} }
-        }
-        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.Studio.line }
-        Copy { text: "공유 모델"; font.bold: true; font.pixelSize: 17 }
-        Repeater {
-            model: page.library.remoteModels
-            RowLayout {
-                required property var modelData
-                id: remoteRow
-                Layout.fillWidth: true
-                Copy { Layout.fillWidth: true; text: remoteRow.modelData.name+" · "+remoteRow.modelData.id.slice(0,8); font.bold: true }
-                StudioButton { text: "다운로드"; enabled: page.idle; onClicked: page.library.modelAction("download",remoteRow.modelData.id,"") }
-            }
         }
         Copy { text: "이전 사용 버전으로 돌아가기"; font.bold: true; font.pixelSize: 17 }
         Repeater {

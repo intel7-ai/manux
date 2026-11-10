@@ -58,7 +58,7 @@ def test_every_learning_tab_opens_with_real_services_and_no_qml_errors(
     QTest.qWait(100)
     for width, height in [(780, 560), (1140, 720)]:
         bridge.window.resize(width, height)
-        for index in range(6):
+        for index in range(3):
             button = visual_child(bridge.window.contentItem(), f"studioTab_{index}")
             assert button is not None
             assert button.property("enabled")

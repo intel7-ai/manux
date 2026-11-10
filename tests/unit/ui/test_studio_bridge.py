@@ -119,7 +119,8 @@ def test_studio_worker_playback_curation_and_small_window_actions(tmp_path):
         b.studio.seek(120)
         assert b.studio.frameIndex == 120 and b.studio.frame["t"] == 4
         assert b.studio.frameDelay == pytest.approx(1000/30)
-        popup.setProperty("pageIndex", 1)
+        popup.setProperty("pageIndex", 0)
+        popup.setProperty("recordingSubTab", 1)
         QTest.qWait(60)
         button = b.window.findChild(QQuickItem, "studioInclude")
         assert button.property("enabled")
@@ -134,14 +135,16 @@ def test_studio_worker_playback_curation_and_small_window_actions(tmp_path):
         for width, height in ((780, 560), (1140, 720)):
             b.window.setWidth(width)
             b.window.setHeight(height)
-            for page in range(3):
+            for page in range(2):
                 popup.setProperty("pageIndex", page)
+                if page == 0:
+                    popup.setProperty("recordingSubTab", 1)
                 QTest.qWait(60)
                 action = b.window.findChild(QQuickItem, "recordSelection")
                 point = action.mapToScene(QPointF(0, 0))
                 assert 0 <= point.y() and point.y()+action.height() <= b.window.height()
                 assert action.property("enabled")
-                if page in (1, 2):
+                if page == 0:
                     canvases = [c for c in b.window.findChildren(QQuickItem, "studioSkeleton") if c.isVisible()]
                     assert len(canvases) == 1
                     canvas = canvases[0]
