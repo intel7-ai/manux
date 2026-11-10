@@ -38,7 +38,7 @@ THRESHOLDS: Dict[str, Any] = {
     "index_tuck_ratio": 1.15,
     # hand-shape speed (docs: hand-mouse/docs/hand-shape-speed.md)
     "shape_dpi_enabled": True,
-    "shape_dpi_min": .6,
+    "shape_dpi_min": 1.0,
     "shape_curl_open": 1.45,
     "shape_curl_fist": .85,
     "shape_dpi_curve": 1.0,
