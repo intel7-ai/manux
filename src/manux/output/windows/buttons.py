@@ -58,12 +58,15 @@ class Keys:
         self.backend = backend
         self.down: List[str] = []
 
-    def chord(self, keys: Tuple[str, ...]) -> None:
+    def chord(self, keys: Tuple[str, ...], hold_s: float = 0.03) -> None:
         """Press `keys` in order, then release them in reverse (released even if a press fails)."""
         try:
             for k in keys:
                 self.backend.key(k, True)
                 self.down.append(k)
+            if hold_s > 0 and type(self.backend).__name__ == "Win32Backend":
+                import time
+                time.sleep(hold_s)
         finally:
             self.release_all(raise_errors=True)
 

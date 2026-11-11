@@ -328,7 +328,7 @@ def test_guard_sustains_and_ends_right_drag_with_spatial_mlp(trained_mlp: Spatia
 
 def test_guard_fires_desktop_on_palm_side_pose(trained_mlp: SpatialMlpModel):
     feat = SpatialPoseFeature(trained_mlp, mode="assist")
-    guard = SpatialPoseGuard(feat)
+    guard = SpatialPoseGuard(feat, k_desktop=5)
 
     hand_palm = HandObservation(
         frame=FrameInfo(1, 600.0, 640, 480, False),
@@ -355,6 +355,67 @@ def test_guard_fires_desktop_on_palm_side_pose(trained_mlp: SpatialMlpModel):
     out5 = guard.filter([Intent(600.133, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], c5)
     assert len(out5) == 1 and out5[0].gesture == "pinch.thumb_tucked_open" and out5[0].phase == "tap"
     assert "spatial_guard:desktop_fired" in guard.drain_events()
+
+
+def test_guard_desktop_rejects_fast_swipe_motion(trained_mlp: SpatialMlpModel):
+    feat = SpatialPoseFeature(trained_mlp, mode="assist")
+    guard = SpatialPoseGuard(feat, k_desktop=5)
+
+    # Simulate a fast moving hand (swipe): wrist jumps 0.05 each frame
+    for i in range(1, 10):
+        t = 600.0 + (i - 1) * 0.033
+        pts = _dummy_hand(20, horizontal=True)
+        # Shift wrist and all landmarks horizontally rapidly
+        pts = [(x + i * 0.05, y, z) for x, y, z in pts]
+        hp = HandObservation(frame=FrameInfo(i, t, 640, 480, False),
+                             landmarks=tuple(pts), handedness="Right", score=0.95)
+        c = FrameContext(hp.frame, "default", "none", "pinch")
+        guard.observe(hp, c)
+        out = guard.filter([Intent(t, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], c)
+        assert len(out) == 1 and out[0].gesture == "pinch.move"
+
+    # Fast swipe must NEVER trigger desktop!
+    assert "spatial_guard:desktop_fired" not in guard.drain_events()
+
+
+def test_guard_fires_window_close_on_rock_sign_pose(trained_mlp: SpatialMlpModel):
+    from manux.features.spatial_pose import SpatialPoseEvidence
+
+    feat = SpatialPoseFeature(trained_mlp, mode="assist")
+    guard = SpatialPoseGuard(feat, k_rock=5)
+
+    pts = _dummy_hand(None)
+    for i in range(1, 5):
+        t = 700.0 + (i - 1) * 0.033
+        hp = HandObservation(frame=FrameInfo(i, t, 640, 480, False),
+                             landmarks=tuple(pts), handedness="Right", score=0.95)
+        c = FrameContext(hp.frame, "default", "none", "pinch")
+        feat._latest_evidence = SpatialPoseEvidence("rock_sign", 0.96, {"rock_sign": 0.96}, t)
+        guard.observe(hp, c)
+        out = guard.filter([Intent(t, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], c)
+        assert len(out) == 1 and out[0].gesture == "pinch.move"
+
+    # Frame 5: run = 5 -> fires window.close (spatial_pose.rock_sign)!
+    t5 = 700.0 + 4 * 0.033
+    hp5 = HandObservation(frame=FrameInfo(5, t5, 640, 480, False),
+                          landmarks=tuple(pts), handedness="Right", score=0.95)
+    c5 = FrameContext(hp5.frame, "default", "none", "pinch")
+    feat._latest_evidence = SpatialPoseEvidence("rock_sign", 0.96, {"rock_sign": 0.96}, t5)
+    guard.observe(hp5, c5)
+    out5 = guard.filter([Intent(t5, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], c5)
+    assert len(out5) == 1 and out5[0].gesture == "spatial_pose.rock_sign" and out5[0].phase == "tap"
+    assert "spatial_guard:rock_fired" in guard.drain_events()
+
+    # Frame 6 (continuous hold without release): must NOT fire again (one-shot per gesture hold)
+    t6 = 700.0 + 5 * 0.033
+    hp6 = HandObservation(frame=FrameInfo(6, t6, 640, 480, False),
+                          landmarks=tuple(pts), handedness="Right", score=0.95)
+    c6 = FrameContext(hp6.frame, "default", "none", "pinch")
+    feat._latest_evidence = SpatialPoseEvidence("rock_sign", 0.96, {"rock_sign": 0.96}, t6)
+    guard.observe(hp6, c6)
+    out6 = guard.filter([Intent(t6, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], c6)
+    assert len(out6) == 1 and out6[0].gesture == "pinch.move"
+    assert "spatial_guard:rock_fired" not in guard.drain_events()
 
 
 def test_guard_respects_disabled_desktop_setting(trained_mlp: SpatialMlpModel):

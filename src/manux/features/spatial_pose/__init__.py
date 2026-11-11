@@ -162,6 +162,7 @@ class SpatialPoseGuard(IntentFilter):
 
     def __init__(self, feature: SpatialPoseFeature, *, tau_veto: float = 0.80, k_frames: int = 2,
                  enabled: bool = True, boost: bool = True, tau_boost: float = 0.70, k_boost: int = 2,
+                 k_desktop: int = 14, k_rock: int = 10,
                  settings: Any = None) -> None:
         self.feature = feature
         self.settings = settings
@@ -171,6 +172,8 @@ class SpatialPoseGuard(IntentFilter):
         self.boost = boost
         self.tau_boost = tau_boost
         self.k_boost = k_boost
+        self.k_desktop = k_desktop
+        self.k_rock = k_rock
         self.vetoed_count = 0
         self.passed_count = 0
         self.boosted_count = 0
@@ -193,8 +196,14 @@ class SpatialPoseGuard(IntentFilter):
         self._scroll_last_scale: Optional[float] = None
         self._scroll_run: int = 0
         self._desktop_run: int = 0
-        self._is_horiz: bool = False
+        self._desktop_fired: bool = False
         self._last_desktop_fired: float = -1e9
+        self._rock_run: int = 0
+        self._rock_fired: bool = False
+        self._last_rock_fired: float = -1e9
+        self._is_horiz: bool = False
+        self._last_wrist_pos: Optional[Tuple[float, float]] = None
+        self._hand_speed: float = 0.0
 
     @staticmethod
     def _circle_score(hand: Optional[HandObservation], cls: str) -> float:
@@ -241,16 +250,32 @@ class SpatialPoseGuard(IntentFilter):
             self._scroll_run = 0
 
         is_horiz = False
+        hand_speed = 0.0
         if hand is not None and hand.landmarks and len(hand.landmarks) >= 10:
             w, m = hand.landmarks[0], hand.landmarks[9]
             # Hand is horizontal when dx >= 0.65 * dy (palm held sideways / horizontal)
             is_horiz = abs(m[0] - w[0]) >= 0.65 * abs(m[1] - w[1])
+            if self._last_wrist_pos is not None:
+                hand_speed = math.hypot(w[0] - self._last_wrist_pos[0], w[1] - self._last_wrist_pos[1])
+            self._last_wrist_pos = (w[0], w[1])
+        else:
+            self._last_wrist_pos = None
         self._is_horiz = is_horiz
+        self._hand_speed = hand_speed
 
-        if ev is not None and ev.action == "palm_side" and ev.confidence >= 0.75 and is_horiz:
+        # Desktop: horizontal, stationary palm_side (speed < 0.025 to reject rapid motion/swipes)
+        if ev is not None and ev.action == "palm_side" and ev.confidence >= 0.75 and is_horiz and hand_speed < 0.025:
             self._desktop_run += 1
         else:
             self._desktop_run = 0
+            self._desktop_fired = False
+
+        # Rock sign (window close): steady rock_sign pose hold
+        if ev is not None and ev.action == "rock_sign" and ev.confidence >= 0.75:
+            self._rock_run += 1
+        else:
+            self._rock_run = 0
+            self._rock_fired = False
 
         # boost: fuse physical pinch circle proximity with Spatial MLP confidence
         cls = None
@@ -292,14 +317,42 @@ class SpatialPoseGuard(IntentFilter):
         scroll_active = (ev.action == "thumb_index" and ev.confidence >= 0.55)
         out: List[Intent] = []
 
-        # Show desktop assist: when Spatial MLP steadily confirms horizontal palm_side (>= 5 frames ~ 160ms)
-        desktop_enabled = True if self.settings is None else bool(self.settings.get("pinch.enable_thumb_tucked_open"))
+        # Show desktop assist: when Spatial MLP steadily confirms horizontal, stationary palm_side (>= k_desktop frames)
+        desktop_enabled = True if self.settings is None else bool(self.settings.get("pinch.enable_thumb_tucked_open", True))
         desktop_cooldown_ok = (ctx.frame.t - self._last_desktop_fired) >= 2.0
-        if desktop_enabled and self._desktop_run >= 5 and desktop_cooldown_ok and not self._dragging and not self._right_dragging and not self._scrolling:
+        if (
+            desktop_enabled
+            and ctx.mode != "motion"
+            and self._desktop_run >= self.k_desktop
+            and desktop_cooldown_ok
+            and not self._desktop_fired
+            and not self._dragging
+            and not self._right_dragging
+            and not self._scrolling
+        ):
             self._last_desktop_fired = ctx.frame.t
+            self._desktop_fired = True
             self._desktop_run = 0
             self._events.append("spatial_guard:desktop_fired")
             return (Intent(ctx.frame.t, "pinch", "pinch.thumb_tucked_open", "tap"),)
+
+        # Window close assist: when Spatial MLP steadily confirms rock_sign (>= k_rock frames)
+        close_enabled = True if self.settings is None else bool(self.settings.get("pinch.enable_rock_sign", True))
+        rock_cooldown_ok = (ctx.frame.t - self._last_rock_fired) >= 1.5
+        if (
+            close_enabled
+            and self._rock_run >= self.k_rock
+            and rock_cooldown_ok
+            and not self._rock_fired
+            and not self._dragging
+            and not self._right_dragging
+            and not self._scrolling
+        ):
+            self._last_rock_fired = ctx.frame.t
+            self._rock_fired = True
+            self._rock_run = 0
+            self._events.append("spatial_guard:rock_fired")
+            return (Intent(ctx.frame.t, "spatial_pose", "spatial_pose.rock_sign", "tap"),)
 
         if not intents and self._scrolling:
             if scroll_active:
@@ -720,6 +773,7 @@ class SpatialPoseGuard(IntentFilter):
         self._boost_class = None
         self._last_boosted_class = None
         self._boost_run = 0
+        self._boost_fast = False
         self._boost_done = False
         self._events.clear()
         self._dragging = False
@@ -733,4 +787,10 @@ class SpatialPoseGuard(IntentFilter):
         self._scroll_last_scale = None
         self._scroll_run = 0
         self._desktop_run = 0
+        self._desktop_fired = False
         self._last_desktop_fired = -1e9
+        self._rock_run = 0
+        self._rock_fired = False
+        self._last_rock_fired = -1e9
+        self._last_wrist_pos = None
+        self._hand_speed = 0.0
