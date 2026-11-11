@@ -105,3 +105,17 @@ def test_paths_never_point_into_the_repository(tmp_path: Path):
         tmp_path / "MANUX" / "v04"
     assert paths.resolve(env={"MANUX_DATA_DIR": str(tmp_path / "x")}, frozen=False).data_dir == tmp_path / "x"
     assert paths.v03_config_dir({"APPDATA": str(tmp_path)}) == tmp_path / "MANUX" / "config"
+
+
+def test_pose_paths_resolution(tmp_path: Path):
+    p_frozen = paths.resolve(env={"APPDATA": str(tmp_path)}, frozen=True, app_dir=tmp_path)
+    assert p_frozen.pose_snapshots_dir == tmp_path / "MANUX" / "v04" / "pose_snapshots"
+    assert p_frozen.spatial_models_dir == tmp_path / "MANUX" / "v04" / "models" / "spatial_mlp"
+
+    p_custom = paths.resolve(env={"MANUX_DATA_DIR": str(tmp_path / "custom")}, frozen=False)
+    assert p_custom.pose_snapshots_dir == tmp_path / "custom" / "pose_snapshots"
+    assert p_custom.spatial_models_dir == tmp_path / "custom" / "models" / "spatial_mlp"
+
+    p_dev = paths.resolve(env={"APPDATA": str(tmp_path)}, frozen=False)
+    assert p_dev.pose_snapshots_dir == p_dev.app_dir / "data" / "pose_snapshots"
+    assert p_dev.spatial_models_dir == p_dev.app_dir / "models" / "spatial_mlp"

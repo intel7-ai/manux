@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/Custom_AI_Model-SpatialPoseMLP_(Zero--GC)-8A2BE2?style=flat-square" alt="Custom AI Model" />
   <img src="https://img.shields.io/badge/Trained_Samples-17%2C689+_Gold_Dataset-success?style=flat-square" alt="Trained Samples" />
   <img src="https://img.shields.io/badge/Inference_Speed-0.003ms_(3.0μs)-yellow?style=flat-square" alt="Inference Speed" />
-  <img src="https://img.shields.io/badge/Unit_Tests-890_Passed-brightgreen?style=flat-square" alt="Unit Tests" />
+  <img src="https://img.shields.io/badge/Unit_Tests-895_Passed-brightgreen?style=flat-square" alt="Unit Tests" />
   <img src="https://img.shields.io/badge/Platform-Windows_x64-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Platform" />
 </p>
 
@@ -103,7 +103,7 @@
 
 ### 2. Spatial MLP & Guard 센서 퓨전 동작 원리 (Internal Mechanism)
 
-`src/manux/features/spatial_pose/__init__.py`의 `SpatialPoseGuard`는 2D 규칙 엔진의 출력을 가로채 아래 3단계로 필터링합니다:
+`src/manux/features/spatial_pose/__init__.py`의 `SpatialPoseGuard`는 2D 규칙 엔진의 출력을 가로채 아래 4가지 경로로 필터링합니다:
 
 ```mermaid
 flowchart TD
@@ -161,13 +161,13 @@ uv run --locked --python 3.12 --extra ui --extra vision --extra ml python -m man
 ```powershell
 uv run --python 3.12 python tools/train_spatial_mlp.py
 ```
-학습 결과는 `models/spatial_mlp/active_model.json`에 저장되어 앱 실행 시 기본 탑재됩니다.
+기본값은 `models/spatial_mlp/gh.json`에 학습 결과가 저장되며(`--model <이름>`으로 변경 가능), `models/spatial_mlp/active_model.json`의 `active_model_id`가 가리키는 모델이 앱 실행 시 로드됩니다.
 
-### 3. 단위 테스트 실행 (890개 전체 검증)
+### 3. 단위 테스트 실행 (894개 전체 검증)
 ```powershell
 uv run --locked --python 3.12 pytest -q
 ```
-*클릭 1:1 에뮬레이션, 드래그 유지, 우클릭 드래그, 양쪽 클릭, Spatial Guard, 스튜디오 전 기능 890개 테스트가 100% 통과하도록 검증됩니다.*
+*클릭 1:1 에뮬레이션, 드래그 유지, 우클릭 드래그, 양쪽 클릭, Spatial Guard, 스튜디오 전 기능 895개 테스트가 100% 통과하도록 검증됩니다.*
 
 ---
 

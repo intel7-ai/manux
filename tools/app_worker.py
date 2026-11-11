@@ -197,7 +197,9 @@ def run_pose_training(request, send=emit):
     from manux.perception.spatial_features import extract_spatial_features
     from manux.data.studio import atomic_json
     from model_library import add
-    studio = PoseSnapshotStudio(Path(request["data_dir"]))
+    snapshots_dir = Path(request["snapshots_dir"]) if request.get("snapshots_dir") else None
+    models_dir = Path(request["models_dir"]) if request.get("models_dir") else None
+    studio = PoseSnapshotStudio(Path(request["data_dir"]), snapshots_dir=snapshots_dir, models_dir=models_dir)
     model_id = request.get("model_id", studio.active_model_id)
     if not isinstance(model_id, str) or Path(model_id).name != model_id or not model_id.endswith(".json"):
         raise ValueError("포즈 모델 선택값이 잘못되었습니다.")

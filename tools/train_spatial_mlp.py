@@ -25,8 +25,7 @@ def main() -> None:
     models_dir = repo_root / "models" / "spatial_mlp"
     models_dir.mkdir(parents=True, exist_ok=True)
 
-    studio = make_pose_studio(data_dir)
-    studio.models_dir = models_dir
+    studio = make_pose_studio(data_dir, snapshots_dir=data_dir / "pose_snapshots", models_dir=models_dir)
     target = args.model if args.model.endswith(".json") else f"{args.model}.json"
     studio.active_model_id = target
 
