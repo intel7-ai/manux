@@ -119,7 +119,7 @@ def test_studio_restores_per_gesture_actions_saved_plans_and_visible_progress(tm
             QTest.qWait(50)
             if not bridge.trainingBusy:
                 bridge.trainingChanged.emit(); QTest.qWait(50); break
-        assert len(bridge.trainingRows) == 8
+        assert len(bridge.trainingRows) == 5
         progress = bridge.window.findChild(QQuickItem, "openTrainingProgress")
         assert progress.isVisible() and progress.mapToScene(QPointF(0, 0)).y() < 140
         listing = bridge.window.findChild(QQuickItem, "trainingTasks")

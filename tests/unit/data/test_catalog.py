@@ -14,13 +14,13 @@ RASP_JUN = {  # key -> training label, from origin/codex/rasp-jun-training-cente
     "thumb_middle_drag": "thumb_middle", "thumb_index_middle": "thumb_index_middle", "thumb_pinky": "thumb_pinky",
     "palm_side": "palm_side", "v_sign": "v_sign", "rock_sign": "rock_sign", "thumbs_up": "thumbs_up",
     "swipe_left": "swipe_left", "swipe_right": "swipe_right", "swipe_tab_left": "swipe_tab_left",
-    "swipe_tab_right": "swipe_tab_right", "swipe_down": "swipe_down", "open_move": "none", "fist_move": "none",
+    "swipe_tab_right": "swipe_tab_right", "open_move": "none", "fist_move": "none",
 }
 
 
 def test_rasp_juns_eighteen_keep_keys_order_and_labels():
     assert [(t.key, t.label) for t in TASKS] == list(RASP_JUN.items())
-    assert len(TASKS) == 18 and set(catalog.DISPLAY_KEYS) == set(RASP_JUN)
+    assert len(TASKS) == 17 and set(catalog.DISPLAY_KEYS) == set(RASP_JUN) - {"open_move", "fist_move"}
     assert {t.category for t in TASKS} == set(catalog.CATEGORIES[1:])
     assert all(t.name and t.do for t in ALL_TASKS)
 
@@ -29,7 +29,7 @@ def test_gesture_ids_exist_in_v04_features_or_are_capture_only():
     for task in ALL_TASKS:
         for gid in (task.gesture, task.related):
             assert gid is None or gid in DECLARED, (task.key, gid)
-    assert set(CAPTURE_ONLY) == {"rock_sign", "swipe_down"}
+    assert set(CAPTURE_ONLY) == {"rock_sign"}
     assert BY_KEY["v_sign"].gesture == control.V_SIGN
     assert BY_KEY["thumb_ring"].gesture == pinch.THUMB_RING
     assert BY_KEY["thumb_index"].gesture == pinch.SCROLL
@@ -63,7 +63,7 @@ def test_tasks_for_focus_category_and_mode():
     assert tasks_for("unknown") == TASKS                  # rasp-jun's fallback
     assert [t.key for t in tasks_for(["swipe_left", "none", "swipe_left"])] == ["swipe_left", "none"]
     assert {t.key for t in tasks_for(category="방향 모션")} == {
-        "swipe_left", "swipe_right", "swipe_tab_left", "swipe_tab_right", "swipe_down"}
+        "swipe_left", "swipe_right", "swipe_tab_left", "swipe_tab_right"}
     assert tasks_for(category="전체") == TASKS
     assert "trigger_drag" in {t.key for t in tasks_for(mode="trigger")}
     assert "thumb_ring" not in {t.key for t in tasks_for(mode="pointer")}

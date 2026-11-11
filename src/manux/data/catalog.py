@@ -12,8 +12,8 @@ A task (`GestureSpec`) has:
   several tasks may share one class, e.g. click and double click are both `thumb_middle`);
 - `gesture`: the v0.4 gesture id the *class* stands for (`label.gesture`, model card `gestures`).
   `None` for the `none` class and for capture-only tasks with no v0.4 feature yet
-  (`rock_sign`, `swipe_down`): those are recorded and can be trained, but nothing in
-  v0.4 checks them yet;
+  (`rock_sign`): recorded and can be trained, but nothing in
+  v0.4 checked it yet;
 - `related`: a v0.4 gesture the task performs although its class is not that gesture (cursor moves
   recorded as `none` negatives: `pinch.move`, `pinch.move_fist`, `pointer.move`);
 - `category` (screen grouping), `direction` (swipes; the dataset reader drops "do" frames that did not
@@ -126,8 +126,6 @@ TASKS: Tuple[GestureSpec, ...] = (
        MOTION, direction="left", gesture="motion.swipe_left_tucked"),
     _t("swipe_tab_right", "엄지 접고 오른쪽 쓸기 (다음 탭)", "엄지를 접고 네 손가락을 펴 오른쪽으로 한 번 쓸어 멈추세요. 쉬기 때 돌아오세요",
        MOTION, direction="right", gesture="motion.swipe_right_tucked"),
-    _t("swipe_down", "손 펴고 아래로 쓸기 (창 닫기)", "손을 펴 아래로 한 번 쓸어 멈추세요. 쉬기 때 올리세요. 실제 창은 닫히지 않아요",
-       MOTION, direction="down"),
     _t("open_move", "손 펴고 이동 (빠른 커서)", "손을 편 채 여러 방향으로 움직이세요. 손가락을 집지 마세요", MOVE,
        free=True, target=NONE, related="pinch.move", modes=_PINCH),
     _t("fist_move", "주먹 이동 (정밀 커서)", "주먹을 쥐고 천천히 여러 방향으로 움직이세요. 엄지만 세우지 마세요", MOVE,
@@ -168,7 +166,7 @@ BY_KEY: Dict[str, GestureSpec] = {t.key: t for t in ALL_TASKS}
 DISPLAY_KEYS: Tuple[str, ...] = (
     "thumb_middle", "thumb_index", "thumb_ring", "thumb_middle_drag", "thumb_index_middle", "thumb_pinky",
     "palm_side", "v_sign", "rock_sign", "thumbs_up", "swipe_left", "swipe_right", "swipe_tab_left",
-    "swipe_tab_right", "swipe_down", "none", "open_move", "fist_move")
+    "swipe_tab_right", "none")
 PILOT_KEYS: Tuple[str, ...] = ("thumb_ring", "thumb_index", NONE)   # Dan's three (guided.DEFAULT_SPECS)
 CAPTURE_ONLY: Tuple[str, ...] = tuple(t.key for t in ALL_TASKS if t.gesture_id is None and t.label != NONE)
 

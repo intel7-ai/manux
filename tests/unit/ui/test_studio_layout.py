@@ -233,7 +233,7 @@ def test_original_studio_flows_use_current_training_service(studio, monkeypatch)
             bridge.trainingChanged.emit()
             QTest.qWait(100)
             break
-    assert len(bridge.studioTrainingRows) == 18
+    assert len(bridge.studioTrainingRows) == 15
     assert not bridge.window.findChild(QObject, "settingsNav")
     assert not bridge.window.findChild(QObject, "homeNav")
     bridge.command(32)

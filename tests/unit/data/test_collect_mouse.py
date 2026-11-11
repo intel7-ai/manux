@@ -152,13 +152,13 @@ def cli(*argv):
 
 def test_cli_list_uses_the_catalog_and_the_plan(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("MANUX_DATA_DIR", str(tmp_path))
-    assert collect_mouse.main(["--list", "--plan", "positions", "--focus", "v_sign", "swipe_left", "swipe_down"]) == 0
+    assert collect_mouse.main(["--list", "--plan", "positions", "--focus", "v_sign", "swipe_left", "rock_sign"]) == 0
     out = capsys.readouterr().out
     assert "control.v_sign" in out and "motion.swipe_left" in out
     v_line = next(line for line in out.splitlines() if "v_sign" in line)
-    down_line = next(line for line in out.splitlines() if "swipe_down" in line)
+    rock_line = next(line for line in out.splitlines() if "rock_sign" in line)
     assert "control.v_sign" in v_line and "capture-only" not in v_line
-    assert "capture-only" in down_line
+    assert "capture-only" in rock_line
     assert out.count("condition ") == 9 and "pose-" in out
 
 
