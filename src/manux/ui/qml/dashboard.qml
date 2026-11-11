@@ -229,12 +229,6 @@ ApplicationWindow {
                         text: dashboard.motionLabel
                         onClicked: dashboard.toggleMotion()
                     }
-                    ActionButton {
-                        Layout.fillWidth: true
-                        enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
-                        text: dashboard.profileLabel + (dashboard.profileCount > 0 ? "  (눌러서 바꾸기)" : "  (없음)")
-                        onClicked: dashboard.cycleProfile()
-                    }
                     ColumnLayout {
                         visible: dashboard.pointerOnly
                         Layout.fillWidth: true
@@ -520,7 +514,7 @@ ApplicationWindow {
                     anchors.margins: 12
                     spacing: 4
                     Repeater {
-                        model: [["home", "홈"], ["studio", "스튜디오"], ["profiles", "프로필"], ["customize", "맞춤 설정"]]
+                        model: [["home", "홈"], ["studio", "스튜디오"], ["customize", "맞춤 설정"]]
                         delegate: Button {
                             id: navItem
                             required property var modelData
@@ -1477,57 +1471,6 @@ ApplicationWindow {
                 }
             }
 
-            // Profiles: which calibration profile the engine uses
-            ScrollView {
-                id: profilesScroll
-                visible: dashboard.currentPage === "profiles"
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                clip: true
-                contentWidth: availableWidth
-                ColumnLayout {
-                    width: Math.min(profilesScroll.availableWidth - 48, 720)
-                    x: 24
-                    spacing: 12
-                    Item { Layout.preferredHeight: 8 }
-                    TextLabel { text: "프로필"; font.pixelSize: 22; font.bold: true }
-                    TextLabel {
-                        Layout.fillWidth: true
-                        wrapMode: Text.Wrap
-                        color: window.muted
-                        text: "프로필은 내 손에 맞춰 잰 값입니다. 기본값 위에 덮어써서, 같은 동작도 사람마다 잘 맞게 합니다. 바꾸면 입력이 멈추니 다시 켜세요."
-                    }
-                    Repeater {
-                        model: dashboard.profileNames
-                        delegate: Rectangle {
-                            required property var modelData
-                            readonly property bool chosen: dashboard.profileName === modelData[0]
-                            Layout.fillWidth: true
-                            implicitHeight: 52
-                            radius: 12
-                            color: chosen ? "#E3F8F1" : "white"
-                            border.color: chosen ? window.mint : window.line
-                            border.width: chosen ? 2 : 1
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 16
-                                anchors.rightMargin: 16
-                                TextLabel { text: modelData[1]; font.bold: chosen; Layout.fillWidth: true }
-                                TextLabel { visible: chosen; text: "사용 중"; color: "#08775E"; font.pixelSize: 12 }
-                            }
-                            MouseArea { anchors.fill: parent; onClicked: dashboard.selectProfile(modelData[0]) }
-                        }
-                    }
-                    TextLabel {
-                        Layout.fillWidth: true
-                        wrapMode: Text.Wrap
-                        color: window.muted
-                        font.pixelSize: 12
-                        text: "새 프로필 만들기(내 손에 맞추기)는 맞춤 설정 화면에 곧 추가됩니다."
-                    }
-                }
-            }
-
             // Customization: what the user can change without a developer (docs/design/decision-customization.md)
             ScrollView {
                 id: customizeScroll
@@ -1588,16 +1531,36 @@ ApplicationWindow {
                         }
                     }
                     Divider {}
-                    SectionLabel { text: "곧 추가됩니다" }
-                    Repeater {
-                        model: [["동작 바꾸기", "원하는 동작을 다섯 번 보여 주면, 그 동작으로 클릭·우클릭 등을 하게 바꿉니다."],
-                                ["내 손에 맞추기", "지금 동작이 잘 안 될 때, 몇 번 해 보이면 내 손에 맞는 값으로 프로필을 만듭니다."]]
-                        delegate: ColumnLayout {
-                            required property var modelData
-                            Layout.fillWidth: true
-                            spacing: 2
-                            TextLabel { text: modelData[0]; font.bold: true; color: window.muted }
-                            TextLabel { Layout.fillWidth: true; text: modelData[1]; color: window.muted; font.pixelSize: 12; wrapMode: Text.Wrap }
+                    SectionLabel { text: "상세 및 고급 설정" }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: advRow.implicitHeight + 24
+                        radius: 12
+                        color: "white"
+                        border.color: window.line
+                        RowLayout {
+                            id: advRow
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 12
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                TextLabel { text: "모든 고급 설정"; font.bold: true; color: window.navy }
+                                TextLabel {
+                                    Layout.fillWidth: true
+                                    text: "테두리 발광 알림 여백, 커서 이동 파라미터, 단축키 등 세부 항목을 직접 조정합니다."
+                                    color: window.muted
+                                    font.pixelSize: 12
+                                    wrapMode: Text.Wrap
+                                }
+                            }
+                            ActionButton {
+                                Layout.fillWidth: false
+                                Layout.preferredWidth: 140
+                                text: "고급 설정 열기"
+                                onClicked: advancedSettings.open()
+                            }
                         }
                     }
                 }

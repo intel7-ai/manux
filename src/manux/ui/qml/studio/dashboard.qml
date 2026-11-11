@@ -343,12 +343,6 @@ ApplicationWindow {
                                 text: dashboard.motionLabel
                                 onClicked: dashboard.toggleMotion()
                             }
-                            ActionButton {
-                                Layout.fillWidth: true
-                                enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
-                                text: dashboard.profileLabel + (dashboard.profileCount > 0 ? "  (눌러서 바꾸기)" : "  (없음)")
-                                onClicked: dashboard.cycleProfile()
-                            }
                             RowLayout {
                                 visible: !dashboard.pointerOnly
                                 Layout.fillWidth: true

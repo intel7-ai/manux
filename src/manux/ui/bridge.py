@@ -1177,7 +1177,7 @@ class Bridge(QObject):
 
     @Slot(str)
     def setPage(self, page):
-        if page in ("home", "studio", "profiles", "customize") and page != self.page:
+        if page in ("home", "studio", "customize") and page != self.page:
             if page == "studio":
                 self._pause()
                 self._studio_summary_cache = self.pose_studio.summary()
