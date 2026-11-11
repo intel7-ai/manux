@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/Custom_AI_Model-SpatialPoseMLP_(Zero--GC)-8A2BE2?style=flat-square" alt="Custom AI Model" />
   <img src="https://img.shields.io/badge/Trained_Samples-22%2C893_Gold_Dataset-success?style=flat-square" alt="Trained Samples" />
   <img src="https://img.shields.io/badge/Inference_Speed-0.003ms_(3.0μs)-yellow?style=flat-square" alt="Inference Speed" />
-  <img src="https://img.shields.io/badge/Unit_Tests-895_Passed-brightgreen?style=flat-square" alt="Unit Tests" />
+  <img src="https://img.shields.io/badge/Unit_Tests-909_Passed-brightgreen?style=flat-square" alt="Unit Tests" />
   <img src="https://img.shields.io/badge/Platform-Windows_x64-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Platform" />
 </p>
 
@@ -51,6 +51,12 @@
 - **숨은 AppData 종속 탈피**: 기존에는 스튜디오에서 수집한 스냅샷 및 훈련된 모델이 Windows `%APPDATA%` 폴더로 저장되어 Git 버전 관리에 반영되지 못하는 문제가 있었습니다.
 - **로컬 디렉터리 자동 바인딩**: 개발 환경(`not frozen`)에서 스냅샷 수집 및 백그라운드 학습 시, 리포지토리 내의 `data/pose_snapshots/` 및 `models/spatial_mlp/`에 즉시 기록되도록 근본적인 경로 해석(`pose_snapshots_dir`, `spatial_models_dir`)을 개편했습니다.
 - **22,893개 골드 데이터셋 Git 완전 추적**: 우클릭(`thumb_ring`), 양쪽 동시클릭(`thumb_middle_ring`), 좌클릭(`thumb_middle`), 스크롤(`thumb_index`), 가드(`none`) 등 10개 클래스의 37개 JSON 데이터셋(22,893개 표본)과 최신 `gh.json` 모델이 브랜치에 안전하게 영구 보존됩니다.
+
+### 8. 웹캠 화각 이탈 방지 모니터 테두리 발광 알림 (Edge Boundary Glow Alert)
+- **화각 이탈 사전 예방**: 손이 카메라 화각 밖으로 나가 트래킹 및 마우스 제어가 끊기는 문제를 방지하기 위해, 웹캠 테두리에 손의 어느 한 관절이라도 6% 이내로 근접하면 모니터 해당 테두리가 부드럽게 점등합니다.
+- **클릭 완전 관통형 투명 오버레이 (`EdgeGlowOverlay`)**: `Qt.WindowTransparentForInput` 및 `WA_TransparentForMouseEvents`를 적용하여 게임이나 작업 중 마우스 클릭, 드래그, 휠 입력을 100% 무간섭 관통합니다.
+- **연속 그라데이션 & 방향 맞춤형 발광**: 단계 없이 거리에 따라 `투명` $\rightarrow$ `주황` $\rightarrow$ `짙은 빨강`으로 부드럽게 보간되며, 손이 나가는 해당 모서리만 35~50px 안개형 비네팅으로 발광합니다.
+- **제어 상태 연동**: 마우스 제어 활성화(`control_on == True`) 및 손 감지 시에만 작동하며, 제어가 꺼지면 즉시 완전히 투명화/숨김 처리되어 CPU/GPU 점유율 0%를 유지합니다.
 
 ---
 
@@ -150,6 +156,8 @@ flowchart TD
 | `src/manux/settings/paths.py` | • `AppPaths.pose_snapshots_dir` 및 `spatial_models_dir` 추가.<br>• 개발 모드(`not frozen`)에서 로컬 리포지토리의 `data/pose_snapshots` 및 `models/spatial_mlp` 자동 바인딩.<br>• 배포 패키지(`frozen=True`) 및 `MANUX_DATA_DIR` 오버라이드 격리 완벽 보장. |
 | `tools/app_worker.py` & `tools/studio_worker.py` | • UI 학습 및 스튜디오 비동기 작업 시 `snapshots_dir`, `models_dir` 파라미터 수신 및 로컬 디렉터리 연동.<br>• 백그라운드 프로세스에서도 로컬 브랜치 경로 직접 접근 및 원자적(atomic) 모델 저장. |
 | `tools/train_spatial_mlp.py` | • 로컬 `data/pose_snapshots`의 22,893개 표본 기준 1.8초 초고속 재학습 CLI (`--model gh.json`). |
+| `src/manux/core/boundary.py` | • `calc_edge_proximity`: 21개 관절의 카메라 4방향 최근접 거리 계산 및 거울 모드 보정.<br>• 타이트한 6% 임계값 기반 연속 정규화 강도 계산. |
+| `src/manux/platform/overlay.py` | • `EdgeGlowOverlay`: 클릭 완전 관통형 투명 프레임리스 테두리 발광 위젯.<br>• 방향별 35~50px 선형 그라데이션 및 색상/투명도 실시간 보간 렌더링. |
 
 ---
 
@@ -176,11 +184,11 @@ uv run --python 3.12 python tools/train_spatial_mlp.py
 ```
 기본값은 `models/spatial_mlp/gh.json`에 학습 결과가 저장되며(`--model <이름>`으로 변경 가능), `models/spatial_mlp/active_model.json`의 `active_model_id`가 가리키는 모델이 앱 실행 시 로드됩니다.
 
-### 3. 단위 테스트 실행 (895개 전체 검증)
+### 3. 단위 테스트 실행 (909개 전체 검증)
 ```powershell
 uv run --locked --python 3.12 pytest -q
 ```
-*클릭 1:1 에뮬레이션, 드래그 유지, 우클릭 드래그, 양쪽 클릭, Spatial Guard, 스튜디오 전 기능 895개 테스트가 100% 통과하도록 검증됩니다.*
+*클릭 1:1 에뮬레이션, 드래그 유지, 우클릭 드래그, 양쪽 클릭, Spatial Guard, 스튜디오, 테두리 발광 알림 전 기능 909개 테스트가 100% 통과하도록 검증됩니다.*
 
 ---
 
