@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace as NS
 
 import pytest
@@ -114,6 +115,49 @@ def test_crop_miss_falls_back_to_the_whole_frame():
 def test_malformed_landmarks_become_no_hand():
     bad = RawHand(((0.5, 0.5, 0.0),) * 20, "Left", 0.95)
     assert HandTracker(FakeLandmarker([bad])).step(FRAME, None, "Right").hand is None
+
+
+def test_tracking_keeps_current_joints_through_brief_handedness_uncertainty():
+    fake = FakeLandmarker([hand_at(.5, .5, score=.68)])
+    tracker = HandTracker(fake)
+
+    def step(index):
+        frame = replace(FRAME, seq=index, t=FRAME.t + index * .04)
+        return tracker.step(frame, None, "Right")
+
+    assert step(0).hand is None  # uncertainty cannot start a track
+    fake.full = [hand_at(.5, .5)]
+    assert step(1).hand is not None
+    for i in range(2, 7):
+        fake.full = [hand_at(.5 + .005 * i, .5, label="Right" if i == 3 else "Left", score=.68)]
+        result = step(i)
+        assert result.hand.handedness == "Right" and result.hand.frame.seq == i
+        assert result.hand.landmarks == fake.full[0].landmarks
+        assert result.hands[0].score == .68
+    assert step(7).hand is None  # consecutive uncertain frames cannot extend the grace
+    fake.full = [hand_at(.55, .5)]
+    assert step(8).hand is not None
+
+
+@pytest.mark.parametrize("interruption", ["opposite", "jump", "missing", "multiple", "camera", "gap"])
+def test_tracking_does_not_transfer_the_grace_to_an_unrelated_detection(interruption):
+    fake = FakeLandmarker([hand_at(.5, .5)])
+    tracker = HandTracker(fake)
+    assert tracker.step(FRAME, None, "Right").hand is not None
+    uncertain = hand_at(.5, .5, score=.65)
+    fake.full = {
+        "opposite": [hand_at(.5, .5, label="Right")],
+        "jump": [hand_at(.8, .5, score=.65)],
+        "missing": [],
+        "multiple": [uncertain, hand_at(.6, .5, score=.65)],
+        "camera": [uncertain],
+        "gap": [uncertain],
+    }[interruption]
+    frame = replace(FRAME, seq=1, t=1.16 if interruption == "gap" else 1.04,
+                    mirrored=interruption != "camera")
+    assert tracker.step(frame, None, "Right").hand is None
+    fake.full = [uncertain]
+    assert tracker.step(replace(frame, seq=2, t=frame.t + .04), None, "Right").hand is None
 
 
 @pytest.mark.parametrize("requested", [None, 2])
