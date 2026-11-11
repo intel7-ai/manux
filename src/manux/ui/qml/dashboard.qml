@@ -4,6 +4,7 @@ import QtQuick.Layouts
 
 ApplicationWindow {
     id: window
+    objectName: "raspJunStudio"
     width: 1140
     height: 720
     minimumWidth: 780
@@ -57,6 +58,7 @@ ApplicationWindow {
     // Settings: everything that is not needed every day. Basic things first; engine options under "고급".
     Dialog {
         id: settingsDialog
+        objectName: "settingsDialog"
         anchors.centerIn: parent
         width: Math.min(520, window.width - 48)
         height: Math.min(window.height - 48, 680)
@@ -482,6 +484,7 @@ ApplicationWindow {
                 spacing: 12
                 Image {
                     // the official horizontal logo: mark + MANUX wordmark
+                    objectName: "mainBrandLogo"
                     source: "assets/manux.svg"
                     Layout.preferredHeight: 34
                     Layout.preferredWidth: 34 * 1552 / 494
@@ -494,6 +497,7 @@ ApplicationWindow {
                 ActionButton { text: "학습 센터"; onClicked: trainingCenter.open() }
                 TextLabel { text: dashboard.chosenHand; color: window.muted; font.pixelSize: 13 }
                 ActionButton {
+                    objectName: "mainControlToggle"
                     text: dashboard.controlLabel === "일시정지" ? "끄기" : "켜기"
                     accent: dashboard.controlLabel !== "일시정지"
                     Layout.preferredWidth: 96
@@ -516,7 +520,7 @@ ApplicationWindow {
                     anchors.margins: 12
                     spacing: 4
                     Repeater {
-                        model: [["home", "홈"], ["profiles", "프로필"], ["customize", "맞춤 설정"]]
+                        model: [["home", "홈"], ["studio", "스튜디오"], ["profiles", "프로필"], ["customize", "맞춤 설정"]]
                         delegate: Button {
                             id: navItem
                             required property var modelData
@@ -869,7 +873,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             spacing: 2
                             TextLabel {
-                                text: "⚡ 포즈 스냅샷 & 영상 프레임 스튜디오 (Spatial MLP)"
+                                text: "포즈 스냅샷 & 영상 프레임 스튜디오 (Spatial MLP)"
                                 font.pixelSize: 20
                                 font.bold: true
                             }
@@ -884,7 +888,7 @@ ApplicationWindow {
                         Segmented {
                             Layout.fillWidth: false
                             Layout.preferredWidth: 270
-                            options: [["stream", "🎥 영상 연속 수집 (스트림)"], ["snapshot", "📷 단일 캡처 (스냅샷)"]]
+                            options: [["stream", "영상 연속 수집 (스트림)"], ["snapshot", "단일 캡처 (스냅샷)"]]
                             current: dashboard.studioCaptureMode
                             onPicked: function (value) { dashboard.setStudioCaptureMode(value) }
                         }
@@ -952,7 +956,7 @@ ApplicationWindow {
                                         Layout.fillWidth: true
                                         spacing: 8
                                         Chip {
-                                            text: dashboard.studioHandTracked ? "✋ 21관절 추적 정상" : "⚠️ 손 대기 중"
+                                            text: dashboard.studioHandTracked ? "21관절 추적 정상" : "손 대기 중"
                                             warn: !dashboard.studioHandTracked
                                         }
                                         Rectangle {
@@ -1041,7 +1045,7 @@ ApplicationWindow {
                                             }
                                             TextLabel {
                                                 Layout.fillWidth: true
-                                                text: "🚨 불일치(오인식 사각지대) 프레임만 자동 선별 수집 — 손을 이리저리 돌릴 때 틀리는 각도만 쏙쏙 골라 담습니다"
+                                                text: "불일치(오인식 사각지대) 프레임만 자동 선별 수집 — 손을 이리저리 돌릴 때 틀리는 각도만 선별합니다"
                                                 font.pixelSize: 12
                                                 font.bold: dashboard.studioDiscrepancyOnly
                                                 color: dashboard.studioDiscrepancyOnly ? "#B91C1C" : window.navy
@@ -1063,7 +1067,7 @@ ApplicationWindow {
                                             }
                                             TextLabel {
                                                 Layout.fillWidth: true
-                                                text: "✋ 21개 관절 완전 인식 시에만 수집 — 손가락이 화면 가장자리에 잘리거나 가려진 불량 프레임 저장을 방지합니다"
+                                                text: "21개 관절 완전 인식 시에만 수집 — 손가락이 화면 가장자리에 잘리거나 가려진 불량 프레임 저장을 방지합니다"
                                                 font.pixelSize: 12
                                                 font.bold: dashboard.studioRequireFullJoints
                                                 color: dashboard.studioRequireFullJoints ? "#065F46" : window.navy
@@ -1097,31 +1101,34 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 spacing: 8
                                 ActionButton {
+                                    objectName: "capturePoseSample"
                                     Layout.fillWidth: true
                                     accent: true
                                     text: dashboard.studioCaptureMode === "stream"
-                                        ? (dashboard.studioStreaming ? "⏹️ 수집 정지 (Space)" : "▶️ 연속 수집 시작 (Space)")
-                                        : "📸 1프레임 캡처 (Space)"
+                                        ? (dashboard.studioStreaming ? "수집 정지 (Space)" : "연속 수집 시작 (Space)")
+                                        : "1프레임 캡처 (Space)"
                                     onClicked: dashboard.triggerStudioCapture()
                                 }
                                 ActionButton {
-                                    text: "↩️ 직전 취소"
+                                    text: "직전 취소"
                                     enabled: dashboard.studioTotalSamples > 0
                                     onClicked: dashboard.undoStudioSample()
                                 }
                                 ActionButton {
-                                    text: "🗑️ 비우기"
+                                    text: "비우기"
                                     enabled: dashboard.studioTotalSamples > 0
                                     onClicked: dashboard.clearStudioSamples()
                                 }
                                 ActionButton {
-                                    text: "💾 데이터셋 저장 (" + dashboard.studioTotalSamples + ")"
+                                    objectName: "savePoseSamples"
+                                    text: "데이터셋 저장 (" + dashboard.studioTotalSamples + ")"
                                     enabled: dashboard.studioTotalSamples > 0
                                     onClicked: dashboard.saveStudioDataset()
                                 }
                                 ActionButton {
+                                    objectName: "trainPoseModel"
                                     accent: true
-                                    text: "⚡ 즉시 학습 (0.2초)"
+                                    text: "즉시 학습 (0.2초)"
                                     onClicked: dashboard.trainStudioModel()
                                 }
                             }
@@ -1140,7 +1147,7 @@ ApplicationWindow {
                                 }
                                 ActionButton {
                                     implicitHeight: 30
-                                    text: "📂 데이터 폴더"
+                                    text: "데이터 폴더"
                                     onClicked: dashboard.openStudioSnapshotsFolder()
                                 }
                             }
@@ -1304,7 +1311,7 @@ ApplicationWindow {
                                 RowLayout {
                                     Layout.fillWidth: true
                                     TextLabel {
-                                        text: "🛡️  0ms 하이브리드 오동작 방어 가드"
+                                        text: "0ms 하이브리드 오동작 방어 가드"
                                         font.bold: true
                                         font.pixelSize: 14
                                         color: window.navy
@@ -1340,14 +1347,19 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 spacing: 10
                                 TextLabel {
-                                    text: "🤖 Spatial MLP 모델 관리 (다중 모델)"
+                                    text: "Spatial MLP 제스처 모델 관리"
                                     font.pixelSize: 15
                                     font.bold: true
                                     color: window.navy
                                 }
                                 Item { Layout.fillWidth: true }
                                 ActionButton {
-                                    text: "➕ 새 모델 추가"
+                                    text: "기존 학습 센터 (TCN)"
+                                    implicitHeight: 32
+                                    onClicked: trainingCenter.open()
+                                }
+                                ActionButton {
+                                    text: "새 모델 추가"
                                     accent: true
                                     implicitHeight: 32
                                     onClicked: {
@@ -1356,11 +1368,6 @@ ApplicationWindow {
                                             newModelField.forceActiveFocus()
                                         }
                                     }
-                                }
-                                ActionButton {
-                                    text: "기존 학습 센터 (TCN)"
-                                    implicitHeight: 32
-                                    onClicked: trainingCenter.open()
                                 }
                             }
 
@@ -1430,7 +1437,7 @@ ApplicationWindow {
                                             ColumnLayout {
                                                 spacing: 2
                                                 TextLabel {
-                                                    text: modelData.name + (modelData.active ? (modelData.exists ? "  [✅ 현재 엔진 적용 중]" : "  [📌 현재 학습 대상 슬롯]") : "")
+                                                    text: modelData.name + (modelData.active ? (modelData.exists ? "  [현재 엔진 적용 중]" : "  [현재 학습 대상 슬롯]") : "")
                                                     font.pixelSize: 13
                                                     font.bold: true
                                                     color: modelData.active ? "#065F46" : window.navy
@@ -1438,7 +1445,7 @@ ApplicationWindow {
                                                 TextLabel {
                                                     text: modelData.exists
                                                         ? ("학습 데이터 내부 확인(실제 정확도 아님) " + modelData.test_accuracy.toFixed(1) + "% · 표본 " + modelData.total_samples + "개 · " + modelData.trained_at + " · " + modelData.file_size_kb + "KB")
-                                                        : "미학습 슬롯 — 상단에서 표본 수집 후 [⚡ 즉시 학습]을 누르면 이 모델로 저장됩니다"
+                                                        : "미학습 슬롯 — 상단에서 표본 수집 후 [즉시 학습]을 누르면 이 모델로 저장됩니다"
                                                     font.pixelSize: 11
                                                     color: window.muted
                                                 }

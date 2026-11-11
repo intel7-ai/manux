@@ -12,25 +12,18 @@ from manux.ui.bridge import Bridge
 from test_bridge import FakeRuntime
 
 
-@pytest.mark.parametrize("layout",["standard","studio"])
-def test_common_tabs_keep_header_and_named_model_actions(tmp_path,monkeypatch,layout):
-    settings=Settings(schema())
-    runtime=FakeRuntime(settings)
-    if layout=="studio":
-        from manux.desktop import build
-        from types import SimpleNamespace
-        runtime=build(settings,SimpleNamespace(close=lambda:None),windows=False)
-    service=TrainingCenterService(tmp_path/'config',tmp_path/'data',tmp_path/'recordings',specs=training_specs())
+@pytest.mark.parametrize("layout", ["standard"])
+def test_common_tabs_keep_header_and_named_model_actions(tmp_path, monkeypatch, layout):
+    settings = Settings(schema())
+    runtime = FakeRuntime(settings)
+    service = TrainingCenterService(tmp_path / 'config', tmp_path / 'data', tmp_path / 'recordings', specs=training_specs())
     service.configure("synthetic")
-    b=Bridge(runtime,settings,tmp_path/'config',services={"training_center":service},layout=layout)
+    b = Bridge(runtime, settings, tmp_path / 'config', services={"training_center": service}, layout=layout)
     try:
-        b.control_hand="Right";b.finishSplash()
-        popup=b.window.findChild(QObject,"studioDataManagement" if layout=="studio" else "trainingCenter")
-        if layout=="studio":
-            button=b.window.findChild(QObject,"openLearningCenter")
-            assert QMetaObject.invokeMethod(button,"click")
-            assert not b.window.findChild(QObject,"trainingCenter").property("visible")
-        else: QMetaObject.invokeMethod(popup,"open")
+        b.control_hand = "Right"
+        b.finishSplash()
+        popup = b.window.findChild(QObject, "trainingCenter")
+        QMetaObject.invokeMethod(popup, "open")
         for _ in range(80):
             QTest.qWait(30)
             if not b.studio.busy and not b.training_busy:break

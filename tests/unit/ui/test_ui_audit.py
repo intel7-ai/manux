@@ -6,10 +6,60 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip("PySide6")
-from PySide6.QtCore import QObject, QMetaObject
+from types import SimpleNamespace
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QObject, QMetaObject, qInstallMessageHandler
 from PySide6.QtTest import QTest
 from PySide6.QtQuick import QQuickItem
-from test_studio_layout import studio, visual_child
+
+from manux.app import schema, training_specs
+from manux.desktop import build, make_pose_studio
+from manux.data.training_center import TrainingCenterService
+from manux.data.pose_studio import STUDIO_ACTIONS, STUDIO_CATEGORIES
+from manux.perception.palm_axes import PalmAxesCalibration, valid_axes, palm_point
+from manux.settings.store import Settings
+from manux.ui.bridge import Bridge
+
+
+def visual_child(item, name):
+    if item.objectName() == name:
+        return item
+    for child in item.childItems():
+        found = visual_child(child, name)
+        if found is not None:
+            return found
+    return None
+
+
+@pytest.fixture
+def studio(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    settings = Settings(schema())
+    runtime = build(settings, SimpleNamespace(close=lambda: None), windows=False)
+    service = TrainingCenterService(tmp_path / "config", tmp_path / "data", tmp_path / "recordings", specs=training_specs())
+    service.configure("synthetic")
+    messages = []
+    old = qInstallMessageHandler(lambda kind, context, text: messages.append(text))
+    bridge = None
+    try:
+        bridge = Bridge(runtime, settings, tmp_path / "config", layout="standard", services={
+            "training_center": service, "palm_calibration": PalmAxesCalibration,
+            "valid_palm_axes": valid_axes, "palm_point": palm_point,
+            "pose_studio": make_pose_studio(tmp_path / "data"),
+            "studio_actions": lambda: list(STUDIO_ACTIONS),
+            "studio_categories": lambda: list(STUDIO_CATEGORIES)})
+        bridge._set_stage("main")
+        yield bridge, service, runtime, messages
+    finally:
+        if bridge:
+            service.job.state = {"running": False}
+            for _ in range(100):
+                if not bridge.training_busy:
+                    break
+                QTest.qWait(20)
+            bridge.close()
+        runtime.stop()
+        qInstallMessageHandler(old)
 
 
 def test_all_qml_bridge_and_library_handler_targets_are_defined():
@@ -53,7 +103,7 @@ def test_every_learning_tab_opens_with_real_services_and_no_qml_errors(
     bridge, service, runtime, messages = studio
     bridge.timer.stop()
     monkeypatch.setattr(bridge.studio, "_run", lambda *args, **kwargs: None)
-    center = bridge.window.findChild(QObject, "studioDataManagement")
+    center = bridge.window.findChild(QObject, "trainingCenter")
     QMetaObject.invokeMethod(center, "open")
     QTest.qWait(100)
     for width, height in [(780, 560), (1140, 720)]:
@@ -158,7 +208,7 @@ def test_library_pose_preview_selects_model_after_preserving_current_samples(
 
 
 @pytest.mark.parametrize(
-    "dialog_name", ["studioDataManagement", "advancedSettings", "studioSettings"]
+    "dialog_name", ["trainingCenter", "advancedSettings", "settingsDialog"]
 )
 def test_v_cannot_enable_control_inside_capture_or_settings_dialogs(
     studio, dialog_name
