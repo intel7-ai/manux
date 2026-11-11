@@ -644,7 +644,7 @@ class Bridge(QObject):
         self.provider = CameraImage()
         self.engine.addImageProvider("vision", self.provider)
         self.engine.rootContext().setContextProperty("dashboard", self)
-        qml = QML
+        qml = QML.parent / "studio" / "dashboard.qml" if self.layout == "studio" else QML
         self.engine.load(QUrl.fromLocalFile(str(qml)))
         if not self.engine.rootObjects():
             raise RuntimeError("MANUX 화면을 열지 못했습니다.")

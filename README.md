@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/Custom_AI_Model-SpatialPoseMLP_(Zero--GC)-8A2BE2?style=flat-square" alt="Custom AI Model" />
   <img src="https://img.shields.io/badge/Trained_Samples-22%2C893_Gold_Dataset-success?style=flat-square" alt="Trained Samples" />
   <img src="https://img.shields.io/badge/Inference_Speed-0.003ms_(3.0μs)-yellow?style=flat-square" alt="Inference Speed" />
-  <img src="https://img.shields.io/badge/Unit_Tests-895_Passed-brightgreen?style=flat-square" alt="Unit Tests" />
+  <img src="https://img.shields.io/badge/Unit_Tests-909_Passed-brightgreen?style=flat-square" alt="Unit Tests" />
   <img src="https://img.shields.io/badge/Platform-Windows_x64-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Platform" />
 </p>
 
