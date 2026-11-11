@@ -8,8 +8,8 @@ Popup {
     id: studio
     objectName: "trainingCenter"
     required property var controller
-    readonly property var library: controller.learningStudio
-    property string profileDraft: ""
+    readonly property var library: controller ? controller.learningStudio : null
+    property string profileDraft: controller ? controller.trainingProfile : ""
     property int pageIndex: 0
     property int recordingSubTab: 0
     property string detailKey: ""
@@ -17,20 +17,50 @@ Popup {
     property string confirmAction: "trash"
     property string confirmVersion: ""
     readonly property bool idle: !controller.recActive && !controller.trainingRunning && !controller.hubRunning
-                                 && controller.trainingBusy === "" && !library.busy
-    readonly property var detail: controller.trainingRows.find(function(r) {return r.key===detailKey}) || controller.trainingRows[0] || ({})
+                                 && controller.trainingBusy === "" && !(library && library.busy)
+    readonly property var detail: (controller && controller.trainingRows ? controller.trainingRows.find(function(r) {return r.key===detailKey}) : null) || (controller && controller.trainingRows ? controller.trainingRows[0] : null) || ({})
     signal recordingRequested()
     signal progressRequested()
-    anchors.centerIn: parent
-    width: Math.min(1240, parent.width-24); height: Math.min(900, parent.height-24)
-    modal: true; focus: true; padding: Theme.Studio.pad; closePolicy: Popup.CloseOnEscape
-    onOpened: { profileDraft=controller.trainingProfile; controller.openTraining();library.open() }
-    onClosed: {library.hide();controller.closeTraining()}
-    background: Rectangle { radius: Theme.Studio.radius; color: Theme.Studio.surface; border.color: Theme.Studio.line }
+
+    property bool embedded: true
+
+    x: embedded ? 200 : (parent ? (parent.width - width) / 2 : 0)
+    y: embedded ? 0 : (parent ? (parent.height - height) / 2 : 0)
+    width: embedded ? (parent ? parent.width - 200 : 1000) : Math.min(1240, parent ? parent.width - 24 : 1000)
+    height: embedded ? (parent ? parent.height : 800) : Math.min(900, parent ? parent.height - 24 : 700)
+    modal: !embedded
+    dim: !embedded
+    closePolicy: embedded ? Popup.NoAutoClose : Popup.CloseOnEscape
+    padding: Theme.Studio.pad
+
+    onOpened: {
+        profileDraft = controller ? controller.trainingProfile : ""
+        if (controller) controller.openTraining()
+        if (library) library.open()
+        if (embedded && controller && controller.setPage && controller.currentPage !== "tcn") {
+            controller.setPage("tcn")
+        }
+    }
+    onClosed: {
+        if (library) library.hide()
+        if (controller) controller.closeTraining()
+        if (embedded && controller && controller.setPage && controller.currentPage === "tcn") {
+            controller.setPage("home")
+        }
+    }
+
+    background: Rectangle {
+        radius: embedded ? 0 : Theme.Studio.radius
+        color: Theme.Studio.surface
+        border.color: embedded ? "transparent" : Theme.Studio.line
+        border.width: embedded ? 0 : 1
+    }
+
     component Copy: Label {
         color: Theme.Studio.ink; font.family: Theme.Studio.font; font.pixelSize: Theme.Studio.body; wrapMode: Text.Wrap
     }
     component Panel: Rectangle { color: Theme.Studio.paper; border.color: Theme.Studio.line; radius: Theme.Studio.radius }
+
     contentItem: ColumnLayout {
         spacing: Theme.Studio.gap
         RowLayout {

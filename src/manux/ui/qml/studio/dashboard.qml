@@ -1032,6 +1032,7 @@ ApplicationWindow {
     Current.LearningCenter {
         id: dataCenter
         objectName: "studioDataManagement"
+        embedded: false
         controller: dashboard
         onRecordingRequested: capturePlan.open()
         onProgressRequested: trainingProgressPage.open()

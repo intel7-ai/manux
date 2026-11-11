@@ -25,7 +25,7 @@ ApplicationWindow {
     readonly property color mint: "#46E5BD"
     readonly property color line: "#DEE5EA"
     readonly property bool learningDialogOpen: advancedSettings.visible || settingsDialog.visible || trainingCenter.visible || capturePlan.visible || trainingProgress.visible
-    readonly property bool interactionBusy: learningDialogOpen || dashboard.currentPage === "studio"
+    readonly property bool interactionBusy: learningDialogOpen || dashboard.currentPage === "studio" || dashboard.currentPage === "tcn"
     onInteractionBusyChanged: dashboard.setInteractionBusy(interactionBusy)
     font.family: "Malgun Gothic"
 
@@ -517,16 +517,10 @@ ApplicationWindow {
                         delegate: Button {
                             id: navItem
                             required property var modelData
-                            readonly property bool selected: modelData[0] === "tcn" ? trainingCenter.visible : dashboard.currentPage === modelData[0]
+                            readonly property bool selected: dashboard.currentPage === modelData[0]
                             Layout.fillWidth: true
                             implicitHeight: 42
-                            onClicked: {
-                                if (modelData[0] === "tcn") {
-                                    trainingCenter.open()
-                                } else {
-                                    dashboard.setPage(modelData[0])
-                                }
-                            }
+                            onClicked: dashboard.setPage(modelData[0])
                             contentItem: TextLabel {
                                 text: navItem.modelData[1]
                                 font.bold: navItem.selected
@@ -1561,6 +1555,7 @@ ApplicationWindow {
 
     LearningCenter {
         id: trainingCenter
+        embedded: true
         controller: dashboard
         onRecordingRequested: capturePlan.open()
         onProgressRequested: trainingProgress.open()
@@ -1574,6 +1569,13 @@ ApplicationWindow {
     Connections {
         target: dashboard
         function onTrainingStarted() { trainingCenter.close(); trainingProgress.open() }
+        function onCurrentPageChanged() {
+            if (dashboard.currentPage === "tcn") {
+                if (!trainingCenter.visible) trainingCenter.open()
+            } else {
+                if (trainingCenter.visible) trainingCenter.close()
+            }
+        }
     }
 
     RecordingPlanDialog { id: capturePlan; editor: dashboard.recordingPlan }

@@ -1177,7 +1177,7 @@ class Bridge(QObject):
 
     @Slot(str)
     def setPage(self, page):
-        if page in ("home", "studio", "customize") and page != self.page:
+        if page in ("home", "studio", "tcn", "customize") and page != self.page:
             if page == "studio":
                 self._pause()
                 self._studio_summary_cache = self.pose_studio.summary()
@@ -1185,6 +1185,13 @@ class Bridge(QObject):
             elif self.page == "studio" and self.pose_studio.is_streaming:
                 self.pose_studio.stop_stream()
                 self.studioChanged.emit()
+            elif page == "tcn":
+                self._pause()
+                self.openTraining()
+                self.learningStudio.open()
+            elif self.page == "tcn":
+                self.learningStudio.hide()
+                self.closeTraining()
             self.page = page
             self.stateChanged.emit()
 
