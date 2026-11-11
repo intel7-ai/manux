@@ -188,7 +188,7 @@ class _NullPoseStudio:
         self.discrepancy_only = False
         self.require_full_joints = True
         self.full_joints_tracked = False
-        self.active_model_id = "spatial_pose_mlp.json"
+        self.active_model_id = "gh.json"
         self.status_note = "숫자키(1~8)로 동작을 고르고 Space 또는 수집 버튼으로 프레임을 모으세요."
         self.hand_tracked = False
         self.live_system_action = "none"
@@ -280,8 +280,8 @@ class _NullPoseStudio:
 
     def list_models(self) -> List[Dict[str, Any]]:
         return [{
-            "id": "spatial_pose_mlp.json",
-            "name": "기본 모델 (Default)",
+            "id": "gh.json",
+            "name": "기본 모델 (gh)",
             "active": True,
             "exists": False,
             "test_accuracy": 0.0,
@@ -1925,7 +1925,7 @@ class Bridge(QObject):
 
     @Property(str, notify=studioChanged)
     def studioActiveModelId(self):
-        return str(getattr(self.pose_studio, "active_model_id", "spatial_pose_mlp.json"))
+        return str(getattr(self.pose_studio, "active_model_id", "gh.json"))
 
     @Property("QVariantList", notify=studioChanged)
     def studioModelList(self):
@@ -1961,7 +1961,7 @@ class Bridge(QObject):
     @Property(str, notify=studioChanged)
     def studioModelText(self):
         ms = self.pose_studio.model_summary
-        name = ms.get("name") or getattr(self.pose_studio, "active_model_id", "spatial_pose_mlp.json")
+        name = ms.get("name") or getattr(self.pose_studio, "active_model_id", "gh.json")
         if not ms.get("loaded"):
             return f"Spatial MLP [{name}]: 아직 학습 전 (표본을 모으고 [⚡ 4초 즉시 학습]을 누르세요)"
         return (f"Spatial MLP [{name}] 활성 · 학습 데이터 내부 확인(실제 정확도 아님) {ms.get('test_accuracy', 0):.1f}% "

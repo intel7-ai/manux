@@ -118,7 +118,7 @@ def run(request, send, cancelled):
             library = Path(request["data_dir"]) / "models/library"
             sources = [Path(request["store"]) / "versions" / row["version"] / "model.onnx"
                        for row in result["versions"] if row["valid"]]
-            spatial_mlp_default = (Path(request["models_dir"]) / "spatial_pose_mlp.json") if request.get("models_dir") else (Path(request["data_dir"]) / "models/spatial_mlp/spatial_pose_mlp.json")
+            spatial_mlp_default = (Path(request["models_dir"]) / "gh.json") if request.get("models_dir") else (Path(request["data_dir"]) / "models/spatial_mlp/gh.json")
             sources += [Path(request.get("model_path", "")), spatial_mlp_default]
             for path in sources:
                 if path.is_file():
@@ -198,7 +198,7 @@ def run(request, send, cancelled):
             if row["format"] == "spatial":
                 from manux.data.studio import atomic_json
                 from manux.ml.spatial_mlp import SpatialMlpModel
-                destination = (Path(request["models_dir"]) / "spatial_pose_mlp.json") if request.get("models_dir") else (Path(request["data_dir"]) / "models/spatial_mlp/spatial_pose_mlp.json")
+                destination = (Path(request["models_dir"]) / "gh.json") if request.get("models_dir") else (Path(request["data_dir"]) / "models/spatial_mlp/gh.json")
                 atomic_json(destination, SpatialMlpModel.load(path).to_dict())
                 result = {"models": models.scan(library), "spatial_selected": True, "note": "포즈 미리보기 모델 선택 · TCN 제어 모델과 보조 차단 설정은 유지했습니다."}
             elif action == "model_preview":

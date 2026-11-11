@@ -333,12 +333,12 @@ class PoseSnapshotStudio:
                     return str(active_id)
             except Exception:
                 pass
-        if (self.models_dir / "spatial_pose_mlp.json").is_file():
-            return "spatial_pose_mlp.json"
+        if (self.models_dir / "gh.json").is_file():
+            return "gh.json"
         existing = sorted(f.name for f in self.models_dir.glob("*.json") if f.name != "active_model.json")
         if existing:
             return existing[0]
-        return "spatial_pose_mlp.json"
+        return "gh.json"
 
     def _save_active_model_config(self) -> None:
         cfg = self.models_dir / "active_model.json"
@@ -349,7 +349,7 @@ class PoseSnapshotStudio:
 
     def _load_model_summary(self, model_id: str) -> Dict[str, Any]:
         model_file = self.models_dir / model_id
-        default_name = "기본 모델 (Default)" if model_id == "spatial_pose_mlp.json" else Path(model_id).stem
+        default_name = "기본 모델 (gh)" if model_id == "gh.json" else Path(model_id).stem
         if model_file.is_file():
             try:
                 doc = json.loads(model_file.read_text(encoding="utf-8"))
@@ -402,12 +402,12 @@ class PoseSnapshotStudio:
         self.models_dir.mkdir(parents=True, exist_ok=True)
         res = []
         files = sorted(self.models_dir.glob("*.json"))
-        has_default = any(f.name == "spatial_pose_mlp.json" for f in files)
+        has_default = any(f.name == "gh.json" for f in files)
         if not has_default:
             res.append({
-                "id": "spatial_pose_mlp.json",
-                "name": "기본 모델 (Default)",
-                "active": self.active_model_id == "spatial_pose_mlp.json",
+                "id": "gh.json",
+                "name": "기본 모델 (gh)",
+                "active": self.active_model_id == "gh.json",
                 "exists": False,
                 "test_accuracy": 0.0,
                 "train_accuracy": 0.0,
@@ -424,7 +424,7 @@ class PoseSnapshotStudio:
                 is_trained = doc.get("schema") == "manux-spatial-mlp/1" and "weights" in doc
                 is_active = (f.name == self.active_model_id)
                 name = meta.get("name") or (
-                    "기본 모델 (Default)" if f.name == "spatial_pose_mlp.json" else f.stem
+                    "기본 모델 (gh)" if f.name == "gh.json" else f.stem
                 )
                 res.append({
                     "id": f.name,
@@ -504,7 +504,7 @@ class PoseSnapshotStudio:
                 self.status_note = f"❌ 모델 활성화 실패: {exc}"
                 return False
         else:
-            if model_id != "spatial_pose_mlp.json" and not model_file.is_file():
+            if model_id != "gh.json" and not model_file.is_file():
                 self.status_note = f"⚠️ 모델 파일을 찾을 수 없습니다: {model_id}"
                 return False
             self.active_model = None
@@ -532,7 +532,7 @@ class PoseSnapshotStudio:
             for fpath in list(self.snapshots_dir.glob("*.json")):
                 try:
                     doc = json.loads(fpath.read_text(encoding="utf-8"))
-                    doc_model = doc.get("modelId", "spatial_pose_mlp.json") if isinstance(doc, dict) else "spatial_pose_mlp.json"
+                    doc_model = doc.get("modelId", "gh.json") if isinstance(doc, dict) else "gh.json"
                     if doc_model == model_id:
                         fpath.unlink()
                 except Exception:
@@ -547,7 +547,7 @@ class PoseSnapshotStudio:
             if remaining:
                 self.activate_model(remaining[0])
             else:
-                self.active_model_id = "spatial_pose_mlp.json"
+                self.active_model_id = "gh.json"
                 self._save_active_model_config()
                 self.model_summary = {"loaded": False}
         self.invalidate_saved_cache()
@@ -809,11 +809,11 @@ class PoseSnapshotStudio:
         return res
 
     def _doc_matches_active_model(self, doc: Any) -> bool:
-        target = self.active_model_id or "spatial_pose_mlp.json"
+        target = self.active_model_id or "gh.json"
         if isinstance(doc, dict):
-            doc_model = doc.get("modelId") or "spatial_pose_mlp.json"
+            doc_model = doc.get("modelId") or "gh.json"
             return doc_model == target
-        return target == "spatial_pose_mlp.json"
+        return target == "gh.json"
 
     def saved_dataset_counts(self, force: bool = False) -> Dict[str, int]:
         if self._saved_counts_cache is not None and not force:
@@ -844,7 +844,7 @@ class PoseSnapshotStudio:
             return None
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
         stamp = int(time.time() * 1000)
-        model_id = self.active_model_id or "spatial_pose_mlp.json"
+        model_id = self.active_model_id or "gh.json"
         model_stem = Path(model_id).stem
         filename = f"manux_pose_snapshots_{model_stem}_{self.split}_{stamp}_{uuid4().hex}.json"
         out_path = self.snapshots_dir / filename
@@ -921,7 +921,7 @@ class PoseSnapshotStudio:
         """Save current buffer (if non-empty) and run the Spatial MLP trainer into target model."""
         if self.is_streaming:
             self.stop_stream()
-        target_id = model_name or self.active_model_id or "spatial_pose_mlp.json"
+        target_id = model_name or self.active_model_id or "gh.json"
         self.active_model_id = target_id
         if self.samples:
             self.save_dataset()

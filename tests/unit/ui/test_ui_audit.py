@@ -116,7 +116,7 @@ def test_model_slot_switch_preserves_unsaved_pose_samples(studio):
     from manux.data.pose_studio import PoseSnapshotStudio
 
     original = PoseSnapshotStudio(service.data_dir)
-    original.active_model_id = "spatial_pose_mlp.json"
+    original.active_model_id = "gh.json"
     assert sample_id in {sample["sampleId"] for sample in original.load_all_samples()}
 
 
@@ -135,7 +135,7 @@ def test_library_pose_preview_selects_model_after_preserving_current_samples(
         np.zeros(2),
         classes=("none", "thumb_ring"),
     )
-    model.save(bridge.pose_studio.models_dir / "spatial_pose_mlp.json")
+    model.save(bridge.pose_studio.models_dir / "gh.json")
     bridge.createStudioModel("temporary selected slot")
     selected = bridge.pose_studio.active_model_id
     points = tuple((0.2 + 0.1 * (i % 5), 0.25 + 0.1 * (i // 5), 0.0) for i in range(21))
@@ -148,7 +148,7 @@ def test_library_pose_preview_selects_model_after_preserving_current_samples(
     bridge.studio.modelAction("preview", "synthetic-model", "")
     assert calls and not bridge.pose_studio.samples
     bridge.studio._apply(bridge.studio.generation, {"spatial_selected": True})
-    assert bridge.pose_studio.active_model_id == "spatial_pose_mlp.json"
+    assert bridge.pose_studio.active_model_id == "gh.json"
     assert bridge.pose_studio.active_model is not None
     from manux.data.pose_studio import PoseSnapshotStudio
 
