@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/Desktop-Qt6_QML_(PySide6)-41CD52?style=flat-square&logo=qt&logoColor=white" alt="Desktop" />
   <img src="https://img.shields.io/badge/AI_Vision-MediaPipe_Tasks-0078D4?style=flat-square&logo=google&logoColor=white" alt="MediaPipe" />
   <img src="https://img.shields.io/badge/Custom_AI_Model-SpatialPoseMLP_(Zero--GC)-8A2BE2?style=flat-square" alt="Custom AI Model" />
-  <img src="https://img.shields.io/badge/Trained_Samples-17%2C689+_Gold_Dataset-success?style=flat-square" alt="Trained Samples" />
+  <img src="https://img.shields.io/badge/Trained_Samples-22%2C893_Gold_Dataset-success?style=flat-square" alt="Trained Samples" />
   <img src="https://img.shields.io/badge/Inference_Speed-0.003ms_(3.0μs)-yellow?style=flat-square" alt="Inference Speed" />
   <img src="https://img.shields.io/badge/Unit_Tests-895_Passed-brightgreen?style=flat-square" alt="Unit Tests" />
   <img src="https://img.shields.io/badge/Platform-Windows_x64-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Platform" />
@@ -46,6 +46,11 @@
 ### 6. 바탕화면 보기(`palm_side`) 수평 손 검증 & 고급 설정
 - 일상적인 손 이동 중 바탕화면이 열리는 오발화를 방지하기 위해, 손바닥을 가로로 눕힌 수평 손자세($dx \ge 0.65 dy$)와 일정 시간 유지를 엄격히 검증합니다.
 - 설정 UI에서 바탕화면 보기 기능을 켜고 끌 수 있는 토글(`enable_thumb_tucked_open`)을 제공합니다.
+
+### 7. 로컬 Git 리포지토리 영구 연동 (Persistent Local Dataset & Model Management)
+- **숨은 AppData 종속 탈피**: 기존에는 스튜디오에서 수집한 스냅샷 및 훈련된 모델이 Windows `%APPDATA%` 폴더로 저장되어 Git 버전 관리에 반영되지 못하는 문제가 있었습니다.
+- **로컬 디렉터리 자동 바인딩**: 개발 환경(`not frozen`)에서 스냅샷 수집 및 백그라운드 학습 시, 리포지토리 내의 `data/pose_snapshots/` 및 `models/spatial_mlp/`에 즉시 기록되도록 근본적인 경로 해석(`pose_snapshots_dir`, `spatial_models_dir`)을 개편했습니다.
+- **22,893개 골드 데이터셋 Git 완전 추적**: 우클릭(`thumb_ring`), 양쪽 동시클릭(`thumb_middle_ring`), 좌클릭(`thumb_middle`), 스크롤(`thumb_index`), 가드(`none`) 등 10개 클래스의 37개 JSON 데이터셋(22,893개 표본)과 최신 `gh.json` 모델이 브랜치에 안전하게 영구 보존됩니다.
 
 ---
 
@@ -99,6 +104,11 @@
    - **수정 이유**: 사용자가 학습 센터에서 수집하는 데이터는 '찰나의 클릭 순간'이 아니라 **'버튼을 누르고 있는 동안 취하는 손 모양'** 입니다.
    - 따라서 MLP가 해당 클래스를 확신하는 동안은 버튼이 계속 눌려있는 상태(Hold/Drag)로 간주하며, 손이 펴질 때(`none`) 비로소 해제되도록 엔진 전반의 생명주기를 통일했습니다.
 
+5. **학습 표본 및 MLP 모델의 로컬 리포지토리 영구 바인딩 (Path Resolution)**
+   - **기존 문제**: 기존 `AppPaths`는 개발 모드(`not frozen`)에서도 모든 사용자 데이터를 `%APPDATA%/MANUX-dev/v04`에 기록하도록 설계되었습니다. 그 결과, 포즈 스튜디오에서 수집한 스냅샷 JSON 파일들과 새로 학습된 `gh.json` 모델이 로컬 Git 작업 트리가 아닌 Windows의 숨겨진 AppData 폴더에 격리 저장되어 Git 버전 관리에 반영되지 못했습니다.
+   - **수정 이유**: `AppPaths`에 `pose_snapshots_dir`와 `spatial_models_dir` 프로퍼티를 추가하여, 개발 모드에서는 항상 로컬 리포지토리의 `data/pose_snapshots` 및 `models/spatial_mlp`를 직접 가리키도록 파이프라인 전체(`desktop.py`, `pose_studio.py`, `app_worker.py`, `studio_worker.py`)를 재구성했습니다. (단, 배포 패키지 `frozen=True`나 `MANUX_DATA_DIR` 환경변수 지정 시에는 격리된 사용자 데이터 경로를 유지하여 권한 충돌을 방지합니다.)
+   - **병합 시 주의**: 병합 시 `desktop.py`의 `make_pose_studio`, `TrainingCenterService`, `app_worker.py`에 전달되는 `snapshots_dir` 및 `models_dir` 매개변수를 삭제하거나 임의로 단순 `data_dir`로 되돌리지 마십시오.
+
 ---
 
 ### 2. Spatial MLP & Guard 센서 퓨전 동작 원리 (Internal Mechanism)
@@ -137,6 +147,9 @@ flowchart TD
 | `src/manux/features/pinch/engine.py` | • `nearest == "ring"` 진입 시 중지(`middle`) 락아웃 조기 해제.<br>• `PinchFrame`에 `action="right_drag_hold"` 추가 및 링 드래그 앵커 지원. |
 | `src/manux/features/pinch/preview.py` | • `ACTION_FINGER`에 `"right_drag_hold": "ring"` 추가하여 카메라 오버레이 연동. |
 | `src/manux/ui/bridge.py` | • 스튜디오 화면 진입 시 실시간 핀치 가이드 및 관절 거리로 우클릭·양쪽클릭 실시간 판정.<br>• 모션 모드 켜짐 시에도 기본 마우스 제어가 살아있도록 분리. |
+| `src/manux/settings/paths.py` | • `AppPaths.pose_snapshots_dir` 및 `spatial_models_dir` 추가.<br>• 개발 모드(`not frozen`)에서 로컬 리포지토리의 `data/pose_snapshots` 및 `models/spatial_mlp` 자동 바인딩.<br>• 배포 패키지(`frozen=True`) 및 `MANUX_DATA_DIR` 오버라이드 격리 완벽 보장. |
+| `tools/app_worker.py` & `tools/studio_worker.py` | • UI 학습 및 스튜디오 비동기 작업 시 `snapshots_dir`, `models_dir` 파라미터 수신 및 로컬 디렉터리 연동.<br>• 백그라운드 프로세스에서도 로컬 브랜치 경로 직접 접근 및 원자적(atomic) 모델 저장. |
+| `tools/train_spatial_mlp.py` | • 로컬 `data/pose_snapshots`의 22,893개 표본 기준 1.8초 초고속 재학습 CLI (`--model gh.json`). |
 
 ---
 
@@ -156,14 +169,14 @@ uv run --locked --python 3.12 --extra ui --extra vision --extra ml python -m man
   python -m manux --self-check out.json
   ```
 
-### 2. Spatial MLP 모델 원클릭 학습 (1.5초)
-내장된 17,000+ 골드 스냅샷 샘플을 기반으로 96차원 Spatial MLP를 즉시 재학습합니다:
+### 2. Spatial MLP 모델 원클릭 학습 (1.8초)
+내장된 22,893개 골드 스냅샷 샘플(37개 JSON 데이터셋 파일)을 기반으로 96차원 Spatial MLP를 즉시 재학습합니다:
 ```powershell
 uv run --python 3.12 python tools/train_spatial_mlp.py
 ```
 기본값은 `models/spatial_mlp/gh.json`에 학습 결과가 저장되며(`--model <이름>`으로 변경 가능), `models/spatial_mlp/active_model.json`의 `active_model_id`가 가리키는 모델이 앱 실행 시 로드됩니다.
 
-### 3. 단위 테스트 실행 (894개 전체 검증)
+### 3. 단위 테스트 실행 (895개 전체 검증)
 ```powershell
 uv run --locked --python 3.12 pytest -q
 ```
