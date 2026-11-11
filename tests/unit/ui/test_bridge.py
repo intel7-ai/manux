@@ -414,3 +414,59 @@ def test_runtime_frame_latency_is_shown_without_relabeling_inference_time(bridge
     b.apply_view(ViewFrame(None, fps=30.0, detect_ms=7.0, frame_age_ms=22.0))
     assert "추론 7.0 ms" in b.state[-1]
     assert "앱 내 프레임 지연 22.0 ms" in b.state[-1]
+
+
+def test_bridge_edge_glow_overlay_activation(tmp_path):
+    from manux.core.contracts import OutputTarget
+    from manux.engine.snapshot import Snapshot
+    from manux.ui.bridge import Bridge
+
+    class FakeOverlay:
+        def __init__(self):
+            self.last_prox = None
+            self.cleared = False
+        def set_proximities(self, prox):
+            self.last_prox = prox
+            self.cleared = False
+        def clear(self):
+            self.cleared = True
+
+    settings = Settings(schema(), {})
+    overlay = FakeOverlay()
+    runtime = FakeRuntime(settings)
+    b = Bridge(runtime, settings, tmp_path, edge_overlay=overlay)
+
+    snap_on = Snapshot(
+        seq=1, t=1.0, stage=Stage.MAIN, output=OutputTarget.WINDOWS, mode="pointer",
+        control_on=True, busy=(), has_hand=True, intents=(), unrouted=(),
+        results=(), activities=(), events=(), errors=()
+    )
+    snap_off = Snapshot(
+        seq=2, t=2.0, stage=Stage.MAIN, output=OutputTarget.WINDOWS, mode="pointer",
+        control_on=False, busy=(), has_hand=True, intents=(), unrouted=(),
+        results=(), activities=(), events=(), errors=()
+    )
+
+    try:
+        # 1. Hand near right border, control ON -> overlay receives proximity with right > 0
+        hand_near_right = [(0.5, 0.5, 0.0)] * 20 + [(0.98, 0.5, 0.0)]
+        b.apply_view(ViewFrame(snapshot=snap_on, landmarks=tuple(hand_near_right), mirrored=True))
+        assert overlay.last_prox is not None
+        assert overlay.last_prox.right > 0.0
+        assert not overlay.cleared
+
+        # 2. Hand near right border, but control OFF -> overlay is cleared
+        b.apply_view(ViewFrame(snapshot=snap_off, landmarks=tuple(hand_near_right), mirrored=True))
+        assert overlay.cleared
+
+        # 3. Hand in center, control ON -> overlay has proximity.active == False
+        hand_center = [(0.5, 0.5, 0.0)] * 21
+        b.apply_view(ViewFrame(snapshot=snap_on, landmarks=tuple(hand_center), mirrored=True))
+        assert not overlay.last_prox.active
+
+        # 4. Settings toggle: boundary_alert.enabled = False -> overlay cleared even if control ON
+        settings.set("boundary_alert.enabled", False)
+        b.apply_view(ViewFrame(snapshot=snap_on, landmarks=tuple(hand_near_right), mirrored=True))
+        assert overlay.cleared
+    finally:
+        b.close()

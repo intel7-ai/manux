@@ -26,6 +26,7 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication
 
 from manux.core.contracts import RuntimeRequest, Stage
+from manux.core.boundary import calc_edge_proximity
 from manux.engine.commands import Mark, RequestMode, SetBaseMode, SetBusy, SetControl, SetStage
 from manux.settings import profiles, store
 from manux.settings.sensitivity import rows as sensitivity_rows
@@ -490,13 +491,15 @@ class Bridge(QObject):
     def __init__(self, runtime, settings: store.Settings, config_dir: Path, *,
                  services: Optional[Dict[str, Callable]] = None, hotkeys=None, hotkey_defaults=None,
                  normalize_combo: Callable[[str], Optional[str]] = lambda c: c, combo_label=lambda c: c,
-                 hide_to_tray: bool = False, layout: str = "standard") -> None:
+                 hide_to_tray: bool = False, layout: str = "standard",
+                 edge_overlay: Optional[Any] = None) -> None:
         super().__init__()
         self.runtime = runtime
         self.settings = settings
         self.config_dir = Path(config_dir)
         self.services = services or {}
         self.layout = layout
+        self.edge_overlay = edge_overlay
         self._palm_cal = None
         self._palm_axes = None
         self._palm_hint = ""
@@ -2783,6 +2786,15 @@ class Bridge(QObject):
         if snap is not None and self.stage_name == "main" and self.paused == snap.control_on:
             self.paused = not snap.control_on
             self.stateChanged.emit()
+        if self.edge_overlay is not None:
+            enabled = bool(self.settings.get("boundary_alert.enabled"))
+            margin = float(self.settings.get("boundary_alert.margin"))
+            control_active = bool(snap is not None and snap.control_on and snap.has_hand and view.landmarks is not None)
+            if enabled and control_active:
+                prox = calc_edge_proximity(view.landmarks, mirrored=view.mirrored, margin=margin)
+                self.edge_overlay.set_proximities(prox)
+            else:
+                self.edge_overlay.clear()
         rec_view = dict(view.rec) if view.rec is not None else None
         if rec_view != self.rec_view:
             self.rec_view = rec_view
@@ -2927,6 +2939,14 @@ class Bridge(QObject):
         if getattr(self, "_closed_qml", False):
             return
         self._closed_qml = True
+        if getattr(self, "edge_overlay", None) is not None:
+            try:
+                self.edge_overlay.clear()
+                self.edge_overlay.close()
+                self.edge_overlay.deleteLater()
+            except Exception:
+                pass
+            self.edge_overlay = None
         self.timer.stop()
         self.training_timer.stop()
         self.studio.close()
@@ -2968,14 +2988,16 @@ class _HandChoice:
 
 def run(runtime, settings, paths, *, tray: bool = True, screenshot: Optional[Path] = None,
         services: Optional[Dict[str, Callable]] = None, hotkeys=None, hotkey_defaults=None,
-        normalize_combo=None, combo_label=None, make_tray=None, layout=None) -> int:
+        normalize_combo=None, combo_label=None, make_tray=None, make_edge_overlay=None, layout=None) -> int:
     """Run the desktop window until the user quits. The composition root passes the platform pieces."""
     app = QApplication.instance() or QApplication([])
     preferences = QSettings(str(paths.config_dir / "ui.ini"), QSettings.Format.IniFormat)
     layout = layout or preferences.value("layout", "standard", type=str)
+    edge_overlay = make_edge_overlay() if (make_edge_overlay is not None and screenshot is None) else None
     bridge = Bridge(runtime, settings, paths.config_dir, services=services, hotkeys=hotkeys, layout=layout,
                     hotkey_defaults=hotkey_defaults, normalize_combo=normalize_combo or (lambda c: c),
-                    combo_label=combo_label or (lambda c: c), hide_to_tray=tray and make_tray is not None)
+                    combo_label=combo_label or (lambda c: c), hide_to_tray=tray and make_tray is not None,
+                    edge_overlay=edge_overlay)
     preferences.setValue("layout", layout)
     preferences.sync()
     if hotkeys is not None:
@@ -2995,6 +3017,13 @@ def run(runtime, settings, paths, *, tray: bool = True, screenshot: Optional[Pat
     finally:
         if tray_icon is not None:
             tray_icon.hide()
+        if edge_overlay is not None:
+            try:
+                edge_overlay.clear()
+                edge_overlay.close()
+                edge_overlay.deleteLater()
+            except Exception:
+                pass
         runtime.stop()
         bridge.close()
     return 0

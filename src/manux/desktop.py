@@ -1185,6 +1185,7 @@ def main(argv=None) -> int:
     from manux.features.pointer.workspace import pointer_axes
     from manux.platform import hotkeys
     from manux.platform.tray import QtTray
+    from manux.platform.overlay import EdgeGlowOverlay
     from manux.ui.bridge import run
     tc = TrainingCenterService(paths.config_dir, paths.data_dir, paths.recordings_dir, model_path=args.tcn_model,
                                store_dir=args.tcn_store, policy_store=policy_store, on_policy=lambda: runtime.request(RuntimeRequest("tcn_policy")),
@@ -1216,7 +1217,8 @@ def main(argv=None) -> int:
                    "studio_system_action": normalize_system_action,
                },
                hotkeys=hotkeys.GlobalHotkeys({}), hotkey_defaults=hotkeys.DEFAULTS,
-               normalize_combo=hotkeys.normalize, combo_label=hotkeys.label, make_tray=QtTray)
+               normalize_combo=hotkeys.normalize, combo_label=hotkeys.label, make_tray=QtTray,
+               make_edge_overlay=EdgeGlowOverlay)
 
 
 def self_check(paths: AppPaths, model: Path, info, out: Path) -> int:
