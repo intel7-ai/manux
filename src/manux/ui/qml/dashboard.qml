@@ -83,6 +83,13 @@ ApplicationWindow {
                 width: settingsScroll.availableWidth
                 spacing: 10
                 ActionButton { text: "휴대폰 카메라 연결"; onClicked: { settingsDialog.close(); phoneCameraDialog.open() } }
+                ActionButton {
+                    objectName: "refreshPcCamera"
+                    text: "카메라 새로고침"
+                    enabled: dashboard.pcCameraAvailable && dashboard.recMode === "off" && !dashboard.recActive
+                             && !dashboard.calibratingPointer && !dashboard.palmCalibrating && !dashboard.trackingActive
+                    onClicked: { settingsDialog.close(); dashboard.reconnectCamera() }
+                }
                 SectionLabel { text: "사용하는 손" }
                 RowLayout {
                     Layout.fillWidth: true
@@ -381,13 +388,23 @@ ApplicationWindow {
             TextLabel {
                 visible: dashboard.stage === "capture"
                 Layout.alignment: Qt.AlignHCenter
-                text: dashboard.handCandidate ? dashboard.handCandidate + " 감지됨 · " + dashboard.secondsRemaining + "초 남음" : "한 손을 기다리는 중"
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                text: dashboard.tracking === "카메라 없음" ? dashboard.currentAction
+                    : dashboard.handCandidate ? dashboard.handCandidate + " 감지됨 · " + dashboard.secondsRemaining + "초 남음" : "한 손을 기다리는 중"
                 color: dashboard.handCandidate ? "#08775E" : window.muted
                 font.bold: true
             }
             RowLayout {
                 visible: dashboard.stage === "capture"
                 Layout.alignment: Qt.AlignHCenter
+                ActionButton {
+                    objectName: "refreshSetupCamera"
+                    text: "카메라 새로고침"
+                    enabled: dashboard.pcCameraAvailable
+                    onClicked: dashboard.reconnectCamera()
+                }
                 ActionButton {
                     visible: dashboard.chosenHand !== ""
                     text: "취소"

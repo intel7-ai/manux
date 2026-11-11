@@ -26,7 +26,7 @@ from uuid import uuid4
 
 from manux.actions.bindings import Binding
 from manux.app import _FEATURES, _camera_config, build_engine, schema, pipeline_parts, read_bindings, training_specs
-from manux.capture.camera import LatestFrameCamera, brightness, transform
+from manux.capture.camera import LatestFrameCamera, brightness, parse_source, transform
 from manux.core.contracts import FrameInfo, HandObservation, OutputTarget, PracticeEvent, RecordingIdentity, RuntimeRequest, Stage
 from manux.data.catalog import BY_KEY, tasks_for
 from manux.data.guided import GuidedSession
@@ -75,6 +75,7 @@ class CameraInput:
         self.error = ""
         self._next_try = 0.0
         self._last_camera_frame = 0.0
+        self._try_alternate_camera = False
         self.phone = None  # explicit opt-in; configured only by the desktop composition
 
     def phone_action(self, action, host=""):
@@ -82,6 +83,7 @@ class CameraInput:
             raise ValueError("이 실행에서는 휴대폰 카메라를 사용할 수 없습니다.")
         self.phone.command(action, host)
         if action in ("start", "local"):
+            self._try_alternate_camera = False
             if self.camera is not None:
                 self.camera.release()
             self.camera = None
@@ -91,6 +93,17 @@ class CameraInput:
 
     def phone_view(self):
         return self.phone.view() if self.phone is not None else None
+
+    def reconnect_camera(self) -> None:
+        if self.camera is not None:
+            self.camera.release()
+            self.camera = None
+        if self.tracker is not None:
+            self.tracker.reset()
+        self._next_try = 0.
+        self._last_camera_frame = time.perf_counter()
+        self._try_alternate_camera = True
+        self.error = "PC 카메라에 다시 연결하는 중입니다."
 
     def _open(self) -> bool:
         now = time.perf_counter()
@@ -105,11 +118,24 @@ class CameraInput:
                 self.landmarker = MediaPipeLandmarker(self.model_path, **options_from(track))
                 self.tracker = HandTracker(self.landmarker, use_crop=track["hand_crop"], min_score=track["min_hand_score"])
             remote = self.phone.link if self.phone is not None else None
-            camera = remote.source if remote is not None else LatestFrameCamera(_camera_config(self.settings, self.source))
-            if remote is None and not camera.open():
-                self.error = "카메라를 찾을 수 없습니다. 연결을 확인하세요."
-                return False
+            if remote is not None:
+                camera = remote.source
+            else:
+                config = _camera_config(self.settings, self.source)
+                candidates = [config]
+                index = parse_source(config.source)
+                if self._try_alternate_camera and isinstance(index, int):
+                    candidates.append(replace(config, source=1 if index == 0 else 0))
+                for candidate in candidates:
+                    camera = LatestFrameCamera(candidate)
+                    if camera.open():
+                        break
+                else:
+                    self.error = "카메라를 찾을 수 없습니다. 연결을 확인하세요."
+                    return False
             self.camera, self.error = camera, ""
+            if remote is None:
+                self._last_camera_frame = time.perf_counter()
             return True
         except Exception as exc:                       # missing extras, model download failure ...
             self.error = f"카메라·손 인식을 시작하지 못했습니다: {exc}"
@@ -130,11 +156,13 @@ class CameraInput:
                 else:
                     self.error = ("휴대폰 영상이 멈췄습니다. 폰의 브라우저 화면을 확인하세요."
                                   if mode is not None else self.phone.view()["status"])
+            elif self._last_camera_frame and time.perf_counter() - self._last_camera_frame >= 3.0:
+                self.error = "PC 카메라 영상이 끊겼습니다. USB 연결 후 카메라 새로고침을 눌러 주세요."
             return None
         frame, image = item
+        self._last_camera_frame = time.perf_counter()
+        self.error = ""
         if self.phone is not None and self.phone.link is not None:
-            self._last_camera_frame = time.perf_counter()
-            self.error = ""
             mirror = self.settings.get("camera.mirror")
             if frame.mirrored != mirror:
                 # RemoteCamera applied the phone's front/rear metadata. Normalize to
@@ -844,6 +872,8 @@ class DesktopRuntime:
             command = self._runtime_requests.get_nowait()
             if command.kind == "phone_camera":
                 self._phone_request(command)
+            if command.kind == "camera_reconnect":
+                self._reconnect_camera()
             if command.kind == "pointer_setup":
                 if command.path == "skip":
                     self._pointer_setup = self._pointer_setup_action = None
@@ -900,6 +930,19 @@ class DesktopRuntime:
                 self._model_token = None
                 if not self.reload_model(force=True):
                     self.model_store, self._model_token, self._attempted_model_token = previous
+
+    def _reconnect_camera(self):
+        if not isinstance(self.source, CameraInput):
+            return
+        if self.source.phone is not None and self.source.phone.link is not None:
+            return
+        self.engine.pause_for_settings()
+        if self.engine.state.busy or self._rec_want[0] != "off" or self._pointer_setup is not None:
+            return
+        self.source.reconnect_camera()
+        self.pinch_preview = PinchPreview()
+        self._metrics = ("", -1, False)
+        self._publish(ViewFrame(None, camera_ok=False, message=self.source.error, model_status=self.model_status))
 
     def _phone_request(self, command):
         phone = getattr(self.source, "phone", None)

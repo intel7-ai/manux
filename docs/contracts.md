@@ -586,6 +586,8 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 
 ## 14. 휴대폰 연결 (`link`, v0.8)
 
+- PC 카메라 새로고침은 `RuntimeRequest("camera_reconnect")`로 요청한다. 런타임이 제어를 멈추고 기존 영상과 추적 상태를 비운 뒤 설정된 장치를 다시 연다. 번호로 지정한 장치를 열 수 없으면 대체 번호를 시도하고 저장 설정은 유지한다. 녹화·보정 중이거나 휴대폰이 카메라 소스일 때는 실행하지 않는다.
+
 출처: Dan(한순중)의 `hand-mouse-gesture-overhaul@9da1f634e8c0afd9d3d6b32a56c83cddfb23d5f8`,
 `src/phone_web_bridge.py`와 `src/camera.py`. 영향 계층: core, capture, 신규 link.
 

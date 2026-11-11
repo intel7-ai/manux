@@ -177,13 +177,23 @@ ApplicationWindow {
             TextLabel {
                 visible: dashboard.stage === "capture"
                 Layout.alignment: Qt.AlignHCenter
-                text: dashboard.handCandidate ? dashboard.handCandidate + " 감지됨 · " + dashboard.secondsRemaining + "초 남음" : "한 손을 기다리는 중"
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                text: dashboard.tracking === "카메라 없음" ? dashboard.currentAction
+                    : dashboard.handCandidate ? dashboard.handCandidate + " 감지됨 · " + dashboard.secondsRemaining + "초 남음" : "한 손을 기다리는 중"
                 color: dashboard.handCandidate ? "#08775E" : window.muted
                 font.bold: true
             }
             RowLayout {
                 visible: dashboard.stage === "capture"
                 Layout.alignment: Qt.AlignHCenter
+                ActionButton {
+                    objectName: "refreshSetupCamera"
+                    text: "카메라 새로고침"
+                    enabled: dashboard.pcCameraAvailable
+                    onClicked: dashboard.reconnectCamera()
+                }
                 ActionButton {
                     visible: dashboard.chosenHand !== ""
                     text: "취소"
@@ -578,6 +588,14 @@ ApplicationWindow {
 
                     Current.HandSkeleton { anchors.fill: parent; bridge: dashboard; imageWidth: parent.paintedWidth; imageHeight: parent.paintedHeight }
                 }
+                        Button {
+                            objectName: "refreshPcCamera"
+                            anchors { right: parent.right; top: parent.top; margins: 8 }
+                            text: "카메라 새로고침"
+                            enabled: dashboard.pcCameraAvailable && dashboard.recMode === "off" && !dashboard.recActive
+                                     && !dashboard.calibratingPointer && !dashboard.palmCalibrating && !dashboard.trackingActive
+                            onClicked: dashboard.reconnectCamera()
+                        }
                         Item {
                             visible: dashboard.recMode === "guided" && dashboard.recCondition !== ""
                             x: (parent.width - capturePreview.paintedWidth) / 2

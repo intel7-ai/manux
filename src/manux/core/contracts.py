@@ -207,12 +207,12 @@ class PracticeEvent:
 
 @dataclass(frozen=True)
 class RuntimeRequest:
-    kind: Literal["activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard", "sensitivity", "advanced", "pointer_setup", "phone_camera"]
+    kind: Literal["activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard", "sensitivity", "advanced", "pointer_setup", "phone_camera", "camera_reconnect"]
     path: str = ""
     values: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if (self.kind not in ("activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard", "sensitivity", "advanced", "pointer_setup", "phone_camera")
+        if (self.kind not in ("activate_model", "preview_model", "tcn_policy", "tcn_toggle", "next_monitor", "spatial_guard", "sensitivity", "advanced", "pointer_setup", "phone_camera", "camera_reconnect")
                 or not isinstance(self.path, str)
                 or self.kind in ("activate_model", "preview_model", "sensitivity", "advanced") and not self.path
                 or self.kind in ("tcn_toggle", "spatial_guard") and self.path not in ("on", "off")

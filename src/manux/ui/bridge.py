@@ -681,6 +681,19 @@ class Bridge(QObject):
         self._pause()
         self.runtime.request(RuntimeRequest("phone_camera", action, {"host": host}))
 
+    @Property(bool, notify=phoneCameraChanged)
+    def pcCameraAvailable(self):
+        source = getattr(self.runtime, "source", None)
+        return callable(getattr(source, "reconnect_camera", None)) and not self._phone_view.get("enabled", False)
+
+    @Slot()
+    def reconnectCamera(self):
+        if (self.pcCameraAvailable and self.rec_mode == "off" and not self.recActive
+                and not self.trackingActive and not self.calibratingPointer and not self.palmCalibrating
+                and not self.pointerSetupActive):
+            self._pause()
+            self.runtime.request(RuntimeRequest("camera_reconnect"))
+
     @Slot()
     def copyPhoneUrl(self):
         self.application.clipboard().setText(self._phone_view.get("url", ""))
@@ -2967,6 +2980,10 @@ class Bridge(QObject):
         if (state, live) != (self.state, self.live_gesture):
             self.state, self.live_gesture = state, live
             self.liveChanged.emit()
+        if not view.camera_ok and not self.provider.image.isNull():
+            self.provider.image = QImage()
+            self.sequence += 1
+            self.previewChanged.emit()
         if view.image is None or not self.window.isVisible():
             return
         now = time.perf_counter()

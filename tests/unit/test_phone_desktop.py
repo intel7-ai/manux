@@ -137,6 +137,44 @@ def test_waiting_phone_is_not_reopened_as_usb_and_local_returns(tmp_path,monkeyp
     source.close()
 
 
+@pytest.mark.parametrize("renumbered", [False, True])
+def test_refresh_recovers_pc_camera_after_missing_frames(tmp_path, monkeypatch, renumbered):
+    import manux.desktop as desktop
+
+    source = source_with_phone(tmp_path)
+    image = np.full((36, 48, 3), 128, dtype=np.uint8)
+    released = []
+    opened = []
+    source.camera = SimpleNamespace(read=lambda **_: None, release=lambda: released.append("old"))
+    source._last_camera_frame = time.perf_counter() - 4
+    source._next_try = time.perf_counter() + 100
+    assert source.read("Right", False) is None and "카메라 새로고침" in source.error
+    runtime = build(source.settings, source, windows=False)
+    runtime.engine.commands.put(SetStage(Stage.MAIN))
+    runtime.engine.commands.put(SetControl(True))
+
+    def new_camera(config):
+        opened.append(config.source)
+        can_open = not renumbered or config.source == 0
+        return SimpleNamespace(
+            open=lambda: can_open, release=lambda: released.append("new"),
+            read=lambda **_: (FrameInfo(0, time.perf_counter(), 48, 36, True), image),
+            actual_mode=lambda: (48, 36, 30.), fps=30.,
+        )
+
+    monkeypatch.setattr(desktop, "LatestFrameCamera", new_camera)
+    runtime.request(RuntimeRequest("camera_reconnect"))
+    runtime._drain_runtime_requests()
+    assert released == ["old"] and not runtime.engine.state.control_on
+    assert not runtime.latest()[1].camera_ok and runtime.latest()[1].image is None
+    runtime.step()
+    assert opened == (["1", 0] if renumbered else ["1"])
+    assert runtime.latest()[1].image is image
+    assert runtime.latest()[1].camera_ok and source.settings.get("camera.source") == "1"
+    runtime.stop()
+    assert released == ["old", "new"]
+
+
 def test_actual_tls_phone_frame_enters_desktop_and_disconnect_clears_image(tmp_path):
     aiohttp=pytest.importorskip("aiohttp")
     cv2=pytest.importorskip("cv2")
