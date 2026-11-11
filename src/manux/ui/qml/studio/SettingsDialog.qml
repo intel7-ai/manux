@@ -7,6 +7,7 @@ Dialog {
     objectName: "studioSettings"
     required property var controller
     signal dataRequested()
+    signal phoneRequested()
     signal advancedRequested()
     property var settingRows: []
     property var draft: ({})
@@ -113,6 +114,7 @@ Dialog {
                 ColumnLayout {
                     Layout.fillWidth: true
                     visible: tabs.currentIndex === 2
+                    Button { text: "휴대폰 카메라 연결"; Layout.fillWidth: true; onClicked: settings.phoneRequested() }
                     CheckBox {
                         text: "커서 옆 손가락 표시"
                         checked: settings.controller.fingerOverlay

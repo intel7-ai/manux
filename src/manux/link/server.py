@@ -1,6 +1,7 @@
 """Opt-in HTTPS camera bridge, port of Dan (한순중) phone_web_bridge.py @9da1f634e8c0afd9d3d6b32a56c83cddfb23d5f8.
 
-Retains latest-only JPEG reception. Adds pairing/private-network controls; remote commands removed.
+Retains latest-only JPEG reception. Adds pairing/private-network controls and authenticated desktop
+preview for the front camera; remote input commands are not accepted.
 Optional aiohttp/cryptography imports happen only at create_app/start.
 """
 from __future__ import annotations
@@ -8,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import secrets
 import threading
 import time
 from pathlib import Path
@@ -34,13 +36,19 @@ def unpack_frame(packet):
 
 
 class PhoneLink:
-    def __init__(self, data_dir, *, host, port=8443, source=None):
+    def __init__(self, data_dir, *, host, port=8443, source=None, screen=None):
         if not private_address(host):
             raise ValueError("bind a private IP, not a public or wildcard address")
         self.data_dir, self.host, self.port = Path(data_dir), host, port
         self.source = source if source is not None else RemoteCamera()
         self.pairing = Pairing()
         self._http_limit = RateLimit(120, 60)
+        self.screen = screen
+        self._screen_key = None
+        self._screen_front = False
+        self._screen_epoch = 0
+        self._screen_limit = RateLimit(12, 1)
+        self._screen_http_limit = RateLimit(30, 1)
         self._blocked = False
         self._ws = None
         self._pending = set()
@@ -82,6 +90,7 @@ class PhoneLink:
             self._blocked = True
         self.pairing.clear()
         self.source.disconnect()  # invalidate consumer results before awaiting network close
+        self._clear_screen()
         self._device = None
         sockets = set(self._pending)
         if self._ws is not None:
@@ -103,6 +112,7 @@ class PhoneLink:
             self._blocked = self._blocked or block
             self.pairing.clear()
             self.source.disconnect()
+            self._clear_screen()
             self._device = None
 
     def unblock(self):
@@ -127,10 +137,11 @@ class PhoneLink:
                 raise web.HTTPForbidden() from None
             if not request.secure or host != self.host:
                 raise web.HTTPForbidden()
-            if not self._http_limit.allow():
+            limiter = self._screen_http_limit if request.path == "/screen" else self._http_limit
+            if not limiter.allow():
                 raise web.HTTPTooManyRequests()
             origin = request.headers.get("Origin")
-            if (origin is not None or request.path in ("/pair", "/ws")) and origin != f"https://{request.host}":
+            if (origin is not None or request.path in ("/pair", "/ws", "/screen")) and origin != f"https://{request.host}":
                 raise web.HTTPForbidden()
             return await handler(request)
 
@@ -141,7 +152,7 @@ class PhoneLink:
                 "Permissions-Policy": "camera=(self), microphone=()",
                 "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; "
                                            "style-src 'self' 'unsafe-inline'; connect-src 'self'; "
-                                           "media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'",
+                                           "media-src 'self' blob:; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'",
             })
 
         async def index(request):
@@ -167,9 +178,44 @@ class PhoneLink:
         app.router.add_get("/", index)
         app.router.add_post("/pair", pair)
         app.router.add_get("/ws", self._handle_ws)
+        app.router.add_post("/screen", self._handle_screen)
         app.on_response_prepare.append(headers)
         app.on_shutdown.append(shutdown)
         return app
+
+    def _clear_screen(self):
+        self._screen_epoch += 1
+        self._screen_key = None
+        self._screen_front = False
+        if self.screen is not None:
+            self.screen.clear()
+
+    async def _handle_screen(self, request):
+        from aiohttp import web
+
+        key = self._screen_key
+        epoch = self._screen_epoch
+        auth = request.headers.get("Authorization", "")
+        ws = self._ws
+        if (key is None or not auth.isascii() or not secrets.compare_digest(auth, "Bearer " + key) or ws is None
+                or not self._device or request.remote != self._device["peer"]):
+            raise web.HTTPForbidden()
+        if self.screen is None or not self._screen_front or not self.source.is_open:
+            raise web.HTTPConflict()
+        if not self._screen_limit.allow():
+            raise web.HTTPTooManyRequests()
+        try:
+            jpeg = await self.screen.request()
+        except BlockingIOError:
+            raise web.HTTPTooManyRequests() from None
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            raise web.HTTPServiceUnavailable() from None
+        if (self._blocked or self._ws is not ws or self._screen_key != key or self._screen_epoch != epoch
+                or not self._screen_front or not self.source.is_open):
+            raise web.HTTPForbidden()
+        if not isinstance(jpeg, bytes) or not 4 <= len(jpeg) <= 512 * 1024:
+            raise web.HTTPServiceUnavailable()
+        return web.Response(body=jpeg, content_type="image/jpeg")
 
     async def _handle_ws(self, request):
         from aiohttp import WSMsgType, web
@@ -193,7 +239,9 @@ class PhoneLink:
             self._ws = ws
             self._device = {"name": device, "peer": request.remote}
             self.source.connect()
-            await ws.send_json({"kind": "ready"})
+            self._clear_screen()
+            self._screen_key = secrets.token_urlsafe(32) if self.screen is not None else None
+            await ws.send_json({"kind": "ready", "screen_token": self._screen_key})
             rate = RateLimit(36, 1)
             async for msg in ws:
                 if self._blocked or self._ws is not ws:
@@ -203,6 +251,11 @@ class PhoneLink:
                 if msg.type == WSMsgType.BINARY:
                     meta, jpeg = unpack_frame(msg.data)
                     accepted = self.source.submit(meta, jpeg)
+                    if accepted and self._screen_front != (meta.facing == "user"):
+                        self._screen_epoch += 1
+                        self._screen_front = meta.facing == "user"
+                        if self.screen is not None:
+                            self.screen.clear()
                     await ws.send_json({"kind": "ack", "seq": meta.seq, "accepted": accepted})
                 elif msg.type == WSMsgType.TEXT:
                     data = json.loads(msg.data)
@@ -218,6 +271,7 @@ class PhoneLink:
                 self._ws = None
                 self._device = None
                 self.source.disconnect()
+                self._clear_screen()
             await ws.close(code=1008, message=b"invalid phone link message")
         finally:
             self._pending.discard(ws)
@@ -225,6 +279,7 @@ class PhoneLink:
                 self._ws = None
                 self._device = None
                 self.source.disconnect()
+                self._clear_screen()
         return ws
 
     def start(self):

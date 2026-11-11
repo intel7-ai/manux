@@ -44,6 +44,19 @@
       transform: scaleX(-1);
     }
     video.rear { transform: none; }
+    #desktopScreen { display: none; width: 100%; height: 100%; object-fit: contain; }
+    #screenStatus { display: none; position: absolute; left: 10px; top: 10px;
+      padding: 6px 10px; background: #0f172ad9; border-radius: 6px; font-size: .8rem; }
+    .video-wrap.pc-screen { max-width: none; height: calc(100dvh - 210px); min-height: 240px; aspect-ratio: auto; }
+    .pc-screen #desktopScreen, .pc-screen #screenStatus { display: block; }
+    .pc-screen video { position: absolute; left: 0; top: 0; width: 1px; height: 1px;
+      opacity: 0; pointer-events: none; }
+    .video-wrap:fullscreen { width: 100vw; height: 100dvh; max-width: none; min-height: 0;
+      border: 0; border-radius: 0; aspect-ratio: auto; }
+    .video-wrap:fullscreen video { object-fit: contain; }
+    #exitFullscreen { display: none; position: absolute; right: 10px; top: 10px;
+      min-width: 0; padding: 8px 12px; background: #334155dd; }
+    .video-wrap:fullscreen #exitFullscreen { display: block; }
     .controls {
       display: flex;
       gap: 10px;
@@ -80,8 +93,11 @@
   <h1>🖐️ MANUX 스마트폰 카메라</h1>
   <div id="status" class="status">PC 화면의 6자리 코드를 입력하세요.</div>
 
-  <div class="video-wrap">
+  <div id="viewer" class="video-wrap">
+    <img id="desktopScreen" alt="현재 조작 중인 PC 모니터 전체 화면" />
+    <div id="screenStatus" role="status">PC 화면을 기다리는 중</div>
     <video id="video" autoplay playsinline muted></video>
+    <button id="exitFullscreen" type="button">전체화면 나가기</button>
   </div>
 
   <form id="pairForm" class="controls">
@@ -92,8 +108,11 @@
   <div class="controls">
     <button id="switchBtn" type="button" disabled>🔄 전면/후면 전환</button>
     <button id="disconnectBtn" type="button" class="secondary" disabled>연결 끊기</button>
+    <button id="fullscreenBtn" type="button" class="secondary" disabled>⛶ PC 화면 전체보기</button>
   </div>
   <p class="hint">같은 Wi-Fi에서 손과 약 1m 거리로 거치하세요. 전송 FPS는 PC 수신 확인 기준입니다.<br>
+  전면 카메라에서는 PC 바탕화면·작업표시줄·열린 창을 포함한 모니터 전체가 표시됩니다.<br>
+  PC 화면 전체보기 버튼으로 크게 볼 수 있습니다. 전면 카메라는 손 인식용으로 계속 작동합니다.<br>
   화면 꺼짐 방지는 지원되는 브라우저에서만 동작합니다. 이 페이지는 마이크를 사용하지 않습니다.</p>
 
   <canvas id="canvas" style="display:none;"></canvas>
@@ -107,6 +126,10 @@
     const disconnectBtn = document.getElementById('disconnectBtn');
     const connectBtn = document.getElementById('connectBtn');
     const cameraSelect = document.getElementById('camera');
+    const viewer = document.getElementById('viewer');
+    const desktopScreen = document.getElementById('desktopScreen');
+    const screenStatus = document.getElementById('screenStatus');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
     // Dan's existing JPEG settings and aspect-preserving canvas pipeline.
     const TARGET_W = 480, TARGET_H = 360, JPEG_QUALITY = 0.55;
     let facingMode = 'environment', stream = null, ws = null, wake = null;
@@ -114,6 +137,95 @@
     let lastVideoTime = -1, lastAttempt = 0, offsetMs = 0, synced = false;
     let ackCount = 0, fpsStart = 0, fps = 0, ackDeadline = 0, syncTimer = null;
     let callbackId = null, videoCallback = false, cameraBusy = false;
+    let screenToken = null, screenTimer = null, screenAbort = null, screenEpoch = 0, screenUrl = null;
+    let lastScreenAt = 0;
+    let screenDisplayState = 'waiting';
+
+    function loadScreenImage(url, signal) {
+      // onload works in Android/in-app browsers whose Image.decode is absent or
+      // rejects otherwise displayable JPEGs. Bound the decode by the request deadline.
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        const finish = error => {
+          image.onload = image.onerror = null;
+          signal.removeEventListener('abort', aborted);
+          if (error) reject(error); else resolve(image);
+        };
+        const aborted = () => finish(new Error('PC 화면 읽기 시간 초과'));
+        image.onload = () => finish(null);
+        image.onerror = () => finish(new Error('PC 화면 이미지 읽기 실패'));
+        signal.addEventListener('abort', aborted, {once: true});
+        if (signal.aborted) { aborted(); return; }
+        image.src = url;
+      });
+    }
+
+    function stopScreen() {
+      ++screenEpoch;
+      clearTimeout(screenTimer); screenTimer = null;
+      if (screenAbort) { screenAbort.abort(); screenAbort = null; }
+      desktopScreen.removeAttribute('src');
+      if (screenUrl) { URL.revokeObjectURL(screenUrl); screenUrl = null; }
+      viewer.classList.remove('pc-screen');
+      fullscreenBtn.disabled = true;
+      if (document.fullscreenElement === viewer) document.exitFullscreen().catch(() => {});
+      lastScreenAt = 0;
+    }
+    function startScreen() {
+      stopScreen();
+      if (facingMode !== 'user' || !stream || !screenToken || document.hidden) return;
+      viewer.classList.add('pc-screen');
+      fullscreenBtn.disabled = false;
+      screenStatus.textContent = 'PC 화면을 기다리는 중';
+      pullScreen(screenEpoch);
+    }
+    async function pullScreen(epoch) {
+      if (epoch !== screenEpoch) return;
+      const controller = new AbortController();
+      screenAbort = controller;
+      const deadline = setTimeout(() => controller.abort(), 1500);
+      let nextUrl = null;
+      let stage = '서버 응답';
+      let phase = 'fetch';
+      try {
+        const response = await fetch('/screen', {method: 'POST', cache: 'no-store',
+          headers: {Authorization: 'Bearer ' + screenToken, 'X-Manux-Display': screenDisplayState}, signal: controller.signal});
+        if (!response.ok) throw new Error('PC 화면 대기 (' + response.status + ')');
+        stage = '이미지 수신';
+        phase = 'blob';
+        const blob = await response.blob();
+        if (epoch !== screenEpoch) return;
+        nextUrl = URL.createObjectURL(blob);
+        stage = '이미지 표시';
+        phase = 'image';
+        await loadScreenImage(nextUrl, controller.signal);
+        if (epoch !== screenEpoch) return;
+        const previous = screenUrl;
+        screenUrl = nextUrl; nextUrl = null;
+        desktopScreen.src = screenUrl;
+        if (previous) URL.revokeObjectURL(previous);
+        lastScreenAt = performance.now();
+        screenDisplayState = 'shown';
+        screenStatus.textContent = 'PC 모니터 · 손 인식 카메라 연결 중';
+      } catch (error) {
+        if (epoch === screenEpoch) {
+          screenDisplayState = phase + '_failed';
+          screenStatus.textContent = 'PC 화면 재시도 · ' + stage + ' · ' +
+            (error.name === 'AbortError' ? '시간 초과' : error.message);
+          if (performance.now() - lastScreenAt > 2000) {
+            desktopScreen.removeAttribute('src');
+            if (screenUrl) { URL.revokeObjectURL(screenUrl); screenUrl = null; }
+          }
+        }
+      } finally {
+        clearTimeout(deadline);
+        if (nextUrl) URL.revokeObjectURL(nextUrl);
+        if (epoch === screenEpoch) {
+          screenAbort = null;
+          screenTimer = setTimeout(() => pullScreen(epoch), 100);
+        }
+      }
+    }
 
     function cancelFrame() {
       if (callbackId !== null) {
@@ -135,6 +247,7 @@
     }
     function stop(message = '연결 종료 · 새 PC 코드로 다시 연결하세요.') {
       ++generation;
+      stopScreen(); screenToken = null;
       cancelFrame(); clearInterval(syncTimer); syncTimer = null;
       if (ws) { ws.onclose = null; ws.close(); ws = null; }
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
@@ -142,6 +255,7 @@
       video.srcObject = null;
       sending = awaitingAck = synced = false;
       switchBtn.disabled = disconnectBtn.disabled = true;
+      fullscreenBtn.disabled = true;
       connectBtn.disabled = false;
       statusEl.textContent = message;
       statusEl.classList.remove('connected');
@@ -149,6 +263,7 @@
     async function startCamera() {
       if (cameraBusy) return;
       cameraBusy = true; switchBtn.disabled = true;
+      stopScreen();
       cancelFrame();
       const current = ++generation;
       if (stream) stream.getTracks().forEach(t => t.stop());
@@ -170,6 +285,7 @@
         if (current !== generation) return;
         lastVideoTime = -1; sending = false;
         await wakeScreen();
+        startScreen();
         scheduleNextFrame();
       } catch (error) { if (current === generation) stop('카메라 접근 실패: ' + error.message); }
       finally { cameraBusy = false; switchBtn.disabled = !ws || ws.readyState !== WebSocket.OPEN; }
@@ -179,7 +295,9 @@
     }
     function scheduleNextFrame() {
       if (!stream || !ws || ws.readyState !== WebSocket.OPEN) return;
-      videoCallback = 'requestVideoFrameCallback' in video;
+      // The front video is hidden behind the PC screen. Drive it independently of
+      // video compositing so hiding the selfie view cannot stall camera uploads.
+      videoCallback = facingMode !== 'user' && 'requestVideoFrameCallback' in video;
       callbackId = videoCallback ? video.requestVideoFrameCallback(sendCurrentVideoFrame)
                                  : requestAnimationFrame(sendCurrentVideoFrame);
     }
@@ -237,6 +355,7 @@
           try {
             const data = JSON.parse(event.data);
             if (data.kind === 'ready') {
+              screenToken = data.screen_token || null;
               seq = 0; fpsStart = performance.now(); ackCount = 0;
               disconnectBtn.disabled = false; statusEl.classList.add('connected');
               synchronize(); syncTimer = setInterval(synchronize, 10000);
@@ -260,7 +379,21 @@
       facingMode = facingMode === 'user' ? 'environment' : 'user'; startCamera();
     });
     disconnectBtn.addEventListener('click', () => stop());
-    document.addEventListener('visibilitychange', () => { if (!document.hidden && stream) wakeScreen(); });
+    fullscreenBtn.addEventListener('click', async () => {
+      if (facingMode !== 'user' || !screenToken || !stream) return;
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else if (viewer.requestFullscreen) await viewer.requestFullscreen();
+        else statusEl.textContent = '이 브라우저는 전체화면을 지원하지 않습니다.';
+      } catch (_) { statusEl.textContent = '전체화면을 열지 못했습니다. 버튼을 다시 눌러 주세요.'; }
+    });
+    document.getElementById('exitFullscreen').addEventListener('click', () => {
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) stopScreen();
+      else if (stream) { wakeScreen(); startScreen(); }
+    });
     window.addEventListener('pagehide', () => stop());
 </script>
 </body>

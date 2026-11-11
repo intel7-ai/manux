@@ -589,7 +589,8 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 출처: Dan(한순중)의 `hand-mouse-gesture-overhaul@9da1f634e8c0afd9d3d6b32a56c83cddfb23d5f8`,
 `src/phone_web_bridge.py`와 `src/camera.py`. 영향 계층: core, capture, 신규 link.
 
-- 기본 꺼짐. 명시적 PhoneLink.start()/개발 실행기만 HTTPS listener를 연다. 앱 선택·QR 표시는 #96 이후 별도 PR이다.
+- 기본 꺼짐. 앱의 휴대폰 연결 켜기 또는 `--phone-web`/`--source phone`을 명시해야 listener를 연다. `RuntimeRequest("phone_camera", action)`은 start/local/pair/disconnect/block/unblock을 런타임 큐로 전달한다. Qt는 네트워크를 열지 않고 `ViewFrame.phone`의 일시적 상태·URL·코드만 표시한다. QR에는 URL만 넣는다.
+- 연결 창은 `SetBusy("connecting")`으로 OS 입력을 막는다. 카메라 변경 전 입력을 해제하고 제어를 끈다. 녹화·등록·보정 중 소스 변경은 거절한다. 휴대폰 프레임도 기존 손 추적·엔진을 사용한다. 새 프레임이 없는 매 읽기는 `frame_missing`으로 기존 손 소실·입력 해제를 처리한다. 첫 유효 영상 이후 연결이 살아 있고 마지막 유효 영상에서 2초 미만인 짧은 수신 간격에는 미리보기만 유지한다. 연결 해제·새 세션의 첫 영상 대기·2초 이상 유효 영상 정체에는 이전 영상과 관절을 지운다. 유지한 영상을 추적·엔진·녹화에 다시 넣지 않는다. PC 카메라로 돌아가기는 서버를 닫고 기존 카메라 설정을 그대로 다시 연다. 인증 정보·휴대폰 선택은 설정에 저장하지 않으므로 재실행 기본은 기존 PC 카메라다.
 - peer/bind 허용 주소는 RFC1918 IPv4(10/8, 172.16/12, 192.168/16), IPv6 ULA(fc00::/7), 로컬 시험용 loopback뿐이다. 공인·문서용·multicast·unspecified 주소 거절. 실제 TCP peer를 검사하며 Forwarded/X-Forwarded-For는 신뢰하지 않는다. Host와 HTTPS Origin은 listener 주소와 일치해야 한다.
 - PC에서 6자리 난수 코드 발급, 단조시계 120초 만료·성공 한 번만 사용. 재발급은 이전 코드/미접속 토큰 폐기. 코드 교환은 전역 분당 5회, HTTP는 전역 분당 120회 제한.
 - POST /pair의 {code, device} 검증 후 256bit 이상 접속 토큰 응답. 메모리에서만 관리하고 IP에 묶으며 120초 안에 한 번 WebSocket 인증에 쓴다. /ws 첫 JSON {kind:"auth", token} 없이는 프레임을 받지 않고 5초 내 인증하지 않으면 닫는다. 코드·토큰을 URL/QR/로그에 넣지 않는다.
@@ -599,7 +600,11 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 - sync JSON {kind:"sync", sent:epoch_ms} → {kind:"sync", sent, server:epoch_ms} 왕복 중간점으로 시계 보정. 촬영 시각은 JPEG 인코딩 직전 추정치이고 센서 노출 시각이 아니다. 데모 지연은 추정 촬영→PC 수신 시간이며 오차가 있다.
 - 초당 프레임 36회(여유 포함) 제한. 서버 ack 전에 다음 프레임을 보내지 않고 건너뛴다. 잘못된 메시지는 닫고 이전 seq·750ms 초과/250ms 이상 미래 촬영 시각은 ack accepted=false로 버린다. audio 종류는 예약만 하고 현재 거절한다. 원격 명령·마이크·Bluetooth 없음.
 - RemoteCamera는 압축 최신 하나만 보관, 덮어쓴 수를 센다. read(timeout)은 소비 스레드에서 JPEG 해독·반전·회전 후 FrameInfo와 BGR image 반환. FrameInfo.t는 수신 perf_counter, seq는 소스 전체에서 증가. 해독 중 연결이 바뀌면 결과 폐기. fps·actual_mode·추정 수신 지연 제공.
+- 데스크톱 조립자는 휴대폰의 전면/후면 기본 반전과 `camera.mirror`가 다르면 추적 전에 영상과 `FrameInfo.mirrored`를 함께 보정한다. 반전 후 회전 순서와 기존 회전·크기를 유지한다. 전면 영상을 중복 반전하지 않으며 실제 손 선택·미리보기·관절·커서·녹화가 같은 보정된 좌표를 사용한다. PC 카메라는 이미 설정을 적용하므로 재보정하지 않는다.
 - 새 프레임이 없으면 read는 None. 마지막 수신/접속 뒤 2초 정체면 is_open=false. 끊기/정지 때 즉시 슬롯을 비우고 대기자를 깨운다. QR 대기 화면·이전 프레임은 판정기에 넣지 않는다. 조립자가 Engine.frame_missing(now)으로 손 소실·입력 해제를 처리한다. link는 엔진·Windows 입력을 호출하지 않는다.
+- 전면 카메라 연결에서는 현재 OS 커서가 있는 모니터 전체를 휴대폰에 표시한다. `platform.screen_preview`가 Qt GUI 스레드에서 QScreen을 캡처하고 커서 위치를 표시한다. 최대 1280×720에 비율 유지, JPEG 품질 65, 512KiB 상한이다. PC 화면은 좌우반전하지 않는다. `desktop`이 `ScreenRequests`의 take/complete 콜백을 주입하고 UI는 수명만 관리한다. 후면·미연결·요청 없음에는 캡처하지 않고 화면을 저장하지 않는다.
+- 화면 전송은 손 영상 WebSocket과 별도의 `POST /screen` 요청이다. WS ready에서 메모리 전용 256bit 화면 토큰을 발급한다. 같은 Origin·IP·현재 인증된 WS·유효한 전면 카메라 프레임이 있어야 Authorization 헤더 토큰을 수락한다. URL·로그·저장소에 토큰을 넣지 않는다. 화면 HTTP는 초당 30회, 인증 후 요청은 초당 12회 제한하며 기존 일반 HTTP 분당 120회와 분리한다. 요청은 동시에 하나만 허용하고 캡처 대기는 0.8초로 제한한다. 전면/후면 전환·WS 종료·PC 차단은 진행 중 결과를 무효화한다. 응답도 인증과 세대를 재검사한다.
+- 휴대폰은 이전 화면 응답·JPEG 해독을 마친 뒤 100ms 뒤에 다음 화면을 요청한다. 숨김·카메라 전환·연결 종료 때 HTTP를 취소하고 이미지 URL을 해제한다. 짧은 화면 수신 지연은 이전 이미지를 유지하고 2초 이상 갱신되지 않으면 비운다. 화면 실패는 손 영상 전송을 끊지 않는다. 전체화면은 사용자가 버튼을 눌러 진입·종료하며 모니터 비율을 유지한다. 전체화면 미지원/거절도 카메라 연결을 유지한다.
 
 ### v0.5 MLP·UI 감사 연결 계약
 

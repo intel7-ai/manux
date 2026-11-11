@@ -11,7 +11,7 @@ echo.
 cd /d "%~dp0"
 
 echo [1/2] Checking dependencies...
-call uv sync --extra vision --extra ui --extra ml
+call uv sync --locked --extra vision --extra ui --extra ml --extra link --extra qr
 if errorlevel 1 (
     echo [ERROR] Failed to sync packages with uv.
     pause
@@ -28,7 +28,7 @@ echo   - Space: Start/Stop continuous recording
 echo   - Train button: Instant 4s Spatial MLP training
 echo.
 
-call uv run python -m manux
+call uv run --locked --extra vision --extra ui --extra ml --extra link --extra qr python -m manux %*
 
 if errorlevel 1 (
     echo.

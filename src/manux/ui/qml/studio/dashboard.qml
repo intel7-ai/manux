@@ -103,17 +103,17 @@ ApplicationWindow {
         }
     }
 
-    Shortcut { sequence: "Return"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
-    Shortcut { sequence: "Enter"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
-    Shortcut { sequence: "Esc"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(27) }
-    Shortcut { sequence: "Space"; enabled: !window.learningDialogOpen && !dashboard.trackingActive && (!pointerSettings.visible); onActivated: dashboard.command(32) }
-    Shortcut { sequence: "Q"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(81) }
-    Shortcut { sequence: "O"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(111) }
-    Shortcut { sequence: "M"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(109) }
-    Shortcut { sequence: "N"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(110) }
-    Shortcut { sequence: "F"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.markFailure() }
-    Shortcut { sequence: "C"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(99) }
-    Shortcut { sequence: "P"; enabled: !window.learningDialogOpen && !dashboard.trackingActive; onActivated: dashboard.command(112) }
+    Shortcut { sequence: "Return"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
+    Shortcut { sequence: "Enter"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive && (dashboard.calibratingPointer); autoRepeat: false; onActivated: dashboard.capturePointerSample() }
+    Shortcut { sequence: "Esc"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive; onActivated: dashboard.command(27) }
+    Shortcut { sequence: "Space"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive && (!pointerSettings.visible); onActivated: dashboard.command(32) }
+    Shortcut { sequence: "Q"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive; onActivated: dashboard.command(81) }
+    Shortcut { sequence: "O"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive; onActivated: dashboard.command(111) }
+    Shortcut { sequence: "M"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive; onActivated: dashboard.command(109) }
+    Shortcut { sequence: "N"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive; onActivated: dashboard.command(110) }
+    Shortcut { sequence: "F"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive; onActivated: dashboard.markFailure() }
+    Shortcut { sequence: "C"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive; onActivated: dashboard.command(99) }
+    Shortcut { sequence: "P"; enabled: !window.learningDialogOpen && !phoneCameraDialog.visible && !dashboard.trackingActive; onActivated: dashboard.command(112) }
 
     Timer { interval: 700; running: dashboard.stage === "splash"; onTriggered: dashboard.finishSplash() }
 
@@ -553,6 +553,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         spacing: 8
                         TextLabel { text: "카메라"; font.pixelSize: 20; font.bold: true }
+                        Button { text: "휴대폰 연결"; objectName: "openPhoneCamera"; onClicked: phoneCameraDialog.open() }
                         Item { Layout.fillWidth: true }
                         Chip { visible: dashboard.cameraMode !== ""; text: dashboard.cameraMode }
                         Chip {
@@ -1042,9 +1043,12 @@ ApplicationWindow {
         onRecordingRequested: capturePlan.open()
         onProgressRequested: trainingProgressPage.open()
     }
+    Current.PhoneCameraDialog { id: phoneCameraDialog; controller: dashboard }
+
     SettingsDialog {
         id: studioSettings
         controller: dashboard
+        onPhoneRequested: { close(); phoneCameraDialog.open() }
         onDataRequested: { close(); dataCenter.open() }
         onAdvancedRequested: advancedSettings.open()
     }
