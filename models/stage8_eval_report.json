@@ -1,0 +1,1152 @@
+{
+  "schema": "manux-stage1-eval-report/1",
+  "generated_at": "2026-11-08 09:56:44",
+  "elapsed_sec": 392.74,
+  "fixture_regressions": {
+    "total_fixtures": 3,
+    "passed_fixtures": 3,
+    "all_passed": true,
+    "gate_loaded": true,
+    "checks": [
+      {
+        "fixture": "half_fist_ring_contact.json",
+        "frames": 54,
+        "passed": true,
+        "rule_false_right_clicks": 0,
+        "gated_false_right_clicks": 0,
+        "invariant": "right_click not fired during half-fist ring contact"
+      },
+      {
+        "fixture": "scroll_grab_stroke_and_return.json",
+        "frames": 140,
+        "passed": true,
+        "return_scrollback": 0.0092,
+        "invariant": "no drag_hold misfire and return stroke scrollback < 0.012"
+      },
+      {
+        "fixture": "half_fist_moving.json",
+        "frames": 60,
+        "passed": true,
+        "rule_actions": [
+          "move_cursor"
+        ],
+        "gated_actions": [
+          "move_cursor"
+        ],
+        "invariant": "every frame remains move_cursor with zero false clicks"
+      }
+    ]
+  },
+  "dataset_diversity": {
+    "num_sessions": 20,
+    "unique_persons": [
+      "user_primary"
+    ],
+    "num_persons": 1,
+    "single_user_limitation": true,
+    "unique_cameras": [
+      "0:1280x720x30.0:usb_or_vcam:폰 카메라"
+    ],
+    "num_cameras": 1,
+    "single_camera_limitation": true,
+    "unique_pcs": [
+      "home-pc",
+      "pc-ded5"
+    ],
+    "unique_sessions": [
+      "20261105-030947-guided.jsonl.gz",
+      "20261105-094058-home-pc-guided.jsonl.gz",
+      "20261105-104228-home-pc-guided.jsonl.gz",
+      "20261105-113527-home-pc-guided.jsonl.gz",
+      "20261105-120844-home-pc-guided.jsonl.gz",
+      "20261105-142443-ffc668da-home-pc-guided.jsonl.gz",
+      "20261105-143456-ca052343-home-pc-guided.jsonl.gz",
+      "20261105-143809-a18918c5-home-pc-guided.jsonl.gz",
+      "20261105-144201-f15dc83d-home-pc-guided.jsonl.gz",
+      "20261105-174342-f8dfca21-home-pc-guided.jsonl.gz",
+      "20261105-194358-599bcb32-home-pc-guided.jsonl.gz",
+      "20261105-222130-9ec6de20-home-pc-guided.jsonl.gz",
+      "20261105-230210-3a82297b-home-pc-guided.jsonl.gz",
+      "20261106-025047-12f4b792-home-pc-guided.jsonl.gz",
+      "20261106-105800-f901519c-home-pc-guided.jsonl.gz",
+      "20261106-121946-c8394343-home-pc-guided.jsonl.gz",
+      "20261106-161459-260acca2-home-pc-guided.jsonl.gz",
+      "20261107-202832-8bc3df5c-home-pc-guided.jsonl.gz",
+      "20261107-214618-32881cd5-home-pc-guided.jsonl.gz",
+      "20261108-020550-d7a4789e-home-pc-guided.jsonl.gz"
+    ],
+    "unique_conditions": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14
+    ],
+    "num_conditions": 15,
+    "supported_split_modes": [
+      "condition",
+      "session",
+      "person",
+      "camera",
+      "random"
+    ],
+    "limitations": [
+      "현재 녹화 데이터셋은 단일 사용자(1인) 환경에서 수집되어 사용자 간 손 크기·손가락 비율 일반화 검증에 한계가 있습니다. 다중 사용자 녹화(`meta.person_id` 또는 `meta.user`)가 추가되면 코드 수정 없이 `--split-mode person`(`leave-person-out`)이 즉시 활성화됩니다.",
+      "현재 녹화 데이터셋은 단일 카메라 구성(폰 카메라 1280x720@30fps 연결)에 치우쳐 있어 이종 렌즈·화각(FOV)·해상도 일반화 검증에 한계가 있습니다. 다중 카메라 녹화(`meta.camera.id` 또는 상이한 카메라 소스/해상도)가 추가되면 코드 수정 없이 `--split-mode camera`(`leave-camera-out`)가 즉시 활성화됩니다."
+    ],
+    "sessions": [
+      {
+        "session_idx": 0,
+        "session_id": "20261105-030947-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "pc-ded5",
+        "conditions": [
+          0,
+          1,
+          2
+        ],
+        "frames": 28994
+      },
+      {
+        "session_idx": 1,
+        "session_id": "20261105-094058-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          0,
+          1,
+          2
+        ],
+        "frames": 29537
+      },
+      {
+        "session_idx": 2,
+        "session_id": "20261105-104228-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          0,
+          1,
+          2
+        ],
+        "frames": 6046
+      },
+      {
+        "session_idx": 3,
+        "session_id": "20261105-113527-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          0,
+          1,
+          2
+        ],
+        "frames": 6025
+      },
+      {
+        "session_idx": 4,
+        "session_id": "20261105-120844-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          0,
+          1,
+          2
+        ],
+        "frames": 5849
+      },
+      {
+        "session_idx": 5,
+        "session_id": "20261105-142443-ffc668da-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          3,
+          5,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          14
+        ],
+        "frames": 15198
+      },
+      {
+        "session_idx": 6,
+        "session_id": "20261105-143456-ca052343-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 4907
+      },
+      {
+        "session_idx": 7,
+        "session_id": "20261105-143809-a18918c5-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 4869
+      },
+      {
+        "session_idx": 8,
+        "session_id": "20261105-144201-f15dc83d-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 5036
+      },
+      {
+        "session_idx": 9,
+        "session_id": "20261105-174342-f8dfca21-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 4948
+      },
+      {
+        "session_idx": 10,
+        "session_id": "20261105-194358-599bcb32-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 5827
+      },
+      {
+        "session_idx": 11,
+        "session_id": "20261105-222130-9ec6de20-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 5482
+      },
+      {
+        "session_idx": 12,
+        "session_id": "20261105-230210-3a82297b-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 5207
+      },
+      {
+        "session_idx": 13,
+        "session_id": "20261106-025047-12f4b792-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5
+        ],
+        "frames": 630
+      },
+      {
+        "session_idx": 14,
+        "session_id": "20261106-105800-f901519c-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 5257
+      },
+      {
+        "session_idx": 15,
+        "session_id": "20261106-121946-c8394343-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 5257
+      },
+      {
+        "session_idx": 16,
+        "session_id": "20261106-161459-260acca2-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 4717
+      },
+      {
+        "session_idx": 17,
+        "session_id": "20261107-202832-8bc3df5c-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 1745
+      },
+      {
+        "session_idx": 18,
+        "session_id": "20261107-214618-32881cd5-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          4,
+          6,
+          13
+        ],
+        "frames": 1935
+      },
+      {
+        "session_idx": 19,
+        "session_id": "20261108-020550-d7a4789e-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          4,
+          6,
+          13
+        ],
+        "frames": 4227
+      }
+    ]
+  },
+  "spatial_mlp_leakage_comparison": {
+    "total_samples": 59665,
+    "condition_leave_out": {
+      "train_samples": 42723,
+      "test_samples": 16942,
+      "train_accuracy": 98.98,
+      "test_accuracy": 83.9,
+      "per_class": {
+        "none": {
+          "total": 31574,
+          "correct": 29876,
+          "accuracy": 94.6,
+          "test_total": 10498,
+          "test_correct": 8909,
+          "test_accuracy": 84.9
+        },
+        "thumb_index": {
+          "total": 8096,
+          "correct": 7627,
+          "accuracy": 94.2,
+          "test_total": 1349,
+          "test_correct": 1138,
+          "test_accuracy": 84.4
+        },
+        "thumb_ring": {
+          "total": 1544,
+          "correct": 1425,
+          "accuracy": 92.3,
+          "test_total": 503,
+          "test_correct": 409,
+          "test_accuracy": 81.3
+        },
+        "thumb_middle": {
+          "total": 7566,
+          "correct": 7233,
+          "accuracy": 95.6,
+          "test_total": 1347,
+          "test_correct": 1038,
+          "test_accuracy": 77.1
+        },
+        "thumb_pinky": {
+          "total": 3576,
+          "correct": 3345,
+          "accuracy": 93.5,
+          "test_total": 800,
+          "test_correct": 575,
+          "test_accuracy": 71.9
+        },
+        "palm_side": {
+          "total": 4390,
+          "correct": 4087,
+          "accuracy": 93.1,
+          "test_total": 1460,
+          "test_correct": 1160,
+          "test_accuracy": 79.5
+        },
+        "thumbs_up": {
+          "total": 2919,
+          "correct": 2907,
+          "accuracy": 99.6,
+          "test_total": 985,
+          "test_correct": 985,
+          "test_accuracy": 100.0
+        }
+      },
+      "temperature": 1.68,
+      "calibration": {
+        "temperature": 1.68,
+        "before": {
+          "ece": 0.06961,
+          "mce": 0.27846,
+          "nll": 0.51102,
+          "brier": 0.24067,
+          "mean_confidence": 0.9086,
+          "accuracy": 0.839
+        },
+        "after": {
+          "ece": 0.01513,
+          "mce": 0.32282,
+          "nll": 0.44365,
+          "brier": 0.22726,
+          "mean_confidence": 0.8369,
+          "accuracy": 0.839
+        },
+        "ece_reduction_pct": 78.26
+      }
+    },
+    "session_leave_out": {
+      "train_samples": 36629,
+      "test_samples": 23036,
+      "train_accuracy": 99.12,
+      "test_accuracy": 85.91,
+      "per_class": {
+        "none": {
+          "total": 31574,
+          "correct": 29369,
+          "accuracy": 93.0,
+          "test_total": 15997,
+          "test_correct": 13896,
+          "test_accuracy": 86.9
+        },
+        "thumb_index": {
+          "total": 8096,
+          "correct": 7777,
+          "accuracy": 96.1,
+          "test_total": 1349,
+          "test_correct": 1169,
+          "test_accuracy": 86.7
+        },
+        "thumb_ring": {
+          "total": 1544,
+          "correct": 1438,
+          "accuracy": 93.1,
+          "test_total": 673,
+          "test_correct": 593,
+          "test_accuracy": 88.1
+        },
+        "thumb_middle": {
+          "total": 7566,
+          "correct": 7068,
+          "accuracy": 93.4,
+          "test_total": 1347,
+          "test_correct": 876,
+          "test_accuracy": 65.0
+        },
+        "thumb_pinky": {
+          "total": 3576,
+          "correct": 3398,
+          "accuracy": 95.0,
+          "test_total": 800,
+          "test_correct": 624,
+          "test_accuracy": 78.0
+        },
+        "palm_side": {
+          "total": 4390,
+          "correct": 4204,
+          "accuracy": 95.8,
+          "test_total": 1400,
+          "test_correct": 1228,
+          "test_accuracy": 87.7
+        },
+        "thumbs_up": {
+          "total": 2919,
+          "correct": 2842,
+          "accuracy": 97.4,
+          "test_total": 1470,
+          "test_correct": 1405,
+          "test_accuracy": 95.6
+        }
+      }
+    },
+    "random_80_20": {
+      "legacy_random_80_20_with_specialist_leak_acc": 98.99,
+      "random_80_20_train_only_specialists_acc": 98.69,
+      "random_80_20_base_only_acc": 97.99
+    },
+    "adjacent_frame_and_specialist_leakage_pct": 15.09,
+    "adjacent_frame_only_leakage_pct": 14.79
+  },
+  "stage8_adaptation": {
+    "stage8_1_onboarding": {
+      "eval_frames": 15502,
+      "onboard_calibration_frames": 1440,
+      "encoder_frozen": true,
+      "encoder_weight_max_diff": 0.0,
+      "overall_accuracy_before_pct": 83.98,
+      "overall_accuracy_after_pct": 84.25,
+      "overall_delta_pct": 0.28,
+      "active_gesture_accuracy_before_pct": 82.37,
+      "active_gesture_accuracy_after_pct": 83.64,
+      "active_gesture_delta_pct": 1.27,
+      "per_class_before_pct": {
+        "none": 84.97,
+        "thumb_index": 84.35,
+        "thumb_ring": 81.6,
+        "thumb_middle": 77.25,
+        "thumb_pinky": 71.97,
+        "palm_side": 79.34,
+        "thumbs_up": 100.0
+      },
+      "per_class_after_pct": {
+        "none": 84.63,
+        "thumb_index": 84.91,
+        "thumb_ring": 81.84,
+        "thumb_middle": 78.12,
+        "thumb_pinky": 75.07,
+        "palm_side": 81.82,
+        "thumbs_up": 100.0
+      },
+      "prototype_cosine_shifts": {
+        "thumb_index": 0.00161,
+        "thumb_ring": 0.00049,
+        "thumb_middle": 0.00735,
+        "thumb_pinky": 0.00439,
+        "palm_side": 0.00621,
+        "thumbs_up": 0.00081,
+        "none": 0.01166
+      },
+      "user_ood_thresholds": {
+        "thumb_index": 4.8627,
+        "thumb_ring": 9.6273,
+        "thumb_middle": 11.2354,
+        "thumb_pinky": 11.5077,
+        "palm_side": 12.3426,
+        "thumbs_up": 4.7078
+      }
+    },
+    "stage8_2_custom_registration": {
+      "few_shot_evaluations": {
+        "thumbs_up_3reps": {
+          "gesture": "thumbs_up",
+          "reps_registered": 3,
+          "held_out_reps_recognised": 99,
+          "held_out_reps_total": 112,
+          "held_out_rep_recall_pct": 88.39,
+          "held_out_frame_accuracy_pct": 80.37,
+          "rep_consistency_cosine": 0.9525,
+          "closest_existing_class": "thumb_index",
+          "closest_cosine": 0.8222,
+          "proximity_warning_triggered": false,
+          "neutral_30s_misfires_default": 0,
+          "neutral_30s_misfires_after_tuning": 0,
+          "recommended_threshold": 0.72,
+          "base_classes_acc_before_pct": 83.38,
+          "base_classes_acc_after_pct": 82.93,
+          "encoder_frozen": true
+        },
+        "thumbs_up_5reps": {
+          "gesture": "thumbs_up",
+          "reps_registered": 5,
+          "held_out_reps_recognised": 96,
+          "held_out_reps_total": 110,
+          "held_out_rep_recall_pct": 87.27,
+          "held_out_frame_accuracy_pct": 76.96,
+          "rep_consistency_cosine": 0.9542,
+          "closest_existing_class": "thumb_index",
+          "closest_cosine": 0.8038,
+          "proximity_warning_triggered": false,
+          "neutral_30s_misfires_default": 0,
+          "neutral_30s_misfires_after_tuning": 0,
+          "recommended_threshold": 0.72,
+          "base_classes_acc_before_pct": 83.38,
+          "base_classes_acc_after_pct": 83.14,
+          "encoder_frozen": true
+        },
+        "palm_side_3reps": {
+          "gesture": "palm_side",
+          "reps_registered": 3,
+          "held_out_reps_recognised": 125,
+          "held_out_reps_total": 172,
+          "held_out_rep_recall_pct": 72.67,
+          "held_out_frame_accuracy_pct": 66.88,
+          "rep_consistency_cosine": 0.8187,
+          "closest_existing_class": "thumb_index",
+          "closest_cosine": 0.8401,
+          "proximity_warning_triggered": false,
+          "neutral_30s_misfires_default": 0,
+          "neutral_30s_misfires_after_tuning": 0,
+          "recommended_threshold": 0.72,
+          "base_classes_acc_before_pct": 83.38,
+          "base_classes_acc_after_pct": 83.35,
+          "encoder_frozen": true
+        },
+        "palm_side_5reps": {
+          "gesture": "palm_side",
+          "reps_registered": 5,
+          "held_out_reps_recognised": 132,
+          "held_out_reps_total": 170,
+          "held_out_rep_recall_pct": 77.65,
+          "held_out_frame_accuracy_pct": 73.59,
+          "rep_consistency_cosine": 0.8238,
+          "closest_existing_class": "thumb_index",
+          "closest_cosine": 0.8146,
+          "proximity_warning_triggered": false,
+          "neutral_30s_misfires_default": 0,
+          "neutral_30s_misfires_after_tuning": 0,
+          "recommended_threshold": 0.72,
+          "base_classes_acc_before_pct": 83.38,
+          "base_classes_acc_after_pct": 83.18,
+          "encoder_frozen": true
+        },
+        "v_sign_field_3reps": {
+          "gesture": "v_sign_custom",
+          "reps_registered": 3,
+          "held_out_reps_recognised": 7,
+          "held_out_reps_total": 8,
+          "held_out_rep_recall_pct": 87.5,
+          "rep_consistency_cosine": 0.9131,
+          "closest_existing_class": "thumb_ring",
+          "closest_cosine": 0.7637,
+          "proximity_warning_triggered": false,
+          "neutral_30s_misfires_default": 0,
+          "neutral_30s_misfires_after_tuning": 0,
+          "recommended_threshold": 0.72
+        }
+      },
+      "duplicate_proximity_check": {
+        "registered_label": "duplicate_thumb_index",
+        "closest_class": "thumb_index",
+        "closest_cosine": 0.9349,
+        "proximity_warning_triggered": true,
+        "warning_text": "기존 동작 'thumb_index'와 프로토타입 유사도가 높습니다 (cos=0.935 >= 0.85): 혼동 위험이 있으니 다른 손모양을 권장합니다."
+      }
+    },
+    "stage8_3_runtime_ema_and_rollback": {
+      "shadow_mode_logged": true,
+      "shadow_mode_prototype_diff": 0.0,
+      "live_ema_updates_applied": 24,
+      "accuracy_before_ema_pct": 83.98,
+      "accuracy_after_ema_pct": 84.22,
+      "ema_delta_pct": 0.25,
+      "cancelled_rejected": true,
+      "low_confidence_rejected": true,
+      "rollback_succeeded": true,
+      "post_rollback_prototype_max_diff": 0.0
+    }
+  },
+  "pipeline_evaluation": {
+    "split_mode": "condition",
+    "evaluated_folds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14
+    ],
+    "fold_plan": {
+      "num_folds": 15,
+      "degenerate": false,
+      "degenerate_reason": null
+    },
+    "gesture_policy": {
+      "thresholds": {
+        "thumb_index": 0.62,
+        "thumb_middle": 0.68,
+        "thumb_ring": 0.58,
+        "thumb_index_middle": 0.68,
+        "thumb_pinky": 0.73,
+        "palm_side": 0.65,
+        "thumbs_up": 0.73,
+        "v_sign": 0.78,
+        "rock_sign": 0.78
+      },
+      "frames": {
+        "thumb_index": 4,
+        "thumb_middle": 4,
+        "thumb_ring": 2,
+        "thumb_index_middle": 4,
+        "thumb_pinky": 4,
+        "palm_side": 4,
+        "thumbs_up": 4,
+        "v_sign": 5,
+        "rock_sign": 5
+      },
+      "ood_ratio_limits": {
+        "thumb_index": 1.4,
+        "thumb_middle": 1.35,
+        "thumb_ring": 1.45,
+        "thumb_index_middle": 1.35,
+        "thumb_pinky": 1.25,
+        "palm_side": 1.2,
+        "thumbs_up": 1.2,
+        "v_sign": 1.15,
+        "rock_sign": 1.15
+      },
+      "hold_seconds": {
+        "thumb_index": 0.0,
+        "thumb_middle": 0.0,
+        "thumb_ring": 0.0,
+        "thumb_index_middle": 0.0,
+        "thumb_pinky": 0.08,
+        "palm_side": 0.1,
+        "thumbs_up": 0.1,
+        "v_sign": 0.15,
+        "rock_sign": 0.15
+      },
+      "spatial_alpha": 0.4,
+      "veto_threshold": 0.8,
+      "veto_target_cap": 0.15,
+      "boost_threshold": 0.85
+    },
+    "hybrid_calibration": {
+      "temperature": 0.8,
+      "before": {
+        "ece": 0.03265,
+        "mce": 0.14894,
+        "nll": 0.35491,
+        "brier": 0.16354,
+        "mean_confidence": 0.8604,
+        "accuracy": 0.8907
+      },
+      "after": {
+        "ece": 0.01169,
+        "mce": 0.10028,
+        "nll": 0.35779,
+        "brier": 0.16093,
+        "mean_confidence": 0.893,
+        "accuracy": 0.8907
+      },
+      "ece_reduction_pct": 64.2
+    },
+    "per_gesture": {
+      "none": {
+        "windows": 31574,
+        "free_minutes_deployed": 17.65,
+        "deployed_misfires": 17,
+        "deployed_misfires_per_min": 0.96,
+        "rules_misfires": 156,
+        "rules_misfires_per_min": 8.84,
+        "leave_out_free_minutes": 17.65,
+        "leave_out_misfires": 20,
+        "leave_out_misfires_per_min": 1.13,
+        "leave_out_rules_misfires_per_min": 8.84
+      },
+      "thumb_index": {
+        "windows": 8096,
+        "leave_out_recognised": 227,
+        "leave_out_total": 257,
+        "leave_out_rate": 0.8833,
+        "leave_out_ci95": [
+          0.8383,
+          0.917
+        ],
+        "deployed_recognised": 246,
+        "deployed_total": 257,
+        "deployed_rate": 0.9572,
+        "deployed_ci95": [
+          0.925,
+          0.9759
+        ],
+        "rules_recognised": 182,
+        "rules_total": 257,
+        "rules_rate": 0.7082,
+        "rules_ci95": [
+          0.6499,
+          0.7604
+        ],
+        "leave_out_reaction_latency": {
+          "samples": 228,
+          "mean_ms": 201.4,
+          "median_ms": 80.0,
+          "p90_ms": 547.8,
+          "mean_frames": 6.93,
+          "median_frames": 3.0,
+          "p90_frames": 17.0
+        },
+        "deployed_reaction_latency": {
+          "samples": 249,
+          "mean_ms": 179.7,
+          "median_ms": 71.0,
+          "p90_ms": 433.6,
+          "mean_frames": 6.29,
+          "median_frames": 3.0,
+          "p90_frames": 13.2
+        },
+        "rules_reaction_latency": {
+          "samples": 182,
+          "mean_ms": 176.4,
+          "median_ms": 36.0,
+          "p90_ms": 595.9,
+          "mean_frames": 6.2,
+          "median_frames": 2.0,
+          "p90_frames": 19.0
+        }
+      },
+      "thumb_ring": {
+        "windows": 1544,
+        "leave_out_recognised": 56,
+        "leave_out_total": 89,
+        "leave_out_rate": 0.6292,
+        "leave_out_ci95": [
+          0.5255,
+          0.7223
+        ],
+        "deployed_recognised": 82,
+        "deployed_total": 89,
+        "deployed_rate": 0.9213,
+        "deployed_ci95": [
+          0.8464,
+          0.9614
+        ],
+        "rules_recognised": 70,
+        "rules_total": 89,
+        "rules_rate": 0.7865,
+        "rules_ci95": [
+          0.6905,
+          0.8589
+        ],
+        "leave_out_reaction_latency": {
+          "samples": 47,
+          "mean_ms": 218.9,
+          "median_ms": 158.0,
+          "p90_ms": 381.2,
+          "mean_frames": 7.62,
+          "median_frames": 6.0,
+          "p90_frames": 12.4
+        },
+        "deployed_reaction_latency": {
+          "samples": 79,
+          "mean_ms": 156.4,
+          "median_ms": 79.0,
+          "p90_ms": 359.8,
+          "mean_frames": 5.65,
+          "median_frames": 3.0,
+          "p90_frames": 12.0
+        },
+        "rules_reaction_latency": {
+          "samples": 70,
+          "mean_ms": 62.8,
+          "median_ms": 0.0,
+          "p90_ms": 122.3,
+          "mean_frames": 2.84,
+          "median_frames": 1.0,
+          "p90_frames": 4.3
+        }
+      },
+      "thumb_middle": {
+        "windows": 7566,
+        "leave_out_recognised": 69,
+        "leave_out_total": 126,
+        "leave_out_rate": 0.5476,
+        "leave_out_ci95": [
+          0.4606,
+          0.6318
+        ],
+        "deployed_recognised": 99,
+        "deployed_total": 126,
+        "deployed_rate": 0.7857,
+        "deployed_ci95": [
+          0.7062,
+          0.8483
+        ],
+        "rules_recognised": 72,
+        "rules_total": 126,
+        "rules_rate": 0.5714,
+        "rules_ci95": [
+          0.4842,
+          0.6545
+        ],
+        "leave_out_reaction_latency": {
+          "samples": 69,
+          "mean_ms": 206.1,
+          "median_ms": 64.0,
+          "p90_ms": 514.4,
+          "mean_frames": 7.22,
+          "median_frames": 3.0,
+          "p90_frames": 15.6
+        },
+        "deployed_reaction_latency": {
+          "samples": 104,
+          "mean_ms": 281.1,
+          "median_ms": 69.0,
+          "p90_ms": 820.7,
+          "mean_frames": 8.74,
+          "median_frames": 3.0,
+          "p90_frames": 24.1
+        },
+        "rules_reaction_latency": {
+          "samples": 72,
+          "mean_ms": 106.1,
+          "median_ms": 0.0,
+          "p90_ms": 391.3,
+          "mean_frames": 4.17,
+          "median_frames": 1.0,
+          "p90_frames": 12.7
+        }
+      },
+      "thumb_pinky": {
+        "windows": 3576,
+        "leave_out_recognised": 58,
+        "leave_out_total": 85,
+        "leave_out_rate": 0.6824,
+        "leave_out_ci95": [
+          0.5773,
+          0.7716
+        ],
+        "deployed_recognised": 65,
+        "deployed_total": 85,
+        "deployed_rate": 0.7647,
+        "deployed_ci95": [
+          0.6643,
+          0.8422
+        ],
+        "rules_recognised": 55,
+        "rules_total": 85,
+        "rules_rate": 0.6471,
+        "rules_ci95": [
+          0.5411,
+          0.7403
+        ],
+        "leave_out_reaction_latency": {
+          "samples": 62,
+          "mean_ms": 280.7,
+          "median_ms": 68.5,
+          "p90_ms": 466.6,
+          "mean_frames": 7.95,
+          "median_frames": 3.0,
+          "p90_frames": 14.9
+        },
+        "deployed_reaction_latency": {
+          "samples": 68,
+          "mean_ms": 170.7,
+          "median_ms": 67.5,
+          "p90_ms": 438.1,
+          "mean_frames": 6.13,
+          "median_frames": 3.0,
+          "p90_frames": 14.0
+        },
+        "rules_reaction_latency": {
+          "samples": 55,
+          "mean_ms": 69.4,
+          "median_ms": 0.0,
+          "p90_ms": 164.6,
+          "mean_frames": 2.82,
+          "median_frames": 1.0,
+          "p90_frames": 6.0
+        }
+      },
+      "palm_side": {
+        "windows": 4390,
+        "leave_out_recognised": 63,
+        "leave_out_total": 90,
+        "leave_out_rate": 0.7,
+        "leave_out_ci95": [
+          0.5987,
+          0.7849
+        ],
+        "deployed_recognised": 86,
+        "deployed_total": 90,
+        "deployed_rate": 0.9556,
+        "deployed_ci95": [
+          0.8912,
+          0.9826
+        ],
+        "rules_recognised": 88,
+        "rules_total": 90,
+        "rules_rate": 0.9778,
+        "rules_ci95": [
+          0.9226,
+          0.9939
+        ],
+        "leave_out_reaction_latency": {
+          "samples": 62,
+          "mean_ms": 157.3,
+          "median_ms": 76.0,
+          "p90_ms": 405.1,
+          "mean_frames": 5.56,
+          "median_frames": 3.0,
+          "p90_frames": 12.8
+        },
+        "deployed_reaction_latency": {
+          "samples": 86,
+          "mean_ms": 80.4,
+          "median_ms": 67.5,
+          "p90_ms": 93.0,
+          "mean_frames": 3.35,
+          "median_frames": 3.0,
+          "p90_frames": 3.0
+        },
+        "rules_reaction_latency": {
+          "samples": 88,
+          "mean_ms": 238.0,
+          "median_ms": 111.5,
+          "p90_ms": 529.3,
+          "mean_frames": 8.03,
+          "median_frames": 4.0,
+          "p90_frames": 17.0
+        }
+      },
+      "thumbs_up": {
+        "windows": 2919,
+        "leave_out_recognised": 57,
+        "leave_out_total": 60,
+        "leave_out_rate": 0.95,
+        "leave_out_ci95": [
+          0.863,
+          0.9829
+        ],
+        "deployed_recognised": 60,
+        "deployed_total": 60,
+        "deployed_rate": 1.0,
+        "deployed_ci95": [
+          0.9398,
+          1.0
+        ],
+        "rules_recognised": 57,
+        "rules_total": 60,
+        "rules_rate": 0.95,
+        "rules_ci95": [
+          0.863,
+          0.9829
+        ],
+        "leave_out_reaction_latency": {
+          "samples": 57,
+          "mean_ms": 96.9,
+          "median_ms": 65.0,
+          "p90_ms": 80.8,
+          "mean_frames": 3.93,
+          "median_frames": 3.0,
+          "p90_frames": 3.0
+        },
+        "deployed_reaction_latency": {
+          "samples": 60,
+          "mean_ms": 81.2,
+          "median_ms": 65.0,
+          "p90_ms": 79.1,
+          "mean_frames": 3.45,
+          "median_frames": 3.0,
+          "p90_frames": 3.0
+        },
+        "rules_reaction_latency": {
+          "samples": 57,
+          "mean_ms": 546.4,
+          "median_ms": 487.0,
+          "p90_ms": 1066.0,
+          "mean_frames": 17.33,
+          "median_frames": 16.0,
+          "p90_frames": 32.4
+        }
+      }
+    }
+  },
+  "deferred_techniques": {
+    "Soft-DTW": "향후 동적 스와이프/궤적형 커스텀 제스처(`swipe_*`, 궤적 서명 등)를 3~5회 소수 샷 템플릿 매칭으로 직접 정렬·비교해야 하고 고정 15프레임 윈도우 평균 프로토타입만으로 속도 편차 흡수가 부족할 때 도입한다.",
+    "TS2Vec": "라벨 없는 자유 사용 녹화(`free` 모드)가 수십 시간 이상 축적되어 지도 대조학습(SupCon)만으로는 포착하기 어려운 시계열 표현을 자기지도 사전학습(self-supervised pretraining)으로 보강해야 할 때 도입한다.",
+    "BADGE": "수만 개 이상의 미라벨 후보 윈도우 풀에서 불확실성과 표현 다양성을 동시에 고려해 사용자에게 라벨링 질의를 능동 학습(active learning)으로 자동 선별해야 할 만큼 후보 풀이 커질 때 도입한다.",
+    "K-Center Greedy": "다중 사용자·다중 카메라 온보딩 데이터가 대량 축적되어 전체 임베딩 코어셋(coreset) 대표 표본만 압축 보관하거나 프로토타입 커버리지 빈틈을 기하학적으로 샘플링해야 할 때 도입한다."
+  }
+}

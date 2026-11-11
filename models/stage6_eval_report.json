@@ -1,0 +1,903 @@
+{
+  "schema": "manux-stage1-eval-report/1",
+  "generated_at": "2026-11-08 06:49:15",
+  "elapsed_sec": 251.05,
+  "fixture_regressions": {
+    "total_fixtures": 3,
+    "passed_fixtures": 3,
+    "all_passed": true,
+    "gate_loaded": true,
+    "checks": [
+      {
+        "fixture": "half_fist_ring_contact.json",
+        "frames": 54,
+        "passed": true,
+        "rule_false_right_clicks": 0,
+        "gated_false_right_clicks": 0,
+        "invariant": "right_click not fired during half-fist ring contact"
+      },
+      {
+        "fixture": "scroll_grab_stroke_and_return.json",
+        "frames": 140,
+        "passed": true,
+        "return_scrollback": 0.0092,
+        "invariant": "no drag_hold misfire and return stroke scrollback < 0.012"
+      },
+      {
+        "fixture": "half_fist_moving.json",
+        "frames": 60,
+        "passed": true,
+        "rule_actions": [
+          "move_cursor"
+        ],
+        "gated_actions": [
+          "move_cursor"
+        ],
+        "invariant": "every frame remains move_cursor with zero false clicks"
+      }
+    ]
+  },
+  "dataset_diversity": {
+    "num_sessions": 20,
+    "unique_persons": [
+      "user_primary"
+    ],
+    "num_persons": 1,
+    "single_user_limitation": true,
+    "unique_cameras": [
+      "0:1280x720x30.0:usb_or_vcam:폰 카메라"
+    ],
+    "num_cameras": 1,
+    "single_camera_limitation": true,
+    "unique_pcs": [
+      "home-pc",
+      "pc-ded5"
+    ],
+    "unique_sessions": [
+      "20261105-030947-guided.jsonl.gz",
+      "20261105-094058-home-pc-guided.jsonl.gz",
+      "20261105-104228-home-pc-guided.jsonl.gz",
+      "20261105-113527-home-pc-guided.jsonl.gz",
+      "20261105-120844-home-pc-guided.jsonl.gz",
+      "20261105-142443-ffc668da-home-pc-guided.jsonl.gz",
+      "20261105-143456-ca052343-home-pc-guided.jsonl.gz",
+      "20261105-143809-a18918c5-home-pc-guided.jsonl.gz",
+      "20261105-144201-f15dc83d-home-pc-guided.jsonl.gz",
+      "20261105-174342-f8dfca21-home-pc-guided.jsonl.gz",
+      "20261105-194358-599bcb32-home-pc-guided.jsonl.gz",
+      "20261105-222130-9ec6de20-home-pc-guided.jsonl.gz",
+      "20261105-230210-3a82297b-home-pc-guided.jsonl.gz",
+      "20261106-025047-12f4b792-home-pc-guided.jsonl.gz",
+      "20261106-105800-f901519c-home-pc-guided.jsonl.gz",
+      "20261106-121946-c8394343-home-pc-guided.jsonl.gz",
+      "20261106-161459-260acca2-home-pc-guided.jsonl.gz",
+      "20261107-202832-8bc3df5c-home-pc-guided.jsonl.gz",
+      "20261107-214618-32881cd5-home-pc-guided.jsonl.gz",
+      "20261108-020550-d7a4789e-home-pc-guided.jsonl.gz"
+    ],
+    "unique_conditions": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14
+    ],
+    "num_conditions": 15,
+    "supported_split_modes": [
+      "condition",
+      "session",
+      "person",
+      "camera",
+      "random"
+    ],
+    "limitations": [
+      "현재 녹화 데이터셋은 단일 사용자(1인) 환경에서 수집되어 사용자 간 손 크기·손가락 비율 일반화 검증에 한계가 있습니다. 다중 사용자 녹화(`meta.person_id` 또는 `meta.user`)가 추가되면 코드 수정 없이 `--split-mode person`(`leave-person-out`)이 즉시 활성화됩니다.",
+      "현재 녹화 데이터셋은 단일 카메라 구성(폰 카메라 1280x720@30fps 연결)에 치우쳐 있어 이종 렌즈·화각(FOV)·해상도 일반화 검증에 한계가 있습니다. 다중 카메라 녹화(`meta.camera.id` 또는 상이한 카메라 소스/해상도)가 추가되면 코드 수정 없이 `--split-mode camera`(`leave-camera-out`)가 즉시 활성화됩니다."
+    ],
+    "sessions": [
+      {
+        "session_idx": 0,
+        "session_id": "20261105-030947-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "pc-ded5",
+        "conditions": [
+          0,
+          1,
+          2
+        ],
+        "frames": 28994
+      },
+      {
+        "session_idx": 1,
+        "session_id": "20261105-094058-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          0,
+          1,
+          2
+        ],
+        "frames": 29537
+      },
+      {
+        "session_idx": 2,
+        "session_id": "20261105-104228-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          0,
+          1,
+          2
+        ],
+        "frames": 6046
+      },
+      {
+        "session_idx": 3,
+        "session_id": "20261105-113527-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          0,
+          1,
+          2
+        ],
+        "frames": 6025
+      },
+      {
+        "session_idx": 4,
+        "session_id": "20261105-120844-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          0,
+          1,
+          2
+        ],
+        "frames": 5849
+      },
+      {
+        "session_idx": 5,
+        "session_id": "20261105-142443-ffc668da-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          3,
+          5,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          14
+        ],
+        "frames": 15198
+      },
+      {
+        "session_idx": 6,
+        "session_id": "20261105-143456-ca052343-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 4907
+      },
+      {
+        "session_idx": 7,
+        "session_id": "20261105-143809-a18918c5-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 4869
+      },
+      {
+        "session_idx": 8,
+        "session_id": "20261105-144201-f15dc83d-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 5036
+      },
+      {
+        "session_idx": 9,
+        "session_id": "20261105-174342-f8dfca21-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 4948
+      },
+      {
+        "session_idx": 10,
+        "session_id": "20261105-194358-599bcb32-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 5827
+      },
+      {
+        "session_idx": 11,
+        "session_id": "20261105-222130-9ec6de20-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 5482
+      },
+      {
+        "session_idx": 12,
+        "session_id": "20261105-230210-3a82297b-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 5207
+      },
+      {
+        "session_idx": 13,
+        "session_id": "20261106-025047-12f4b792-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5
+        ],
+        "frames": 630
+      },
+      {
+        "session_idx": 14,
+        "session_id": "20261106-105800-f901519c-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 5257
+      },
+      {
+        "session_idx": 15,
+        "session_id": "20261106-121946-c8394343-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 5257
+      },
+      {
+        "session_idx": 16,
+        "session_id": "20261106-161459-260acca2-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 4717
+      },
+      {
+        "session_idx": 17,
+        "session_id": "20261107-202832-8bc3df5c-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          5,
+          7,
+          8
+        ],
+        "frames": 1745
+      },
+      {
+        "session_idx": 18,
+        "session_id": "20261107-214618-32881cd5-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          4,
+          6,
+          13
+        ],
+        "frames": 1935
+      },
+      {
+        "session_idx": 19,
+        "session_id": "20261108-020550-d7a4789e-home-pc-guided.jsonl.gz",
+        "person_id": "user_primary",
+        "has_explicit_person": false,
+        "camera_id": "0:1280x720x30.0:usb_or_vcam:폰 카메라",
+        "has_explicit_camera": false,
+        "pc_id": "home-pc",
+        "conditions": [
+          4,
+          6,
+          13
+        ],
+        "frames": 4227
+      }
+    ]
+  },
+  "spatial_mlp_leakage_comparison": {
+    "total_samples": 59665,
+    "condition_leave_out": {
+      "train_samples": 42723,
+      "test_samples": 16942,
+      "train_accuracy": 99.0,
+      "test_accuracy": 82.57,
+      "per_class": {
+        "none": {
+          "total": 31574,
+          "correct": 29733,
+          "accuracy": 94.2,
+          "test_total": 10498,
+          "test_correct": 8746,
+          "test_accuracy": 83.3
+        },
+        "thumb_index": {
+          "total": 8096,
+          "correct": 7641,
+          "accuracy": 94.4,
+          "test_total": 1349,
+          "test_correct": 1132,
+          "test_accuracy": 83.9
+        },
+        "thumb_ring": {
+          "total": 1544,
+          "correct": 1440,
+          "accuracy": 93.3,
+          "test_total": 503,
+          "test_correct": 417,
+          "test_accuracy": 82.9
+        },
+        "thumb_middle": {
+          "total": 7566,
+          "correct": 7216,
+          "accuracy": 95.4,
+          "test_total": 1347,
+          "test_correct": 1018,
+          "test_accuracy": 75.6
+        },
+        "thumb_pinky": {
+          "total": 3576,
+          "correct": 3273,
+          "accuracy": 91.5,
+          "test_total": 800,
+          "test_correct": 504,
+          "test_accuracy": 63.0
+        },
+        "palm_side": {
+          "total": 4390,
+          "correct": 4114,
+          "accuracy": 93.7,
+          "test_total": 1460,
+          "test_correct": 1187,
+          "test_accuracy": 81.3
+        },
+        "thumbs_up": {
+          "total": 2919,
+          "correct": 2908,
+          "accuracy": 99.6,
+          "test_total": 985,
+          "test_correct": 985,
+          "test_accuracy": 100.0
+        }
+      }
+    },
+    "session_leave_out": {
+      "train_samples": 36629,
+      "test_samples": 23036,
+      "train_accuracy": 99.09,
+      "test_accuracy": 85.58,
+      "per_class": {
+        "none": {
+          "total": 31574,
+          "correct": 29380,
+          "accuracy": 93.1,
+          "test_total": 15997,
+          "test_correct": 13897,
+          "test_accuracy": 86.9
+        },
+        "thumb_index": {
+          "total": 8096,
+          "correct": 7750,
+          "accuracy": 95.7,
+          "test_total": 1349,
+          "test_correct": 1156,
+          "test_accuracy": 85.7
+        },
+        "thumb_ring": {
+          "total": 1544,
+          "correct": 1443,
+          "accuracy": 93.5,
+          "test_total": 673,
+          "test_correct": 592,
+          "test_accuracy": 88.0
+        },
+        "thumb_middle": {
+          "total": 7566,
+          "correct": 7099,
+          "accuracy": 93.8,
+          "test_total": 1347,
+          "test_correct": 894,
+          "test_accuracy": 66.4
+        },
+        "thumb_pinky": {
+          "total": 3576,
+          "correct": 3264,
+          "accuracy": 91.3,
+          "test_total": 800,
+          "test_correct": 489,
+          "test_accuracy": 61.1
+        },
+        "palm_side": {
+          "total": 4390,
+          "correct": 4253,
+          "accuracy": 96.9,
+          "test_total": 1400,
+          "test_correct": 1275,
+          "test_accuracy": 91.1
+        },
+        "thumbs_up": {
+          "total": 2919,
+          "correct": 2850,
+          "accuracy": 97.6,
+          "test_total": 1470,
+          "test_correct": 1412,
+          "test_accuracy": 96.1
+        }
+      }
+    },
+    "random_80_20": {
+      "legacy_random_80_20_with_specialist_leak_acc": 98.95,
+      "random_80_20_train_only_specialists_acc": 98.84,
+      "random_80_20_base_only_acc": 98.66
+    },
+    "adjacent_frame_and_specialist_leakage_pct": 16.38,
+    "adjacent_frame_only_leakage_pct": 16.27
+  },
+  "pipeline_evaluation": {
+    "split_mode": "condition",
+    "evaluated_folds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14
+    ],
+    "fold_plan": {
+      "num_folds": 15,
+      "degenerate": false,
+      "degenerate_reason": null
+    },
+    "per_gesture": {
+      "none": {
+        "windows": 31574,
+        "free_minutes_deployed": 17.65,
+        "deployed_misfires": 6,
+        "deployed_misfires_per_min": 0.34,
+        "rules_misfires": 156,
+        "rules_misfires_per_min": 8.84,
+        "leave_out_free_minutes": 17.65,
+        "leave_out_misfires": 27,
+        "leave_out_misfires_per_min": 1.53,
+        "leave_out_rules_misfires_per_min": 8.84
+      },
+      "thumb_index": {
+        "windows": 8096,
+        "leave_out_recognised": 228,
+        "leave_out_total": 257,
+        "leave_out_rate": 0.8872,
+        "leave_out_ci95": [
+          0.8426,
+          0.9203
+        ],
+        "deployed_recognised": 249,
+        "deployed_total": 257,
+        "deployed_rate": 0.9689,
+        "deployed_ci95": [
+          0.9398,
+          0.9841
+        ],
+        "rules_recognised": 182,
+        "rules_total": 257,
+        "rules_rate": 0.7082,
+        "rules_ci95": [
+          0.6499,
+          0.7604
+        ],
+        "leave_out_reaction_latency": {
+          "samples": 228,
+          "mean_ms": 198.8,
+          "median_ms": 80.0,
+          "p90_ms": 547.8,
+          "mean_frames": 6.87,
+          "median_frames": 3.0,
+          "p90_frames": 17.0
+        },
+        "deployed_reaction_latency": {
+          "samples": 249,
+          "mean_ms": 180.3,
+          "median_ms": 73.0,
+          "p90_ms": 463.2,
+          "mean_frames": 6.32,
+          "median_frames": 3.0,
+          "p90_frames": 14.2
+        },
+        "rules_reaction_latency": {
+          "samples": 182,
+          "mean_ms": 176.4,
+          "median_ms": 36.0,
+          "p90_ms": 595.9,
+          "mean_frames": 6.2,
+          "median_frames": 2.0,
+          "p90_frames": 19.0
+        }
+      },
+      "thumb_ring": {
+        "windows": 1544,
+        "leave_out_recognised": 48,
+        "leave_out_total": 89,
+        "leave_out_rate": 0.5393,
+        "leave_out_ci95": [
+          0.4363,
+          0.6391
+        ],
+        "deployed_recognised": 79,
+        "deployed_total": 89,
+        "deployed_rate": 0.8876,
+        "deployed_ci95": [
+          0.8054,
+          0.9378
+        ],
+        "rules_recognised": 70,
+        "rules_total": 89,
+        "rules_rate": 0.7865,
+        "rules_ci95": [
+          0.6905,
+          0.8589
+        ],
+        "leave_out_reaction_latency": {
+          "samples": 48,
+          "mean_ms": 218.6,
+          "median_ms": 157.5,
+          "p90_ms": 351.9,
+          "mean_frames": 7.58,
+          "median_frames": 6.0,
+          "p90_frames": 12.3
+        },
+        "deployed_reaction_latency": {
+          "samples": 79,
+          "mean_ms": 156.4,
+          "median_ms": 79.0,
+          "p90_ms": 359.8,
+          "mean_frames": 5.65,
+          "median_frames": 3.0,
+          "p90_frames": 12.0
+        },
+        "rules_reaction_latency": {
+          "samples": 70,
+          "mean_ms": 62.8,
+          "median_ms": 0.0,
+          "p90_ms": 122.3,
+          "mean_frames": 2.84,
+          "median_frames": 1.0,
+          "p90_frames": 4.3
+        }
+      },
+      "thumb_middle": {
+        "windows": 7566,
+        "leave_out_recognised": 66,
+        "leave_out_total": 126,
+        "leave_out_rate": 0.5238,
+        "leave_out_ci95": [
+          0.4372,
+          0.609
+        ],
+        "deployed_recognised": 104,
+        "deployed_total": 126,
+        "deployed_rate": 0.8254,
+        "deployed_ci95": [
+          0.7498,
+          0.8818
+        ],
+        "rules_recognised": 72,
+        "rules_total": 126,
+        "rules_rate": 0.5714,
+        "rules_ci95": [
+          0.4842,
+          0.6545
+        ],
+        "leave_out_reaction_latency": {
+          "samples": 66,
+          "mean_ms": 271.0,
+          "median_ms": 67.0,
+          "p90_ms": 528.5,
+          "mean_frames": 9.15,
+          "median_frames": 3.0,
+          "p90_frames": 16.5
+        },
+        "deployed_reaction_latency": {
+          "samples": 104,
+          "mean_ms": 271.0,
+          "median_ms": 69.0,
+          "p90_ms": 820.7,
+          "mean_frames": 8.45,
+          "median_frames": 3.0,
+          "p90_frames": 24.1
+        },
+        "rules_reaction_latency": {
+          "samples": 72,
+          "mean_ms": 106.1,
+          "median_ms": 0.0,
+          "p90_ms": 391.3,
+          "mean_frames": 4.17,
+          "median_frames": 1.0,
+          "p90_frames": 12.7
+        }
+      },
+      "thumb_pinky": {
+        "windows": 3576,
+        "leave_out_recognised": 62,
+        "leave_out_total": 85,
+        "leave_out_rate": 0.7294,
+        "leave_out_ci95": [
+          0.6266,
+          0.8124
+        ],
+        "deployed_recognised": 68,
+        "deployed_total": 85,
+        "deployed_rate": 0.8,
+        "deployed_ci95": [
+          0.7028,
+          0.8712
+        ],
+        "rules_recognised": 55,
+        "rules_total": 85,
+        "rules_rate": 0.6471,
+        "rules_ci95": [
+          0.5411,
+          0.7403
+        ],
+        "leave_out_reaction_latency": {
+          "samples": 62,
+          "mean_ms": 299.6,
+          "median_ms": 69.5,
+          "p90_ms": 755.0,
+          "mean_frames": 8.52,
+          "median_frames": 3.0,
+          "p90_frames": 23.6
+        },
+        "deployed_reaction_latency": {
+          "samples": 68,
+          "mean_ms": 170.7,
+          "median_ms": 67.5,
+          "p90_ms": 438.1,
+          "mean_frames": 6.13,
+          "median_frames": 3.0,
+          "p90_frames": 14.0
+        },
+        "rules_reaction_latency": {
+          "samples": 55,
+          "mean_ms": 69.4,
+          "median_ms": 0.0,
+          "p90_ms": 164.6,
+          "mean_frames": 2.82,
+          "median_frames": 1.0,
+          "p90_frames": 6.0
+        }
+      },
+      "palm_side": {
+        "windows": 4390,
+        "leave_out_recognised": 63,
+        "leave_out_total": 90,
+        "leave_out_rate": 0.7,
+        "leave_out_ci95": [
+          0.5987,
+          0.7849
+        ],
+        "deployed_recognised": 86,
+        "deployed_total": 90,
+        "deployed_rate": 0.9556,
+        "deployed_ci95": [
+          0.8912,
+          0.9826
+        ],
+        "rules_recognised": 88,
+        "rules_total": 90,
+        "rules_rate": 0.9778,
+        "rules_ci95": [
+          0.9226,
+          0.9939
+        ],
+        "leave_out_reaction_latency": {
+          "samples": 63,
+          "mean_ms": 169.9,
+          "median_ms": 76.0,
+          "p90_ms": 481.8,
+          "mean_frames": 5.95,
+          "median_frames": 3.0,
+          "p90_frames": 15.0
+        },
+        "deployed_reaction_latency": {
+          "samples": 86,
+          "mean_ms": 76.2,
+          "median_ms": 67.5,
+          "p90_ms": 93.0,
+          "mean_frames": 3.23,
+          "median_frames": 3.0,
+          "p90_frames": 3.0
+        },
+        "rules_reaction_latency": {
+          "samples": 88,
+          "mean_ms": 238.0,
+          "median_ms": 111.5,
+          "p90_ms": 529.3,
+          "mean_frames": 8.03,
+          "median_frames": 4.0,
+          "p90_frames": 17.0
+        }
+      },
+      "thumbs_up": {
+        "windows": 2919,
+        "leave_out_recognised": 56,
+        "leave_out_total": 60,
+        "leave_out_rate": 0.9333,
+        "leave_out_ci95": [
+          0.8407,
+          0.9738
+        ],
+        "deployed_recognised": 60,
+        "deployed_total": 60,
+        "deployed_rate": 1.0,
+        "deployed_ci95": [
+          0.9398,
+          1.0
+        ],
+        "rules_recognised": 57,
+        "rules_total": 60,
+        "rules_rate": 0.95,
+        "rules_ci95": [
+          0.863,
+          0.9829
+        ],
+        "leave_out_reaction_latency": {
+          "samples": 56,
+          "mean_ms": 104.5,
+          "median_ms": 65.5,
+          "p90_ms": 135.5,
+          "mean_frames": 4.16,
+          "median_frames": 3.0,
+          "p90_frames": 4.5
+        },
+        "deployed_reaction_latency": {
+          "samples": 60,
+          "mean_ms": 81.2,
+          "median_ms": 65.0,
+          "p90_ms": 79.1,
+          "mean_frames": 3.45,
+          "median_frames": 3.0,
+          "p90_frames": 3.0
+        },
+        "rules_reaction_latency": {
+          "samples": 57,
+          "mean_ms": 546.4,
+          "median_ms": 487.0,
+          "p90_ms": 1066.0,
+          "mean_frames": 17.33,
+          "median_frames": 16.0,
+          "p90_frames": 32.4
+        }
+      }
+    }
+  },
+  "deferred_techniques": {
+    "Soft-DTW": "향후 동적 스와이프/궤적형 커스텀 제스처(`swipe_*`, 궤적 서명 등)를 3~5회 소수 샷 템플릿 매칭으로 직접 정렬·비교해야 하고 고정 15프레임 윈도우 평균 프로토타입만으로 속도 편차 흡수가 부족할 때 도입한다.",
+    "TS2Vec": "라벨 없는 자유 사용 녹화(`free` 모드)가 수십 시간 이상 축적되어 지도 대조학습(SupCon)만으로는 포착하기 어려운 시계열 표현을 자기지도 사전학습(self-supervised pretraining)으로 보강해야 할 때 도입한다.",
+    "BADGE": "수만 개 이상의 미라벨 후보 윈도우 풀에서 불확실성과 표현 다양성을 동시에 고려해 사용자에게 라벨링 질의를 능동 학습(active learning)으로 자동 선별해야 할 만큼 후보 풀이 커질 때 도입한다.",
+    "K-Center Greedy": "다중 사용자·다중 카메라 온보딩 데이터가 대량 축적되어 전체 임베딩 코어셋(coreset) 대표 표본만 압축 보관하거나 프로토타입 커버리지 빈틈을 기하학적으로 샘플링해야 할 때 도입한다."
+  }
+}

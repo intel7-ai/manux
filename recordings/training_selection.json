@@ -1,0 +1,10 @@
+{
+  "excluded": [],
+  "augmentation": {
+    "enabled": true,
+    "strength": "normal",
+    "factor": 2
+  },
+  "training_mode": "fast",
+  "training_device": "auto"
+}

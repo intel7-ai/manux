@@ -1,15 +1,62 @@
-node_modules/
-.npm-cache/
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.pytest_cache/
+
+# Local self-signed TLS certificates
+models/certs/
+*.pem
+
+# Performance logs
 logs/
-test-results/
-public/models/*.task
-public/media/*.webm
-public/media/*.mp4
-.tools/
+
+# Personal calibration profiles (a profile name can be a person's name) and the active choice
+config/profiles/
+config/active_profile.txt
+config/calibration.json
+config/gestures.json.bak-*
+
+# Training center: per-recording summary cache and exported model packages
+recordings/*.summary.json
+recordings/*.quality.json
+recordings/*.cleaned.jsonl.gz
+recordings/*.aug*.jsonl.gz
+recordings/cleaned/
+recordings/crops/
+recordings/augmented/
+recordings/.cache/
+recordings/.selection.json
+recordings/.aug_config.json
+recordings_raw_backup/
+exports/
+models/gestures/
+models/backups/
+recordings/*.part
 .local/
-tests/fixtures/*.jpg
 .env
-.env.*
-*.log
-.DS_Store
-Thumbs.db
+config/tcn-ui.ini
+config/recording-plans.json
+config/recording-plans.tmp
+config/hub.json
+config/hub.json.tmp
+config/hub_secrets.bin
+config/hub_secrets.bin.tmp
+
+# Online learning data: joints of a person using the app (docs/online-learning-design.md)
+data/online/
+
+# uv's local package cache (setup-tcn.cmd)
+.local/
+
+# What the user asked the AI helper (their own sentences; src/llm_binding.History)
+config/ai_connections.json
+
+# The app's own settings (QSettings ini): hand choice, box, AI provider and the encrypted API key
+config/tcn-ui.ini
