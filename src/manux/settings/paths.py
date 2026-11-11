@@ -22,6 +22,7 @@ class AppPaths:
     app_dir: Path        # bundled read-only files (models, qml, default config)
     data_dir: Path       # the user's own files
     frozen: bool
+    custom_data_dir: bool = False
 
     @property
     def config_dir(self) -> Path:
@@ -38,6 +39,36 @@ class AppPaths:
     @property
     def recordings_dir(self) -> Path:
         return self.data_dir / "recordings"
+
+    @property
+    def pose_data_dir(self) -> Path:
+        """Base data directory for pose snapshots and models.
+        In dev repo mode (not frozen and not custom MANUX_DATA_DIR), points to app_dir.
+        In packaged or custom data_dir mode, points to data_dir.
+        """
+        if not self.frozen and not self.custom_data_dir and (self.app_dir / "data" / "pose_snapshots").exists():
+            return self.app_dir
+        return self.data_dir
+
+    @property
+    def pose_snapshots_dir(self) -> Path:
+        """Directory for pose snapshots JSON datasets.
+        In dev repo mode, directly uses repo root data/pose_snapshots so training data is tracked in git.
+        In frozen packaged app mode or custom MANUX_DATA_DIR, uses data_dir / pose_snapshots.
+        """
+        if not self.frozen and not self.custom_data_dir and (self.app_dir / "data" / "pose_snapshots").exists():
+            return self.app_dir / "data" / "pose_snapshots"
+        return self.data_dir / "pose_snapshots"
+
+    @property
+    def spatial_models_dir(self) -> Path:
+        """Directory for spatial MLP models.
+        In dev repo mode, directly uses repo root models/spatial_mlp so models (gh.json, etc.) are tracked in git.
+        In frozen packaged app mode or custom MANUX_DATA_DIR, uses data_dir / models / spatial_mlp.
+        """
+        if not self.frozen and not self.custom_data_dir and (self.app_dir / "models" / "spatial_mlp").exists():
+            return self.app_dir / "models" / "spatial_mlp"
+        return self.data_dir / "models" / "spatial_mlp"
 
     @property
     def hand_model(self) -> Path:
@@ -61,7 +92,7 @@ def resolve(env: Optional[Mapping[str, str]] = None, frozen: Optional[bool] = No
         data_dir = Path(override)
     else:
         data_dir = _appdata(env) / ("MANUX" if frozen else "MANUX-dev") / "v04"
-    return AppPaths(app_dir=Path(app_dir), data_dir=data_dir, frozen=frozen)
+    return AppPaths(app_dir=Path(app_dir), data_dir=data_dir, frozen=frozen, custom_data_dir=bool(override))
 
 
 def v03_config_dir(env: Optional[Mapping[str, str]] = None) -> Path:

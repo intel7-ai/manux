@@ -45,4 +45,9 @@ TRACKING = (
             doc="handedness score a detection needs to count as the control hand"),
 )
 
-ALL = APP + CAMERA + TRACKING
+BOUNDARY_ALERT = (
+    Setting("boundary_alert.enabled", True, kind="bool", doc="warn with edge glow when hand approaches camera boundary"),
+    Setting("boundary_alert.margin", 0.06, minimum=0.02, maximum=0.20, doc="boundary distance ratio to trigger edge glow"),
+)
+
+ALL = APP + CAMERA + TRACKING + BOUNDARY_ALERT

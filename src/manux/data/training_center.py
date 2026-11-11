@@ -507,11 +507,16 @@ class TrainingCenterService:
     """Service bundle injected into `ui.bridge.Bridge` by `desktop.py` so `ui` never imports `data`."""
 
     def __init__(self, config_dir: Path, data_dir: Path, recordings_dir: Path, *,
-                 model_path: Optional[Path] = None, specs=None, on_ready=None, env_files=(), store_dir=None, policy_store=None, on_policy=None) -> None:
+                 model_path: Optional[Path] = None, specs=None, on_ready=None, env_files=(),
+                 store_dir=None, policy_store=None, on_policy=None,
+                 pose_snapshots_dir: Optional[Path] = None,
+                 pose_models_dir: Optional[Path] = None) -> None:
         self.config_dir = Path(config_dir)
         self.policy_store, self.on_policy = policy_store, on_policy
         self.data_dir = Path(data_dir)
         self.recordings_dir = Path(recordings_dir)
+        self.pose_snapshots_dir = Path(pose_snapshots_dir) if pose_snapshots_dir is not None else None
+        self.pose_models_dir = Path(pose_models_dir) if pose_models_dir is not None else None
         self.plans_path = plans.plans_file(self.config_dir)
         self.model_path = Path(model_path) if model_path is not None else self.data_dir / "models" / "gesture_tcn.onnx"
         self.exports_dir = self.data_dir / "exports"
@@ -540,13 +545,18 @@ class TrainingCenterService:
     def studio_request(self, action, **values):
         if self.job.running or self.hub_job.running:
             return self.studio_job.fail("학습·공유 작업이 끝난 뒤 시작하세요.")
-        return self.studio_job.start_request({"kind": "studio", "action": action,
+        req = {"kind": "studio", "action": action,
             "data_dir": str(self.data_dir), "model_path": str(self.current_model()),
             "env_files": [str(path) for path in self.env_files], "repo": self.repo,
             "recordings_dir": str(self.recordings_dir), "store": str(self.store_dir),
             "policy_path": str(self.policy_store.path) if self.policy_store else None,
             "profile": self.profile, "preset": self.preset_name,
-            "cache_dir": str(self.data_dir / "features"), **self.simulation_config, **values})
+            "cache_dir": str(self.data_dir / "features"), **self.simulation_config, **values}
+        if self.pose_snapshots_dir is not None:
+            req["snapshots_dir"] = str(self.pose_snapshots_dir)
+        if self.pose_models_dir is not None:
+            req["models_dir"] = str(self.pose_models_dir)
+        return self.studio_job.start_request(req)
 
     def studio_result(self):
         state = self.studio_job.snapshot()
@@ -581,6 +591,10 @@ class TrainingCenterService:
         if self.studio_job.running or self.hub_job.running:
             return self.job.fail("검수·공유가 끝난 뒤 학습하세요.")
         request = {"kind": "pose_train", "data_dir": str(self.data_dir)}
+        if self.pose_snapshots_dir is not None:
+            request["snapshots_dir"] = str(self.pose_snapshots_dir)
+        if self.pose_models_dir is not None:
+            request["models_dir"] = str(self.pose_models_dir)
         if model_id is not None:
             request["model_id"] = model_id
         return self.job.start_request(request)

@@ -1104,7 +1104,9 @@ def build(settings: Settings, source, *, windows: bool = True, tcn_model=None, t
 
 
 def make_pose_studio(data_dir: Path,
-                     on_model_updated: Optional[Callable[[Optional[SpatialMlpModel]], None]] = None) -> PoseSnapshotStudio:
+                     on_model_updated: Optional[Callable[[Optional[SpatialMlpModel]], None]] = None,
+                     snapshots_dir: Optional[Path] = None,
+                     models_dir: Optional[Path] = None) -> PoseSnapshotStudio:
     """Create a PoseSnapshotStudio wired to the 96-dim SpatialFeatureExtractor and 4-second SpatialMlpModel."""
     import numpy as np
 
@@ -1180,6 +1182,8 @@ def make_pose_studio(data_dir: Path,
         predict_fn=predict_fn,
         load_model_fn=SpatialMlpModel.load,
         on_model_updated=update_model,
+        snapshots_dir=snapshots_dir,
+        models_dir=models_dir,
     )
     if studio.active_model is not None:
         update_model(studio.active_model)
@@ -1236,7 +1240,7 @@ def main(argv=None) -> int:
     except (OSError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 1
-    models_dir = paths.data_dir / "models" / "spatial_mlp"
+    models_dir = paths.spatial_models_dir
     bundled_models_dir = paths.app_dir / "models" / "spatial_mlp"
     active_cfg = models_dir / "active_model.json"
     if not active_cfg.is_file() and (bundled_models_dir / "active_model.json").is_file():
@@ -1298,17 +1302,22 @@ def main(argv=None) -> int:
     from manux.platform import hotkeys
     from manux.platform.tray import QtTray
     from manux.platform.screen_preview import ScreenPreview
+    from manux.platform.overlay import EdgeGlowOverlay
     from manux.ui.bridge import run
     tc = TrainingCenterService(paths.config_dir, paths.data_dir, paths.recordings_dir, model_path=args.tcn_model,
                                store_dir=args.tcn_store, policy_store=policy_store, on_policy=lambda: runtime.request(RuntimeRequest("tcn_policy")),
                                env_files=(Path(sys.executable).parent / ".env",) if paths.frozen else (),
                                specs=training_specs(), on_ready=lambda event: runtime.request(
                                    RuntimeRequest("activate_model", event["store"])) if event.get("store") else
-                                   runtime.request(RuntimeRequest("preview_model", event["candidate"])) if event.get("candidate") else None)
+                                   runtime.request(RuntimeRequest("preview_model", event["candidate"])) if event.get("candidate") else None,
+                               pose_snapshots_dir=paths.pose_snapshots_dir,
+                               pose_models_dir=paths.spatial_models_dir)
     tc.simulation_bindings = read_bindings(args.bindings)
     tc.simulation_config = {"simulation_mode": args.tcn_mode,
                             "simulation_model": str(args.tcn_model) if args.tcn_model else None}
-    studio = make_pose_studio(paths.data_dir, runtime.set_spatial_model)
+    studio = make_pose_studio(paths.pose_data_dir, runtime.set_spatial_model,
+                              snapshots_dir=paths.pose_snapshots_dir,
+                              models_dir=paths.spatial_models_dir)
     from manux.perception.palm_axes import PalmAxesCalibration, valid_axes, palm_point
     return run(runtime, settings, paths, tray=not args.no_tray, screenshot=args.screenshot, layout=args.ui,
                services={
@@ -1328,7 +1337,8 @@ def main(argv=None) -> int:
                    "studio_system_action": normalize_system_action,
                },
                hotkeys=hotkeys.GlobalHotkeys({}), hotkey_defaults=hotkeys.DEFAULTS,
-               normalize_combo=hotkeys.normalize, combo_label=hotkeys.label, make_tray=QtTray)
+               normalize_combo=hotkeys.normalize, combo_label=hotkeys.label, make_tray=QtTray,
+               make_edge_overlay=EdgeGlowOverlay)
 
 
 def self_check(paths: AppPaths, model: Path, info, out: Path) -> int:

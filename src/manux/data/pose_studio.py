@@ -254,10 +254,28 @@ class PoseSnapshotStudio:
         predict_fn: Optional[Callable[[Any, Any], Optional[Dict[str, Any]]]] = None,
         load_model_fn: Optional[Callable[[Path], Any]] = None,
         on_model_updated: Optional[Callable[[Any], None]] = None,
+        snapshots_dir: Optional[Path] = None,
+        models_dir: Optional[Path] = None,
     ) -> None:
         self.data_dir = Path(data_dir)
-        self.snapshots_dir = self.data_dir / "pose_snapshots"
-        self.models_dir = self.data_dir / "models" / "spatial_mlp"
+        if snapshots_dir is not None:
+            self.snapshots_dir = Path(snapshots_dir)
+        elif (self.data_dir / "data" / "pose_snapshots").is_dir():
+            self.snapshots_dir = self.data_dir / "data" / "pose_snapshots"
+        elif (self.data_dir / "pose_snapshots").is_dir():
+            self.snapshots_dir = self.data_dir / "pose_snapshots"
+        else:
+            self.snapshots_dir = self.data_dir / "pose_snapshots"
+
+        if models_dir is not None:
+            self.models_dir = Path(models_dir)
+        elif (self.data_dir / "models" / "spatial_mlp").is_dir():
+            self.models_dir = self.data_dir / "models" / "spatial_mlp"
+        elif (self.data_dir.parent / "models" / "spatial_mlp").is_dir():
+            self.models_dir = self.data_dir.parent / "models" / "spatial_mlp"
+        else:
+            self.models_dir = self.data_dir / "models" / "spatial_mlp"
+
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
         self.models_dir.mkdir(parents=True, exist_ok=True)
 
