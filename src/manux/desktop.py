@@ -1012,7 +1012,7 @@ def make_pose_studio(data_dir: Path,
     model_stamp = [None]
 
     def predict_fn(landmarks: Any, _world: Any) -> Optional[Dict[str, Any]]:
-        model_file = studio.models_dir / (studio.active_model_id or "gh.json")
+        model_file = studio.models_dir / (studio.active_model_id or "main.json")
         stamp = (str(model_file), model_file.stat().st_mtime_ns) if model_file.is_file() else None
         if stamp != model_stamp[0]:
             try: active_mlp[0] = SpatialMlpModel.load(model_file) if stamp else None
@@ -1131,7 +1131,7 @@ def main(argv=None) -> int:
     active_cfg = models_dir / "active_model.json"
     if not active_cfg.is_file() and (bundled_models_dir / "active_model.json").is_file():
         active_cfg = bundled_models_dir / "active_model.json"
-    active_model_file = "gh.json"
+    active_model_file = "main.json"
     if active_cfg.is_file():
         try:
             active_model_file = json.loads(active_cfg.read_text("utf-8")).get("active_model_id", active_model_file)
@@ -1141,9 +1141,9 @@ def main(argv=None) -> int:
     if not spatial_model_path.is_file():
         spatial_model_path = bundled_models_dir / active_model_file
     if not spatial_model_path.is_file():
-        spatial_model_path = models_dir / "gh.json"
+        spatial_model_path = models_dir / "main.json"
     if not spatial_model_path.is_file():
-        spatial_model_path = bundled_models_dir / "gh.json"
+        spatial_model_path = bundled_models_dir / "main.json"
     if not spatial_model_path.is_file():
         for candidate_dir in (models_dir, bundled_models_dir):
             if candidate_dir.is_dir():

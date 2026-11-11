@@ -305,7 +305,7 @@ class StudioBridge(QObject):
         if "versions" in result: self.versions = result["versions"]
         if "models" in result: self.models = result["models"]
         if result.get("spatial_selected"):
-            self.owner.pose_studio.activate_model("gh.json")
+            self.owner.pose_studio.activate_model("main.json")
             self.owner.studioChanged.emit()
         if "remote_models" in result: self.remote_models = result["remote_models"]
         if "diagnostics" in result: self.diagnostics = result["diagnostics"]

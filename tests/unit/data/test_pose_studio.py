@@ -197,7 +197,7 @@ def test_pose_studio_multi_model_management(tmp_path: Path):
     studio = make_pose_studio(tmp_path)
     models = studio.list_models()
     assert len(models) >= 1
-    assert studio.active_model_id == "gh.json"
+    assert studio.active_model_id == "main.json"
 
     # 1. Create a new model and verify it immediately appears in list_models() before training
     created = studio.create_model("custom_fast_model")
@@ -323,7 +323,7 @@ def test_existing_dataset_stage_is_not_removed_when_exclusive_open_fails(tmp_pat
     buffered = list(studio.samples)
     monkeypatch.setattr("manux.data.pose_studio.time.time", lambda: 1234.567)
     monkeypatch.setattr("manux.data.pose_studio.uuid4", lambda: UUID(int=0))
-    part = studio.snapshots_dir / ".manux_pose_snapshots_gh_train_1234567_00000000000000000000000000000000.json.part"
+    part = studio.snapshots_dir / ".manux_pose_snapshots_main_train_1234567_00000000000000000000000000000000.json.part"
     part.write_bytes(b"synthetic-other-save-in-progress")
     with pytest.raises(FileExistsError):
         studio.save_dataset()

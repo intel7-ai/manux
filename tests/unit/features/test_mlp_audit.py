@@ -27,7 +27,7 @@ def constant_model(label, version="spatial-mlp-v1"):
 @pytest.mark.parametrize("label", ACTION_IDS)
 def test_every_mlp_class_is_predicted_captured_saved_and_reloaded(tmp_path, label):
     studio = make_pose_studio(tmp_path)
-    constant_model(label).save(studio.models_dir / "gh.json")
+    constant_model(label).save(studio.models_dir / "main.json")
     points = _dummy_hand()
     studio.observe_frame(points, None, label)
     assert studio.live_ai_action == label
@@ -46,7 +46,7 @@ def test_33_dimension_model_works_in_preview_and_guard_and_skips_missing_world(
 ):
     model = constant_model("thumb_middle", "pose-angles-v1")
     studio = make_pose_studio(tmp_path)
-    model.save(studio.models_dir / "gh.json")
+    model.save(studio.models_dir / "main.json")
     points = tuple(_dummy_hand())
     studio.observe_frame(points, points, "thumb_middle")
     assert studio.live_ai_action == "thumb_middle"
@@ -94,7 +94,7 @@ def test_real_worker_training_writes_selected_slot_preserves_default_and_eval(tm
     from app_worker import run_pose_training
 
     studio = make_pose_studio(tmp_path)
-    default = studio.models_dir / "gh.json"
+    default = studio.models_dir / "main.json"
     constant_model("none").save(default)
     original = default.read_bytes()
     result = studio.create_model("audit slot")

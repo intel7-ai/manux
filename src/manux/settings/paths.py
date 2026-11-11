@@ -63,7 +63,7 @@ class AppPaths:
     @property
     def spatial_models_dir(self) -> Path:
         """Directory for spatial MLP models.
-        In dev repo mode, directly uses repo root models/spatial_mlp so models (gh.json, etc.) are tracked in git.
+        In dev repo mode, directly uses repo root models/spatial_mlp so models (main.json, etc.) are tracked in git.
         In frozen packaged app mode or custom MANUX_DATA_DIR, uses data_dir / models / spatial_mlp.
         """
         if not self.frozen and not self.custom_data_dir and (self.app_dir / "models" / "spatial_mlp").exists():

@@ -50,7 +50,7 @@
 ### 7. 로컬 Git 리포지토리 영구 연동 (Persistent Local Dataset & Model Management)
 - **숨은 AppData 종속 탈피**: 기존에는 스튜디오에서 수집한 스냅샷 및 훈련된 모델이 Windows `%APPDATA%` 폴더로 저장되어 Git 버전 관리에 반영되지 못하는 문제가 있었습니다.
 - **로컬 디렉터리 자동 바인딩**: 개발 환경(`not frozen`)에서 스냅샷 수집 및 백그라운드 학습 시, 리포지토리 내의 `data/pose_snapshots/` 및 `models/spatial_mlp/`에 즉시 기록되도록 근본적인 경로 해석(`pose_snapshots_dir`, `spatial_models_dir`)을 개편했습니다.
-- **22,893개 골드 데이터셋 Git 완전 추적**: 우클릭(`thumb_ring`), 양쪽 동시클릭(`thumb_middle_ring`), 좌클릭(`thumb_middle`), 스크롤(`thumb_index`), 가드(`none`) 등 10개 클래스의 37개 JSON 데이터셋(22,893개 표본)과 최신 `gh.json` 모델이 브랜치에 안전하게 영구 보존됩니다.
+- **22,893개 골드 데이터셋 Git 완전 추적**: 우클릭(`thumb_ring`), 양쪽 동시클릭(`thumb_middle_ring`), 좌클릭(`thumb_middle`), 스크롤(`thumb_index`), 가드(`none`) 등 10개 클래스의 37개 JSON 데이터셋(22,893개 표본)과 최신 `main.json` 모델이 브랜치에 안전하게 영구 보존됩니다.
 
 ### 8. 웹캠 화각 이탈 방지 모니터 테두리 발광 알림 (Edge Boundary Glow Alert)
 - **화각 이탈 사전 예방**: 손이 카메라 화각 밖으로 나가 트래킹 및 마우스 제어가 끊기는 문제를 방지하기 위해, 웹캠 테두리에 손의 어느 한 관절이라도 6% 이내로 근접하면 모니터 해당 테두리가 부드럽게 점등합니다.
@@ -111,7 +111,7 @@
    - 따라서 MLP가 해당 클래스를 확신하는 동안은 버튼이 계속 눌려있는 상태(Hold/Drag)로 간주하며, 손이 펴질 때(`none`) 비로소 해제되도록 엔진 전반의 생명주기를 통일했습니다.
 
 5. **학습 표본 및 MLP 모델의 로컬 리포지토리 영구 바인딩 (Path Resolution)**
-   - **기존 문제**: 기존 `AppPaths`는 개발 모드(`not frozen`)에서도 모든 사용자 데이터를 `%APPDATA%/MANUX-dev/v04`에 기록하도록 설계되었습니다. 그 결과, 포즈 스튜디오에서 수집한 스냅샷 JSON 파일들과 새로 학습된 `gh.json` 모델이 로컬 Git 작업 트리가 아닌 Windows의 숨겨진 AppData 폴더에 격리 저장되어 Git 버전 관리에 반영되지 못했습니다.
+   - **기존 문제**: 기존 `AppPaths`는 개발 모드(`not frozen`)에서도 모든 사용자 데이터를 `%APPDATA%/MANUX-dev/v04`에 기록하도록 설계되었습니다. 그 결과, 포즈 스튜디오에서 수집한 스냅샷 JSON 파일들과 새로 학습된 `main.json` 모델이 로컬 Git 작업 트리가 아닌 Windows의 숨겨진 AppData 폴더에 격리 저장되어 Git 버전 관리에 반영되지 못했습니다.
    - **수정 이유**: `AppPaths`에 `pose_snapshots_dir`와 `spatial_models_dir` 프로퍼티를 추가하여, 개발 모드에서는 항상 로컬 리포지토리의 `data/pose_snapshots` 및 `models/spatial_mlp`를 직접 가리키도록 파이프라인 전체(`desktop.py`, `pose_studio.py`, `app_worker.py`, `studio_worker.py`)를 재구성했습니다. (단, 배포 패키지 `frozen=True`나 `MANUX_DATA_DIR` 환경변수 지정 시에는 격리된 사용자 데이터 경로를 유지하여 권한 충돌을 방지합니다.)
    - **병합 시 주의**: 병합 시 `desktop.py`의 `make_pose_studio`, `TrainingCenterService`, `app_worker.py`에 전달되는 `snapshots_dir` 및 `models_dir` 매개변수를 삭제하거나 임의로 단순 `data_dir`로 되돌리지 마십시오.
 
@@ -155,7 +155,7 @@ flowchart TD
 | `src/manux/ui/bridge.py` | • 스튜디오 화면 진입 시 실시간 핀치 가이드 및 관절 거리로 우클릭·양쪽클릭 실시간 판정.<br>• 모션 모드 켜짐 시에도 기본 마우스 제어가 살아있도록 분리. |
 | `src/manux/settings/paths.py` | • `AppPaths.pose_snapshots_dir` 및 `spatial_models_dir` 추가.<br>• 개발 모드(`not frozen`)에서 로컬 리포지토리의 `data/pose_snapshots` 및 `models/spatial_mlp` 자동 바인딩.<br>• 배포 패키지(`frozen=True`) 및 `MANUX_DATA_DIR` 오버라이드 격리 완벽 보장. |
 | `tools/app_worker.py` & `tools/studio_worker.py` | • UI 학습 및 스튜디오 비동기 작업 시 `snapshots_dir`, `models_dir` 파라미터 수신 및 로컬 디렉터리 연동.<br>• 백그라운드 프로세스에서도 로컬 브랜치 경로 직접 접근 및 원자적(atomic) 모델 저장. |
-| `tools/train_spatial_mlp.py` | • 로컬 `data/pose_snapshots`의 22,893개 표본 기준 1.8초 초고속 재학습 CLI (`--model gh.json`). |
+| `tools/train_spatial_mlp.py` | • 로컬 `data/pose_snapshots`의 22,893개 표본 기준 1.8초 초고속 재학습 CLI (`--model main.json`). |
 | `src/manux/core/boundary.py` | • `calc_edge_proximity`: 21개 관절의 카메라 4방향 최근접 거리 계산 및 거울 모드 보정.<br>• 타이트한 6% 임계값 기반 연속 정규화 강도 계산. |
 | `src/manux/platform/overlay.py` | • `EdgeGlowOverlay`: 클릭 완전 관통형 투명 프레임리스 테두리 발광 위젯.<br>• 방향별 35~50px 선형 그라데이션 및 색상/투명도 실시간 보간 렌더링. |
 
@@ -182,7 +182,7 @@ uv run --locked --python 3.12 --extra ui --extra vision --extra ml python -m man
 ```powershell
 uv run --python 3.12 python tools/train_spatial_mlp.py
 ```
-기본값은 `models/spatial_mlp/gh.json`에 학습 결과가 저장되며(`--model <이름>`으로 변경 가능), `models/spatial_mlp/active_model.json`의 `active_model_id`가 가리키는 모델이 앱 실행 시 로드됩니다.
+기본값은 `models/spatial_mlp/main.json`에 학습 결과가 저장되며(`--model <이름>`으로 변경 가능), `models/spatial_mlp/active_model.json`의 `active_model_id`가 가리키는 모델이 앱 실행 시 로드됩니다.
 
 ### 3. 단위 테스트 실행 (909개 전체 검증)
 ```powershell

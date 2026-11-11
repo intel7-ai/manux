@@ -1,7 +1,7 @@
 """Train Spatial MLP model from pose snapshots.
 
 Usage:
-    uv run python tools/train_spatial_mlp.py [--model gh.json]
+    uv run python tools/train_spatial_mlp.py [--model main.json]
 """
 import argparse
 import sys
@@ -18,7 +18,7 @@ from manux.desktop import make_pose_studio
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train Spatial MLP model from snapshots.")
-    parser.add_argument("--model", default="gh.json", help="Model name or filename (default: gh.json)")
+    parser.add_argument("--model", default="main.json", help="Model name or filename (default: main.json)")
     args = parser.parse_args()
 
     data_dir = repo_root / "data"
