@@ -51,11 +51,18 @@ _SPECS = (
 )
 
 CATALOG: Mapping[ActionId, ActionSpec] = MappingProxyType({s.id: s for s in _SPECS})
+_CUSTOM_SPECS: dict[ActionId, ActionSpec] = {}
+
+
+def register_custom_action(action: ActionId, phases=TAP) -> ActionSpec:
+    s = ActionSpec(action, phases)
+    _CUSTOM_SPECS[action] = s
+    return s
 
 
 def spec(action: ActionId) -> Optional[ActionSpec]:
     """The spec of `action`, or None when the id is not in the catalog."""
-    return CATALOG.get(action)
+    return CATALOG.get(action) or _CUSTOM_SPECS.get(action)
 
 
 def from_v03(name: str) -> Optional[ActionId]:

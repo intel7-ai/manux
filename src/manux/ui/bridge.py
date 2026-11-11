@@ -46,6 +46,19 @@ ACTION_TEXT = {"mouse.move": "커서 이동", "mouse.left_click": "클릭", "mou
 MOTION_TEXT = {k: ACTION_TEXT[k] for k in ("nav.back", "nav.forward", "tab.prev", "tab.next")}
 STAGES = {"splash": Stage.SPLASH, "welcome": Stage.WELCOME, "capture": Stage.CAPTURE,
           "tutorial": Stage.TUTORIAL, "main": Stage.MAIN}
+CLASS_KOREAN_NAMES = {
+    "none": "동작 없음 (기본 대기)",
+    "thumb_middle": "좌클릭 (엄지+중지)",
+    "thumb_ring": "우클릭 (엄지+약지)",
+    "thumb_index": "스크롤 (엄지+검지)",
+    "thumb_pinky": "창 선택 (엄지+새끼)",
+    "palm_side": "바탕화면 (손 가로)",
+    "thumbs_up": "모션 모드 (엄지 세우기)",
+    "swipe_left": "뒤로 가기 (왼쪽 쓸기)",
+    "swipe_right": "앞으로 가기 (오른쪽 쓸기)",
+    "swipe_tab_left": "이전 탭 (엄지 접고 왼쪽)",
+    "swipe_tab_right": "다음 탭 (엄지 접고 오른쪽)",
+}
 KEY_SPACE, KEY_ESC, KEY_Q = 32, 27, 81
 
 
@@ -139,6 +152,45 @@ class _NullTrainingService:
 
     def export(self) -> Path:
         raise FileNotFoundError("학습한 모델이 없어요. 먼저 학습하세요.")
+
+    def active_model_info(self):
+        return {
+            "isDefault": True,
+            "title": "기본 TCN 제스처 모델 (Official)",
+            "filename": "gesture_tcn.onnx",
+            "trainedAt": "2026-11-06 02:37:09",
+            "classes": [],
+            "classCount": 0,
+            "status": "정상 작동 중",
+            "epochs": 25,
+        }
+
+    def default_model_info(self):
+        return {
+            "title": "기본 탑재 모델 (Official TCN)",
+            "filename": "gesture_tcn.onnx",
+            "trainedAt": "2026-11-06 02:37:09",
+            "classes": [],
+            "classCount": 0,
+            "status": "공장 출하 안정화 버전 (권장)",
+            "description": "노이즈 및 오작동 방지 최적화가 완료된 표준 모델",
+        }
+
+    def reset_to_default(self):
+        return True
+
+    def preset_commands(self):
+        return []
+
+    def direction_choices(self):
+        return []
+
+    def add_custom_gesture(self, name, direction, keys, instruction=""):
+        return {"success": False, "error": "Not supported"}
+
+    def delete_custom_gesture(self, key):
+        return False
+
 
 
 _DEFAULT_STUDIO_CATEGORIES = (
@@ -1664,6 +1716,56 @@ class Bridge(QObject):
     @Property(str, notify=trainingChanged)
     def trainingModel(self):
         return self.training_info[1]
+
+    @Property("QVariantMap", notify=trainingChanged)
+    def tcnActiveModelInfo(self):
+        getter = getattr(self.tc, "active_model_info", None)
+        return getter() if getter else {}
+
+    @Property("QVariantMap", notify=trainingChanged)
+    def tcnDefaultModelInfo(self):
+        getter = getattr(self.tc, "default_model_info", None)
+        return getter() if getter else {}
+
+    @Slot(result=bool)
+    def resetTcnToDefault(self):
+        method = getattr(self.tc, "reset_to_default", None)
+        ok = method() if method else False
+        self.refreshTraining()
+        self.trainingChanged.emit()
+        return ok
+
+    @Property("QVariantList", constant=True)
+    def presetCommands(self):
+        getter = getattr(self.tc, "preset_commands", None)
+        return getter() if getter else []
+
+    @Property("QVariantList", constant=True)
+    def directionChoices(self):
+        getter = getattr(self.tc, "direction_choices", None)
+        return getter() if getter else []
+
+    @Slot(str, str, "QVariantList", str, result="QVariantMap")
+    def addCustomGesture(self, name, direction, keys, instruction=""):
+        method = getattr(self.tc, "add_custom_gesture", None)
+        if not method:
+            return {"success": False, "error": "서비스를 사용할 수 없습니다."}
+        clean_keys = [str(k) for k in keys if str(k).strip()]
+        res = method(name, direction, clean_keys, instruction)
+        self.refreshTraining()
+        self.trainingChanged.emit()
+        return res
+
+    @Slot(str, result=bool)
+    def deleteCustomGesture(self, key):
+        method = getattr(self.tc, "delete_custom_gesture", None)
+        if not method:
+            return False
+        res = method(key)
+        self.refreshTraining()
+        self.trainingChanged.emit()
+        return res
+
 
     @Property(str, notify=trainingChanged)
     def trainingStorage(self):

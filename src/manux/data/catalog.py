@@ -167,6 +167,16 @@ DISPLAY_KEYS: Tuple[str, ...] = (
     "thumb_middle", "thumb_index", "thumb_ring", "thumb_middle_drag", "thumb_index_middle", "thumb_pinky",
     "palm_side", "v_sign", "rock_sign", "thumbs_up", "swipe_left", "swipe_right", "swipe_tab_left",
     "swipe_tab_right", "none")
+_CUSTOM_TASKS: Dict[str, GestureSpec] = {}
+
+
+def register_custom_task(spec: GestureSpec) -> None:
+    _CUSTOM_TASKS[spec.key] = spec
+    BY_KEY[spec.key] = spec
+
+
+def get_display_keys() -> Tuple[str, ...]:
+    return (*DISPLAY_KEYS, *[k for k in _CUSTOM_TASKS if k not in DISPLAY_KEYS])
 PILOT_KEYS: Tuple[str, ...] = ("thumb_ring", "thumb_index", NONE)   # Dan's three (guided.DEFAULT_SPECS)
 CAPTURE_ONLY: Tuple[str, ...] = tuple(t.key for t in ALL_TASKS if t.gesture_id is None and t.label != NONE)
 
@@ -231,3 +241,27 @@ def tasks_for(focus: Union[str, Sequence[str]] = "", *, category: str = "",
 
 def is_free(key: str) -> bool:
     return key in BY_KEY and BY_KEY[key].free
+
+
+_CUSTOM_TASKS: Dict[str, GestureSpec] = {}
+
+
+def register_custom_task(spec: GestureSpec) -> None:
+    _CUSTOM_TASKS[spec.key] = spec
+    BY_KEY[spec.key] = spec
+
+
+def unregister_custom_task(key: str) -> None:
+    _CUSTOM_TASKS.pop(key, None)
+    BY_KEY.pop(key, None)
+
+
+def clear_custom_tasks() -> None:
+    for k in list(_CUSTOM_TASKS.keys()):
+        BY_KEY.pop(k, None)
+    _CUSTOM_TASKS.clear()
+
+
+def get_custom_tasks() -> Dict[str, GestureSpec]:
+    return dict(_CUSTOM_TASKS)
+

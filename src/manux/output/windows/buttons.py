@@ -10,7 +10,7 @@ from typing import List, Mapping, Tuple
 from manux.output.windows.backend import InputBackend
 
 # action id -> keys pressed in order and released in reverse
-KEY_CHORDS: Mapping[str, Tuple[str, ...]] = {
+KEY_CHORDS: dict[str, tuple[str, ...]] = {
     "window.task_switcher": ("ctrl", "alt", "tab"),
     "window.show_desktop": ("win", "d"),
     "window.close": ("alt", "f4"),
@@ -19,6 +19,10 @@ KEY_CHORDS: Mapping[str, Tuple[str, ...]] = {
     "tab.prev": ("ctrl", "shift", "tab"),
     "tab.next": ("ctrl", "tab"),
 }
+
+
+def register_chord(action: str, keys: Sequence[str]) -> None:
+    KEY_CHORDS[action] = tuple(str(k).lower().strip() for k in keys)
 
 
 class Buttons:

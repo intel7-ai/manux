@@ -1201,6 +1201,19 @@ def main(argv=None) -> int:
     studio = make_pose_studio(paths.pose_data_dir, runtime.set_spatial_model,
                               snapshots_dir=paths.pose_snapshots_dir,
                               models_dir=paths.spatial_models_dir)
+    from manux.actions.catalog import register_custom_action, TAP
+    from manux.output.windows.buttons import register_chord
+    from manux.data.custom_gestures import add_custom_gesture_hook, register_all_custom_gestures
+
+    def _on_custom_register(item: Dict[str, Any]) -> None:
+        action_id = item.get("action", f"custom.{item['key']}")
+        keys = item.get("keys", [])
+        register_custom_action(action_id, TAP)
+        register_chord(action_id, keys)
+
+    add_custom_gesture_hook(_on_custom_register)
+    register_all_custom_gestures(paths.config_dir, tc)
+
     from manux.perception.palm_axes import PalmAxesCalibration, valid_axes, palm_point
     return run(runtime, settings, paths, tray=not args.no_tray, screenshot=args.screenshot, layout=args.ui,
                services={

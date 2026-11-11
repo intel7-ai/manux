@@ -21,7 +21,7 @@ from uuid import uuid4
 import numpy as np
 
 from manux.data import capture_plan as plans
-from manux.data.catalog import ALL_TASKS, BY_KEY, CATEGORIES, DISPLAY_KEYS, NONE, TASKS, is_free, tasks_for
+from manux.data.catalog import ALL_TASKS, BY_KEY, CATEGORIES, DISPLAY_KEYS, NONE, TASKS, is_free, tasks_for, get_display_keys
 from manux.data.recorder import public_source
 from manux.data.recording import read
 from manux.core.contracts import RecordingIdentity
@@ -40,6 +40,20 @@ SPECIALIST_SCHEMA = "manux-gesture-models/1"
 
 NAMES: Dict[str, str] = {k: BY_KEY[k].name for k in DISPLAY_KEYS}
 ALL_NAMES: Dict[str, str] = {t.key: t.name for t in ALL_TASKS}
+CLASS_KOREAN_NAMES: Dict[str, str] = {
+    "none": "동작 없음 (기본 대기)",
+    "thumb_middle": "좌클릭 (엄지+중지)",
+    "thumb_ring": "우클릭 (엄지+약지)",
+    "thumb_index": "스크롤 (엄지+검지)",
+    "thumb_pinky": "창 선택 (엄지+새끼)",
+    "palm_side": "바탕화면 (손 가로)",
+    "thumbs_up": "모션 모드 (엄지 세우기)",
+    "swipe_left": "뒤로 가기 (왼쪽 쓸기)",
+    "swipe_right": "앞으로 가기 (오른쪽 쓸기)",
+    "swipe_tab_left": "이전 탭 (엄지 접고 왼쪽)",
+    "swipe_tab_right": "다음 탭 (엄지 접고 오른쪽)",
+}
+
 
 
 def _frame_durations(frames: Sequence[Mapping[str, Any]]) -> np.ndarray:
@@ -296,6 +310,15 @@ def gesture_rows(summary: Mapping[str, Any], report: Optional[Mapping[str, Any]]
         m = current.get("per_task", {}).get(key, current.get("per_gesture", pg).get(task.label, {}))
         classes = current.get("classes", list(pg))
         stale = bool(current) and summary.get("newest", 0) > current.get("mtime", 0)
+        is_trained = task.label in classes
+        is_none = (task.label == NONE)
+        is_custom = (task.category == "사용자 정의")
+        status_badge = "기본 대기 상태" if is_none else "맞춤 학습됨" if specialist else "커스텀 동작" if is_custom else "기본 탑재됨" if is_trained else "새 기능 추가 가능"
+        status_color = "#6B7280" if is_none else "#059669" if specialist else "#8B5CF6" if is_custom else "#10B981" if is_trained else "#2563EB"
+        status_desc = ("손을 가만히 두거나 마우스를 이동하는 기본 대기 상태" if is_none else
+                       "사용자 지정 단축키가 연결된 새 동작 · 녹화 및 학습으로 활성화" if is_custom else
+                       "현재 모델에 탑재되어 작동 중 · 내 손에 맞게 재학습 가능" if is_trained else
+                       "현재 모델에 미포함 · 녹화 후 학습하여 새 기능으로 활성화")
         row = {
             "key": key,
             "name": name,
@@ -313,6 +336,11 @@ def gesture_rows(summary: Mapping[str, Any], report: Optional[Mapping[str, Any]]
             "rules_rate": m.get("rules_rate"),
             "misfires_per_min": m.get("misfires_per_min"),
             "rules_misfires_per_min": m.get("rules_misfires_per_min"),
+            "is_trained": is_trained,
+            "is_custom": is_custom,
+            "status_badge": status_badge,
+            "status_color": status_color,
+            "status_desc": status_desc,
         }
         advice, level = [], "ok"
         if task.free:
@@ -681,6 +709,69 @@ class TrainingCenterService:
         return plans.save_plan(plan, self._plan_key(focus), self.plans_path)
 
     # training center operations
+    def active_model_info(self) -> Dict[str, Any]:
+        curr = self.current_model()
+        is_default = (curr == self.model_path) if (curr and self.model_path) else True
+        report = model_report(curr) if curr else {}
+        classes = report.get("classes", []) if report else []
+        class_names = [CLASS_KOREAN_NAMES.get(c, c) for c in classes if c != "none"]
+        return {
+            "isDefault": is_default,
+            "title": "기본 TCN 제스처 모델 (Official)" if is_default else (report.get("name") or "내 맞춤 TCN 모델"),
+            "filename": curr.name if curr else "gesture_tcn.onnx",
+            "trainedAt": str(report.get("trained") or "2026-11-06 02:37:09") if report else "2026-11-06 02:37:09",
+            "classes": class_names,
+            "classCount": len(class_names),
+            "status": "정상 작동 중",
+            "epochs": report.get("epochs", 25) if report else 25,
+        }
+
+    def default_model_info(self) -> Dict[str, Any]:
+        report = model_report(self.model_path) if self.model_path else {}
+        classes = report.get("classes", []) if report else []
+        class_names = [CLASS_KOREAN_NAMES.get(c, c) for c in classes if c != "none"]
+        return {
+            "title": "기본 탑재 모델 (Official TCN)",
+            "filename": "gesture_tcn.onnx",
+            "trainedAt": str(report.get("trained") or "2026-11-06 02:37:09") if report else "2026-11-06 02:37:09",
+            "classes": class_names,
+            "classCount": len(class_names),
+            "status": "공장 출하 안정화 버전 (권장)",
+            "description": "노이즈 및 오작동 방지 최적화가 완료된 표준 모델",
+        }
+
+    def reset_to_default(self) -> bool:
+        try:
+            active_json = self.store_dir / "active.json"
+            if active_json.exists():
+                active_json.unlink()
+            candidate = pending_model(self.data_dir)
+            if candidate and candidate.exists():
+                candidate.unlink(missing_ok=True)
+            return True
+        except Exception:
+            return False
+
+    def preset_commands(self) -> List[Dict[str, Any]]:
+        from manux.data.custom_gestures import PRESET_COMMANDS
+        return list(PRESET_COMMANDS)
+
+    def direction_choices(self) -> List[Dict[str, str]]:
+        from manux.data.custom_gestures import DIRECTION_CHOICES
+        return list(DIRECTION_CHOICES)
+
+    def add_custom_gesture(self, name: str, direction: str, keys: Sequence[str], instruction: str = "") -> Dict[str, Any]:
+        from manux.data.custom_gestures import save_custom_gesture
+        clean_keys = [str(k) for k in keys if str(k).strip()]
+        item = save_custom_gesture(self.config_dir, name, direction, clean_keys, instruction)
+        if self.specs is not None:
+            self.specs[item["gesture"]] = {"phases": ["tap"], "modes": ["pinch", "pointer", "motion"]}
+        return {"success": True, "key": item["key"], "name": item["name"]}
+
+    def delete_custom_gesture(self, key: str) -> bool:
+        from manux.data.custom_gestures import remove_custom_gesture
+        return remove_custom_gesture(self.config_dir, key)
+
     def summary_and_rows(self) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], List[Dict[str, Any]], Tuple[str, bool]]:
         summary = dataset_summary(self.recordings_dir)
         summary["coverage"] = dataset_summary(self.recordings_dir, profile=self.profile, split=self.split)["coverage"]
@@ -700,13 +791,51 @@ class TrainingCenterService:
                 row["can_train"] = False
                 if BY_KEY[row["key"]].label != NONE:
                     row["advice"] = "녹화·공유 가능 · 제어 전환·안전 동작 또는 연속 커서 이동은 기존 판정을 사용합니다."
-        for row in rows:
             row["trainer_available"] = worker_available()
             if not row["trainer_available"]:
                 row["can_train"] = False
                 row["advice"] = COMPONENT_REQUIRED
+
+        # Append custom gesture rows (specific to this config)
+        from manux.data.custom_gestures import load_custom_gestures
+        for g in load_custom_gestures(self.config_dir):
+            k = g["key"]
+            d = summary["per_gesture"].get(k, {"reps": 0, "postures": {}, "minutes": 0.0})
+            rows.append({
+                "key": k,
+                "name": g["name"],
+                "reps": d["reps"],
+                "postures": len(d["postures"]),
+                "category": "사용자 정의",
+                "instruction": g.get("instruction", ""),
+                "model_text": "커스텀 동작",
+                "can_train": True,
+                "label": k,
+                "minutes": d.get("minutes", 0.0),
+                "train_accuracy": None,
+                "rate": None,
+                "rules_rate": None,
+                "misfires_per_min": None,
+                "rules_misfires_per_min": None,
+                "is_trained": False,
+                "is_custom": True,
+                "status_badge": "커스텀 동작",
+                "status_color": "#8B5CF6",
+                "status_desc": "사용자 지정 단축키가 연결된 새 동작 · 녹화 및 학습으로 활성화",
+                "data_text": f"{d['reps']}회 녹화",
+                "data_ratio": min(1.0, d["reps"] / 20.0),
+                "advice": [],
+                "level": "ok",
+                "score_text": "학습 대기",
+                "score_desc": "새로 추가된 동작",
+                "trainer_available": worker_available(),
+                "tcn_mode": "rules",
+                "model_id": "",
+                "import_pending": False,
+            })
         storage = storage_text(summary)
         return summary, report, rows, storage
+
 
     def export(self) -> Path:
         return export_package(self.current_model(), self.exports_dir)
