@@ -106,11 +106,12 @@
 | `landmarks` | 21 × `(x, y, z)` | §1 영상 좌표 |
 | `world` | 21 × `(x, y, z)` 또는 `None` | §1 실세계 좌표. 모델이 주지 않으면 `None` |
 | `handedness` | `"Left"` / `"Right"` | 실제 손 |
-| `score` | 0..1 | MediaPipe 손 신뢰도 |
+| `score` | 0..1 | MediaPipe 좌우 손 분류 신뢰도 |
 | `from_crop` | bool | 손 주변 확대 영상에서 찾았는가(좌표는 이미 전체 영상 기준으로 되돌림) |
 
 규칙:
 - 엔진에는 **조작 손 하나만** 들어간다. 손 선택(`HandSelection`)은 `tracking`이 끝낸다. 손이 없으면 `None`.
+- 좌우 손 정보가 없는 검출은 불확실한 상태로 취급한다. 신뢰도 0을 1로 바꾸거나 빈 좌우 라벨을 특정 손으로 대체하지 않는다.
 - 기본 검출 수 `tracking.num_hands`는 v0.3과 같은 1이다. 필요하면 2를 명시할 수 있지만,
   한 손만 보이는 상태에서 추가 손을 찾는 비용이 늘 수 있다. 선택한 조작 손이 검출되지 않으면
   다른 손으로 대체하지 않고 `None`을 넘긴다.
@@ -601,13 +602,13 @@ CLI 수집기(`tools/collect_mouse.py`)도 같은 키·형식을 쓴다. 이전 
 - 첫 명시 실행 때 사용자 데이터 폴더 link/certs에 자체 서명 인증서/키 생성. Git checkout/worktree 내부와 그 안을 가리키는 링크 경로 거절. TLS 1.2 이상 HTTPS만 제공. 인증서 경고 후 iOS Safari getUserMedia 가능 여부는 사람이 검증한다.
 - binary 프레임 하나 = 4byte big-endian JSON 길이 + UTF-8 JSON + JPEG. JSON ≤1024byte, 전체 ≤1MiB. JSON: {kind:"frame", seq, captured_at, width, height, mirrored, rotation, facing}. seq는 연결 내 증가 정수, captured_at은 PC epoch 초로 보정한 촬영 시각, JPEG 각 변 ≤1280·총 ≤1280×960, rotation은 적용할 시계방향 0/90/180/270, facing은 user|environment, mirrored는 적용할 좌우 반전이다. 캔버스는 회전 반영 픽셀이므로 기본 rotation=0, 전면만 mirrored=true. **480×360 상한·품질 0.55·목표 최대 30fps**는 원본 유지.
 - sync JSON {kind:"sync", sent:epoch_ms} → {kind:"sync", sent, server:epoch_ms} 왕복 중간점으로 시계 보정. 촬영 시각은 JPEG 인코딩 직전 추정치이고 센서 노출 시각이 아니다. 데모 지연은 추정 촬영→PC 수신 시간이며 오차가 있다.
-- 초당 프레임 36회(여유 포함) 제한. 서버 ack 전에 다음 프레임을 보내지 않고 건너뛴다. 잘못된 메시지는 닫고 이전 seq·750ms 초과/250ms 이상 미래 촬영 시각은 ack accepted=false로 버린다. audio 종류는 예약만 하고 현재 거절한다. 원격 명령·마이크·Bluetooth 없음.
+- 초당 프레임 36회(여유 포함) 제한. 휴대폰은 JPEG 인코딩 하나와 미확인 전송 최대 두 개만 허용하고, 송신 버퍼가 차 있거나 슬롯이 없으면 최신 영상만 다음 기회에 시도한다. ack는 seq가 일치하는 슬롯만 해제하며 3초 미응답이면 연결을 닫는다. 30fps 전송 기한은 작은 콜백 지터를 허용하되 정체 뒤 밀린 프레임을 몰아서 보내지 않는다. 잘못된 메시지는 닫고 이전 seq·750ms 초과/250ms 이상 미래 촬영 시각은 ack accepted=false로 버린다. audio 종류는 예약만 하고 현재 거절한다. 원격 명령·마이크·Bluetooth 없음.
 - RemoteCamera는 압축 최신 하나만 보관, 덮어쓴 수를 센다. read(timeout)은 소비 스레드에서 JPEG 해독·반전·회전 후 FrameInfo와 BGR image 반환. FrameInfo.t는 수신 perf_counter, seq는 소스 전체에서 증가. 해독 중 연결이 바뀌면 결과 폐기. fps·actual_mode·추정 수신 지연 제공.
 - 데스크톱 조립자는 휴대폰의 전면/후면 기본 반전과 `camera.mirror`가 다르면 추적 전에 영상과 `FrameInfo.mirrored`를 함께 보정한다. 반전 후 회전 순서와 기존 회전·크기를 유지한다. 전면 영상을 중복 반전하지 않으며 실제 손 선택·미리보기·관절·커서·녹화가 같은 보정된 좌표를 사용한다. PC 카메라는 이미 설정을 적용하므로 재보정하지 않는다.
 - 새 프레임이 없으면 read는 None. 마지막 수신/접속 뒤 2초 정체면 is_open=false. 끊기/정지 때 즉시 슬롯을 비우고 대기자를 깨운다. QR 대기 화면·이전 프레임은 판정기에 넣지 않는다. 조립자가 Engine.frame_missing(now)으로 손 소실·입력 해제를 처리한다. link는 엔진·Windows 입력을 호출하지 않는다.
-- 전면 카메라 연결에서는 현재 OS 커서가 있는 모니터 전체를 휴대폰에 표시한다. `platform.screen_preview`가 Qt GUI 스레드에서 QScreen을 캡처하고 커서 위치를 표시한다. 최대 1280×720에 비율 유지, JPEG 품질 65, 512KiB 상한이다. PC 화면은 좌우반전하지 않는다. `desktop`이 `ScreenRequests`의 take/complete 콜백을 주입하고 UI는 수명만 관리한다. 후면·미연결·요청 없음에는 캡처하지 않고 화면을 저장하지 않는다.
-- 화면 전송은 손 영상 WebSocket과 별도의 `POST /screen` 요청이다. WS ready에서 메모리 전용 256bit 화면 토큰을 발급한다. 같은 Origin·IP·현재 인증된 WS·유효한 전면 카메라 프레임이 있어야 Authorization 헤더 토큰을 수락한다. URL·로그·저장소에 토큰을 넣지 않는다. 화면 HTTP는 초당 30회, 인증 후 요청은 초당 12회 제한하며 기존 일반 HTTP 분당 120회와 분리한다. 요청은 동시에 하나만 허용하고 캡처 대기는 0.8초로 제한한다. 전면/후면 전환·WS 종료·PC 차단은 진행 중 결과를 무효화한다. 응답도 인증과 세대를 재검사한다.
-- 휴대폰은 이전 화면 응답·JPEG 해독을 마친 뒤 100ms 뒤에 다음 화면을 요청한다. 숨김·카메라 전환·연결 종료 때 HTTP를 취소하고 이미지 URL을 해제한다. 짧은 화면 수신 지연은 이전 이미지를 유지하고 2초 이상 갱신되지 않으면 비운다. 화면 실패는 손 영상 전송을 끊지 않는다. 전체화면은 사용자가 버튼을 눌러 진입·종료하며 모니터 비율을 유지한다. 전체화면 미지원/거절도 카메라 연결을 유지한다.
+- 전면 카메라 연결에서는 현재 OS 커서가 있는 모니터 전체를 휴대폰에 표시한다. `platform.screen_preview`는 Windows에서 MSS 캡처와 독립 QImage의 축소·커서 표시·JPEG 압축을 단일 worker에서 처리한다. 캡처 자원도 같은 worker에서 닫는다. 비 Windows는 GUI 스레드의 QScreen 캡처를 사용한다. 처리 중 추가 캡처·대기열을 만들지 않고 종료 뒤 결과는 버린다. `ScreenCaptureRequest.profile`은 detail(1280×720/품질65), balanced(960×540/55), compact(640×360/45)만 허용하며 모든 크기는 비율 유지 상한이다. 512KiB 상한과 전체 모니터 범위·반전 없음은 공통이다. `desktop`이 `ScreenRequests`의 take/complete 콜백을 주입하고 UI는 수명만 관리한다. 후면·미연결·요청 없음에는 캡처하지 않고 화면을 저장하지 않는다.
+- 화면 전송은 손 영상 WebSocket과 별도의 `POST /screen` 요청이다. WS ready에서 메모리 전용 256bit 화면 토큰을 발급한다. 같은 Origin·IP·현재 인증된 WS·유효한 전면 카메라 프레임이 있어야 Authorization 헤더 토큰을 수락한다. URL·로그·저장소에 토큰을 넣지 않는다. 화면 HTTP는 초당 48회, 인증 후 요청은 초당 24회 제한하며 기존 일반 HTTP 분당 120회와 분리한다. `X-Manux-Screen-Profile`에는 위 세 값만 허용하고 없으면 기존 detail을 사용한다. 요청은 동시에 하나만 허용하고 캡처 대기는 0.8초로 제한한다. 전면/후면 전환·WS 종료·PC 차단은 진행 중 결과를 무효화한다. 응답도 인증과 세대를 재검사한다.
+- 휴대폰의 PC 화면 요청은 동시에 하나이며, 응답·JPEG 해독 시간을 포함해 목표 50ms(20fps) 간격으로 요청한다. balanced로 시작하고 전송·해독 이동평균이 70ms를 넘거나 카메라 ACK 왕복이 120ms를 넘으면 화면 크기·품질을 낮춘다. 충분히 빠른 40프레임이 연속되면 한 단계 높인다. 실제 속도는 캡처·네트워크에 따라 달라진다. 디코딩 완료 픽셀만 canvas에 한 번에 그리고 표시 fps를 카메라 전송 fps와 구분해 표시한다. 숨김·카메라 전환·연결 종료 때 HTTP를 취소하고 화면을 지운다. Blob URL은 그리기·실패 직후 해제한다. 짧은 화면 수신 지연은 이전 픽셀을 유지하고 2초 이상 실패하면 비운다. 화면 실패는 손 영상 전송을 끊지 않는다. 전체화면은 사용자가 버튼을 눌러 진입·종료하며 모니터 비율을 유지한다. 전체화면 미지원/거절도 카메라 연결을 유지한다.
 
 ### v0.5 MLP·UI 감사 연결 계약
 

@@ -89,6 +89,25 @@ def test_mediapipe_result_parsing_keeps_world_joints():
     assert _hands(NS(hand_landmarks=[], handedness=[]), lambda p: p) == []
 
 
+@pytest.mark.parametrize("handedness", [
+    None, [], [[]],
+    [[NS(category_name="Left", score=0.0)]],
+    [[NS(category_name="Right", score=0.0)]],
+    [[NS(category_name="Right", score=None)]],
+    [[NS(category_name="", score=.95)]],
+    [[NS(category_name=None, score=.95)]],
+])
+def test_missing_or_zero_handedness_cannot_select_either_control_hand(handedness):
+    lm = [NS(x=.1, y=.2, z=0.)] * 21
+    result = NS(hand_landmarks=[lm], handedness=handedness)
+    hands = _hands(result, lambda p: (p.x, p.y, p.z))
+    assert len(hands) == 1  # preserve the raw detection for diagnostics
+    assert hands[0].score == 0.0
+    for mirrored in (True, False):
+        for side in ("Left", "Right"):
+            assert select(hands, side, mirrored) is None
+
+
 # ---------------------------------------------------------------- tracker
 
 def test_tracker_returns_the_control_hand_as_an_observation():

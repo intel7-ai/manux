@@ -47,8 +47,8 @@ class PhoneLink:
         self._screen_key = None
         self._screen_front = False
         self._screen_epoch = 0
-        self._screen_limit = RateLimit(12, 1)
-        self._screen_http_limit = RateLimit(30, 1)
+        self._screen_limit = RateLimit(24, 1)
+        self._screen_http_limit = RateLimit(48, 1)
         self._blocked = False
         self._ws = None
         self._pending = set()
@@ -204,8 +204,11 @@ class PhoneLink:
             raise web.HTTPConflict()
         if not self._screen_limit.allow():
             raise web.HTTPTooManyRequests()
+        profile = request.headers.get("X-Manux-Screen-Profile", "detail")
+        if profile not in ("detail", "balanced", "compact"):
+            raise web.HTTPBadRequest()
         try:
-            jpeg = await self.screen.request()
+            jpeg = await self.screen.request(profile=profile)
         except BlockingIOError:
             raise web.HTTPTooManyRequests() from None
         except (asyncio.TimeoutError, asyncio.CancelledError):

@@ -123,6 +123,16 @@ class RemoteFrameMetadata:
             raise ValueError("invalid remote camera facing")
 
 
+@dataclass(frozen=True)
+class ScreenCaptureRequest:
+    """Bounded desktop preview quality choice, never an arbitrary screen region."""
+    profile: Literal["detail", "balanced", "compact"] = "detail"
+
+    def __post_init__(self) -> None:
+        if self.profile not in ("detail", "balanced", "compact"):
+            raise ValueError("invalid screen profile")
+
+
 # ----------------------------------------------------------------------------- 3. hand
 
 @dataclass(frozen=True)

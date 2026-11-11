@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import threading
 
+from manux.core.contracts import ScreenCaptureRequest
+
 
 class ScreenRequests:
     def __init__(self):
@@ -11,9 +13,9 @@ class ScreenRequests:
         self._pending = None
         self._claimed = False
 
-    async def request(self, timeout=.8):
+    async def request(self, timeout=.8, *, profile="detail"):
         loop = asyncio.get_running_loop()
-        ticket, future = object(), loop.create_future()
+        ticket, future = ScreenCaptureRequest(profile), loop.create_future()
         with self._lock:
             if self._pending is not None:
                 raise BlockingIOError("screen capture already pending")

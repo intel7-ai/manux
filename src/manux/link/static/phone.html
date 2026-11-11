@@ -94,7 +94,7 @@
   <div id="status" class="status">PC 화면의 6자리 코드를 입력하세요.</div>
 
   <div id="viewer" class="video-wrap">
-    <img id="desktopScreen" alt="현재 조작 중인 PC 모니터 전체 화면" />
+    <canvas id="desktopScreen" role="img" aria-label="현재 조작 중인 PC 모니터 전체 화면"></canvas>
     <div id="screenStatus" role="status">PC 화면을 기다리는 중</div>
     <video id="video" autoplay playsinline muted></video>
     <button id="exitFullscreen" type="button">전체화면 나가기</button>
@@ -128,18 +128,39 @@
     const cameraSelect = document.getElementById('camera');
     const viewer = document.getElementById('viewer');
     const desktopScreen = document.getElementById('desktopScreen');
+    const screenContext = desktopScreen.getContext('2d', {alpha: false, desynchronized: true});
     const screenStatus = document.getElementById('screenStatus');
     const fullscreenBtn = document.getElementById('fullscreenBtn');
     // Dan's existing JPEG settings and aspect-preserving canvas pipeline.
     const TARGET_W = 480, TARGET_H = 360, JPEG_QUALITY = 0.55;
+    const FRAME_INTERVAL = 1000 / 30, MAX_IN_FLIGHT = 2;
+    const pendingFrames = new Map();
     let facingMode = 'environment', stream = null, ws = null, wake = null;
-    let sending = false, awaitingAck = false, seq = 0, generation = 0;
-    let lastVideoTime = -1, lastAttempt = 0, offsetMs = 0, synced = false;
-    let ackCount = 0, fpsStart = 0, fps = 0, ackDeadline = 0, syncTimer = null;
+    let sending = false, seq = 0, generation = 0;
+    let lastVideoTime = -1, nextFrameAt = 0, offsetMs = 0, synced = false;
+    let ackCount = 0, fpsStart = 0, fps = 0, ackRttMs = 0, syncTimer = null;
     let callbackId = null, videoCallback = false, cameraBusy = false;
-    let screenToken = null, screenTimer = null, screenAbort = null, screenEpoch = 0, screenUrl = null;
+    let screenToken = null, screenTimer = null, screenAbort = null, screenEpoch = 0;
     let lastScreenAt = 0;
     let screenDisplayState = 'waiting';
+    const SCREEN_PROFILES = ['compact', 'balanced', 'detail'];
+    let screenLevel = 1, screenGoodFrames = 0, screenCostMs = 0;
+    let screenFpsStart = 0, screenFrames = 0, screenFps = 0;
+
+    function adjustScreenQuality(cost) {
+      screenCostMs = screenCostMs ? .8 * screenCostMs + .2 * cost : cost;
+      if (screenCostMs > 70 || ackRttMs > 120) {
+        screenLevel = Math.max(0, screenLevel - 1); screenGoodFrames = 0;
+      } else if (screenCostMs < 45 && ackRttMs < 80) {
+        if (++screenGoodFrames >= 40) {
+          screenLevel = Math.min(2, screenLevel + 1); screenGoodFrames = 0;
+        }
+      } else screenGoodFrames = 0;
+    }
+
+    function clearScreenPixels() {
+      screenContext.clearRect(0, 0, desktopScreen.width, desktopScreen.height);
+    }
 
     function loadScreenImage(url, signal) {
       // onload works in Android/in-app browsers whose Image.decode is absent or
@@ -164,8 +185,7 @@
       ++screenEpoch;
       clearTimeout(screenTimer); screenTimer = null;
       if (screenAbort) { screenAbort.abort(); screenAbort = null; }
-      desktopScreen.removeAttribute('src');
-      if (screenUrl) { URL.revokeObjectURL(screenUrl); screenUrl = null; }
+      clearScreenPixels();
       viewer.classList.remove('pc-screen');
       fullscreenBtn.disabled = true;
       if (document.fullscreenElement === viewer) document.exitFullscreen().catch(() => {});
@@ -176,11 +196,15 @@
       if (facingMode !== 'user' || !stream || !screenToken || document.hidden) return;
       viewer.classList.add('pc-screen');
       fullscreenBtn.disabled = false;
+      screenLevel = 1; screenGoodFrames = 0; screenCostMs = 0;
+      screenFpsStart = performance.now(); screenFrames = 0; screenFps = 0;
+      screenDisplayState = 'waiting';
       screenStatus.textContent = 'PC 화면을 기다리는 중';
       pullScreen(screenEpoch);
     }
     async function pullScreen(epoch) {
       if (epoch !== screenEpoch) return;
+      const startedAt = performance.now();
       const controller = new AbortController();
       screenAbort = controller;
       const deadline = setTimeout(() => controller.abort(), 1500);
@@ -189,7 +213,9 @@
       let phase = 'fetch';
       try {
         const response = await fetch('/screen', {method: 'POST', cache: 'no-store',
-          headers: {Authorization: 'Bearer ' + screenToken, 'X-Manux-Display': screenDisplayState}, signal: controller.signal});
+          headers: {Authorization: 'Bearer ' + screenToken, 'X-Manux-Display': screenDisplayState,
+            'X-Manux-Screen-Profile': SCREEN_PROFILES[screenLevel],
+            'X-Manux-Screen-Fps': screenFps.toFixed(1)}, signal: controller.signal});
         if (!response.ok) throw new Error('PC 화면 대기 (' + response.status + ')');
         stage = '이미지 수신';
         phase = 'blob';
@@ -198,23 +224,31 @@
         nextUrl = URL.createObjectURL(blob);
         stage = '이미지 표시';
         phase = 'image';
-        await loadScreenImage(nextUrl, controller.signal);
+        const image = await loadScreenImage(nextUrl, controller.signal);
         if (epoch !== screenEpoch) return;
-        const previous = screenUrl;
-        screenUrl = nextUrl; nextUrl = null;
-        desktopScreen.src = screenUrl;
-        if (previous) URL.revokeObjectURL(previous);
+        // Present the already decoded pixels in one draw. Swapping img.src can
+        // trigger another asynchronous decode and briefly blank the old frame.
+        if (desktopScreen.width !== image.naturalWidth || desktopScreen.height !== image.naturalHeight) {
+          desktopScreen.width = image.naturalWidth; desktopScreen.height = image.naturalHeight;
+        }
+        screenContext.drawImage(image, 0, 0);
         lastScreenAt = performance.now();
+        adjustScreenQuality(lastScreenAt - startedAt);
+        ++screenFrames;
+        const elapsed = lastScreenAt - screenFpsStart;
+        if (elapsed >= 1000) {
+          screenFps = screenFrames * 1000 / elapsed; screenFrames = 0; screenFpsStart = lastScreenAt;
+        }
         screenDisplayState = 'shown';
-        screenStatus.textContent = 'PC 모니터 · 손 인식 카메라 연결 중';
+        screenStatus.textContent = `PC 모니터 · ${screenFps.toFixed(1)} fps`;
       } catch (error) {
         if (epoch === screenEpoch) {
           screenDisplayState = phase + '_failed';
+          screenLevel = Math.max(0, screenLevel - 1); screenGoodFrames = 0;
           screenStatus.textContent = 'PC 화면 재시도 · ' + stage + ' · ' +
             (error.name === 'AbortError' ? '시간 초과' : error.message);
           if (performance.now() - lastScreenAt > 2000) {
-            desktopScreen.removeAttribute('src');
-            if (screenUrl) { URL.revokeObjectURL(screenUrl); screenUrl = null; }
+            clearScreenPixels();
           }
         }
       } finally {
@@ -222,7 +256,11 @@
         if (nextUrl) URL.revokeObjectURL(nextUrl);
         if (epoch === screenEpoch) {
           screenAbort = null;
-          screenTimer = setTimeout(() => pullScreen(epoch), 100);
+          // Adapt bytes per frame before reducing motion to a 4fps slideshow.
+          // One request/decode at a time still bounds bandwidth and memory.
+          const interval = screenDisplayState === 'shown' ? 50 : 150;
+          screenTimer = setTimeout(() => pullScreen(epoch),
+            Math.max(8, interval - (performance.now() - startedAt)));
         }
       }
     }
@@ -253,7 +291,8 @@
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
       if (wake) { wake.release().catch(() => {}); wake = null; }
       video.srcObject = null;
-      sending = awaitingAck = synced = false;
+      sending = synced = false;
+      pendingFrames.clear(); ackRttMs = 0;
       switchBtn.disabled = disconnectBtn.disabled = true;
       fullscreenBtn.disabled = true;
       connectBtn.disabled = false;
@@ -283,7 +322,7 @@
         video.className = facingMode === 'environment' ? 'rear' : '';
         await video.play();
         if (current !== generation) return;
-        lastVideoTime = -1; sending = false;
+        lastVideoTime = -1; nextFrameAt = 0; sending = false;
         await wakeScreen();
         startScreen();
         scheduleNextFrame();
@@ -303,11 +342,15 @@
     }
     function sendCurrentVideoFrame() {
       callbackId = null;
-      if (awaitingAck && performance.now() > ackDeadline) { stop('PC 수신 확인 시간 초과'); return; }
-      if (synced && !document.hidden && !awaitingAck && !sending && ws?.readyState === WebSocket.OPEN &&
+      const now = performance.now(), oldest = pendingFrames.values().next().value;
+      if (oldest !== undefined && now - oldest > 3000) { stop('PC 수신 확인 시간 초과'); return; }
+      if (synced && !document.hidden && pendingFrames.size < MAX_IN_FLIGHT && !sending && ws?.readyState === WebSocket.OPEN &&
           ws.bufferedAmount === 0 && video.readyState >= 2 && video.currentTime !== lastVideoTime &&
-          performance.now() - lastAttempt >= 1000 / 30) {
-        lastVideoTime = video.currentTime; lastAttempt = performance.now();
+          now + 2 >= nextFrameAt) {
+        lastVideoTime = video.currentTime;
+        // Small callback jitter must not halve a 30fps camera to 15fps. Advance
+        // the deadline; after a long stall start fresh without a catch-up burst.
+        nextFrameAt = Math.max(nextFrameAt + FRAME_INTERVAL, now + FRAME_INTERVAL - 2);
         const capturedAt = (Date.now() + offsetMs) / 1000;
         const vw = video.videoWidth || TARGET_W, vh = video.videoHeight || TARGET_H;
         const scale = Math.min(1.0, TARGET_W / vw, TARGET_H / vh);
@@ -322,14 +365,14 @@
             if (!blob) return;
             const jpeg = new Uint8Array(await blob.arrayBuffer());
             if (current !== generation || ws !== socket || socket.readyState !== WebSocket.OPEN ||
-                socket.bufferedAmount !== 0 || awaitingAck) return;
+                socket.bufferedAmount !== 0 || pendingFrames.size >= MAX_IN_FLIGHT) return;
             // Canvas pixels already reflect browser orientation; only front-view mirroring is applied on PC.
             const meta = new TextEncoder().encode(JSON.stringify({ kind: 'frame', seq: frameSeq,
               captured_at: capturedAt, width: cw, height: ch, mirrored: facing === 'user', rotation: 0, facing }));
             const packet = new Uint8Array(4 + meta.length + jpeg.length);
             new DataView(packet.buffer).setUint32(0, meta.length);
             packet.set(meta, 4); packet.set(jpeg, 4 + meta.length);
-            awaitingAck = true; ackDeadline = performance.now() + 3000;
+            pendingFrames.set(frameSeq, performance.now());
             socket.send(packet);
           } catch (error) { if (current === generation) stop('전송 실패: ' + error.message); }
           finally { if (current === generation) sending = false; }
@@ -363,7 +406,11 @@
             } else if (data.kind === 'sync') {
               offsetMs = data.server - (data.sent + Date.now()) / 2; synced = true;
             } else if (data.kind === 'ack') {
-              awaitingAck = false;
+              const sentAt = pendingFrames.get(data.seq);
+              if (sentAt === undefined) return; // old/duplicate ACK cannot free another frame's slot
+              pendingFrames.delete(data.seq);
+              const rtt = performance.now() - sentAt;
+              ackRttMs = ackRttMs ? .8 * ackRttMs + .2 * rtt : rtt;
               if (data.accepted) ++ackCount;
               const elapsed = performance.now() - fpsStart;
               if (elapsed >= 1000) { fps = ackCount * 1000 / elapsed; ackCount = 0; fpsStart = performance.now(); }

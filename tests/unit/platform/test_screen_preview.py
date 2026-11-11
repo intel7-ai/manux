@@ -8,6 +8,7 @@ from PySide6.QtCore import QPoint, QRect
 from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import QApplication
 import manux.platform.screen_preview as module
+from manux.core.contracts import ScreenCaptureRequest
 
 
 @pytest.mark.parametrize("size,dpr", [((1920, 1080), 1.), ((1080, 1920), 1.), ((3840, 2160), 2.)])
@@ -58,3 +59,89 @@ def test_no_capture_without_request_and_failed_capture_isolated():
         assert completed == [(ticket, None)]
     finally:
         preview.close()
+
+
+@pytest.mark.parametrize("close_during_encode", [False, True])
+@pytest.mark.parametrize("background_capture", [False, True])
+def test_slow_screen_encoding_does_not_block_gui_or_queue_more_grabs(close_during_encode, background_capture):
+    import threading
+    app = QApplication.instance() or QApplication([])
+    gui_thread = threading.get_ident()
+    entered, release = threading.Event(), threading.Event()
+    tickets = [ScreenCaptureRequest("balanced"), ScreenCaptureRequest("compact")]
+    captured, completed, encoded_on = [], [], []
+    def capture():
+        assert (threading.get_ident() != gui_thread) == background_capture
+        captured.append(True)
+        return object()
+    def encode(grab, profile):
+        assert profile == "balanced"
+        encoded_on.append(threading.get_ident())
+        entered.set()
+        assert release.wait(2)
+        return b"synthetic JPEG"
+    preview = module.ScreenPreview(None, take=lambda: tickets.pop(0) if tickets else None,
+                                   complete=lambda ticket, data: completed.append((ticket, data)),
+                                   capture=capture, encode=encode, background_capture=background_capture)
+    preview.timer.stop()
+    try:
+        first = tickets[0]
+        preview.poll()
+        assert entered.wait(1)  # GUI returned while the encoder is deliberately blocked.
+        preview.poll()
+        assert len(captured) == 1 and len(tickets) == 1
+        assert encoded_on == [encoded_on[0]] and encoded_on[0] != gui_thread
+        if close_during_encode:
+            preview.close()
+        release.set()
+        preview._encoding.result(timeout=1)
+        assert completed == ([] if close_during_encode else [(first, b"synthetic JPEG")])
+    finally:
+        release.set()
+        preview.close()
+
+
+@pytest.mark.parametrize("profile,size", [("detail", (1280, 720)), ("balanced", (960, 540)), ("compact", (640, 360))])
+def test_screen_profiles_reduce_bytes_without_cropping_monitor(profile, size):
+    image = QImage(1920, 1080, QImage.Format_RGB32)
+    image.fill(QColor("#123456"))
+    from PySide6.QtGui import QPainter
+    painter = QPainter(image)
+    painter.fillRect(0, 0, 480, 1080, QColor("#ff0000"))
+    painter.fillRect(1440, 0, 480, 1080, QColor("#0000ff"))
+    painter.end()
+    encoded = module.encode_monitor((image, (.5, .5)), profile)
+    result = QImage.fromData(encoded, "JPEG")
+    assert (result.width(), result.height()) == size
+    assert result.pixelColor(5, 5).red() > 200
+    assert result.pixelColor(size[0]-6, 5).blue() > 200
+
+
+def test_native_capture_and_cleanup_run_on_the_same_worker(monkeypatch):
+    import threading
+    app = QApplication.instance() or QApplication([])
+    gui_thread = threading.get_ident()
+    calls, requests = [], [ScreenCaptureRequest("balanced")]
+    closed = threading.Event()
+    class Native:
+        def __call__(self):
+            calls.append(("grab", threading.get_ident()))
+            return object()
+        def close(self):
+            calls.append(("close", threading.get_ident()))
+            closed.set()
+    monkeypatch.setattr(module, "WindowsMonitorGrabber", Native)
+    monkeypatch.setattr(module, "sys", SimpleNamespace(platform="win32"))
+    preview = module.ScreenPreview(None, take=lambda: requests.pop(0) if requests else None,
+                                   complete=lambda *_: None, encode=lambda *_: b"synthetic JPEG")
+    preview.timer.stop()
+    try:
+        preview.poll()
+        preview._encoding.result(timeout=1)
+    finally:
+        preview.close()
+    assert closed.wait(1)
+    preview.close()
+    preview.poll()
+    assert [name for name, _ in calls] == ["grab", "close"]
+    assert calls[0][1] == calls[1][1] != gui_thread

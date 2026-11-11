@@ -18,6 +18,49 @@ async def take_request(screen):
     raise AssertionError("capture was not requested")
 
 
+def test_screen_profile_validation_does_not_leave_a_pending_request():
+    async def run():
+        screen = ScreenRequests()
+        with pytest.raises(ValueError):
+            await screen.request(profile="unbounded")
+        assert screen.take() is None
+        pending = asyncio.create_task(screen.request(profile="compact"))
+        ticket = await take_request(screen)
+        assert ticket.profile == "compact"
+        screen.complete(ticket, b"synthetic JPEG")
+        assert await pending == b"synthetic JPEG"
+    asyncio.run(run())
+
+
+def test_screen_accepts_twenty_fps_and_only_bounded_profiles(tmp_path):
+    async def run():
+        screen = ScreenRequests()
+        link = PhoneLink(tmp_path, host="127.0.0.1", screen=screen)
+        client, origin = await client_for(link)
+        try:
+            ws, _ = await authenticate(client, origin, link.issue_code())
+            headers = {"Origin": origin, "Authorization": "Bearer " + link._screen_key}
+            await ws.send_bytes(packet(0, facing="user", mirrored=True))
+            assert (await ws.receive_json())["accepted"]
+            assert (await client.post("/screen", headers={**headers, "X-Manux-Screen-Profile": "unbounded"})).status == 400
+            assert screen.take() is None
+            started = asyncio.get_running_loop().time()
+            for index in range(20):
+                profile = ("balanced", "compact", "detail")[index % 3]
+                request = asyncio.create_task(client.post("/screen", headers={**headers, "X-Manux-Screen-Profile": profile}))
+                ticket = await take_request(screen)
+                assert ticket.profile == profile
+                screen.complete(ticket, b"synthetic JPEG")
+                response = await request
+                assert response.status == 200
+                await response.read()
+                await asyncio.sleep(max(0, started + (index+1)*.05 - asyncio.get_running_loop().time()))
+            await ws.close()
+        finally:
+            await client.close()
+    asyncio.run(run())
+
+
 def test_single_screen_request_timeout_invalidation_and_late_results():
     async def run():
         screen = ScreenRequests()

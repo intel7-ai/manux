@@ -21,7 +21,7 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     # layers import cv2, mediapipe, PySide6 and onnxruntime inside functions; take every manux module
-    hiddenimports=collect_submodules("manux") + ["velopack"],
+    hiddenimports=collect_submodules("manux") + collect_submodules("mss") + ["velopack"],
     excludes=["pytest", "torch", "tkinter"],
 )
 pyz = PYZ(a.pure)

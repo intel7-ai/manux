@@ -87,7 +87,7 @@ apps/manux/
 | `aiohttp`, `cryptography` | `link` (명시적 서버/인증서 시작 때 지연 import) |
 | `torch` | `tools/`만 (앱 프로세스에는 없음. 설치본의 별도 MANUXWorker에 포함) |
 
-link는 기본 꺼짐이며 엔진·판정·Windows 입력·설정을 import하지 않는다. 서버/인증서는 명시적으로 켤 때만 aiohttp/cryptography를 import한다. 끊김 때 remote.read는 None을 반환하고 조립자는 기존 frame_missing 경로로 손 소실을 처리한다. 데스크톱은 PhoneSession을 조립하고, UI는 큐 요청과 상태 표시를 맡는다. 전면 카메라의 PC 화면 보기는 platform.screen_preview의 Qt 캡처를 link.screen.ScreenRequests의 단일 요청함과 콜백으로 연결한다. link는 Qt를 import하지 않고 UI는 화면 전송·인증을 처리하지 않는다.
+link는 기본 꺼짐이며 엔진·판정·Windows 입력·설정을 import하지 않는다. 서버/인증서는 명시적으로 켤 때만 aiohttp/cryptography를 import한다. 끊김 때 remote.read는 None을 반환하고 조립자는 기존 frame_missing 경로로 손 소실을 처리한다. 데스크톱은 PhoneSession을 조립하고, UI는 큐 요청과 상태 표시를 맡는다. 전면 카메라의 PC 화면 보기는 platform.screen_preview의 모니터 캡처를 link.screen.ScreenRequests의 단일 요청함과 콜백으로 연결한다. Windows의 MSS 캡처·QImage 압축은 하나의 worker에서 수행하며, 비 Windows Qt 캡처는 GUI 스레드에 둔다. link는 Qt를 import하지 않고 UI는 화면 전송·인증을 처리하지 않는다.
 
 ## 5. 기능 모듈
 
