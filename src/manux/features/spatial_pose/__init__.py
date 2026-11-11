@@ -226,6 +226,15 @@ class SpatialPoseGuard(IntentFilter):
             return 0.0
         return max(0.0, min(1.0, 1.0 - (dist - thr) / (thr * 0.6)))
 
+    def _setting(self, key: str, default: Any = True) -> Any:
+        if self.settings is None:
+            return default
+        try:
+            val = self.settings.get(key)
+            return default if val is None else val
+        except (KeyError, TypeError, AttributeError):
+            return default
+
     @property
     def id(self) -> str:
         return GUARD_ID
@@ -318,7 +327,7 @@ class SpatialPoseGuard(IntentFilter):
         out: List[Intent] = []
 
         # Show desktop assist: when Spatial MLP steadily confirms horizontal, stationary palm_side (>= k_desktop frames)
-        desktop_enabled = True if self.settings is None else bool(self.settings.get("pinch.enable_thumb_tucked_open", True))
+        desktop_enabled = bool(self._setting("pinch.enable_thumb_tucked_open", True))
         desktop_cooldown_ok = (ctx.frame.t - self._last_desktop_fired) >= 2.0
         if (
             desktop_enabled
@@ -337,7 +346,7 @@ class SpatialPoseGuard(IntentFilter):
             return (Intent(ctx.frame.t, "pinch", "pinch.thumb_tucked_open", "tap"),)
 
         # Window close assist: when Spatial MLP steadily confirms rock_sign (>= k_rock frames)
-        close_enabled = True if self.settings is None else bool(self.settings.get("pinch.enable_rock_sign", True))
+        close_enabled = bool(self._setting("pinch.enable_rock_sign", True))
         rock_cooldown_ok = (ctx.frame.t - self._last_rock_fired) >= 1.5
         if (
             close_enabled
