@@ -725,6 +725,7 @@ class PoseSnapshotStudio:
         if len(self.samples) >= self.max_samples:
             self.samples.pop(0)
         self.samples.append(sample)
+        self._summary_cache = None
 
         tag = "✅ 일치" if is_match else "🚨 불일치(사각지대)"
         self.last_capture_status = f"{ACTION_LABELS[gt]} 캡처 ({tag}) · 총 {len(self.samples)}개"
@@ -762,6 +763,7 @@ class PoseSnapshotStudio:
             self.status_note = "취소할 표본이 없습니다."
             return False
         removed = self.samples.pop()
+        self._summary_cache = None
         gt = removed.get("groundTruthAction", "none")
         self.status_note = f"↩️ 직전 표본({ACTION_LABELS.get(gt, gt)})을 취소했습니다. (남은 표본: {len(self.samples)}개)"
         return True

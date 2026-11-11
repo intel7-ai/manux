@@ -41,37 +41,57 @@ def grab_item(item):
     raise AssertionError("QML canvas did not render")
 
 
-def test_pose_panel_button_collects_streams_stops_and_saves(studio, monkeypatch):
-    bridge, service, runtime, messages = studio
-    bridge.timer.stop()
-    monkeypatch.setattr(bridge.studio, "_run", lambda *args, **kwargs: None)
-    center = bridge.window.findChild(QObject, "studioDataManagement")
-    center.setProperty("pageIndex", 2)
-    QMetaObject.invokeMethod(center, "open")
-    QTest.qWait(100)
-    bridge.setStudioDiscrepancyOnly(False)
-    bridge.setStudioCaptureMode("snapshot")
-    points = tuple((.2+.1*(i%5), .25+.1*(i//5), 0.) for i in range(21))
-    bridge.apply_view(ViewFrame(None, landmarks=points))
-    button = next(b for b in bridge.window.findChildren(QQuickItem, "capturePoseSample") if b.isVisible())
-    assert button.property("enabled")
-    assert QMetaObject.invokeMethod(button, "click")
-    assert len(bridge.pose_studio.samples) == 1
-    bridge.setStudioCaptureMode("stream")
-    assert QMetaObject.invokeMethod(button, "click")
-    assert bridge.studioStreaming
-    QTest.qWait(60)
-    bridge.apply_view(ViewFrame(None, landmarks=points))
-    assert len(bridge.pose_studio.samples) >= 2
-    assert QMetaObject.invokeMethod(button, "click")
-    assert not bridge.studioStreaming
-    count = len(bridge.pose_studio.samples)
-    save = next(b for b in bridge.window.findChildren(QQuickItem, "savePoseSamples") if b.isVisible())
-    assert QMetaObject.invokeMethod(save, "click")
-    assert not bridge.pose_studio.samples
-    assert len(bridge.pose_studio.load_all_samples()) == count
-    assert bridge.paused and not runtime.engine.state.control_on
-    assert not [m for m in messages if "Error" in m or "has no attribute" in m], messages
+def test_pose_panel_button_collects_streams_stops_and_saves(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    settings = Settings(schema())
+    runtime = build(settings, SimpleNamespace(close=lambda: None), windows=False)
+    service = TrainingCenterService(tmp_path / "config", tmp_path / "data", tmp_path / "recordings", specs=training_specs())
+    service.configure("synthetic")
+    messages = []
+    old = qInstallMessageHandler(lambda kind, context, text: messages.append(text))
+    bridge = None
+    try:
+        bridge = Bridge(runtime, settings, tmp_path / "config", layout="standard", services={
+            "training_center": service, "palm_calibration": PalmAxesCalibration,
+            "valid_palm_axes": valid_axes, "palm_point": palm_point,
+            "pose_studio": make_pose_studio(tmp_path / "data"),
+            "studio_actions": lambda: list(STUDIO_ACTIONS),
+            "studio_categories": lambda: list(STUDIO_CATEGORIES)})
+        bridge._set_stage("main")
+        bridge.setPage("studio")
+        bridge.timer.stop()
+        monkeypatch.setattr(bridge.studio, "_run", lambda *args, **kwargs: None)
+        bridge.setStudioDiscrepancyOnly(False)
+        bridge.setStudioCaptureMode("snapshot")
+        points = tuple((.2+.1*(i%5), .25+.1*(i//5), 0.) for i in range(21))
+        bridge.apply_view(ViewFrame(None, landmarks=points))
+        button = next(b for b in bridge.window.findChildren(QQuickItem, "capturePoseSample") if b.isVisible())
+        assert button.property("enabled")
+        assert QMetaObject.invokeMethod(button, "click")
+        assert len(bridge.pose_studio.samples) == 1
+        bridge.setStudioCaptureMode("stream")
+        assert QMetaObject.invokeMethod(button, "click")
+        assert bridge.studioStreaming
+        QTest.qWait(60)
+        bridge.apply_view(ViewFrame(None, landmarks=points))
+        assert len(bridge.pose_studio.samples) >= 2
+        assert QMetaObject.invokeMethod(button, "click")
+        assert not bridge.studioStreaming
+        QTest.qWait(60)
+        count = len(bridge.pose_studio.samples)
+        save = next(b for b in bridge.window.findChildren(QQuickItem, "savePoseSamples") if b.isVisible())
+        assert save.property("enabled")
+        assert QMetaObject.invokeMethod(save, "click")
+        QTest.qWait(60)
+        assert not bridge.pose_studio.samples
+        assert len(bridge.pose_studio.load_all_samples()) == count
+        assert bridge.paused and not runtime.engine.state.control_on
+        assert not [m for m in messages if "Error" in m or "has no attribute" in m], messages
+    finally:
+        if bridge:
+            bridge.close()
+        runtime.stop()
+        qInstallMessageHandler(old)
 
 
 @pytest.mark.parametrize("action", ["triggerStudioCapture", "trainStudioModel", "toggleSpatialGuard"])
@@ -356,7 +376,7 @@ def test_small_learning_center_can_scroll_to_all_six_tabs_and_player_controls(st
     max_y = max(0., flick.property("contentHeight") - flick.height())
     flick.setProperty("contentY", max_y)
     QTest.qWait(60)
-    tab = visual_child(bridge.window.contentItem(), "studioTab_2")
+    tab = visual_child(bridge.window.contentItem(), "studioTab_1")
     assert tab is not None
     top = tab.mapToScene(QPointF(0, 0)).y()
     bottom = tab.mapToScene(QPointF(0, tab.height())).y()

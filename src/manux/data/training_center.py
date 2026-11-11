@@ -322,7 +322,7 @@ def gesture_rows(summary: Mapping[str, Any], report: Optional[Mapping[str, Any]]
             if not data_ok:
                 advice.append(f"이 이동 동작의 녹화가 부족해요 ({GOAL_FREE_MIN:.0f}분 이상 권장)")
             if row["misfires_per_min"] is not None and row["misfires_per_min"] > MAX_MISFIRES_PER_MIN:
-                advice.append("오작동이 많아요: 반주먹 이동을 더 녹화하세요")
+                advice.append("오작동이 많아요: 기본 이동/대기(None)를 더 녹화하세요")
             score = row["misfires_per_min"]
             row["score_text"] = "아직 평가 없음" if score is None else f"오작동 {score:.1f}회/분"
             if score is not None and row["rules_misfires_per_min"] is not None:

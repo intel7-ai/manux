@@ -102,7 +102,7 @@ TASKS: Tuple[GestureSpec, ...] = (
        gesture="pinch.thumb_ring", modes=_PINCH),
     _t("thumb_index", "엄지+검지 (스크롤)", "엄지와 검지로 집어 위아래로 끌어보세요. 쉬기 때 놓으세요", CLICK,
        gesture="pinch.scroll", modes=_PINCH),
-    _t(NONE, "아무 동작 아님 (반주먹 이동)", "반주먹으로 커서를 움직이듯 손을 이리저리 움직이세요", MOVE, free=True),
+    _t(NONE, "동작 없음 (평상시 손 이동 및 대기)", "평소 마우스를 쓰듯 손을 자유롭게 움직이세요. 제스처를 취하지 마세요", MOVE, free=True),
     _t("thumb_middle", "엄지+중지 (좌클릭)", "엄지와 중지 끝을 붙여 유지하세요. 쉬기 때 떼세요", CLICK,
        gesture="pinch.thumb_middle", modes=_PINCH),
     _t("thumb_middle_drag", "엄지+중지 유지 (드래그)", "엄지와 중지를 붙인 채 1초 유지하고 손을 옮기세요. 쉬기 때 놓으세요",

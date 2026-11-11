@@ -24,8 +24,7 @@ Popup {
     anchors.centerIn: parent
     width: Math.min(1240, parent.width-24); height: Math.min(900, parent.height-24)
     modal: true; focus: true; padding: Theme.Studio.pad; closePolicy: Popup.CloseOnEscape
-    onPageIndexChanged: {if(controller)controller.setPoseStudioVisible(opened && pageIndex===2)}
-    onOpened: {controller.setPoseStudioVisible(pageIndex===2); profileDraft=controller.trainingProfile; controller.openTraining();library.open() }
+    onOpened: { profileDraft=controller.trainingProfile; controller.openTraining();library.open() }
     onClosed: {library.hide();controller.closeTraining()}
     background: Rectangle { radius: Theme.Studio.radius; color: Theme.Studio.surface; border.color: Theme.Studio.line }
     component Copy: Label {
@@ -38,8 +37,8 @@ Popup {
             Layout.fillWidth: true; Layout.minimumHeight: implicitHeight
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 2
-                Copy { text: "학습 센터"; font.pixelSize: Theme.Studio.title; font.bold: true }
-                Copy { text: "내 동작을 모으고, 확인하고, 검증 후 적용하세요"; color: Theme.Studio.muted }
+                Copy { text: "TCN 모션 학습 센터"; font.pixelSize: Theme.Studio.title; font.bold: true }
+                Copy { text: "시계열 스와이프 모션 데이터를 모으고, 확인하고, TCN 모델을 학습하세요"; color: Theme.Studio.muted }
             }
             Item { Layout.fillWidth: true }
             StudioButton { objectName: "openTrainingProgress"; text: "학습 진행"; primary: studio.controller.trainingRunning; onClicked: {studio.close();studio.progressRequested()} }
@@ -73,7 +72,7 @@ Popup {
                 anchors { left: parent.left; right: parent.right; top: parent.top; margins: Theme.Studio.gap }
                 spacing: 3
                 Copy { Layout.fillWidth: true; font.bold: true; text: "처음이라면 ① 별명 저장 → ② 동작 선택 → ③ 녹화 → ④ 모델 학습 → ⑤ 적용" }
-                Copy { Layout.fillWidth: true; font.pixelSize: Theme.Studio.small; color: Theme.Studio.muted; text: "데이터 녹화 탭: 손동작을 녹화하고 라이브러리를 확인합니다. 모델 관리 탭: 학습 및 모델을 적용합니다. 포즈 표본 탭: 단일 자세 표본을 수집합니다." }
+                Copy { Layout.fillWidth: true; font.pixelSize: Theme.Studio.small; color: Theme.Studio.muted; text: "데이터 녹화 탭: 손동작을 녹화하고 라이브러리를 확인합니다. 모델 관리 탭: TCN 모델을 학습하고 적용합니다." }
             }
         }
         RowLayout {
@@ -91,7 +90,7 @@ Popup {
                 ColumnLayout {
                     width: navigationScroll.availableWidth; spacing: 6
                     Repeater {
-                        model: ["데이터 녹화", "모델 관리", "포즈 표본"]
+                        model: ["데이터 녹화", "모델 관리"]
                         StudioButton {
                             required property string modelData; required property int index
                             objectName: "studioTab_" + index
@@ -251,13 +250,12 @@ Popup {
                     }
                 }
                 ModelLibrary { Layout.fillWidth:true;Layout.fillHeight:true;Layout.minimumHeight:0;controller:studio.controller;library:studio.library }
-                PoseSnapshots { Layout.fillWidth:true;Layout.fillHeight:true;Layout.minimumHeight:0;controller:studio.controller }
             }
         }
         Panel {
-            Layout.fillWidth: true; visible:studio.pageIndex<2; implicitHeight: footer.implicitHeight+Theme.Studio.gap*2
+            Layout.fillWidth: true; implicitHeight: footer.implicitHeight+Theme.Studio.gap*2
             ColumnLayout {
-                id: footer; visible:studio.pageIndex<2; anchors {left:parent.left;right:parent.right;top:parent.top;margins:Theme.Studio.gap} spacing: 6
+                id: footer; anchors {left:parent.left;right:parent.right;top:parent.top;margins:Theme.Studio.gap} spacing: 6
                 RowLayout {
                     Layout.fillWidth: true
                     Copy { Layout.fillWidth: true; Layout.minimumWidth: 0; text: studio.controller.selectedTrainingKeys.length+"개 선택 · "+(studio.controller.selectedTrainingRows.map(function(r){return r.name}).join(", ") || "체크한 동작이 여기에 표시됩니다"); maximumLineCount: 2; elide: Text.ElideRight; color: Theme.Studio.mintDark; font.bold: true }

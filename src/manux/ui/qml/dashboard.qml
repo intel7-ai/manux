@@ -488,7 +488,6 @@ ApplicationWindow {
                 }
                 Item { Layout.fillWidth: true }
                 ActionButton { text: "고급 설정"; onClicked: { dashboard.command(27); advancedSettings.open() } }
-                ActionButton { text: "학습 센터"; onClicked: trainingCenter.open() }
                 TextLabel { text: dashboard.chosenHand; color: window.muted; font.pixelSize: 13 }
                 ActionButton {
                     objectName: "mainControlToggle"
@@ -514,14 +513,20 @@ ApplicationWindow {
                     anchors.margins: 12
                     spacing: 4
                     Repeater {
-                        model: [["home", "홈"], ["studio", "스튜디오"], ["customize", "맞춤 설정"]]
+                        model: [["home", "홈"], ["studio", "MLP 학습 센터"], ["tcn", "TCN 학습 센터"], ["customize", "맞춤 설정"]]
                         delegate: Button {
                             id: navItem
                             required property var modelData
-                            readonly property bool selected: dashboard.currentPage === modelData[0]
+                            readonly property bool selected: modelData[0] === "tcn" ? trainingCenter.visible : dashboard.currentPage === modelData[0]
                             Layout.fillWidth: true
                             implicitHeight: 42
-                            onClicked: dashboard.setPage(modelData[0])
+                            onClicked: {
+                                if (modelData[0] === "tcn") {
+                                    trainingCenter.open()
+                                } else {
+                                    dashboard.setPage(modelData[0])
+                                }
+                            }
                             contentItem: TextLabel {
                                 text: navItem.modelData[1]
                                 font.bold: navItem.selected
@@ -537,20 +542,6 @@ ApplicationWindow {
                         }
                     }
                     Item { Layout.fillHeight: true }
-                    Button {
-                        id: trainingNav
-                        Layout.fillWidth: true
-                        implicitHeight: 42
-                        enabled: !dashboard.calibratingPointer
-                        onClicked: trainingCenter.open()
-                        contentItem: TextLabel { text: "학습 센터"; leftPadding: 8; verticalAlignment: Text.AlignVCenter }
-                        background: Rectangle {
-                            radius: 10
-                            color: trainingNav.down ? "#DDE7EC" : "transparent"
-                            border.color: trainingNav.activeFocus ? "#16846E" : "transparent"
-                            border.width: 2
-                        }
-                    }
                     Button {
                         id: settingsNav
                         Layout.fillWidth: true
@@ -724,7 +715,7 @@ ApplicationWindow {
                                 }
                             }
                             Item { Layout.fillWidth: true }
-                            ActionButton { text: "학습 센터 열기"; onClicked: trainingCenter.open() }
+                            ActionButton { text: "TCN 학습 센터 열기"; onClicked: trainingCenter.open() }
                         }
                         RowLayout {
                             visible: dashboard.recActive
@@ -1348,7 +1339,7 @@ ApplicationWindow {
                                 }
                                 Item { Layout.fillWidth: true }
                                 ActionButton {
-                                    text: "기존 학습 센터 (TCN)"
+                                    text: "TCN 학습 센터 열기"
                                     implicitHeight: 32
                                     onClicked: trainingCenter.open()
                                 }
