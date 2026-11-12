@@ -33,6 +33,13 @@ HORIZONTAL = (1.0, 0.0)           # left / right is not measured: the image hori
 Axes = Tuple[float, float, float, float]
 
 
+def palm_anchor_point(pts: Sequence[Tuple[float, float, float]], ratio: float) -> Tuple[float, float]:
+    """Cursor anchor on wrist (#0) -> middle MCP (#9), shared by rules and MLP recovery."""
+    ratio = max(0.0, min(1.0, float(ratio)))
+    wrist, palm = pts[0], pts[9]
+    return (wrist[0] + (palm[0] - wrist[0]) * ratio, wrist[1] + (palm[1] - wrist[1]) * ratio)
+
+
 def palm_point(landmarks):
     """Original wrist-to-middle-MCP midpoint, in normalized image coordinates."""
     if landmarks is None or len(landmarks) != 21:

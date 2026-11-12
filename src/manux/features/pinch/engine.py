@@ -22,6 +22,8 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
+from manux.perception.palm_axes import palm_anchor_point
+
 Pt = Tuple[float, float, float]
 
 WRIST = 0
@@ -67,14 +69,6 @@ def finger_curl_ratios(pts: Sequence[Pt]) -> Tuple[float, ...]:
         base = _d3(pts[mcp_i], wrist)
         ratios.append(_d3(pts[tip_i], wrist) / base if base > 1e-6 else 9.9)
     return tuple(ratios)
-
-
-def palm_anchor_point(pts: Sequence[Pt], ratio: float) -> Tuple[float, float]:
-    """Cursor reference point on the wrist (#0) -> middle MCP (#9) line; ratio 0 = wrist, 1 = MCP."""
-    ratio = max(0.0, min(1.0, float(ratio)))
-    wrist = pts[WRIST]
-    palm = pts[MIDDLE_MCP]
-    return (wrist[0] + (palm[0] - wrist[0]) * ratio, wrist[1] + (palm[1] - wrist[1]) * ratio)
 
 
 class PinchCore:
@@ -246,6 +240,11 @@ class PinchCore:
         elif curl > float(c["fist_curl_exit"]) and mean_curl > float(c["fist_curl_exit"]):
             self._fist = False
             self._index_released_at = now
+        # Keep shape smoothing current even during a confirmed fist, so opening does
+        # not resume from the old pre-fist curl value.
+        k = max(0.05, min(1.0, float(c["shape_curl_smooth"])))
+        self._curl_s = mean_curl if self._curl_s is None else self._curl_s + k * (mean_curl - self._curl_s)
+        shape_mult = self.shape_dpi(self._curl_s, c)
         if self._fist and on("fist"):
             if self._index_pinched:
                 self._index_released_at = now
@@ -256,6 +255,16 @@ class PinchCore:
             return PinchFrame(active_gesture="fist", action="move_cursor", cursor_point=cursor_point_early,
                               pinch_distance=d_index, distances=distances, is_moving=True,
                               dpi_multiplier=max(0.05, float(c["fist_dpi_multiplier"])), hand_shape="fist")
+
+        # Fist confirmation gates fast-mode entry, not palm tracking. Folded fingertips
+        # naturally approach the thumb during this wait; they are not a new pinch.
+        # Existing contact/scroll/drag and the thumbs-up freeze above retain ownership.
+        if (self._fist_candidate_since is not None and on("fist") and on("no_pinch")
+                and not self._index_pinched and not self._secondary_since and not dragging
+                and now - self._scroll_released_at >= float(c["scroll_cursor_hold"])):
+            return PinchFrame(active_gesture="no_pinch", action="move_cursor", cursor_point=cursor_point_early,
+                              pinch_distance=d_index, distances=distances, is_moving=True,
+                              dpi_multiplier=shape_mult, hand_shape="half")
 
         # 0.5 Show desktop: thumb tucked across the palm, four fingers extended, held still
         palm_len = max(1e-6, _d2(pts[WRIST], pts[MIDDLE_MCP]))
@@ -309,11 +318,6 @@ class PinchCore:
         release_threshold = float(c["release_threshold"])
         click_threshold = float(c["click_threshold"])
 
-        mean_curl = sum(ratios) / 4.0
-        # hand-shape speed multiplier (shape_dpi_min for open hand, down to fist_dpi_multiplier for fist)
-        k = max(0.05, min(1.0, float(c["shape_curl_smooth"])))
-        self._curl_s = mean_curl if self._curl_s is None else self._curl_s + k * (mean_curl - self._curl_s)
-        shape_mult = self.shape_dpi(self._curl_s, c)
         curled = mean_curl < float(c["shape_curl_open"]) - .05
 
         # Thumb + index hysteresis

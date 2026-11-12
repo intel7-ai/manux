@@ -1,5 +1,6 @@
 """Drag speed stays independent of finger curl, including MLP-recovered drags."""
 from types import SimpleNamespace
+from dataclasses import replace
 
 import pytest
 
@@ -12,6 +13,97 @@ from manux.output.windows import FakeBackend, WindowsOutputConfig, WindowsOutput
 from manux.platform.monitors import ScreenLayout
 
 import pinch_hands as H
+
+
+@pytest.mark.parametrize("tip,pose,drag,button,fps", [
+    (12, "thumb_middle", "pinch.drag", "left", 30),
+    (16, "thumb_ring", "pinch.right_drag", "right", 60),
+])
+def test_mlp_only_contact_tracks_live_palm_through_missing_rules_and_stale_end(tip, pose, drag, button, fps):
+    feature = PinchFeature()
+    evidence = SimpleNamespace(model=object(), evidence=None)
+    settings = {"pinch.cursor_anchor_ratio": .25, "pinch.palm_axes": [1., .2, 0., 1.]}
+    guard = SpatialPoseGuard(evidence, settings=settings)
+    router, sink = router_and_sink()
+    clicks, points = [], []
+
+    def step(n, prediction=pose, missing=False, stale_end=False):
+        t = 1. + n / fps
+        # Fold only the pinched finger: MLP sees a click, but the 2D entry rule rejects it.
+        pts = H.open_hand(shift=(n * .003, n * .001))
+        pts[tip] = (pts[tip][0], .67 + n * .001, 0.)
+        pts[4] = (pts[tip][0] + .01, pts[tip][1], 0.)
+        hand, ctx = (None if missing else H.obs(t, pts)), H.ctx(t)
+        raw = feature.step(hand, ctx)
+        assert not raw
+        evidence.evidence = SpatialPoseEvidence(prediction, .99, {prediction: .99}, t)
+        guard.observe(hand, ctx)
+        if stale_end:
+            raw = [Intent(t, "pinch", drag, "end", point=points[-1])]
+        out = guard.filter(raw, ctx)
+        for intent in out:
+            if intent.phase == "tap":
+                clicks.append(intent)
+            command = router.route(intent).command
+            assert command is not None and sink.apply(command).accepted
+        return out
+
+    try:
+        step(0)
+        step(1)
+        assert len(clicks) == 1 and sink.backend.buttons_down == {button}
+        for n in range(2, 12):
+            out = step(n, stale_end=n == 7)
+            assert len(out) == 1 and out[0].gesture == drag
+            assert out[0].phase == ("begin" if n == 2 else "hold")
+            assert (out[0].scale or 1.) == 1.
+            # Same configured anchor and aspect-aware calibration as the rule cursor.
+            x, y = .495 + n * .003, .75 + n * .001
+            expected = (x + .6 * .2 * (y - .5) * (720 / 1280), y)
+            assert out[0].point == pytest.approx(expected)
+            points.append(out[0].point)
+            assert sink.backend.buttons_down == {button}
+        assert sink.backend.pos[0] > 500 and len(clicks) == 1
+        before = sink.backend.pos
+        step(12, missing=True)
+        assert sink.backend.pos == before  # Never extrapolate a lost hand.
+        out = step(13, prediction="none")
+        assert [(i.gesture, i.phase) for i in out] == [(drag, "end")]
+        assert not sink.backend.buttons_down
+    finally:
+        sink.close()
+
+
+@pytest.mark.parametrize("settings", [
+    {"pinch.long_press_drag": False},
+    {"pinch.drag_on_move": False, "pinch.long_press_time": 1.},
+])
+def test_mlp_silent_rules_respect_drag_settings(settings):
+    evidence = SimpleNamespace(model=object(), evidence=None)
+    guard = SpatialPoseGuard(evidence, settings=settings)
+    for n in range(12):
+        t = 1. + n / 30
+        evidence.evidence = SpatialPoseEvidence("thumb_middle", .99, {}, t)
+        ctx = H.ctx(t)
+        guard.observe(H.obs(t, H.middle_pinch()), ctx)
+        assert not any(i.gesture == "pinch.drag" for i in guard.filter([], ctx))
+
+
+def test_mlp_drag_recovery_does_not_reuse_observation_after_reset_or_mode_change():
+    evidence = SimpleNamespace(model=object(), evidence=None)
+    guard = SpatialPoseGuard(evidence)
+    for n in range(2):
+        t = 1. + n / 30
+        ctx = H.ctx(t)
+        evidence.evidence = SpatialPoseEvidence("thumb_middle", .99, {}, t)
+        guard.observe(H.obs(t, H.middle_pinch()), ctx)
+        guard.filter([], ctx)
+    ctx = replace(H.ctx(1.1), active_mode="motion")
+    evidence.evidence = SpatialPoseEvidence("thumb_middle", .99, {}, ctx.frame.t)
+    guard.observe(H.obs(ctx.frame.t, H.middle_pinch()), ctx)
+    assert not guard.filter([], ctx)
+    guard.reset("mode_change")
+    assert not guard.filter([], H.ctx(ctx.frame.t))
 
 
 def router_and_sink():

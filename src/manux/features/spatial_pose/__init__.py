@@ -21,6 +21,7 @@ from manux.core.contracts import Activity, Feature, FrameContext, HandObservatio
 from manux.ml.spatial_mlp import SpatialMlpModel
 from manux.perception.spatial_features import extract_spatial_features
 from manux.perception.pose_angles import observation_pose_angles
+from manux.perception.palm_axes import corrected_point, palm_anchor_point
 
 FEATURE_ID = "spatial_pose"
 GUARD_ID = "spatial_pose_guard"
@@ -201,6 +202,8 @@ class SpatialPoseGuard(IntentFilter):
         self._desktop_sample_t: Optional[float] = None
         self._desktop_geometry: Optional[Tuple[int, int, bool, int]] = None
         self._last_desktop_fired: float = -1e9
+        self._cursor_point: Optional[Tuple[float, float]] = None
+        self._cursor_t = float("-inf")
 
     def _setting(self, key: str, default: Any) -> Any:
         """Support both Settings.get(key) and mapping-like callers without masking False."""
@@ -215,6 +218,11 @@ class SpatialPoseGuard(IntentFilter):
     def _configured_drag_scale(self) -> float:
         """MLP-created drags use drag speed, never the recovered move's hand-shape speed."""
         return max(0.1, float(self._setting("pinch.long_press_drag_multiplier", 1.0)))
+
+    def _can_start_drag(self, now: float) -> bool:
+        return (bool(self._setting("pinch.long_press_drag", True))
+                and (bool(self._setting("pinch.drag_on_move", True))
+                     or now - self._boost_t >= float(self._setting("pinch.long_press_time", 0.55))))
 
     def _clear_desktop_observation(self) -> None:
         # Losing a sample is not a deliberate pose release; retain the one-shot latch.
@@ -284,10 +292,27 @@ class SpatialPoseGuard(IntentFilter):
         return GUARD_ID
 
     def observe(self, hand: Optional[HandObservation], ctx: FrameContext) -> None:
+        # Only this frame's hand may fill a missing rule coordinate. Never extrapolate
+        # a lost hand or let pinch recovery create cursor movement in motion mode.
+        self._cursor_point = None
+        self._cursor_t = ctx.frame.t
         if not self.enabled:
             self._idle_run = 0
             self._clear_desktop_observation()
             return
+        if (hand is not None and hand.frame.t == ctx.frame.t and ctx.active_mode == "pinch"
+                and hand.landmarks is not None and len(hand.landmarks) == 21):
+            ratio = self._setting("pinch.cursor_anchor_ratio", .5)
+            try:
+                ratio = .5 if isinstance(ratio, bool) else float(ratio)
+            except (TypeError, ValueError):
+                ratio = .5
+            if not math.isfinite(ratio):
+                ratio = .5
+            self._cursor_point = corrected_point(
+                palm_anchor_point(hand.landmarks, ratio), ctx.frame.aspect,
+                self._setting("pinch.palm_axes", None),
+            )
         ev = self.feature.evidence
         if ev is None or ev.t != ctx.frame.t:
             self.feature.step(hand, ctx)
@@ -345,6 +370,16 @@ class SpatialPoseGuard(IntentFilter):
         pose_active = left_pose_active
         scroll_active = (ev.action == "thumb_index" and ev.confidence >= 0.55)
         out: List[Intent] = []
+        live_point = (self._cursor_point if self._cursor_t == ctx.frame.t
+                      and ctx.active_mode == "pinch" else None)
+        # A confirmed MLP click owns the button even when a folded finger fails the
+        # 2D pinch rule. Supply current motion to the existing drag conversion path.
+        confirmed_left = self._boost_done and self._last_boosted_class == "thumb_middle"
+        confirmed_right = self._boost_done and self._last_boosted_class == "thumb_ring"
+        if (not intents and live_point is not None and not self._scrolling
+                and ((left_pose_active and (self._dragging or (confirmed_left and self._can_start_drag(ctx.frame.t))))
+                     or (right_pose_active and (self._right_dragging or (confirmed_right and self._can_start_drag(ctx.frame.t)))))):
+            intents = (Intent(ctx.frame.t, "pinch", "pinch.move", "hold", point=live_point),)
 
         # Apply the same timed safety gate to both MLP and incoming rule desktop intents.
         desktop_enabled = bool(self._setting("pinch.enable_thumb_tucked_open", True))
@@ -522,9 +557,10 @@ class SpatialPoseGuard(IntentFilter):
                     continue
                 elif intent.phase == "end":
                     if pose_active:
+                        self._drag_last_point = live_point or intent.point or self._drag_last_point
                         sustained = Intent(
                             intent.t, intent.source, "pinch.drag", "hold",
-                            point=intent.point or self._drag_last_point,
+                            point=self._drag_last_point,
                             scale=intent.scale or self._drag_last_scale,
                         )
                         self._dragging = True
@@ -615,9 +651,10 @@ class SpatialPoseGuard(IntentFilter):
                     continue
                 elif intent.phase == "end":
                     if right_pose_active:
+                        self._right_drag_last_point = live_point or intent.point or self._right_drag_last_point
                         sustained = Intent(
                             intent.t, intent.source, "pinch.right_drag", "hold",
-                            point=intent.point or self._right_drag_last_point,
+                            point=self._right_drag_last_point,
                             scale=intent.scale or self._right_drag_last_scale,
                         )
                         self._right_dragging = True
@@ -657,6 +694,8 @@ class SpatialPoseGuard(IntentFilter):
             # convert 2D fallback move intents into the held drag / both-click hold so mouse.move never releases the button early!
             if self._boost_done and intent.phase == "hold" and intent.gesture in ("pinch.move", "pinch.move_fist", "pointer.move"):
                 if left_pose_active and self._last_boosted_class == "thumb_middle":
+                    if not self._can_start_drag(ctx.frame.t):
+                        continue
                     phase = "hold" if self._dragging else "begin"
                     self._dragging = True
                     if intent.point is not None:
@@ -670,6 +709,8 @@ class SpatialPoseGuard(IntentFilter):
                     ))
                     continue
                 if right_pose_active and self._last_boosted_class == "thumb_ring":
+                    if not self._can_start_drag(ctx.frame.t):
+                        continue
                     phase = "hold" if self._right_dragging else "begin"
                     self._right_dragging = True
                     if intent.point is not None:
@@ -796,3 +837,5 @@ class SpatialPoseGuard(IntentFilter):
         self._clear_desktop_observation()
         self._desktop_fired = False
         self._last_desktop_fired = -1e9
+        self._cursor_point = None
+        self._cursor_t = float("-inf")

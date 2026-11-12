@@ -13,6 +13,34 @@ from manux.platform.monitors import ScreenLayout
 import pinch_hands as H
 
 
+@pytest.mark.parametrize("fps", [15, 30, 60])
+def test_moving_open_fist_open_transition_has_no_missing_cursor_frames(fps):
+    feature = PinchFeature()
+    bindings, problems = resolve_bindings(DEFAULT_BINDINGS, gesture_phases=GESTURE_PHASES)
+    assert not problems
+    router = Router(bindings)
+    sink = WindowsOutputSink(FakeBackend((500, 400)), ScreenLayout.single(1920, 1080),
+        WindowsOutputConfig(smoothing=1., relative_gain_min=1.15, relative_gain_max=2.3), threaded=False)
+    shapes = ([H.open_hand()] * 10
+              + [H._lerp(H.open_hand(), H.fist(), n / 20) for n in range(1, 21)]
+              + [H.fist()] * 10
+              + [H._lerp(H.fist(), H.open_hand(), n / 20) for n in range(1, 21)]
+              + [H.open_hand()] * 10)
+    try:
+        for n, pts in enumerate(shapes):
+            t = 1. + n / fps
+            intents = feature.step(H.obs(t, H._shift(pts, (n * .003, 0.))), H.ctx(t))
+            assert len(intents) == 1 and intents[0].gesture in ("pinch.move", "pinch.move_fist"), n
+            before = sink.backend.pos[0]
+            command = router.route(intents[0]).command
+            assert command is not None and sink.apply(command).accepted
+            if n:
+                assert sink.backend.pos[0] > before, n
+        assert sink.backend.clicks() == [] and not sink.backend.buttons_down
+    finally:
+        sink.close()
+
+
 @pytest.mark.parametrize("axis", (0, 1))
 def test_open_fist_open_speed_reaches_output_without_clicking(axis):
     feature = PinchFeature()
