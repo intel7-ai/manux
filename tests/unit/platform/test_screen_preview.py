@@ -101,7 +101,9 @@ def test_slow_screen_encoding_does_not_block_gui_or_queue_more_grabs(close_durin
         preview.close()
 
 
-@pytest.mark.parametrize("profile,size", [("detail", (1280, 720)), ("balanced", (960, 540)), ("compact", (640, 360))])
+@pytest.mark.parametrize("profile,size", [("detail", (1280, 720)), ("balanced", (960, 540)),
+                                         ("compact", (640, 360)), ("internet_hd", (1280, 720)),
+                                         ("internet_detail", (1920, 1080))])
 def test_screen_profiles_reduce_bytes_without_cropping_monitor(profile, size):
     image = QImage(1920, 1080, QImage.Format_RGB32)
     image.fill(QColor("#123456"))
@@ -115,6 +117,30 @@ def test_screen_profiles_reduce_bytes_without_cropping_monitor(profile, size):
     assert (result.width(), result.height()) == size
     assert result.pixelColor(5, 5).red() > 200
     assert result.pixelColor(size[0]-6, 5).blue() > 200
+
+
+def test_internet_detail_busy_frame_falls_back_inside_existing_byte_limit():
+    import numpy as np
+    pixels = np.random.default_rng(42).integers(0, 256, (1080, 1920, 3), dtype=np.uint8)
+    image = QImage(pixels.data, 1920, 1080, 1920 * 3, QImage.Format_RGB888).copy()
+    encoded = module.encode_monitor((image, (.5, .5)), "internet_detail")
+    assert encoded is not None and 4 < len(encoded) <= 512 * 1024
+    result = QImage.fromData(encoded, "JPEG")
+    assert (result.width(), result.height()) == (1280, 720)
+
+
+def test_internet_profile_keeps_existing_transport_profiles_unchanged():
+    assert {name: module.SCREEN_PROFILES[name] for name in ("detail", "balanced", "compact")} == {
+        "detail": (1280, 720, 65), "balanced": (960, 540, 55), "compact": (640, 360, 45)}
+
+
+@pytest.mark.parametrize("profile,size", [("internet_detail", (1080, 1920)), ("internet_hd", (720, 1280))])
+def test_internet_profiles_preserve_portrait_monitor_resolution(profile, size):
+    image = QImage(1080, 1920, QImage.Format_RGB32)
+    image.fill(QColor("#123456"))
+    encoded = module.encode_monitor((image, (.5, .5)), profile)
+    result = QImage.fromData(encoded, "JPEG")
+    assert (result.width(), result.height()) == size
 
 
 def test_native_capture_and_cleanup_run_on_the_same_worker(monkeypatch):

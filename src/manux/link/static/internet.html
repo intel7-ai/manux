@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' blob:; media-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <title>MANUX 인터넷 연결</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;padding:14px;background:#0f172a;color:#f1f5f9;font:15px system-ui,sans-serif}
+    h1{font-size:21px;margin:0 0 7px;color:#7dd3fc}p{line-height:1.45;margin:7px 0}.hint{font-size:12px;color:#94a3b8}
+    form,.actions{display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin:12px 0}label{display:flex;flex-direction:column;gap:5px;flex:1;min-width:130px}
+    input,select,button{font:inherit;border:1px solid #475569;border-radius:9px;padding:11px;background:#1e293b;color:#f8fafc}
+    button{background:#0284c7;font-weight:600;cursor:pointer}button.secondary{background:#334155}button:disabled{opacity:.45;cursor:default}
+    #status{padding:9px 11px;background:#1e293b;border-radius:9px;white-space:pre-line;min-height:40px}#transport{font-weight:700;color:#7dd3fc}
+    #viewer{position:relative;background:#000;width:100%;height:48vh;min-height:220px;border-radius:12px;overflow:hidden}
+    video,canvas{width:100%;height:100%;object-fit:contain}#localVideo.front{transform:scaleX(-1)}#remoteVideo,#screenCanvas{display:none}
+    #viewer.pc #localVideo{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}#viewer.pc.rtc #remoteVideo,#viewer.pc.relay #screenCanvas{display:block}
+    #screenStatus{position:absolute;top:8px;left:8px;background:#0f172ac9;padding:6px 9px;font-size:12px;max-width:85%;border-radius:6px}
+    #viewer:fullscreen{width:100vw;height:100dvh;min-height:0;border-radius:0}#exitFull{display:none;position:absolute;right:8px;bottom:8px;background:#334155dd}
+    #viewer:fullscreen #exitFull{display:block}.actions button{flex:1;min-width:115px}#capture{display:none}
+    @media(orientation:landscape){body{padding:9px}#viewer{height:55vh;min-height:180px}h1{font-size:17px}}
+  </style>
+</head>
+<body>
+  <h1>MANUX 인터넷 연결 · 테스트</h1>
+  <p class="hint">다른 Wi-Fi·LTE에서도 연결할 수 있습니다. PC 앱과 인터넷 연결을 켜 두세요.</p>
+  <div id="status" role="status">PC에 표시된 새 6자리 코드를 입력하세요.</div>
+  <form id="pairForm">
+    <label>PC 연결 코드<input id="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="off"></label>
+    <label>카메라<select id="camera"><option value="user">전면 · PC 화면 보기</option><option value="environment">후면</option></select></label>
+    <button id="connect" type="submit">연결</button>
+  </form>
+  <p id="transport">연결 전</p>
+  <div id="viewer">
+    <video id="localVideo" autoplay playsinline muted class="front"></video>
+    <video id="remoteVideo" autoplay playsinline muted></video>
+    <canvas id="screenCanvas" role="img" aria-label="PC 모니터 전체 화면"></canvas>
+    <div id="screenStatus">전면 카메라 연결 후 PC 화면이 표시됩니다.</div>
+    <button id="exitFull" type="button">전체보기 닫기</button>
+  </div>
+  <div class="actions">
+    <button id="switchCamera" type="button" class="secondary" disabled>전면/후면 전환</button>
+    <button id="fullscreen" type="button" class="secondary" disabled>PC 화면 전체보기</button>
+    <button id="disconnect" type="button" class="secondary" disabled>연결 종료</button>
+  </div>
+  <p class="hint">가능하면 WebRTC로 영상을 직접 전송합니다. 직접 연결이 어려운 네트워크에서는 인터넷 중계로 전환하며 화질·FPS가 낮아질 수 있습니다. 화면에는 실제 사용 중인 방식을 표시합니다. 앱을 닫거나 화면을 끄면 전송을 종료합니다. 마이크와 영상 저장은 사용하지 않습니다.</p>
+  <canvas id="capture"></canvas>
+  <script>
+    'use strict';
+    const el = id => document.getElementById(id);
+    const localVideo = el('localVideo'), remoteVideo = el('remoteVideo'), viewer = el('viewer');
+    const capture = el('capture'), captureContext = capture.getContext('2d', {alpha:false});
+    const screenCanvas = el('screenCanvas'), screenContext = screenCanvas.getContext('2d', {alpha:false});
+    const MAX_PENDING = 2, MAX_BUFFERED = 160 * 1024, RELAY_INTERVAL = 1000 / 15;
+    const CAMERA_MAX_BITRATE = 4_000_000, CAMERA_MAX_FPS = 30;
+    let generation = 0, cameraEpoch = 0, stream = null, openingStream = null, socket = null, peer = null, token = null, screenToken = null;
+    let mode = 'idle', facing = 'user', sequence = 0, offsetMs = 0, synced = false, cameraBusy = false;
+    let encodeBusy = false, callbackId = null, useVideoCallback = false, nextFrame = 0, lastVideoTime = -1;
+    let rtcTimer = null, syncTimer = null, statsTimer = null, screenTimer = null, connectTimer = null, iceGatherCancel = null;
+    let pairAbort = null, screenAbort = null, screenEpoch = 0, wakeLock = null;
+    let authSent = 0, accepted = 0, rejected = 0, screenFrames = 0, fpsSince = 0, rttMs = 0;
+    let lastOutboundFrames = 0, lastRemoteFrames = 0, lastStatsAt = 0, lastScreenAt = 0, screenCost = 0;
+    let relayWidth = 0, relayHeight = 0;
+    const pending = new Map();
+
+    function setStatus(message) { el('status').textContent = message; }
+    function setControls(connected, busy = false) {
+      el('connect').disabled = connected || busy;
+      el('code').disabled = connected || busy;
+      el('camera').disabled = connected || busy;
+      el('disconnect').disabled = !connected && !busy;
+      el('switchCamera').disabled = !connected || cameraBusy;
+      el('fullscreen').disabled = !connected || facing !== 'user';
+    }
+    function frameSize(width, height, maxWidth = 960, maxHeight = 720) {
+      if (height > width) [maxWidth,maxHeight] = [maxHeight,maxWidth];
+      const scale = Math.min(1, maxWidth / width, maxHeight / height);
+      return [Math.max(2, Math.floor(width * scale / 2) * 2), Math.max(2, Math.floor(height * scale / 2) * 2)];
+    }
+    function cameraConstraints() {
+      const portrait = typeof window.matchMedia === 'function' && window.matchMedia('(orientation: portrait)').matches;
+      return {facingMode:{ideal:facing},width:{ideal:portrait?960:1280,max:portrait?960:1280},
+        height:{ideal:portrait?1280:960,max:portrait?1280:960},frameRate:{ideal:CAMERA_MAX_FPS,max:CAMERA_MAX_FPS},
+        aspectRatio:{exact:portrait?3/4:4/3}};
+    }
+    async function configureCameraSender(sender) {
+      if (!sender || typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') return false;
+      // Fetch a fresh transaction for each attempt; unsupported quality preferences must
+      // never interrupt an otherwise valid camera connection.
+      for (const preference of ['resolution','scale','bitrate']) {
+        try {
+          const parameters = sender.getParameters();
+          if (!parameters.encodings?.length) return false;
+          if (preference === 'resolution') parameters.degradationPreference = 'maintain-resolution';
+          else delete parameters.degradationPreference;
+          for (const encoding of parameters.encodings) {
+            encoding.maxBitrate = CAMERA_MAX_BITRATE;
+            encoding.maxFramerate = CAMERA_MAX_FPS;
+            if (preference !== 'bitrate') encoding.scaleResolutionDownBy = 1;
+          }
+          await sender.setParameters(parameters);
+          return true;
+        } catch (_) { }
+      }
+      return false;
+    }
+    function relayQuality() {
+      return rttMs > 250 ? {width:640,height:480,jpeg:.62} : {width:960,height:720,jpeg:.72};
+    }
+    function resolutionText(width, height) { return width > 0 && height > 0 ? `${width}×${height}` : '해상도 확인 중'; }
+    function frameEnvelope(metadata, jpeg) {
+      const header = new TextEncoder().encode(JSON.stringify(metadata));
+      const result = new Uint8Array(4 + header.length + jpeg.byteLength);
+      new DataView(result.buffer).setUint32(0, header.length, false);
+      result.set(header, 4);
+      result.set(new Uint8Array(jpeg), 4 + header.length);
+      return result.buffer;
+    }
+    function send(data) { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data)); }
+    function cameraMetadata() { return {kind:'camera', facing, mirrored:facing === 'user', rotation:0}; }
+    function showViewer() {
+      viewer.classList.toggle('pc', facing === 'user' && mode !== 'idle');
+      viewer.classList.toggle('rtc', mode === 'webrtc');
+      viewer.classList.toggle('relay', mode === 'relay');
+      localVideo.classList.toggle('front', facing === 'user');
+      el('screenStatus').textContent = facing === 'user' ? 'PC 화면을 기다리는 중…' : '후면 카메라 · 손을 화면에 놓으세요.';
+      el('fullscreen').disabled = mode === 'idle' || facing !== 'user';
+    }
+    function cancelFrameLoop() {
+      if (callbackId !== null) {
+        if (useVideoCallback && localVideo.cancelVideoFrameCallback) localVideo.cancelVideoFrameCallback(callbackId);
+        else cancelAnimationFrame(callbackId);
+      }
+      callbackId = null;
+    }
+    function stopScreen() {
+      ++screenEpoch;
+      clearTimeout(screenTimer); screenTimer = null;
+      if (screenAbort) screenAbort.abort();
+      screenAbort = null;
+      screenContext.clearRect(0, 0, screenCanvas.width, screenCanvas.height);
+    }
+    function disconnect(message = '연결을 종료했습니다. PC의 새 코드로 다시 연결하세요.') {
+      ++generation;
+      ++cameraEpoch;
+      if (iceGatherCancel) iceGatherCancel();
+      clearTimeout(rtcTimer); clearTimeout(connectTimer); clearInterval(syncTimer); clearInterval(statsTimer);
+      rtcTimer = connectTimer = syncTimer = statsTimer = null;
+      if (pairAbort) pairAbort.abort(); pairAbort = null;
+      stopScreen(); cancelFrameLoop();
+      const oldSocket = socket; socket = null;
+      if (oldSocket) { oldSocket.onclose = oldSocket.onerror = oldSocket.onmessage = null; oldSocket.close(); }
+      const oldPeer = peer; peer = null; if (oldPeer) oldPeer.close();
+      if (stream) stream.getTracks().forEach(track => track.stop()); stream = null;
+      if (openingStream) openingStream.getTracks().forEach(track => track.stop()); openingStream = null;
+      localVideo.srcObject = remoteVideo.srcObject = null;
+      if (wakeLock) wakeLock.release().catch(() => {}); wakeLock = null;
+      token = screenToken = null; pending.clear(); encodeBusy = cameraBusy = false; synced = false;
+      mode = 'idle'; el('code').value = ''; el('transport').textContent = '연결 전';
+      setControls(false); showViewer(); setStatus(message);
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    }
+    window.manuxDisconnect = disconnect;
+    async function requestCamera(epoch) {
+      const obtained = await navigator.mediaDevices.getUserMedia({audio:false, video:cameraConstraints()});
+      if (epoch !== generation) { obtained.getTracks().forEach(track => track.stop()); return null; }
+      openingStream = obtained;
+      try {
+        const track = obtained.getVideoTracks()[0];
+        if ('contentHint' in track) { try { track.contentHint = 'motion'; } catch (_) { } }
+        const actual = track.getSettings().facingMode;
+        if (actual === 'user' || actual === 'environment') facing = actual;
+        localVideo.srcObject = obtained;
+        await localVideo.play();
+        if (epoch !== generation) { obtained.getTracks().forEach(item => item.stop()); return null; }
+        return obtained;
+      } catch (error) {
+        obtained.getTracks().forEach(track => track.stop());
+        throw error;
+      } finally { if (openingStream === obtained) openingStream = null; }
+    }
+    async function connect(event) {
+      event.preventDefault();
+      if (mode !== 'idle') return;
+      const code = el('code').value.trim();
+      if (!/^[0-9]{6}$/.test(code)) { setStatus('PC의 6자리 코드를 입력하세요.'); return; }
+      if (location.protocol !== 'https:' || !navigator.mediaDevices?.getUserMedia) {
+        setStatus('보안 카메라 연결을 지원하지 않습니다. PC의 HTTPS 주소와 Android System WebView 업데이트를 확인하세요.'); return;
+      }
+      const epoch = ++generation;
+      mode = 'starting'; facing = el('camera').value; setControls(false, true); setStatus('PC 연결 코드를 확인하는 중…');
+      pairAbort = new AbortController();
+      const timeout = setTimeout(() => pairAbort?.abort(), 10000);
+      try {
+        const response = await fetch('/pair', {method:'POST', cache:'no-store', credentials:'omit', redirect:'error',
+          headers:{'Content-Type':'application/json'}, body:JSON.stringify({code,device:'MANUX Internet Phone'}), signal:pairAbort.signal});
+        if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? '코드가 틀리거나 만료됐습니다. PC에서 새 코드를 받으세요.' : 'PC 연결을 시작할 수 없습니다. PC의 인터넷 연결 상태를 확인하세요.');
+        const result = await response.json();
+        if (epoch !== generation) return;
+        if (typeof result.token !== 'string' || !result.token) throw new Error('PC 연결 응답이 올바르지 않습니다.');
+        token = result.token; el('code').value = '';
+        const wsUrl = new URL('/ws', location.href); wsUrl.protocol = 'wss:';
+        const current = new WebSocket(wsUrl.toString()); socket = current; current.binaryType = 'arraybuffer';
+        connectTimer = setTimeout(() => { if (epoch === generation) disconnect('인터넷 인증 응답이 지연됩니다. PC의 새 코드로 다시 연결하세요.'); }, 12000);
+        current.onopen = () => { if (epoch !== generation) { current.close(); return; } authSent = Date.now(); send({kind:'auth',token}); };
+        current.onclose = () => { if (epoch === generation) disconnect('인터넷 연결이 끊겼습니다. PC 앱과 네트워크를 확인하고 새 코드로 연결하세요.'); };
+        current.onerror = () => { if (epoch === generation) disconnect('인터넷 연결에 실패했습니다. PC 인터넷 주소를 확인하세요.'); };
+        current.onmessage = event => handleMessage(event, epoch, result.iceServers || []);
+      } catch (error) {
+        if (epoch === generation) disconnect(error.name === 'AbortError' ? '연결 시간이 초과됐습니다. PC 인터넷 주소를 확인하세요.' : error.message);
+      } finally { clearTimeout(timeout); if (epoch === generation) pairAbort = null; }
+    }
+    async function handleMessage(event, epoch, iceServers) {
+      if (epoch !== generation || typeof event.data !== 'string') return;
+      let message;
+      try { message = JSON.parse(event.data); } catch (_) { disconnect('PC 응답을 읽을 수 없습니다.'); return; }
+      if (message.kind === 'ready') {
+        clearTimeout(connectTimer); connectTimer = null;
+        if (!Number.isFinite(message.server_time)) { disconnect('PC 시간 동기화에 실패했습니다.'); return; }
+        offsetMs = message.server_time * 1000 - (authSent + Date.now()) / 2; synced = true;
+        screenToken = message.screen_token || token;
+        setStatus('인증 완료 · 카메라를 시작하는 중…');
+        try {
+          stream = await requestCamera(epoch);
+          if (!stream || epoch !== generation) return;
+          fpsSince = performance.now(); accepted = rejected = screenFrames = 0; lastStatsAt = performance.now();
+          relayWidth = relayHeight = lastOutboundFrames = lastRemoteFrames = 0;
+          setControls(true); showViewer(); send(cameraMetadata());
+          syncTimer = setInterval(() => send({kind:'sync',sent:Date.now()}), 5000);
+          statsTimer = setInterval(updateStats, 1000);
+          if (navigator.wakeLock) navigator.wakeLock.request('screen').then(lock => {
+            if (epoch === generation) wakeLock = lock; else lock.release().catch(() => {});
+          }).catch(() => {});
+          await startRtc(epoch, iceServers);
+        } catch (error) { if (epoch === generation) disconnect('카메라를 시작할 수 없습니다. 카메라 권한과 다른 앱의 사용을 확인하세요.'); }
+      } else if (message.kind === 'answer' && peer && mode !== 'relay') {
+        try { await peer.setRemoteDescription({type:'answer',sdp:message.sdp}); }
+        catch (_) { if (epoch === generation) startRelay('영상 직접 연결 응답을 적용하지 못해 인터넷 중계로 전환합니다.'); }
+      } else if (message.kind === 'sync' && Number.isFinite(message.sent) && Number.isFinite(message.server)) {
+        const rtt = Date.now() - message.sent;
+        if (rtt >= 0 && rtt < 2500) { offsetMs = message.server - (message.sent + Date.now()) / 2; synced = true; }
+      } else if (message.kind === 'ack') {
+        const sentAt = pending.get(message.seq);
+        if (sentAt !== undefined) {
+          pending.delete(message.seq);
+          rttMs = .8 * rttMs + .2 * (performance.now() - sentAt);
+          if (message.accepted) accepted++; else rejected++;
+        }
+      } else if (message.kind === 'error') {
+        if (['rtc_failed','rtc_unavailable','invalid_offer','rtc_camera_stopped'].includes(message.reason) && stream)
+          startRelay('WebRTC 직접 연결을 사용할 수 없어 인터넷 중계로 전환합니다.');
+        else disconnect(message.reason === 'authentication_failed' ? '인증이 만료됐습니다. PC의 새 코드로 연결하세요.' : 'PC가 연결을 종료했습니다. 새 코드로 다시 연결하세요.');
+      }
+    }
+    async function waitIceComplete(current, epoch) {
+      if (current.iceGatheringState === 'complete') return;
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (epoch !== generation || peer !== current) { finish(new Error('cancelled')); return; }
+          // A blocked STUN server can leave gathering pending after usable host candidates
+          // already exist. Negotiate these now instead of unnecessarily forcing relay.
+          const hasCandidate = /^a=candidate:[^\r\n]+/m.test(current.localDescription?.sdp || '');
+          finish(hasCandidate ? null : new Error('ICE timeout'));
+        }, 8000);
+        const changed = () => { if (current.iceGatheringState === 'complete') finish(); };
+        const cancel = () => finish(new Error('cancelled'));
+        const finish = error => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          current.removeEventListener('icegatheringstatechange', changed);
+          if (iceGatherCancel === cancel) iceGatherCancel = null;
+          error ? reject(error) : resolve();
+        };
+        iceGatherCancel = cancel;
+        current.addEventListener('icegatheringstatechange', changed);
+        if (epoch !== generation) finish(new Error('cancelled'));
+      });
+    }
+    async function startRtc(epoch, iceServers) {
+      if (typeof RTCPeerConnection === 'undefined') { startRelay('이 기기에서는 인터넷 중계로 연결합니다.'); return; }
+      setStatus('WebRTC 직접 영상 연결을 준비하는 중…');
+      try {
+        const current = new RTCPeerConnection({iceServers}); peer = current;
+        const cameraTransceiver = current.addTransceiver(stream.getVideoTracks()[0], {direction:'sendonly',streams:[stream]});
+        current.addTransceiver('video', {direction:'recvonly'});
+        current.ontrack = event => {
+          if (epoch !== generation || peer !== current) return;
+          remoteVideo.srcObject = event.streams[0] || new MediaStream([event.track]); remoteVideo.play().catch(() => {});
+        };
+        current.onconnectionstatechange = () => {
+          if (epoch !== generation || peer !== current) return;
+          if (current.connectionState === 'connected') {
+            clearTimeout(rtcTimer); mode = 'webrtc'; showViewer(); setStatus('WebRTC로 연결됐습니다. PC에서 제어를 시작하세요.');
+          } else if (['failed','closed'].includes(current.connectionState)) startRelay('직접 연결이 중단되어 인터넷 중계로 전환합니다.');
+          else if (current.connectionState === 'disconnected') {
+            clearTimeout(rtcTimer); rtcTimer = setTimeout(() => {
+              if (epoch === generation && peer === current && current.connectionState !== 'connected') startRelay('직접 연결이 복구되지 않아 인터넷 중계로 전환합니다.');
+            }, 3500);
+          }
+        };
+        await current.setLocalDescription(await current.createOffer());
+        await configureCameraSender(cameraTransceiver.sender);
+        await waitIceComplete(current, epoch);
+        if (epoch !== generation || peer !== current) return;
+        send({kind:'offer',sdp:current.localDescription.sdp});
+        rtcTimer = setTimeout(() => { if (epoch === generation && mode !== 'webrtc') startRelay('직접 연결이 어려운 네트워크입니다. 인터넷 중계로 연결합니다.'); }, 15000);
+      } catch (_) { if (epoch === generation) startRelay('직접 영상 연결을 사용할 수 없어 인터넷 중계로 연결합니다.'); }
+    }
+    function startRelay(reason) {
+      if (!stream || mode === 'idle' || mode === 'relay') return;
+      if (iceGatherCancel) iceGatherCancel();
+      clearTimeout(rtcTimer); rtcTimer = null;
+      const oldPeer = peer; peer = null; if (oldPeer) oldPeer.close();
+      remoteVideo.srcObject = null; send({kind:'fallback'});
+      mode = 'relay'; pending.clear(); nextFrame = 0; lastVideoTime = -1;
+      showViewer(); setStatus(reason); scheduleFrame(generation); startScreen();
+    }
+    function scheduleFrame(epoch) {
+      if (epoch !== generation || mode !== 'relay' || !stream) return;
+      const callback = now => { callbackId = null; sendRelayFrame(now, epoch); scheduleFrame(epoch); };
+      useVideoCallback = typeof localVideo.requestVideoFrameCallback === 'function';
+      callbackId = useVideoCallback ? localVideo.requestVideoFrameCallback(callback) : requestAnimationFrame(callback);
+    }
+    async function sendRelayFrame(now, epoch) {
+      if (encodeBusy || !synced || now < nextFrame || localVideo.readyState < 2 || localVideo.currentTime === lastVideoTime
+          || pending.size >= MAX_PENDING || !socket || socket.readyState !== WebSocket.OPEN || socket.bufferedAmount > MAX_BUFFERED) return;
+      const width = localVideo.videoWidth, height = localVideo.videoHeight;
+      if (!width || !height) return;
+      encodeBusy = true; nextFrame = now + Math.max(RELAY_INTERVAL, rttMs / MAX_PENDING); lastVideoTime = localVideo.currentTime;
+      const quality = relayQuality();
+      const [w,h] = frameSize(width,height,quality.width,quality.height); capture.width = w; capture.height = h;
+      const capturedAt = (Date.now() + offsetMs) / 1000, cameraGeneration = cameraEpoch, capturedFacing = facing;
+      try {
+        captureContext.drawImage(localVideo,0,0,w,h);
+        const blob = await new Promise(resolve => capture.toBlob(resolve,'image/jpeg',quality.jpeg));
+        if (!blob) return;
+        const jpeg = await blob.arrayBuffer();
+        if (epoch !== generation || cameraGeneration !== cameraEpoch || mode !== 'relay' || !socket || socket.readyState !== WebSocket.OPEN || pending.size >= MAX_PENDING) return;
+        const seq = ++sequence;
+        const data = frameEnvelope({kind:'frame',seq,captured_at:capturedAt,width:w,height:h,mirrored:capturedFacing==='user',rotation:0,facing:capturedFacing},jpeg);
+        if (data.byteLength > 1024 * 1024) return;
+        pending.set(seq,performance.now()); socket.send(data); relayWidth = w; relayHeight = h;
+      } catch (_) { if (epoch === generation) disconnect('카메라 영상 전송이 중단됐습니다. 새 코드로 연결하세요.'); }
+      finally { if (epoch === generation) encodeBusy = false; }
+    }
+    function startScreen() {
+      stopScreen();
+      if (mode === 'relay' && facing === 'user' && screenToken) pullScreen(generation,screenEpoch);
+    }
+    function decodeScreenImage(blob, signal) {
+      // Image.onload also supports Android WebViews where createImageBitmap rejects valid JPEGs.
+      return new Promise((resolve, reject) => {
+        const image = new Image(), url = URL.createObjectURL(blob);
+        const finish = error => {
+          image.onload = image.onerror = null;
+          signal.removeEventListener('abort', aborted);
+          if (error) { image.src = ''; URL.revokeObjectURL(url); reject(error); }
+          else resolve({image,width:image.naturalWidth,height:image.naturalHeight,close:()=>URL.revokeObjectURL(url)});
+        };
+        const aborted = () => finish(new Error('screen decode cancelled'));
+        image.onload = () => finish(image.naturalWidth > 0 && image.naturalHeight > 0 ? null : new Error('invalid screen dimensions'));
+        image.onerror = () => finish(new Error('screen decode failed'));
+        signal.addEventListener('abort',aborted,{once:true});
+        if (signal.aborted) aborted(); else image.src = url;
+      });
+    }
+    async function pullScreen(epoch, screenGeneration) {
+      if (epoch !== generation || screenGeneration !== screenEpoch || mode !== 'relay' || facing !== 'user') return;
+      const started = performance.now(), controller = new AbortController(); screenAbort = controller;
+      const timeout = setTimeout(() => controller.abort(), 2500);
+      let bitmap = null;
+      try {
+        const response = await fetch('/screen', {method:'POST',cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal,
+          headers:{Authorization:'Bearer '+screenToken,'X-Manux-Screen-Profile':screenCost > 500 || rttMs > 450 ? 'compact' : screenCost > 220 || rttMs > 250 ? 'balanced' : 'internet_detail'}});
+        if (!response.ok) throw new Error('screen unavailable');
+        const blob = await response.blob();
+        if (blob.size > 1024 * 1024) throw new Error('screen too large');
+        bitmap = await decodeScreenImage(blob, controller.signal);
+        if (epoch !== generation || screenGeneration !== screenEpoch) return;
+        if (screenCanvas.width !== bitmap.width || screenCanvas.height !== bitmap.height) {
+          screenCanvas.width = bitmap.width; screenCanvas.height = bitmap.height;
+        }
+        screenContext.drawImage(bitmap.image,0,0); screenFrames++; lastScreenAt = performance.now();
+        el('screenStatus').textContent = 'PC 모니터 전체 · 인터넷 중계';
+      } catch (_) {
+        if (epoch === generation && screenGeneration === screenEpoch && performance.now() - lastScreenAt > 3000)
+          el('screenStatus').textContent = 'PC 화면을 다시 받는 중…';
+      } finally {
+        clearTimeout(timeout); if (bitmap) bitmap.close();
+        if (screenAbort === controller) screenAbort = null;
+        if (epoch === generation && screenGeneration === screenEpoch && mode === 'relay' && facing === 'user') {
+          const cost = performance.now() - started; screenCost = screenCost ? .8 * screenCost + .2 * cost : cost;
+          screenTimer = setTimeout(() => pullScreen(epoch,screenGeneration),Math.max(20,125-cost));
+        }
+      }
+    }
+    async function switchCamera() {
+      if (!stream || cameraBusy) return;
+      cameraBusy = true; setControls(true); const epoch = generation;
+      ++cameraEpoch;
+      const oldStream = stream; stream = null;
+      oldStream.getTracks().forEach(track => track.stop()); cancelFrameLoop(); stopScreen();
+      facing = facing === 'user' ? 'environment' : 'user';
+      try {
+        const obtained = await requestCamera(epoch);
+        if (!obtained || epoch !== generation) return;
+        stream = obtained; send(cameraMetadata());
+        if (peer) {
+          const sender = peer.getSenders().find(item => item.track && item.track.kind === 'video');
+          if (sender) { await sender.replaceTrack(stream.getVideoTracks()[0]); await configureCameraSender(sender); }
+        }
+        showViewer();
+        if (mode === 'relay') { scheduleFrame(epoch); startScreen(); }
+      } catch (_) { if (epoch === generation) disconnect('카메라를 전환하지 못했습니다. 새 코드로 원하는 카메라를 선택해 연결하세요.'); }
+      finally { if (epoch === generation) { cameraBusy = false; setControls(mode !== 'idle'); } }
+    }
+    async function updateStats() {
+      const epoch = generation, now = performance.now(), duration = Math.max(1,(now-fpsSince)/1000);
+      if (mode === 'relay') {
+        for (const sentAt of pending.values()) if (now-sentAt>6000) { disconnect('PC의 영상 응답이 멈췄습니다. 네트워크를 확인하고 새 코드로 연결하세요.'); return; }
+        el('transport').textContent = `인터넷 중계 · 카메라 ${resolutionText(relayWidth,relayHeight)} ${(accepted/duration).toFixed(1)} fps · PC 화면 ${resolutionText(screenFrames ? screenCanvas.width : 0,screenFrames ? screenCanvas.height : 0)} ${(screenFrames/duration).toFixed(1)} fps · 왕복 ${Math.round(rttMs)} ms`;
+        if (rejected > accepted && rejected > 10) setStatus('네트워크 지연으로 오래된 손동작 영상을 건너뛰고 있습니다. 더 안정적인 네트워크에서 연결하세요.');
+      } else if (peer && mode === 'webrtc') {
+        try {
+          const stats = await peer.getStats();
+          if (epoch !== generation || mode !== 'webrtc') return;
+          let outbound = 0, inbound = 0, rtcRtt = 0, sentWidth = 0, sentHeight = 0, receivedWidth = 0, receivedHeight = 0;
+          stats.forEach(report => {
+            if (report.type==='outbound-rtp' && (report.kind==='video'||report.mediaType==='video')) {
+              outbound += report.framesEncoded || 0;
+              if (report.frameWidth && report.frameHeight) { sentWidth = report.frameWidth; sentHeight = report.frameHeight; }
+            }
+            if (report.type==='inbound-rtp' && (report.kind==='video'||report.mediaType==='video')) {
+              inbound += report.framesDecoded || 0;
+              if (report.frameWidth && report.frameHeight) { receivedWidth = report.frameWidth; receivedHeight = report.frameHeight; }
+            }
+            if (report.type==='candidate-pair' && report.state==='succeeded' && report.nominated) rtcRtt = (report.currentRoundTripTime || 0)*1000;
+          });
+          const seconds = Math.max(.1,(now-lastStatsAt)/1000);
+          el('transport').textContent = `WebRTC · 카메라 전송 ${resolutionText(sentWidth,sentHeight)} ${Math.max(0,(outbound-lastOutboundFrames)/seconds).toFixed(1)} fps · PC 화면 ${resolutionText(receivedWidth || remoteVideo.videoWidth,receivedHeight || remoteVideo.videoHeight)} ${Math.max(0,(inbound-lastRemoteFrames)/seconds).toFixed(1)} fps · 왕복 ${Math.round(rtcRtt)} ms`;
+          if (inbound > lastRemoteFrames && facing==='user') el('screenStatus').textContent = 'PC 모니터 전체 · WebRTC';
+          lastOutboundFrames = outbound; lastRemoteFrames = inbound; lastStatsAt = now;
+        } catch (_) { }
+      } else if (mode === 'starting') el('transport').textContent = '영상 경로 연결 중 · WebRTC 우선';
+    }
+    el('pairForm').addEventListener('submit',connect);
+    el('disconnect').addEventListener('click',() => disconnect());
+    el('switchCamera').addEventListener('click',switchCamera);
+    el('fullscreen').addEventListener('click',() => viewer.requestFullscreen().catch(() => setStatus('이 기기에서 전체보기를 열 수 없습니다.')));
+    el('exitFull').addEventListener('click',() => document.exitFullscreen().catch(() => {}));
+    document.addEventListener('visibilitychange',() => { if (document.hidden) disconnect('화면이 대기 상태가 되어 연결을 종료했습니다. 새 코드로 다시 연결하세요.'); });
+    window.addEventListener('pagehide',() => disconnect());
+  </script>
+</body>
+</html>

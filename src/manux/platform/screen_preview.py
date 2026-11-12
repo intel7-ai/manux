@@ -10,7 +10,9 @@ from PySide6.QtGui import QColor, QCursor, QGuiApplication, QImage, QPainter, QP
 
 from manux.platform.monitors import windows_monitors
 
-SCREEN_PROFILES = {"detail": (1280, 720, 65), "balanced": (960, 540, 55), "compact": (640, 360, 45)}
+SCREEN_PROFILES = {"detail": (1280, 720, 65), "balanced": (960, 540, 55), "compact": (640, 360, 45),
+                   "internet_hd": (1280, 720, 85),
+                   "internet_detail": (1920, 1080, 85)}
 
 
 class WindowsMonitorGrabber:
@@ -65,6 +67,8 @@ def encode_monitor(grab, profile="detail"):
         return None
     image, cursor = grab
     width, height, quality = SCREEN_PROFILES[profile]
+    if profile in ("internet_hd", "internet_detail") and image.height() > image.width():
+        width, height = height, width
     image = image.scaled(width, height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
     # Desktop grabs omit the OS cursor. Show its actual position on the same monitor,
     # mapping logical monitor coordinates to the final (possibly high-DPI) image.
@@ -76,12 +80,28 @@ def encode_monitor(grab, profile="detail"):
     painter.drawPolygon(QPolygonF([QPointF(x + dx, y + dy) for dx, dy in
                                   ((0, 0), (0, 18), (5, 13), (9, 21), (12, 19), (8, 12), (15, 12))]))
     painter.end()
-    encoded = QByteArray()
-    buffer = QBuffer(encoded)
-    buffer.open(QIODevice.WriteOnly)
-    ok = image.save(buffer, "JPEG", quality)
-    buffer.close()
-    return bytes(encoded) if ok and 0 < encoded.size() <= 512 * 1024 else None
+    # Keep the existing transports unchanged. Detailed internet frames have a
+    # bounded fallback for busy desktops instead of vanishing over the byte cap.
+    def candidates():
+        yield image, quality
+        if profile == "internet_detail":
+            yield image, 75
+            small_width, small_height = (720, 1280) if image.height() > image.width() else (1280, 720)
+            smaller = image.scaled(small_width, small_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            yield smaller, 85
+            yield smaller, 70
+        elif profile == "internet_hd":
+            yield image, 75
+            yield image, 70
+    for candidate, candidate_quality in candidates():
+        encoded = QByteArray()
+        buffer = QBuffer(encoded)
+        buffer.open(QIODevice.WriteOnly)
+        ok = candidate.save(buffer, "JPEG", candidate_quality)
+        buffer.close()
+        if ok and 0 < encoded.size() <= 512 * 1024:
+            return bytes(encoded)
+    return None
 
 
 def capture_monitor():

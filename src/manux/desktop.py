@@ -62,6 +62,17 @@ CURSOR_BASE_KEYS = ("relative_gain_min", "relative_gain_max", "smoothing")
 PHONE_PREVIEW_GRACE = 2.0  # display only; Engine.frame_missing still runs on every empty read
 
 
+def create_internet_link(data_dir):
+    """Choose the configured address only when Internet connection is requested."""
+    from manux.link.internet import InternetLink
+    from manux.platform.fixed_gateway import FixedGatewayTunnel, load_gateway_config
+    from manux.platform.quick_tunnel import QuickTunnel
+
+    configured = load_gateway_config(data_dir)
+    tunnel_factory = QuickTunnel if configured is None else lambda: FixedGatewayTunnel(data_dir)
+    return InternetLink(data_dir, tunnel_factory=tunnel_factory)
+
+
 class CameraInput:
     """Camera + MediaPipe. Opened lazily and retried, so a missing webcam shows a message instead of crashing."""
 
@@ -82,7 +93,7 @@ class CameraInput:
         if self.phone is None:
             raise ValueError("이 실행에서는 휴대폰 카메라를 사용할 수 없습니다.")
         self.phone.command(action, host)
-        if action in ("start", "local"):
+        if action in ("start", "bluetooth", "internet", "local"):
             self._try_alternate_camera = False
             if self.camera is not None:
                 self.camera.release()
@@ -951,15 +962,22 @@ class DesktopRuntime:
         # Source changes never mix two cameras into a recording/enrollment/calibration attempt.
         self.engine.pause_for_settings()
         if ((self._rec_want[0] != "off" or self.engine.state.busy - {"connecting"} or self._pointer_setup is not None)
-                and command.path in ("start", "local")):
+                and command.path in ("start", "bluetooth", "internet", "local")):
             phone.note = "녹화·등록·보정을 마친 뒤 카메라를 바꾸세요."
             return
         self.pinch_preview = PinchPreview()
         try:
             self.source.phone_action(command.path, str(command.values.get("host", "")))
         except Exception as error:
-            phone.note = ("휴대폰 연결을 시작하지 못했습니다. link·qr 설치와 PC의 LAN 주소/8443 포트를 확인하세요. "
-                          + type(error).__name__)
+            if command.path == "internet":
+                phone.note = ("인터넷 연결 주소를 열지 못했습니다. 인터넷 연결, 고정 주소 설정과 WebRTC·터널 도구 설치를 확인하세요. "
+                              + type(error).__name__)
+            elif command.path == "bluetooth":
+                phone.note = ("Bluetooth 연결을 시작하지 못했습니다. Windows Bluetooth를 켜고 어댑터와 페어링을 확인하세요. "
+                              + type(error).__name__)
+            else:
+                phone.note = ("휴대폰 연결을 시작하지 못했습니다. link·qr 설치와 PC의 LAN 주소/8443 포트를 확인하세요. "
+                              + type(error).__name__)
         self._metrics = ("", -1, False)
         self._publish(ViewFrame(None, camera_ok=False, message=phone.view()["status"]))
 
@@ -1199,6 +1217,8 @@ def main(argv=None) -> int:
     parser.add_argument("--replay", type=Path, help="play a recording instead of the camera")
     parser.add_argument("--source", help="camera index or stream URL")
     parser.add_argument("--phone-web", action="store_true", help="open phone pairing in the desktop app")
+    parser.add_argument("--phone-bluetooth", action="store_true", help="open Android Bluetooth pairing in the desktop app")
+    parser.add_argument("--phone-internet", action="store_true", help="open a temporary Internet phone connection")
     parser.add_argument("--phone-host", default="", help="private LAN address for phone HTTPS (default: auto)")
     parser.add_argument("--hand-model", type=Path)
     parser.add_argument("--tcn-model", type=Path)
@@ -1236,7 +1256,13 @@ def main(argv=None) -> int:
         if isinstance(source, CameraInput):
             from manux.link.session import PhoneSession
             from manux.link.screen import ScreenRequests
-            source.phone = PhoneSession(paths.data_dir, screen=ScreenRequests())
+            bluetooth_factory = None
+            if sys.platform == "win32":
+                from manux.link.bluetooth import BluetoothLink
+                from manux.platform.bluetooth_transport import WindowsRfcommListener
+                bluetooth_factory = lambda data_dir: BluetoothLink(data_dir, transport_factory=WindowsRfcommListener)
+            source.phone = PhoneSession(paths.data_dir, screen=ScreenRequests(), bluetooth_factory=bluetooth_factory,
+                internet_factory=create_internet_link)
     except (OSError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 1
@@ -1287,8 +1313,9 @@ def main(argv=None) -> int:
                         binding_overrides=read_bindings(args.bindings), policy_store=policy_store,
                         spatial_pose_model=init_spatial_model)
         runtime.model_status = "가져온 모델 읽기 실패 · 학습센터에서 복구 상태를 확인하세요"
-    if args.phone_web or args.source == "phone":
-        runtime.request(RuntimeRequest("phone_camera", "start", {"host": args.phone_host}))
+    if args.phone_internet or args.phone_bluetooth or args.phone_web or args.source == "phone":
+        phone_action = "internet" if args.phone_internet else "bluetooth" if args.phone_bluetooth else "start"
+        runtime.request(RuntimeRequest("phone_camera", phone_action, {"host": args.phone_host}))
     runtime.pose_model = paths.app_dir / "models" / "pose_landmarker_lite.task"
     runtime.pointer_setup_dir = paths.config_dir
     runtime.log_dir = paths.log_dir
@@ -1327,7 +1354,7 @@ def main(argv=None) -> int:
                    "pointer_axes": pointer_axes,
                    "export_logs": lambda metrics: export_logs(paths, metrics, info.label),
                    "training_center": tc,
-                   "phone_dialog": args.phone_web or args.source == "phone",
+                   "phone_dialog": args.phone_internet or args.phone_bluetooth or args.phone_web or args.source == "phone",
                    "screen_preview": (lambda parent: ScreenPreview(parent, take=source.phone.screen.take,
                                         complete=source.phone.screen.complete)) if isinstance(source, CameraInput) else None,
                    "pose_studio": studio,

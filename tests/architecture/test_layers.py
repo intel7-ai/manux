@@ -44,6 +44,8 @@ THIRD_PARTY = {
     "win32gui": {"output", "platform"},
     "onnxruntime": {"ml"},
     "aiohttp": {"link"},
+    "aiortc": {"link"},
+    "av": {"link"},
     "cryptography": {"link"},
     "torch": set(),  # tools/ only, never inside the app
 }

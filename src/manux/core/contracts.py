@@ -126,10 +126,10 @@ class RemoteFrameMetadata:
 @dataclass(frozen=True)
 class ScreenCaptureRequest:
     """Bounded desktop preview quality choice, never an arbitrary screen region."""
-    profile: Literal["detail", "balanced", "compact"] = "detail"
+    profile: Literal["detail", "balanced", "compact", "internet_hd", "internet_detail"] = "detail"
 
     def __post_init__(self) -> None:
-        if self.profile not in ("detail", "balanced", "compact"):
+        if self.profile not in ("detail", "balanced", "compact", "internet_hd", "internet_detail"):
             raise ValueError("invalid screen profile")
 
 
@@ -226,7 +226,7 @@ class RuntimeRequest:
                 or not isinstance(self.path, str)
                 or self.kind in ("activate_model", "preview_model", "sensitivity", "advanced") and not self.path
                 or self.kind in ("tcn_toggle", "spatial_guard") and self.path not in ("on", "off")
-                or self.kind == "phone_camera" and self.path not in ("start", "local", "pair", "disconnect", "block", "unblock")
+                or self.kind == "phone_camera" and self.path not in ("start", "bluetooth", "internet", "local", "pair", "disconnect", "block", "unblock")
                 or self.kind == "pointer_setup" and self.path not in ("start", "capture", "skip", "apply", "adjust", "retest")):
             raise ValueError("invalid runtime request")
         object.__setattr__(self, "values", MappingProxyType(dict(self.values)))

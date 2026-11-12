@@ -36,7 +36,7 @@ apps/manux/
     core/                계약 타입과 프로토콜(contracts.py). 표준 라이브러리만
     settings/            설정 스키마·기본값·이전 버전 변환, 프로필, 저장 경로
     capture/             카메라. 최신 프레임 하나만 유지
-    link/                선택적 휴대폰 HTTPS·짝짓기·브라우저 페이지 (엔진·입력 없음)
+    link/                선택적 휴대폰 LAN·Bluetooth·Internet/WebRTC·짝짓기 (엔진·입력 없음)
     tracking/            MediaPipe 손 인식, 손 주변 확대, 조작 손 선택
     perception/          관절 → 특징(손 기준 좌표 local3d, 손 품질)
     features/            기능 모듈. 기능마다 하위 패키지 하나 (§5)
@@ -45,7 +45,7 @@ apps/manux/
     output/              출력 싱크: windows / practice / null, 안전 해제
     engine/              프레임 파이프라인, 모드 중재기, 단계 상태기계, Snapshot
     data/                학습 녹화, 실패 기록, 성능 기록, 로그 묶음
-    platform/            Windows 전용: 전역 단축키, 모니터, 자동 업데이트
+    platform/            OS 연동: 전역 단축키, 모니터, 자동 업데이트, 명시 실행 터널 프로세스
     ui/                  Qt 브리지(뷰모델)와 qml/(디자인 토큰, 컴포넌트, 페이지)
     app.py               조립 지점: 모든 계층을 import하는 유일한 파일
   tools/                 학습·재생·모델 내보내기. 앱 worker에 필요한 도구는 별도 MANUXWorker에 묶음
@@ -85,11 +85,14 @@ apps/manux/
 | `openvino` (선택 의존성) | `ml` (실제 GPU/NPU 실행 장치 확인) |
 
 | `aiohttp`, `cryptography` | `link` (명시적 서버/인증서 시작 때 지연 import) |
+| `aiortc`, `av` | `link` (선택적 인터넷 영상 연결에서 지연 import) |
 | `torch` | `tools/`만 (앱 프로세스에는 없음. 설치본의 별도 MANUXWorker에 포함) |
 
 link는 기본 꺼짐이며 엔진·판정·Windows 입력·설정을 import하지 않는다. 서버/인증서는 명시적으로 켤 때만 aiohttp/cryptography를 import한다. 끊김 때 remote.read는 None을 반환하고 조립자는 기존 frame_missing 경로로 손 소실을 처리한다. 데스크톱은 PhoneSession을 조립하고, UI는 큐 요청과 상태 표시를 맡는다. 전면 카메라의 PC 화면 보기는 platform.screen_preview의 모니터 캡처를 link.screen.ScreenRequests의 단일 요청함과 콜백으로 연결한다. Windows의 MSS 캡처·QImage 압축은 하나의 worker에서 수행하며, 비 Windows Qt 캡처는 GUI 스레드에 둔다. link는 Qt를 import하지 않고 UI는 화면 전송·인증을 처리하지 않는다.
 
 ## 5. 기능 모듈
+
+인터넷 연결은 `desktop`에서 `platform.quick_tunnel.QuickTunnel`을 `link.internet.InternetLink`에 주입한다. 사용자 데이터 폴더에 유효한 `internet-gateway.json`이 있으면 `platform.fixed_gateway.FixedGatewayTunnel`을 대신 주입하여 고정 HTTPS 주소를 표시한다. 설정은 인터넷 연결을 명시적으로 요청할 때 읽고, 손상된 설정은 임시 주소로 우회하지 않는다. 고정 주소의 endpoint 임대·갱신·보호된 게시 자격증명은 platform이 소유한다. link는 내부 QuickTunnel origin 검증을 유지하고 QML은 `fixed_address` 상태에 따라 안내만 바꾼다. 터널은 인증된 서비스의 loopback HTTP 포트만 외부 HTTPS 주소에 연결하며 UI·link가 프로세스 실행을 직접 하지 않는다. `capture.internet.InternetCamera`는 WebRTC 해독 픽셀과 중계 JPEG를 동일한 최신 프레임 인터페이스로 제공한다. 기존 손 추적·제스처·입력 경로를 다시 구현하지 않는다.
 
 testing의 `spatial_pose`는 별도 96차원 영상 관절 특징·NumPy MLP와 기본 꺼짐의 거부권이다.
 포즈 수집은 data, 특징은 perception, 모델은 ml, 학습·공유는 tools/worker에 둔다.

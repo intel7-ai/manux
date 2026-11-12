@@ -43,6 +43,138 @@ class FakeLink:
         self.block()
 
 
+class FakeBluetoothLink(FakeLink):
+    def __init__(self, data_dir):
+        super().__init__(data_dir, host="unused")
+        self.url = ""
+        self.local_name = "Synthetic PC"
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_internet_composition_selects_fixed_gateway_only_when_configured(tmp_path, monkeypatch, configured):
+    from manux.desktop import create_internet_link
+    from manux.platform import fixed_gateway, quick_tunnel
+
+    created = []
+    monkeypatch.setattr(fixed_gateway, "load_gateway_config", lambda path: SimpleNamespace(url="https://stable.example.test") if configured else None)
+    monkeypatch.setattr(fixed_gateway, "FixedGatewayTunnel", lambda path: created.append(("fixed", path)) or "fixed-tunnel")
+    monkeypatch.setattr(quick_tunnel, "QuickTunnel", lambda: created.append(("quick", None)) or "quick-tunnel")
+    link = create_internet_link(tmp_path)
+    assert not created and not link._running  # configuration never starts a listener on its own
+    assert link.tunnel_factory() == ("fixed-tunnel" if configured else "quick-tunnel")
+    assert created == ([("fixed", tmp_path)] if configured else [("quick", None)])
+
+
+def test_invalid_fixed_gateway_config_does_not_fall_back_or_replace_current_source(tmp_path, monkeypatch):
+    from manux.desktop import create_internet_link
+    from manux.platform import fixed_gateway, quick_tunnel
+
+    def invalid(path):
+        raise ValueError("synthetic protected configuration failure")
+    monkeypatch.setattr(fixed_gateway, "load_gateway_config", invalid)
+    monkeypatch.setattr(quick_tunnel, "QuickTunnel", lambda: pytest.fail("must not bypass configured gateway"))
+    session = PhoneSession(tmp_path, factory=FakeLink, internet_factory=create_internet_link)
+    session.command("start", "127.0.0.1")
+    old = session.link
+    with pytest.raises(ValueError):
+        session.command("internet")
+    assert session.link is old and not old.stopped and not session.view()["fixed_address"]
+    session.close()
+
+
+def test_fixed_address_session_view_does_not_affect_other_transports(tmp_path):
+    class FixedInternet(FakeLink):
+        def __init__(self, data_dir):
+            super().__init__(data_dir, host="stable.example.test")
+            self.fixed_address = True
+    session = PhoneSession(tmp_path, factory=FakeLink, internet_factory=FixedInternet)
+    assert not session.view()["fixed_address"]
+    session.command("internet")
+    assert session.view()["fixed_address"] and session.view()["url"] == "https://stable.example.test:8443"
+    session.command("start", "127.0.0.1")
+    assert not session.view()["fixed_address"]
+    session.close()
+
+
+def test_bluetooth_source_switch_preserves_existing_link_if_new_start_fails(tmp_path):
+    session = PhoneSession(tmp_path, factory=FakeLink, bluetooth_factory=FakeBluetoothLink)
+    session.command("start", "127.0.0.1")
+    wifi = session.link
+    class Broken(FakeBluetoothLink):
+        def start(self):
+            raise OSError("unavailable adapter")
+    session.bluetooth_factory = Broken
+    with pytest.raises(OSError):
+        session.command("bluetooth")
+    assert session.link is wifi and not wifi.stopped
+    assert session.view()["transport"] == "wifi"
+    session.bluetooth_factory = FakeBluetoothLink
+    session.command("bluetooth")
+    bluetooth = session.link
+    assert wifi.stopped and session.view()["transport"] == "bluetooth"
+    assert session.view()["local_name"] == "Synthetic PC"
+    assert session.view()["url"] == "" and session.view()["code"]
+    session.command("start", "127.0.0.1")
+    assert bluetooth.stopped and session.view()["transport"] == "wifi"
+    assert session.view()["local_name"] == ""
+    session.close()
+    assert session.view()["transport"] == "" and not session.view()["enabled"]
+
+
+def test_consumed_code_is_not_shown_after_remote_disconnect(tmp_path):
+    session = PhoneSession(tmp_path, bluetooth_factory=FakeBluetoothLink)
+    session.command("bluetooth")
+    session.link.pairing = SimpleNamespace(code=session.code)
+    assert session.view()["code"]
+    session.link.pairing.code = None
+    assert session.view()["code"] == "" and session.view()["seconds"] == 0
+    assert "새 연결 코드" in session.view()["status"]
+    session.close()
+
+
+@pytest.mark.parametrize("busy", [None, "recording", "enrolling", "calibrating"])
+@pytest.mark.parametrize("transport", ["bluetooth", "internet"])
+def test_remote_runtime_releases_input_and_respects_busy_work(tmp_path, busy, transport):
+    source = source_with_phone(tmp_path)
+    setattr(source.phone, transport + "_factory", FakeBluetoothLink)
+    released = []
+    source.camera = SimpleNamespace(release=lambda: released.append(True))
+    runtime = build(source.settings, source, windows=False)
+    runtime.engine.commands.put(SetStage(Stage.MAIN))
+    runtime.engine.commands.put(SetControl(True))
+    if busy:
+        runtime.engine.commands.put(SetBusy(busy, True))
+    runtime.request(RuntimeRequest("phone_camera", transport))
+    runtime._drain_runtime_requests()
+    assert not runtime.engine.state.control_on
+    assert released == ([] if busy else [True])
+    assert bool(source.phone.link) == (busy is None)
+    assert source.settings.get("pinch.long_press_drag_multiplier") == 2.
+    runtime.stop()
+
+
+def test_internet_start_failure_preserves_existing_source_and_close_stops_tunnel(tmp_path):
+    created = []
+    class Internet(FakeLink):
+        def __init__(self, data_dir):
+            super().__init__(data_dir, host="synthetic.example.invalid")
+            created.append(self)
+        def start(self):
+            if len(created) == 1:
+                raise TimeoutError("tunnel unavailable")
+    session = PhoneSession(tmp_path, factory=FakeLink, internet_factory=Internet)
+    session.command("start", "127.0.0.1")
+    old = session.link
+    with pytest.raises(TimeoutError):
+        session.command("internet")
+    assert session.link is old and not old.stopped and created[0].stopped
+    session.command("internet")
+    assert old.stopped and session.view()["transport"] == "internet"
+    assert session.view()["url"].startswith("https://synthetic.example.invalid")
+    session.close()
+    assert created[-1].stopped and not session.view()["enabled"]
+
+
 def source_with_phone(tmp_path, factory=FakeLink):
     source = CameraInput(Settings(schema(), {"camera.source": "1", "pinch.long_press_drag_multiplier": 2.}), tmp_path/"unused.task", "1")
     source.phone = PhoneSession(tmp_path, factory=factory)

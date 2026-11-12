@@ -1,5 +1,9 @@
 # MANUX (v0.5)
 
+Android 휴대폰 연결 앱: [APK 빌드 및 Bluetooth 연결 안내](android/README.md).
+PC에서 `python -m manux --ui studio --phone-bluetooth`로 연결 창을 열 수 있습니다.
+인터넷 테스트는 `internet` 선택 의존성을 설치하고 공식 `cloudflared` 경로를 `MANUX_CLOUDFLARED`로 지정한 뒤 `python -m manux --ui studio --phone-internet`로 시작합니다. APK의 **인터넷 연결**에서 PC에 표시된 임시 HTTPS 주소와 새 코드를 입력합니다. 같은 Wi-Fi가 필요 없으며 WebRTC 직접 연결이 안 되면 인터넷 중계로 전환합니다. 테스트 주소와 연결은 PC 앱 종료 시 닫힙니다.
+
 <p align="center">
   <img src="https://img.shields.io/badge/Runtime-Python_3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Runtime" />
   <img src="https://img.shields.io/badge/Desktop-Qt6_QML_(PySide6)-41CD52?style=flat-square&logo=qt&logoColor=white" alt="Desktop" />
@@ -216,3 +220,13 @@ uv run --locked --python 3.12 pytest -q
 ./packaging/build.ps1 -Version 0.5.0 -Release
 ```
 정식 릴리즈는 `manux-production` 브랜치 push 시 GitHub Actions 워크플로우를 통해 자동으로 배포됩니다.
+
+현재 작업을 Python 설치 없이 실행하려면 `-WithTrainer -SkipPack`으로 빌드한
+`build/dist/MANUX/Manux.exe`를 실행합니다. `_internal`과 `worker`를 포함한 MANUX 폴더 전체가 필요합니다.
+휴대폰 인터넷 연결 도우미는 `-CloudflaredPath <검증한 cloudflared.exe 경로>`로 포함합니다.
+`-DataProfile <APPDATA 아래 상대 프로필 경로>`를 지정하면 기존 설정·모델·고정 주소 인증을 복사하지 않고 재사용합니다.
+`MANUX_DATA_DIR` 환경변수가 있으면 그 선택이 우선합니다. 별도 빌드 환경은
+`-PythonExecutable <빌드 환경의 python.exe>`로 지정할 수 있습니다.
+
+`Manux.exe --self-check <결과.json>`은 기본 손 추적 구성요소를,
+`Manux.exe --bundle-check <결과.json>`은 학습 보조 파일·휴대폰 영상 코덱·기존 프로필 호환성을 오프라인으로 검사합니다.
