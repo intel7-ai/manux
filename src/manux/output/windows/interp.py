@@ -16,7 +16,7 @@ class CursorInterpolator:
     def __init__(self, set_pos: Callable[[int, int], None], rate_hz: float = 144.0) -> None:
         self._set_pos = set_pos
         self.rate_hz = rate_hz
-        self.glide_fraction = 0.5          # glide reaches target early to minimize lag
+        self.glide_fraction = 1.0          # fill the frame interval instead of moving then waiting
         self._lock = threading.Lock()
         self._from: Optional[Point] = None
         self._to: Optional[Point] = None
@@ -48,9 +48,13 @@ class CursorInterpolator:
                 dt = max(0.012, min(0.1, now - self._last_target_t))
                 self._interval = 0.7 * self._interval + 0.3 * dt
             self._last_target_t = now
+            target = (float(x), float(y))
+            if target == self._to:
+                # Still a camera sample: update cadence, but do not extend an existing glide.
+                return
             cur = self.position_at(now)
-            self._from = cur if cur is not None else (float(x), float(y))
-            self._to = (float(x), float(y))
+            self._from = cur if cur is not None else target
+            self._to = target
             self._t0 = now
             self._dur = self._interval * self.glide_fraction
         self._ensure_thread()

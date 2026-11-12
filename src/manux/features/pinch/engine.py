@@ -1,14 +1,13 @@
 """Pinch judgement, ported from v0.3 `hand-mouse/src/gesture_engine.py` `GestureEngine.process`.
 
-The arithmetic and the order of the checks are copied unchanged (the parity test compares every
-field per frame with exact equality). What changed:
+The original state machine is retained, with v0.5 contact, drag and hand-shape refinements:
 
 - Record & Fling (thumb+index `grab`, off by default in v0.3) is not ported: `record_on` is always
   False here, so thumb+index is the scroll grab (or nothing, with `grab_scroll_enabled` off).
 - Gesture -> action names (`gestures.<id>.action`) are gone (D-004). `action` below is the v0.3 action a
-  frame *would* have had with the default mapping; the feature turns it into gesture ids. The long press
-  on thumb+middle becomes a drag whenever `long_press_drag` is on (v0.3 also required that thumb+middle was
-  mapped to `left_click`).
+  frame *would* have had with the default mapping; the feature turns it into gesture ids. Confirmed
+  thumb+middle/ring contact follows the hand as a drag when `long_press_drag` is on. Only the explicit
+  `drag_on_move=False` option waits for a long press.
 - `enabled` comes from `enable_<v0.3 gesture id>` settings, the show-desktop cooldown from
   `desktop_cooldown`; click cooldowns were never used (finger pinches fire once per pinch).
 - Hand loss: `step(t, None)` only records the time; the engine calls `reset()` after
@@ -110,8 +109,6 @@ class PinchCore:
         self._desktop_armed = True
         self._pinky_fired_at = -1e9
         self._desktop_fired_at = -1e9
-        self._press_anchor: Optional[Tuple[float, Tuple[float, float], Tuple[float, float]]] = None
-        self._ring_anchor: Optional[Tuple[float, Tuple[float, float], Tuple[float, float]]] = None
 
     # ------------------------------------------------------------------ public state
     @property
@@ -149,8 +146,6 @@ class PinchCore:
         self._desktop_since = None
         self._desktop_armed = True
         self._curl_s = None
-        self._press_anchor = None
-        self._ring_anchor = None
 
     # ------------------------------------------------------------------ helpers
     def _can_trigger(self, gesture_id: str, now: float, finger: Optional[str], cooldown: float = 0.35) -> bool:
@@ -229,7 +224,16 @@ class PinchCore:
         index_active = scroll_on
         index_tucked = ratios[0] <= float(c["index_tuck_ratio"])
         others_curled = max(ratios[1:]) <= 1.35
-        if not self._fist:
+        # Curling the fingers while dragging must not steal the held button for fast movement.
+        # Let the existing pinch release logic below decide when the drag actually ends.
+        dragging = self._middle_hold_pinched or any(
+            finger in self._secondary_since and self._long_fired.get(finger, False)
+            for finger in ("middle", "ring")
+        )
+        if dragging:
+            self._fist = False
+            self._fist_candidate_since = None
+        elif not self._fist:
             if (not self._index_pinched or not index_active) and index_tucked and (curl <= fist_enter or mean_curl <= fist_enter):
                 if self._fist_candidate_since is None:
                     self._fist_candidate_since = now
@@ -444,6 +448,12 @@ class PinchCore:
                 is_dragging = self._long_fired.get(finger, False)
                 drop_limit = limit * 1.6 if is_dragging else limit * 1.3
                 if held_dist > drop_limit or (not keep_ok and not is_dragging and held_dist > limit * 1.2):
+                    # Release grace protects a confirmed press, not a contact candidate.
+                    # A brief brush must not become a click after the fingers already opened.
+                    if finger in ("middle", "ring") and self._click_fresh.get(finger, True) and not is_dragging:
+                        self._secondary_since.pop(finger, None)
+                        self._secondary_off.pop(finger, None)
+                        return False
                     off = self._secondary_off.setdefault(finger, now)
                     grace = float(c.get("drag_clear_grace", 0.12)) if is_dragging else float(c.get("click_release_grace", 0.08))
                     if held_dist > limit * 2.0:
@@ -502,56 +512,31 @@ class PinchCore:
         )
 
         held_middle = "middle" in self._secondary_since
-        moved_far = False
-        if held_middle and c.get("drag_on_move", True) and cursor_point is not None:
-            # Track both palm anchor and pinch midpoint (thumb + middle tip) so either hand translation
-            # or wrist/finger movement immediately engages drag.
-            track = ((thumb[0] + middle[0]) * 0.5, (thumb[1] + middle[1]) * 0.5)
-            if self._press_anchor is None or self._press_anchor[0] != self._secondary_since["middle"]:
-                self._press_anchor = (self._secondary_since["middle"], cursor_point, track)
-            ref_palm, ref_pinch = self._press_anchor[1], self._press_anchor[2]
-            aspect = float(c.get("frame_aspect", 0.75))
-            moved_palm = math.hypot(cursor_point[0] - ref_palm[0], (cursor_point[1] - ref_palm[1]) * aspect)
-            moved_pinch = math.hypot(track[0] - ref_pinch[0], (track[1] - ref_pinch[1]) * aspect)
-            moved = max(moved_palm, moved_pinch)
-            moved_far = (moved >= float(c.get("drag_move_distance", 0.006))
-                         and now - self._secondary_since["middle"] >= float(c.get("drag_move_min_time", 0.0)))
-        else:
-            self._press_anchor = None
-
+        # A confirmed click already holds the OS button. Feed its position on the next
+        # frame, even for tiny motion; a second time/distance gate adds no click safety.
+        # Explicit drag_on_move=False retains the optional legacy long-press mode.
         is_middle_dragging = (
             held_middle
             and c["long_press_drag"]
             and (
                 self._long_fired.get("middle", False)
-                or (moved_far and (self._click_fresh.get("middle", True) or now - self._secondary_since["middle"] >= 0.10))
-                or now - self._secondary_since["middle"] >= float(c["long_press_time"])
+                or (middle_ok and (
+                    c.get("drag_on_move", True)
+                    or now - self._secondary_since["middle"] >= float(c["long_press_time"])
+                ))
             )
         )
 
         held_ring = "ring" in self._secondary_since
-        moved_far_ring = False
-        if held_ring and c.get("drag_on_move", True) and cursor_point is not None:
-            track_ring = ((thumb[0] + ring[0]) * 0.5, (thumb[1] + ring[1]) * 0.5)
-            if self._ring_anchor is None or self._ring_anchor[0] != self._secondary_since["ring"]:
-                self._ring_anchor = (self._secondary_since["ring"], cursor_point, track_ring)
-            ref_palm, ref_pinch = self._ring_anchor[1], self._ring_anchor[2]
-            aspect = float(c.get("frame_aspect", 0.75))
-            moved_palm = math.hypot(cursor_point[0] - ref_palm[0], (cursor_point[1] - ref_palm[1]) * aspect)
-            moved_pinch = math.hypot(track_ring[0] - ref_pinch[0], (track_ring[1] - ref_pinch[1]) * aspect)
-            moved = max(moved_palm, moved_pinch)
-            moved_far_ring = (moved >= float(c.get("drag_move_distance", 0.006))
-                             and now - self._secondary_since["ring"] >= min(float(c.get("drag_move_min_time", 0.0)), float(c.get("click_confirm_time", 0.06))))
-        else:
-            self._ring_anchor = None
-
         is_ring_dragging = (
             held_ring
             and c.get("long_press_drag", True)
             and (
                 self._long_fired.get("ring", False)
-                or (moved_far_ring and (self._click_fresh.get("ring", True) or now - self._secondary_since["ring"] >= float(c.get("click_confirm_time", 0.06))))
-                or now - self._secondary_since["ring"] >= float(c["long_press_time"])
+                or (ring_ok and (
+                    c.get("drag_on_move", True)
+                    or now - self._secondary_since["ring"] >= float(c["long_press_time"])
+                ))
             )
         )
 
@@ -571,7 +556,7 @@ class PinchCore:
                     return PinchFrame(active_gesture="thumb_pinky_pinch", action="task_switcher",
                                       cursor_point=cursor_point, pinch_distance=d_index, distances=distances)
 
-        # A middle / ring / pinky pinch is held: cursor frozen; long press on thumb+middle / thumb+ring -> drag
+        # After the one-shot click, confirmed middle/ring contact follows the hand as a drag.
         if self._secondary_since and (not self._index_pinched or not index_active or secondary_active):
             held = next(f for f in ("middle", "ring", "pinky") if f in self._secondary_since)
             if held == "middle" and is_middle_dragging and on("thumb_middle_pinch"):

@@ -60,8 +60,9 @@ LABELS = {
     "ring_tuck_ratio": "약지 접힘 비율", "pinky_tuck_ratio": "새끼 접힘 비율",
     "pinky_ring_dominance": "약지·새끼 구별 비율", "pinky_ring_min_gap": "약지·새끼 최소 거리 차이",
     "side_pinch_exclusive": "옆 손가락 핀치 중복 방지", "drag_clear_ratio": "드래그 해제 비율",
-    "drag_clear_grace": "드래그 끊김 보정 (초)", "long_press_drag": "길게 누르기 드래그 사용",
-    "long_press_time": "길게 누르기 시간 (초)", "index_tuck_ratio": "검지 접힘 비율",
+    "drag_clear_grace": "드래그 끊김 보정 (초)", "long_press_drag": "핀치 드래그 사용",
+    "drag_on_move": "접촉 확인 후 즉시 드래그",
+    "long_press_time": "즉시 드래그를 끈 경우 유지 시간 (초)", "index_tuck_ratio": "검지 접힘 비율",
     "shape_dpi_enabled": "손 모양에 따른 속도 사용", "shape_dpi_min": "편 손 기본 속도 배율",
     "shape_curl_open": "손 펴짐 기준", "shape_curl_fist": "손 쥠 기준",
     "shape_dpi_curve": "손 모양 속도 변화 곡선", "shape_curl_smooth": "손 모양 변화 부드러움",
@@ -102,9 +103,10 @@ LABELS = {
     "thumb_tuck": "V 엄지 접힘 기준",
 }
 
-# These settings belong to separate editors, or are derived by the runtime.
+# Separate editors, runtime-derived settings, and retired drag gates kept only for file compatibility.
 EXCLUDED = frozenset({"pointer.axes", "pointer.anchor", "pointer.click_style", "pointer.tracking_only",
-                      "cursor.frame_aspect", "cursor.reanchor_gap"})
+                      "cursor.frame_aspect", "cursor.reanchor_gap",
+                      "pinch.drag_move_distance", "pinch.drag_move_min_time"})
 
 
 def _eligible(key: str) -> bool:

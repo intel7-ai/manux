@@ -196,6 +196,11 @@ class SpatialPoseGuard(IntentFilter):
         self._is_horiz: bool = False
         self._last_desktop_fired: float = -1e9
 
+    def _configured_drag_scale(self) -> float:
+        """MLP-created drags use drag speed, never the recovered move's hand-shape speed."""
+        value = None if self.settings is None else self.settings.get("pinch.long_press_drag_multiplier")
+        return 1.0 if value is None else max(0.1, float(value))
+
     @staticmethod
     def _circle_score(hand: Optional[HandObservation], cls: str) -> float:
         """Proximity score (0..1) of the thumb-to-finger pinch circle (1.0 when pinched, >0 when circle is near)."""
@@ -482,7 +487,7 @@ class SpatialPoseGuard(IntentFilter):
                     drag_intent = Intent(
                         intent.t, "pinch", "pinch.drag", "hold",
                         point=intent.point or self._drag_last_point,
-                        scale=intent.scale or self._drag_last_scale,
+                        scale=self._drag_last_scale,
                     )
                     if intent.point is not None:
                         self._drag_last_point = intent.point
@@ -575,7 +580,7 @@ class SpatialPoseGuard(IntentFilter):
                     right_drag_intent = Intent(
                         intent.t, "pinch", "pinch.right_drag", "hold",
                         point=intent.point or self._right_drag_last_point,
-                        scale=intent.scale or self._right_drag_last_scale,
+                        scale=self._right_drag_last_scale,
                     )
                     if intent.point is not None:
                         self._right_drag_last_point = intent.point
@@ -599,13 +604,12 @@ class SpatialPoseGuard(IntentFilter):
                     self._dragging = True
                     if intent.point is not None:
                         self._drag_last_point = intent.point
-                    if intent.scale is not None:
-                        self._drag_last_scale = intent.scale
+                    self._drag_last_scale = self._configured_drag_scale()
                     self._events.append("spatial_guard:move_converted_to_drag")
                     out.append(Intent(
                         intent.t, "pinch", "pinch.drag", phase,
                         point=intent.point or self._drag_last_point,
-                        scale=intent.scale or self._drag_last_scale,
+                        scale=self._drag_last_scale,
                     ))
                     continue
                 if right_pose_active and self._last_boosted_class == "thumb_ring":
@@ -613,13 +617,12 @@ class SpatialPoseGuard(IntentFilter):
                     self._right_dragging = True
                     if intent.point is not None:
                         self._right_drag_last_point = intent.point
-                    if intent.scale is not None:
-                        self._right_drag_last_scale = intent.scale
+                    self._right_drag_last_scale = self._configured_drag_scale()
                     self._events.append("spatial_guard:move_converted_to_right_drag")
                     out.append(Intent(
                         intent.t, "pinch", "pinch.right_drag", phase,
                         point=intent.point or self._right_drag_last_point,
-                        scale=intent.scale or self._right_drag_last_scale,
+                        scale=self._right_drag_last_scale,
                     ))
                     continue
                 if both_pose_active and self._last_boosted_class == "thumb_middle_ring":

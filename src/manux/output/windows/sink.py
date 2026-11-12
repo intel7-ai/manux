@@ -39,6 +39,7 @@ BLOCKED = OutputResult(False, "blocked")
 
 # Actions that stop a coasting page (v0.3: clicks, drag and the task switcher did)
 _STOPS_INERTIA = frozenset({"mouse.left_click", "mouse.right_click", "mouse.drag", "window.task_switcher"})
+_PINCH_MOVES = frozenset({"pinch.move", "pinch.move_fist"})  # both use the same palm anchor
 
 
 def _error(detail: object) -> OutputResult:
@@ -255,17 +256,18 @@ class WindowsOutputSink:
             self._pump_stop.wait(0.008)
 
     def _place(self, x: int, y: int) -> None:
-        if (x, y) != self._last_sent:
-            if self._interp is not None:
-                self._interp.set_target(x, y, time.perf_counter())
-            else:
-                self.backend.set_cursor_pos(x, y)
-            self._last_sent = (x, y)
+        if self._interp is not None:
+            # Cadence follows input frames, including targets unchanged by pixel rounding.
+            self._interp.set_target(x, y, time.perf_counter())
+        elif (x, y) != self._last_sent:
+            self.backend.set_cursor_pos(x, y)
+        self._last_sent = (x, y)
 
     def _move(self, cmd: ActionCommand, gain: float = 1.0) -> None:
         """Move the cursor for a command that carries a hand point."""
         assert cmd.point is not None
-        fresh = (cmd.gesture != self._move_gesture
+        same_palm = cmd.gesture in _PINCH_MOVES and self._move_gesture in _PINCH_MOVES
+        fresh = ((cmd.gesture != self._move_gesture and not same_palm)
                  or cmd.t - self._move_t > self.config.reanchor_gap)
         self._move_gesture = cmd.gesture
         self._move_t = cmd.t
@@ -319,6 +321,11 @@ class WindowsOutputSink:
 
     def _double_click_hold(self, cmd: ActionCommand) -> bool:
         """True while the cursor should stay still after a left click (Windows wants both clicks within ~4 px)."""
+        if cmd.gesture in _PINCH_MOVES:
+            # Contact recognition already stabilizes pinch clicks. Let Windows handle
+            # their double-click timing without freezing normal hand movement afterwards.
+            self._dbl_until = float("-inf")
+            return False
         if cmd.t >= self._dbl_until or cmd.point is None:
             return False
         point = cmd.point
@@ -387,8 +394,8 @@ class WindowsOutputSink:
         if cmd.point is None and cmd.gesture in ("pinch.thumb_middle", "pointer.left_click"):
             if getattr(self, "_holding_left", False) or (self.dragging and getattr(self, "_drag_button", "left") == "left"):
                 return OK
-            # Contact debounce: ignore rapid re-contact within 200ms of release
-            if cmd.t - getattr(self, "_last_left_release_t", float("-inf")) < 0.20:
+            # Pinch contact/release was confirmed upstream; another cooldown swallows double-clicks.
+            if cmd.gesture == "pointer.left_click" and cmd.t - self._last_left_release_t < 0.20:
                 return OK
             if self._interp is not None:
                 self._interp.snap(*self.cursor.pos)
@@ -410,8 +417,7 @@ class WindowsOutputSink:
         if cmd.point is None and cmd.gesture in ("pinch.thumb_ring", "pointer.right_click"):
             if getattr(self, "_holding_right", False) or (self.dragging and getattr(self, "_drag_button", "left") == "right"):
                 return OK
-            # Contact debounce: ignore rapid re-contact within 220ms of release
-            if cmd.t - getattr(self, "_last_right_release_t", float("-inf")) < 0.22:
+            if cmd.gesture == "pointer.right_click" and cmd.t - self._last_right_release_t < 0.22:
                 return OK
             if self._interp is not None:
                 self._interp.snap(*self.cursor.pos)
@@ -453,7 +459,7 @@ class WindowsOutputSink:
                 )
 
                 # Prevent Windows double-click collision when dragging immediately follows click:
-                if not was_holding_btn and time_since_click < 0.52 and near_click:
+                if cmd.gesture != "pinch.drag" and not was_holding_btn and time_since_click < 0.52 and near_click:
                     self.dragging = True
                     self._drag_deferred_down = True
                     self._drag_start_pos = cur_pos

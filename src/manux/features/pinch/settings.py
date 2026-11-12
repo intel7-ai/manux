@@ -87,11 +87,12 @@ THRESHOLDS: Dict[str, Any] = {
     "side_pinch_exclusive": True,
     "drag_clear_ratio": 1.6,
     "drag_clear_grace": .12,
-    # long press on the left-click pinch -> drag
+    # Confirmed middle/ring contact -> drag; legacy delay applies only with drag_on_move=False.
     "long_press_drag": True,
     "long_press_time": 0.55,
     "long_press_drag_multiplier": 1.0,
     "drag_on_move": True,
+    # Legacy file keys retained for migration; no extra travel/time gate in immediate drag mode.
     "drag_move_distance": 0.006,
     "drag_move_min_time": 0.12,
     # cursor

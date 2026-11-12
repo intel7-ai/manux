@@ -27,10 +27,12 @@ def test_glides_from_current_position_to_target_over_one_frame():
     it.set_target(100, 100, now=0.0)
     it.set_target(130, 100, now=FRAME)
     assert it.position_at(FRAME) == pytest.approx((100, 100))
-    # Glide reaches target early (glide_fraction = 0.5) to minimize lag while keeping 144Hz smoothness
-    assert it.position_at(FRAME + FRAME * 0.25) == pytest.approx((115, 100), abs=0.5)
+    # Use the entire camera interval: reaching it halfway used to leave a visible idle half-frame.
+    assert it.position_at(FRAME + FRAME * 0.25) == pytest.approx((107.5, 100), abs=0.5)
+    assert it.position_at(FRAME + FRAME * 0.75) == pytest.approx((122.5, 100), abs=0.5)
     assert it.position_at(FRAME * 2) == pytest.approx((130, 100))
-    assert it.done_at(FRAME * 1.5)
+    assert not it.done_at(FRAME * 1.5)
+    assert it.done_at(FRAME * 2)
     it.close()
 
 

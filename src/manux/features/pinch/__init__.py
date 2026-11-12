@@ -1,7 +1,7 @@
 """Feature `pinch`: palm cursor, thumb pinch clicks, grab scroll, drag and the two window gestures (S4, from v0.3).
 
-Ported from v0.3 `hand-mouse/src/gesture_engine.py` `GestureEngine.process` (engine.py; parity with v0.3 on the
-same landmark sequences: tests/unit/features/test_pinch_parity.py). Everything here shares one state
+Originally ported from v0.3 `hand-mouse/src/gesture_engine.py` `GestureEngine.process`, with v0.5 refinements
+in engine.py. Everything here shares one state
 machine (the thumb+index hysteresis, the "one side pinch at a time" rule, click lockouts after a grab, the
 show-desktop / task-switcher mutual lockout), so per D-003 it is one feature, window gestures included.
 
@@ -16,8 +16,8 @@ Gestures (v0.3 frame action -> intent):
 | `pinch.thumb_pinky`      | tap                | `task_switcher`                                         | None         | `window.task_switcher` |
 | `pinch.thumb_tucked_open`| tap                | `show_desktop` (thumb tucked, four fingers open, held)  | None         | `window.show_desktop` |
 | `pinch.scroll`           | begin / hold / end | `scroll_grab` frames (thumb + index)                    | palm anchor  | `mouse.scroll` |
-| `pinch.drag`             | begin / hold / end | `drag_hold` (thumb+index+middle, or a long thumb+middle) | palm anchor | `mouse.drag` |
-| `pinch.right_drag`       | begin / hold / end | `right_drag_hold` (long thumb+ring or move while held)  | palm anchor  | `mouse.drag` |
+| `pinch.drag`             | begin / hold / end | `drag_hold` (thumb+index+middle, or confirmed thumb+middle) | palm anchor | `mouse.drag` |
+| `pinch.right_drag`       | begin / hold / end | `right_drag_hold` (confirmed thumb+ring contact)       | palm anchor  | `mouse.drag` |
 
 Phase rules:
 - A span (`pinch.scroll`, `pinch.drag`) ends on the first frame with a hand whose action is something else.
@@ -32,7 +32,7 @@ Phase rules:
 
 Speed: every move and drag intent carries `Intent.scale`, the v0.3 per-frame multiplier: the hand-shape speed
 for `pinch.move` (1 = open hand, up to `fist_dpi_multiplier` for a curled hand), `fist_dpi_multiplier` for
-`pinch.move_fist`, and `long_press_drag_multiplier` (15) for a long-press `pinch.drag`. The router multiplies
+`pinch.move_fist`, and `long_press_drag_multiplier` (default 1) for a middle/ring `pinch.drag`. The router multiplies
 it into the binding's `gain` (contracts sections 5 and 7), so changing those settings changes the speed.
 
 Not ported: Record & Fling (thumb+index `grab`, off by default in v0.3). The Alt-held task switcher of v0.3
@@ -125,7 +125,7 @@ class IntentMapper:
             self.scale = None
         if span is not None:
             info: Dict[str, Any] = {"gesture": frame.active_gesture}
-            # long-press drag moves at long_press_drag_multiplier (v0.3); scroll speed is the scroll's own gain
+            # Drag uses long_press_drag_multiplier; scroll speed is the scroll's own gain.
             scale = _scale(frame.dpi_multiplier) if span in (DRAG, RIGHT_DRAG) else None
             if self.open is None:
                 self.point = frame.cursor_point
