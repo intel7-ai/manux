@@ -11,7 +11,7 @@ Provides two capabilities in one package:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -204,6 +204,8 @@ class SpatialPoseGuard(IntentFilter):
         self._last_desktop_fired: float = -1e9
         self._cursor_point: Optional[Tuple[float, float]] = None
         self._cursor_t = float("-inf")
+        self._rejected_drags: Set[str] = set()
+        self._held_contact: Optional[str] = None
 
     def _setting(self, key: str, default: Any) -> Any:
         """Support both Settings.get(key) and mapping-like callers without masking False."""
@@ -296,6 +298,7 @@ class SpatialPoseGuard(IntentFilter):
         # a lost hand or let pinch recovery create cursor movement in motion mode.
         self._cursor_point = None
         self._cursor_t = ctx.frame.t
+        self._held_contact = None
         if not self.enabled:
             self._idle_run = 0
             self._clear_desktop_observation()
@@ -313,6 +316,10 @@ class SpatialPoseGuard(IntentFilter):
                 palm_anchor_point(hand.landmarks, ratio), ctx.frame.aspect,
                 self._setting("pinch.palm_axes", None),
             )
+            held = ("thumb_middle" if self._dragging else "thumb_ring" if self._right_dragging
+                    else self._last_boosted_class if self._boost_done else None)
+            if held in ("thumb_middle", "thumb_ring") and self._circle_score(hand, held) >= .60:
+                self._held_contact = held
         ev = self.feature.evidence
         if ev is None or ev.t != ctx.frame.t:
             self.feature.step(hand, ctx)
@@ -339,6 +346,11 @@ class SpatialPoseGuard(IntentFilter):
             if ev.confidence >= self.tau_boost or (c_score >= 0.35 and ev.confidence >= 0.65 and hybrid_conf >= 0.68):
                 cls = ev.action
                 fast = c_score >= 0.60 or ev.confidence >= 0.85
+        if (cls is None and self._held_contact is not None and ev is not None
+                and (ev.action == "none" or ev.confidence < .55)):
+            # A pressed mouse button stays down while its physical contact remains.
+            # This only sustains an accepted press; it cannot create a new one.
+            cls = self._held_contact
         if cls is None or cls != self._boost_class:
             self._boost_class = cls
             self._boost_run = 0
@@ -356,6 +368,95 @@ class SpatialPoseGuard(IntentFilter):
             self._boost_fast = self._boost_fast or fast
 
     def filter(self, intents: Sequence[Intent], ctx: FrameContext) -> Sequence[Intent]:
+        """Reconcile rule episodes with the button lifecycle actually passed to output."""
+        was_open = {g for g, active in (("pinch.drag", self._dragging),
+                                       ("pinch.right_drag", self._right_dragging)) if active}
+        old_vetoes = self.vetoed_count
+        old_boost = self._boost_t, self._boost_done, self._last_boosted_class
+        out = list(self._filter_intents(intents, ctx))
+        ev = self.feature.evidence
+        if (not self.enabled or self.feature.model is None or ctx.active_mode != "pinch"
+                or ev is None or ev.t != ctx.frame.t):
+            return tuple(out)
+
+        point = self._cursor_point if self._cursor_t == ctx.frame.t else None
+        vetoed = self.vetoed_count > old_vetoes
+        clicks = {"pinch.thumb_middle": "pinch.drag", "pinch.thumb_ring": "pinch.right_drag"}
+        poses = {"pinch.drag": "thumb_middle", "pinch.right_drag": "thumb_ring"}
+        accepted_clicks = {i.gesture for i in out if i.phase == "tap" and i.gesture in clicks}
+        if vetoed:
+            for i in intents:
+                if i.gesture in clicks and i.gesture not in accepted_clicks:
+                    self._rejected_drags.add(clicks[i.gesture])
+            if not accepted_clicks:
+                # A rejected rule click neither presses a button nor starts a click cooldown.
+                self._boost_t, self._boost_done, self._last_boosted_class = old_boost
+
+        opened = set(was_open)
+        result: List[Intent] = []
+        rejected_drag = False
+        need_k = min(self.k_boost, 2) if self._boost_fast else self.k_boost
+        for i in out:
+            if i.gesture in poses:
+                if i.phase == "end":
+                    if i.gesture in opened:
+                        result.append(i)
+                        opened.discard(i.gesture)
+                    continue
+                if i.gesture in self._rejected_drags and i.gesture not in opened:
+                    # Reconsider a veto only on newly confirmed matching MLP evidence.
+                    # A low-confidence or single wrong frame cannot resurrect a rejected press.
+                    if (self._boost_class != poses[i.gesture] or self._boost_run < need_k):
+                        rejected_drag = True
+                        continue
+                phase = "hold" if i.gesture in opened else "begin"
+                result.append(replace(i, phase=phase))
+                opened.add(i.gesture)
+                self._rejected_drags.discard(i.gesture)
+            elif i.phase == "tap" and i.gesture in clicks:
+                result.append(replace(i, point=i.point or point))
+                self._rejected_drags.discard(clicks[i.gesture])
+            else:
+                result.append(i)
+
+        # A duplicate rule tap can consume the entire frame after the MLP already
+        # pressed. Continue that same button immediately; don't wait for another rule.
+        active = any(i.phase != "end" for i in result)
+        if (not active and point is not None and self._boost_done and not self._scrolling
+                and self._can_start_drag(ctx.frame.t)):
+            for gesture, pose in poses.items():
+                if ev.action == pose and ev.confidence >= .55 and self._last_boosted_class == pose:
+                    phase = "hold" if gesture in opened else "begin"
+                    scale = self._configured_drag_scale()
+                    result.append(Intent(ctx.frame.t, "pinch", gesture, phase, point=point, scale=scale))
+                    opened.add(gesture)
+                    if gesture == "pinch.drag":
+                        self._drag_last_point, self._drag_last_scale = point, scale
+                    else:
+                        self._right_drag_last_point, self._right_drag_last_scale = point, scale
+                    break
+
+        incoming_drags = {i.gesture for i in intents if i.gesture in poses and i.phase != "end"}
+        for gesture in incoming_drags - opened:
+            self._rejected_drags.add(gesture)
+            rejected_drag = True
+        for i in intents:
+            if i.gesture in poses and i.phase == "end" and i.gesture not in opened:
+                self._rejected_drags.discard(i.gesture)
+        self._dragging, self._right_dragging = "pinch.drag" in opened, "pinch.right_drag" in opened
+
+        # Veto the action, not the palm coordinate. Ending/rejecting a rule drag must
+        # not leave subsequent frames sending unusable end/hold commands forever.
+        released = bool(was_open - opened) and ev.action == "none"
+        if (point is not None and not self._scrolling and not opened
+                and (vetoed or rejected_drag or released)
+                and not any(i.phase != "end" for i in result)):
+            scale = next((i.info["cursor_scale"] for i in intents if "cursor_scale" in i.info), 1.)
+            result.append(Intent(ctx.frame.t, "pinch", "pinch.move", "hold", point=point, scale=scale))
+            self._events.append("spatial_guard:cursor_preserved_after_veto_or_release")
+        return tuple(result)
+
+    def _filter_intents(self, intents: Sequence[Intent], ctx: FrameContext) -> Sequence[Intent]:
         if not self.enabled or self.feature.model is None:
             return intents
 
@@ -366,6 +467,9 @@ class SpatialPoseGuard(IntentFilter):
 
         left_pose_active = (ev.action == "thumb_middle" and ev.confidence >= 0.55)
         right_pose_active = (ev.action == "thumb_ring" and ev.confidence >= 0.55)
+        if ev.action == "none" or ev.confidence < .55:
+            left_pose_active = left_pose_active or self._held_contact == "thumb_middle"
+            right_pose_active = right_pose_active or self._held_contact == "thumb_ring"
         both_pose_active = (ev.action == "thumb_middle_ring" and ev.confidence >= 0.55)
         pose_active = left_pose_active
         scroll_active = (ev.action == "thumb_index" and ev.confidence >= 0.55)
@@ -839,3 +943,5 @@ class SpatialPoseGuard(IntentFilter):
         self._last_desktop_fired = -1e9
         self._cursor_point = None
         self._cursor_t = float("-inf")
+        self._rejected_drags.clear()
+        self._held_contact = None

@@ -14,6 +14,45 @@ from manux.platform.monitors import ScreenLayout
 import pinch_hands as H
 
 
+@pytest.mark.parametrize("shape,pose,button", [
+    (H.middle_pinch, "thumb_middle", "left"), (H.ring_pinch, "thumb_ring", "right"),
+])
+@pytest.mark.parametrize("use_mlp", [False, True])
+def test_click_press_and_next_drag_frame_both_preserve_hand_movement(shape, pose, button, use_mlp):
+    feature = PinchFeature()
+    evidence = SimpleNamespace(model=object(), evidence=None)
+    guard = SpatialPoseGuard(evidence)
+    bindings, problems = resolve_bindings(DEFAULT_BINDINGS, gesture_phases=GESTURE_PHASES)
+    assert not problems
+    router = Router(bindings)
+    sink = WindowsOutputSink(FakeBackend((500, 400)), ScreenLayout.single(1920, 1080),
+                            WindowsOutputConfig(smoothing=1.), threaded=False)
+    pressed = False
+    try:
+        for n in range(10):
+            t = 1. + n / 30
+            hand = H.obs(t, (H.open_hand if n < 3 else shape)(shift=(n * .003, 0.)))
+            ctx = H.ctx(t)
+            out = feature.step(hand, ctx)
+            if use_mlp:
+                prediction = "none" if n < 3 else pose
+                evidence.evidence = SpatialPoseEvidence(prediction, .99, {}, t)
+                guard.observe(hand, ctx)
+                out = guard.filter(out, ctx)
+            before = sink.backend.pos[0]
+            for intent in out:
+                command = router.route(intent).command
+                assert command is not None and sink.apply(command).accepted
+            if any(i.phase == "tap" for i in out):
+                pressed = True
+            if pressed:
+                assert sink.backend.buttons_down == {button}
+                assert sink.backend.pos[0] > before, (n, out)
+        assert [e for e in sink.backend.events if e[0] == "button"] == [("button", button, True)]
+    finally:
+        sink.close()
+
+
 @pytest.mark.parametrize("shape,pose,drag,button", [
     (H.middle_pinch, "thumb_middle", "pinch.drag", "left"),
     (H.ring_pinch, "thumb_ring", "pinch.right_drag", "right"),

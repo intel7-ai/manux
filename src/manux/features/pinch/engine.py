@@ -86,6 +86,7 @@ class PinchCore:
         self._last_now = 0.0
         self.last_pinky: Optional[Dict[str, Any]] = None
         self._curl_s: Optional[float] = None
+        self.cursor_scale = 1.0
         self.last_hold: Optional[Tuple[float, float, float]] = None
         self._long_fired: Dict[str, bool] = {}
         self._index_released_at = -1e9
@@ -140,6 +141,7 @@ class PinchCore:
         self._desktop_since = None
         self._desktop_armed = True
         self._curl_s = None
+        self.cursor_scale = 1.0
 
     # ------------------------------------------------------------------ helpers
     def _can_trigger(self, gesture_id: str, now: float, finger: Optional[str], cooldown: float = 0.35) -> bool:
@@ -245,7 +247,9 @@ class PinchCore:
         k = max(0.05, min(1.0, float(c["shape_curl_smooth"])))
         self._curl_s = mean_curl if self._curl_s is None else self._curl_s + k * (mean_curl - self._curl_s)
         shape_mult = self.shape_dpi(self._curl_s, c)
+        self.cursor_scale = shape_mult
         if self._fist and on("fist"):
+            self.cursor_scale = self._fist_mult(c)
             if self._index_pinched:
                 self._index_released_at = now
             self._index_pinched = False
@@ -577,6 +581,12 @@ class PinchCore:
                                   cursor_point=cursor_point, pinch_distance=d_index, distances=distances,
                                   is_moving=True,
                                   dpi_multiplier=max(0.1, float(c["long_press_drag_multiplier"])))
+            if held in ("middle", "ring") and self._click_fresh.get(held, True) and on("no_pinch"):
+                # Confirming a prospective button press must not freeze the mouse.
+                # The click/drag still waits for contact confirmation, but motion does not.
+                return PinchFrame(active_gesture="no_pinch", action="move_cursor", cursor_point=cursor_point,
+                                  pinch_distance=d_index, distances=distances, is_moving=True,
+                                  dpi_multiplier=shape_mult, hand_shape="half" if curled else "open")
             return PinchFrame(active_gesture=f"thumb_{held}_pinch", pinch_distance=d_index, distances=distances)
 
         # Grab scroll off: a thumb+index touch is ignored, the cursor keeps moving

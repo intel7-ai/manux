@@ -11,8 +11,8 @@ Gestures (v0.3 frame action -> intent):
 | ------------------------ | ------------------ | ------------------------------------------------------- | ------------ | --------------- |
 | `pinch.move`             | hold               | `move_cursor` (no pinch, any hand shape but a fist)     | palm anchor  | `mouse.move` |
 | `pinch.move_fist`        | hold               | `move_cursor` from a fist (v0.3 x`fist_dpi_multiplier`) | palm anchor  | `mouse.move` |
-| `pinch.thumb_middle`     | tap                | `left_click`                                            | None         | `mouse.left_click` |
-| `pinch.thumb_ring`       | tap                | `right_click`                                           | None         | `mouse.right_click` |
+| `pinch.thumb_middle`     | tap                | `left_click`                                            | palm anchor  | `mouse.left_click` |
+| `pinch.thumb_ring`       | tap                | `right_click`                                           | palm anchor  | `mouse.right_click` |
 | `pinch.thumb_pinky`      | tap                | `task_switcher`                                         | None         | `window.task_switcher` |
 | `pinch.thumb_tucked_open`| tap                | `show_desktop` (thumb tucked, four fingers open, held)  | None         | `window.show_desktop` |
 | `pinch.scroll`           | begin / hold / end | `scroll_grab` frames (thumb + index)                    | palm anchor  | `mouse.scroll` |
@@ -143,7 +143,8 @@ class IntentMapper:
             out.append(Intent(t, ID, MOVE_FIST if fist else MOVE, "hold", point=frame.cursor_point,
                               info={"hand_shape": frame.hand_shape}, scale=_scale(frame.dpi_multiplier)))
         elif action in _TAPS:
-            out.append(Intent(t, ID, _TAPS[action], "tap"))
+            point = frame.cursor_point if action in ("left_click", "right_click") else None
+            out.append(Intent(t, ID, _TAPS[action], "tap", point=point))
         return out
 
 
@@ -166,11 +167,14 @@ class PinchFeature:
             self.last_frame = None
             return []
         frame = self.core.step(t, hand.landmarks, settings)
-        if frame.action in ("move_cursor", "drag_hold", "right_drag_hold"):
+        if frame.action in ("move_cursor", "drag_hold", "right_drag_hold", "left_click", "right_click"):
             frame = replace(frame, cursor_point=corrected_point(frame.cursor_point, ctx.frame.aspect,
                                                               ctx.settings.get("palm_axes")))
         self.last_frame = frame
-        return self.mapper.map(t, frame)
+        # A filter rejecting a button/window action can retain this frame's normal
+        # movement gain. Drag gain and free-cursor hand-shape gain are independent.
+        return [replace(i, info={**i.info, "cursor_scale": self.core.cursor_scale})
+                for i in self.mapper.map(t, frame)]
 
     def activity(self) -> Activity:
         last = self.core.last_release

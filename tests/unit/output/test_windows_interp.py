@@ -86,7 +86,9 @@ def test_threaded_sink_interpolates_and_snaps_before_clicks():
         # Left click should snap immediately to cursor position
         cmd_click = ActionCommand(now + 0.03, "mouse.left_click", "tap", "pinch.thumb_middle", (0.5, 0.5))
         sink.apply(cmd_click)
-        assert backend.clicks() == ["left"]
+        assert backend.buttons_down == {"left"}  # Contact is a press, even with a coordinate.
         assert backend.cursor_pos() == sink.cursor.pos
+        sink.apply(ActionCommand(now + .06, "mouse.move", "hold", "pinch.move", (.5, .5)))
+        assert backend.clicks() == ["left"] and not backend.buttons_down
     finally:
         sink.close()

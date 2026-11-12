@@ -396,8 +396,8 @@ def test_guard_vetoes_heuristic_desktop_when_hand_is_vertical_or_idle(trained_ml
     guard.observe(hand_idle, ctx1)
     heuristic_desktop = [Intent(650.0, "pinch", "pinch.thumb_tucked_open", "tap")]
     out1 = guard.filter(heuristic_desktop, ctx1)
-    # Intercepted and VETOED!
-    assert len(out1) == 0
+    # The window action is vetoed; the same frame's palm movement survives.
+    assert [(i.gesture, i.phase) for i in out1] == [("pinch.move", "hold")]
     assert guard.vetoed_count == 1
     assert "spatial_guard:vetoed:pinch.thumb_tucked_open:tap" in guard.drain_events()
 
@@ -461,7 +461,7 @@ def test_guard_ends_drag_immediately_when_hand_opens_even_if_heuristic_holds(tra
     guard.observe(hand_open, ctx2)
     out2 = guard.filter([Intent(700.03, "pinch", "pinch.drag", "hold", point=(0.52, 0.5))], ctx2)
     # Guard intercepts and converts lingering drag hold into immediate drag end!
-    assert len(out2) == 1 and out2[0].gesture == "pinch.drag" and out2[0].phase == "end"
+    assert [(i.gesture, i.phase) for i in out2] == [("pinch.drag", "end"), ("pinch.move", "hold")]
     assert guard._dragging is False
     assert "spatial_guard:drag_ended_on_mlp_open" in guard.drain_events()
 

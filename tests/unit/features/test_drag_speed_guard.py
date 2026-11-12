@@ -15,6 +15,99 @@ from manux.platform.monitors import ScreenLayout
 import pinch_hands as H
 
 
+def test_rejected_transition_click_does_not_lock_fist_movement_or_press_a_button():
+    feature = PinchFeature()
+    evidence = SimpleNamespace(model=object(), evidence=None)
+    guard = SpatialPoseGuard(evidence)
+    router, sink = router_and_sink()
+    try:
+        for n in range(30):
+            t = 1. + n / 30
+            shape = H.open_hand if n < 4 else H.middle_pinch if n < 8 else H.fist
+            pts = shape(shift=(n * .003, 0.))
+            if n >= 8:
+                pts[4] = pts[12]  # A curled hand still looks like contact to the rules.
+            hand, ctx = H.obs(t, pts), H.ctx(t)
+            raw = feature.step(hand, ctx)
+            evidence.evidence = SpatialPoseEvidence("none", .99, {}, t)
+            guard.observe(hand, ctx)
+            out = guard.filter(raw, ctx)
+            before = sink.backend.pos[0]
+            for intent in out:
+                command = router.route(intent).command
+                assert command is not None and sink.apply(command).accepted
+            if n >= 7:
+                assert sink.backend.pos[0] > before, (n, raw, out)
+            assert not sink.backend.buttons_down
+        assert guard.vetoed_count == 1
+        assert sink.backend.clicks() == []
+        assert (out[-1].scale or 1.) > 1.9  # Normal fist speed survives the veto.
+    finally:
+        sink.close()
+
+
+@pytest.mark.parametrize("shape,pose,button", [
+    (H.middle_pinch, "thumb_middle", "left"), (H.ring_pinch, "thumb_ring", "right"),
+])
+def test_late_mlp_confirmation_starts_held_button_without_orphan_drag_holds(shape, pose, button):
+    feature = PinchFeature()
+    evidence = SimpleNamespace(model=object(), evidence=None)
+    guard = SpatialPoseGuard(evidence)
+    router, sink = router_and_sink()
+    try:
+        for n in range(18):
+            t = 1. + n / 30
+            hand, ctx = H.obs(t, shape(shift=(n * .003, 0.))), H.ctx(t)
+            raw = feature.step(hand, ctx)
+            prediction = "none" if n < 6 else pose
+            evidence.evidence = SpatialPoseEvidence(prediction, .99, {}, t)
+            guard.observe(hand, ctx)
+            out = guard.filter(raw, ctx)
+            before = sink.backend.pos[0]
+            for intent in out:
+                command = router.route(intent).command
+                assert command is not None and sink.apply(command).accepted, (n, intent)
+            if n >= 7:
+                assert sink.backend.buttons_down == {button}
+                assert sink.backend.pos[0] > before
+        assert [e for e in sink.backend.events if e[0] == "button"] == [("button", button, True)]
+    finally:
+        sink.close()
+
+
+@pytest.mark.parametrize("shape,pose,button", [
+    (H.middle_pinch, "thumb_middle", "left"), (H.ring_pinch, "thumb_ring", "right"),
+])
+def test_pressed_contact_survives_mlp_label_noise_then_releases_on_open(shape, pose, button):
+    feature = PinchFeature()
+    evidence = SimpleNamespace(model=object(), evidence=None)
+    guard = SpatialPoseGuard(evidence)
+    router, sink = router_and_sink()
+    try:
+        for n in range(20):
+            t = 1. + n / 30
+            prediction = "none" if 8 <= n < 11 or n >= 16 else pose
+            hand = H.obs(t, (shape if n < 16 else H.open_hand)(shift=(n * .003, 0.)))
+            ctx = H.ctx(t)
+            evidence.evidence = SpatialPoseEvidence(prediction, .99, {}, t)
+            raw = feature.step(hand, ctx)
+            guard.observe(hand, ctx)
+            before = sink.backend.pos[0]
+            for intent in guard.filter(raw, ctx):
+                command = router.route(intent).command
+                assert command is not None and sink.apply(command).accepted
+            if 4 <= n < 16:
+                assert sink.backend.buttons_down == {button}
+                assert sink.backend.pos[0] > before
+            if n >= 16:
+                assert not sink.backend.buttons_down
+        assert [e for e in sink.backend.events if e[0] == "button"] == [
+            ("button", button, True), ("button", button, False),
+        ]
+    finally:
+        sink.close()
+
+
 @pytest.mark.parametrize("tip,pose,drag,button,fps", [
     (12, "thumb_middle", "pinch.drag", "left", 30),
     (16, "thumb_ring", "pinch.right_drag", "right", 60),
@@ -33,9 +126,12 @@ def test_mlp_only_contact_tracks_live_palm_through_missing_rules_and_stale_end(t
         pts = H.open_hand(shift=(n * .003, n * .001))
         pts[tip] = (pts[tip][0], .67 + n * .001, 0.)
         pts[4] = (pts[tip][0] + .01, pts[tip][1], 0.)
+        if prediction == "none":
+            pts = H.open_hand(shift=(n * .003, n * .001))
         hand, ctx = (None if missing else H.obs(t, pts)), H.ctx(t)
         raw = feature.step(hand, ctx)
-        assert not raw
+        if prediction == pose:
+            assert not raw
         evidence.evidence = SpatialPoseEvidence(prediction, .99, {prediction: .99}, t)
         guard.observe(hand, ctx)
         if stale_end:
@@ -68,7 +164,7 @@ def test_mlp_only_contact_tracks_live_palm_through_missing_rules_and_stale_end(t
         step(12, missing=True)
         assert sink.backend.pos == before  # Never extrapolate a lost hand.
         out = step(13, prediction="none")
-        assert [(i.gesture, i.phase) for i in out] == [(drag, "end")]
+        assert [(i.gesture, i.phase) for i in out] == [(drag, "end"), ("pinch.move", "hold")]
         assert not sink.backend.buttons_down
     finally:
         sink.close()
@@ -212,7 +308,7 @@ def test_mlp_recovered_drag_uses_drag_speed_instead_of_movement_speed(
     def step(n, prediction, intents):
         t = 1. + n / 30
         evidence.evidence = SpatialPoseEvidence(prediction, .99, {prediction: .99}, t)
-        guard.observe(H.obs(t, shape()), H.ctx(t))
+        guard.observe(H.obs(t, H.open_hand() if prediction == "none" else shape()), H.ctx(t))
         out = guard.filter(intents, H.ctx(t))
         for intent in out:
             command = router.route(intent).command

@@ -40,6 +40,7 @@ BLOCKED = OutputResult(False, "blocked")
 # Actions that stop a coasting page (v0.3: clicks, drag and the task switcher did)
 _STOPS_INERTIA = frozenset({"mouse.left_click", "mouse.right_click", "mouse.drag", "window.task_switcher"})
 _PINCH_MOVES = frozenset({"pinch.move", "pinch.move_fist"})  # both use the same palm anchor
+_PALM_CURSOR = _PINCH_MOVES | frozenset({"pinch.thumb_middle", "pinch.thumb_ring", "pinch.drag", "pinch.right_drag"})
 
 
 def _error(detail: object) -> OutputResult:
@@ -266,7 +267,7 @@ class WindowsOutputSink:
     def _move(self, cmd: ActionCommand, gain: float = 1.0) -> None:
         """Move the cursor for a command that carries a hand point."""
         assert cmd.point is not None
-        same_palm = cmd.gesture in _PINCH_MOVES and self._move_gesture in _PINCH_MOVES
+        same_palm = cmd.gesture in _PALM_CURSOR and self._move_gesture in _PALM_CURSOR
         fresh = ((cmd.gesture != self._move_gesture and not same_palm)
                  or cmd.t - self._move_t > self.config.reanchor_gap)
         self._move_gesture = cmd.gesture
@@ -391,7 +392,9 @@ class WindowsOutputSink:
         return OK
 
     def _do_mouse_left_click(self, cmd: ActionCommand) -> OutputResult:
-        if cmd.point is None and cmd.gesture in ("pinch.thumb_middle", "pointer.left_click"):
+        if cmd.gesture == "pinch.thumb_middle" or (cmd.point is None and cmd.gesture == "pointer.left_click"):
+            if cmd.point is not None:
+                self._move(cmd)
             if getattr(self, "_holding_left", False) or (self.dragging and getattr(self, "_drag_button", "left") == "left"):
                 return OK
             # Pinch contact/release was confirmed upstream; another cooldown swallows double-clicks.
@@ -414,7 +417,9 @@ class WindowsOutputSink:
         return result
 
     def _do_mouse_right_click(self, cmd: ActionCommand) -> OutputResult:
-        if cmd.point is None and cmd.gesture in ("pinch.thumb_ring", "pointer.right_click"):
+        if cmd.gesture == "pinch.thumb_ring" or (cmd.point is None and cmd.gesture == "pointer.right_click"):
+            if cmd.point is not None:
+                self._move(cmd)
             if getattr(self, "_holding_right", False) or (self.dragging and getattr(self, "_drag_button", "left") == "right"):
                 return OK
             if cmd.gesture == "pointer.right_click" and cmd.t - self._last_right_release_t < 0.22:
