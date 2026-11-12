@@ -338,8 +338,8 @@ def test_guard_fires_desktop_on_palm_side_pose(trained_mlp: SpatialMlpModel):
     )
     ctx1 = FrameContext(hand_palm.frame, "default", "none", "pinch")
 
-    # Frames 1..4: run = 1..4 (steady hold check, threshold is 5 frames)
-    for i in range(1, 5):
+    # A stationary classified pose must last 0.45s, independently of frame count.
+    for i in range(1, 15):
         hp = HandObservation(frame=FrameInfo(i, 600.0 + (i - 1) * 0.033, 640, 480, False),
                              landmarks=tuple(_dummy_hand(20, horizontal=True)), handedness="Right", score=0.95)
         c = FrameContext(hp.frame, "default", "none", "pinch")
@@ -347,12 +347,12 @@ def test_guard_fires_desktop_on_palm_side_pose(trained_mlp: SpatialMlpModel):
         out = guard.filter([Intent(hp.frame.t, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], c)
         assert len(out) == 1 and out[0].gesture == "pinch.move"
 
-    # Frame 5: run = 5 -> fires desktop!
-    hp5 = HandObservation(frame=FrameInfo(5, 600.133, 640, 480, False),
+    # The next observation is beyond the elapsed-time threshold.
+    hp5 = HandObservation(frame=FrameInfo(15, 600.462, 640, 480, False),
                           landmarks=tuple(_dummy_hand(20, horizontal=True)), handedness="Right", score=0.95)
     c5 = FrameContext(hp5.frame, "default", "none", "pinch")
     guard.observe(hp5, c5)
-    out5 = guard.filter([Intent(600.133, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], c5)
+    out5 = guard.filter([Intent(hp5.frame.t, "pinch", "pinch.move", "hold", point=(0.5, 0.5))], c5)
     assert len(out5) == 1 and out5[0].gesture == "pinch.thumb_tucked_open" and out5[0].phase == "tap"
     assert "spatial_guard:desktop_fired" in guard.drain_events()
 

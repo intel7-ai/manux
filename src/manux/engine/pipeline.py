@@ -241,7 +241,8 @@ class Engine:
             mode_for_ctx = self.arbiter.base_mode if self.arbiter.mode == "motion" and f.id != "motion" else self.arbiter.mode
             ctx = FrameContext(frame, self.state.stage, self.state.output, mode_for_ctx,
                                settings=self.settings_for(f.id),
-                               others={k: v for k, v in activities.items() if k != f.id})
+                               others={k: v for k, v in activities.items() if k != f.id},
+                               active_mode=self.arbiter.mode)
             try:
                 out = list(f.step(hand, ctx))
                 for intent in out:
@@ -280,7 +281,8 @@ class Engine:
 
         # filters (e.g. the TCN gate)
         filter_mode = self.arbiter.base_mode if self.arbiter.mode == "motion" else self.arbiter.mode
-        ctx = FrameContext(frame, self.state.stage, self.state.output, filter_mode)
+        ctx = FrameContext(frame, self.state.stage, self.state.output, filter_mode,
+                           active_mode=self.arbiter.mode)
         for flt in self.filters:
             if suppress:
                 continue

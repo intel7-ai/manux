@@ -47,6 +47,9 @@ GESTURE_TO_CLASS = {**GESTURE_TO_CLASS, "pointer.left_click": "thumb_middle", "p
 BOTH_CLICK_GESTURES = frozenset({"pinch.thumb_middle", "pinch.thumb_ring", "pointer.left_click", "pointer.right_click"})
 DEFAULT_VETO_GESTURES = BOTH_CLICK_GESTURES | frozenset({"pinch.thumb_tucked_open"})
 BOOST_CLASSES = frozenset({"thumb_middle", "thumb_ring", "thumb_middle_ring"})
+DESKTOP_HOLD_S = 0.45
+DESKTOP_MAX_SPEED = 0.025 * 30  # image widths / second, testing's threshold at 30fps
+DESKTOP_MAX_GAP_S = 0.2
 
 
 @dataclass(frozen=True)
@@ -192,14 +195,68 @@ class SpatialPoseGuard(IntentFilter):
         self._scroll_last_point: Optional[Tuple[float, float]] = None
         self._scroll_last_scale: Optional[float] = None
         self._scroll_run: int = 0
-        self._desktop_run: int = 0
-        self._is_horiz: bool = False
+        self._desktop_since: Optional[float] = None
+        self._desktop_fired = False
+        self._desktop_wrist: Optional[Tuple[float, float]] = None
+        self._desktop_sample_t: Optional[float] = None
+        self._desktop_geometry: Optional[Tuple[int, int, bool, int]] = None
         self._last_desktop_fired: float = -1e9
+
+    def _setting(self, key: str, default: Any) -> Any:
+        """Support both Settings.get(key) and mapping-like callers without masking False."""
+        if self.settings is None:
+            return default
+        try:
+            value = self.settings.get(key)
+        except (KeyError, TypeError, AttributeError):
+            return default
+        return default if value is None else value
 
     def _configured_drag_scale(self) -> float:
         """MLP-created drags use drag speed, never the recovered move's hand-shape speed."""
-        value = None if self.settings is None else self.settings.get("pinch.long_press_drag_multiplier")
-        return 1.0 if value is None else max(0.1, float(value))
+        return max(0.1, float(self._setting("pinch.long_press_drag_multiplier", 1.0)))
+
+    def _clear_desktop_observation(self) -> None:
+        # Losing a sample is not a deliberate pose release; retain the one-shot latch.
+        self._desktop_since = None
+        self._desktop_wrist = None
+        self._desktop_sample_t = None
+        self._desktop_geometry = None
+
+    def _observe_desktop(self, hand: Optional[HandObservation], ctx: FrameContext,
+                         ev: Optional[SpatialPoseEvidence]) -> None:
+        if hand is None or ev is None or ev.t != ctx.frame.t:
+            self._clear_desktop_observation()
+            return
+
+        now = ctx.frame.t
+        w, m = hand.landmarks[0], hand.landmarks[9]
+        wrist = (w[0], w[1] * ctx.frame.aspect)
+        geometry = (ctx.frame.width, ctx.frame.height, ctx.frame.mirrored, ctx.frame.rotation)
+        dt = None if self._desktop_sample_t is None else now - self._desktop_sample_t
+        continuous = (dt is not None and 0.0 < dt <= DESKTOP_MAX_GAP_S + 1e-9
+                      and geometry == self._desktop_geometry)
+        speed = 0.0
+        if continuous and self._desktop_wrist is not None:
+            speed = math.hypot(wrist[0] - self._desktop_wrist[0],
+                               wrist[1] - self._desktop_wrist[1]) / dt
+        else:
+            self._desktop_since = None
+        self._desktop_wrist, self._desktop_sample_t = wrist, now
+        self._desktop_geometry = geometry
+
+        # Confidence drops, movement and missing frames must not rearm a held pose.
+        if ev.action != "palm_side" and ev.confidence >= 0.75:
+            self._desktop_fired = False
+        horizontal = abs(m[0] - w[0]) >= 0.65 * abs(m[1] - w[1])
+        eligible = (ev.action == "palm_side" and ev.confidence >= 0.75 and horizontal
+                    and speed < DESKTOP_MAX_SPEED and ctx.active_mode != "motion"
+                    and bool(self._setting("pinch.enable_thumb_tucked_open", True))
+                    and (dt is None or dt > 0.0))
+        if not eligible:
+            self._desktop_since = None
+        elif self._desktop_since is None:
+            self._desktop_since = now
 
     @staticmethod
     def _circle_score(hand: Optional[HandObservation], cls: str) -> float:
@@ -229,6 +286,7 @@ class SpatialPoseGuard(IntentFilter):
     def observe(self, hand: Optional[HandObservation], ctx: FrameContext) -> None:
         if not self.enabled:
             self._idle_run = 0
+            self._clear_desktop_observation()
             return
         ev = self.feature.evidence
         if ev is None or ev.t != ctx.frame.t:
@@ -245,17 +303,7 @@ class SpatialPoseGuard(IntentFilter):
         else:
             self._scroll_run = 0
 
-        is_horiz = False
-        if hand is not None and hand.landmarks and len(hand.landmarks) >= 10:
-            w, m = hand.landmarks[0], hand.landmarks[9]
-            # Hand is horizontal when dx >= 0.65 * dy (palm held sideways / horizontal)
-            is_horiz = abs(m[0] - w[0]) >= 0.65 * abs(m[1] - w[1])
-        self._is_horiz = is_horiz
-
-        if ev is not None and ev.action == "palm_side" and ev.confidence >= 0.75 and is_horiz:
-            self._desktop_run += 1
-        else:
-            self._desktop_run = 0
+        self._observe_desktop(hand, ctx, ev)
 
         # boost: fuse physical pinch circle proximity with Spatial MLP confidence
         cls = None
@@ -288,7 +336,8 @@ class SpatialPoseGuard(IntentFilter):
 
         ev = self.feature.evidence
         if ev is None or ev.t != ctx.frame.t:
-            return intents
+            self._clear_desktop_observation()
+            return tuple(i for i in intents if i.gesture != "pinch.thumb_tucked_open")
 
         left_pose_active = (ev.action == "thumb_middle" and ev.confidence >= 0.55)
         right_pose_active = (ev.action == "thumb_ring" and ev.confidence >= 0.55)
@@ -297,14 +346,22 @@ class SpatialPoseGuard(IntentFilter):
         scroll_active = (ev.action == "thumb_index" and ev.confidence >= 0.55)
         out: List[Intent] = []
 
-        # Show desktop assist: when Spatial MLP steadily confirms horizontal palm_side (>= 5 frames ~ 160ms)
-        desktop_enabled = True if self.settings is None else bool(self.settings.get("pinch.enable_thumb_tucked_open"))
+        # Apply the same timed safety gate to both MLP and incoming rule desktop intents.
+        desktop_enabled = bool(self._setting("pinch.enable_thumb_tucked_open", True))
+        input_active = (self._dragging or self._right_dragging or self._scrolling
+                        or any(i.phase != "end" and i.gesture not in (
+                            "pinch.move", "pinch.move_fist", "pointer.move", "pinch.thumb_tucked_open",
+                        ) for i in intents))
+        if input_active or not desktop_enabled or ctx.active_mode == "motion":
+            self._desktop_since = None
         desktop_cooldown_ok = (ctx.frame.t - self._last_desktop_fired) >= 2.0
-        if desktop_enabled and self._desktop_run >= 5 and desktop_cooldown_ok and not self._dragging and not self._right_dragging and not self._scrolling:
+        if (self._desktop_since is not None and ctx.frame.t - self._desktop_since >= DESKTOP_HOLD_S
+                and desktop_cooldown_ok and not self._desktop_fired):
             self._last_desktop_fired = ctx.frame.t
-            self._desktop_run = 0
+            self._desktop_fired = True
             self._events.append("spatial_guard:desktop_fired")
-            return (Intent(ctx.frame.t, "pinch", "pinch.thumb_tucked_open", "tap"),)
+            return (*[i for i in intents if i.phase == "end"],
+                    Intent(ctx.frame.t, "pinch", "pinch.thumb_tucked_open", "tap"))
 
         if not intents and self._scrolling:
             if scroll_active:
@@ -655,12 +712,11 @@ class SpatialPoseGuard(IntentFilter):
 
             # Check if this click or pinch intent should be vetoed
             if intent.phase in ("tap", "begin") and intent.gesture in DEFAULT_VETO_GESTURES:
-                # Desktop special veto: strictly require horizontal palm_side pose
+                # Only the timed desktop gate above may fire, including for rule intents.
                 if intent.gesture == "pinch.thumb_tucked_open":
-                    if ev is None or ev.action != "palm_side" or not self._is_horiz:
-                        self.vetoed_count += 1
-                        self._events.append(f"spatial_guard:vetoed:{intent.gesture}:{intent.phase}")
-                        continue
+                    self.vetoed_count += 1
+                    self._events.append(f"spatial_guard:vetoed:{intent.gesture}:{intent.phase}")
+                    continue
 
                 # Never veto click if MLP confirms this click class!
                 if intent.gesture in BOTH_CLICK_GESTURES and ev is not None and ev.confidence >= 0.65:
@@ -723,7 +779,9 @@ class SpatialPoseGuard(IntentFilter):
         self._boost_class = None
         self._last_boosted_class = None
         self._boost_run = 0
+        self._boost_fast = False
         self._boost_done = False
+        self._boost_t = float("-inf")
         self._events.clear()
         self._dragging = False
         self._drag_last_point = None
@@ -735,5 +793,6 @@ class SpatialPoseGuard(IntentFilter):
         self._scroll_last_point = None
         self._scroll_last_scale = None
         self._scroll_run = 0
-        self._desktop_run = 0
+        self._clear_desktop_observation()
+        self._desktop_fired = False
         self._last_desktop_fired = -1e9

@@ -263,6 +263,8 @@ def test_motion_enter_switches_mode_and_keeps_base_feature_active():
     assert not snap.unrouted                          # mode intents are never routed
     eng.step(frame(1, 5.03), hand(frame(1, 5.03)))
     assert len(pointer.seen) == 2                     # pointer continues to be stepped in motion mode
+    assert pointer.last_ctx.mode == "pointer" and pointer.last_ctx.active_mode == "motion"
+    assert motion.last_ctx.mode == motion.last_ctx.active_mode == "motion"
     motion.queue = [("motion.exit", "tap")]
     assert eng.step(frame(2, 5.06), hand(frame(2, 5.06))).mode == "pointer"
 

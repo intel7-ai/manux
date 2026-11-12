@@ -63,6 +63,15 @@ def test_values_passed_between_layers_cannot_be_changed():
         ctx.others["pinch"] = Activity(holding=True)  # type: ignore[index]
 
 
+def test_frame_context_distinguishes_actual_mode_without_changing_classifier_mode():
+    legacy = FrameContext(frame(), Stage.MAIN, OutputTarget.WINDOWS, "pinch")
+    assert legacy.active_mode == legacy.mode == "pinch"
+    overlay = FrameContext(frame(), Stage.MAIN, OutputTarget.WINDOWS, "pinch", active_mode="motion")
+    assert overlay.mode == "pinch" and overlay.active_mode == "motion"
+    with pytest.raises(AttributeError):
+        overlay.active_mode = "pinch"
+
+
 def test_action_command_ids():
     cmd = ActionCommand(t=1.0, action="mouse.left_click", phase="tap", gesture="pinch.thumb_middle")
     assert cmd.action == "mouse.left_click"

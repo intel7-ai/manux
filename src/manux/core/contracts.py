@@ -254,10 +254,14 @@ class FrameContext:
     mode: str
     settings: Mapping[str, object] = field(default_factory=dict)
     others: Mapping[str, Activity] = field(default_factory=dict)
+    # Actual arbiter mode; `mode` retains the classifier's base mode during motion.
+    active_mode: Optional[str] = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "settings", _frozen_map(self.settings))
         object.__setattr__(self, "others", _frozen_map(self.others))
+        if self.active_mode is None:
+            object.__setattr__(self, "active_mode", self.mode)
 
 
 @runtime_checkable
