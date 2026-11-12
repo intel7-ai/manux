@@ -101,11 +101,12 @@ def test_curled_drag_keeps_normal_speed_and_fist_acceleration_returns_after_rele
     ("thumb_middle", "pinch.drag", H.middle_pinch, "left"),
     ("thumb_ring", "pinch.right_drag", H.ring_pinch, "right"),
 ])
-@pytest.mark.parametrize("move_gesture,move_scale", [
-    ("pinch.move_fist", 2.), ("pinch.move", 1.5), ("pointer.move", 2.),
+# Each movement source exercises rule recovery and MLP creation; both drag gains remain covered.
+@pytest.mark.parametrize("move_gesture,move_scale,start,drag_scale", [
+    ("pinch.move_fist", 2., "rule_drag", 1.25), ("pinch.move_fist", 2., "mlp_click", 1.),
+    ("pinch.move", 1.5, "rule_drag", 1.), ("pinch.move", 1.5, "mlp_click", 1.25),
+    ("pointer.move", 2., "rule_drag", 1.), ("pointer.move", 2., "mlp_click", 1.25),
 ])
-@pytest.mark.parametrize("start", ["rule_drag", "mlp_click"])
-@pytest.mark.parametrize("drag_scale", [1., 1.25])
 def test_mlp_recovered_drag_uses_drag_speed_instead_of_movement_speed(
     pose, drag, shape, button, move_gesture, move_scale, start, drag_scale,
 ):

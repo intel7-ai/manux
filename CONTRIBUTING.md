@@ -17,9 +17,18 @@ uv run --locked --python 3.12 --extra ui --extra vision --extra ml python -m man
 
 ## 시험
 
+반복적인 마우스 조작감 수정은 아래 빠른 검사로 확인하고 실제 사용 피드백을 받는다.
+클릭·드래그·주먹 배율·커서 보간·바탕화면 안전장치와 엔진/계약을 검사하며,
+학습·휴대폰 통신·Qt UI 전체 시험은 포함하지 않는다. 해당 기능 변경 시 관련 시험을 따로 실행한다.
+실행/재시작만 요청받았을 때는 시험을 먼저 돌리지 않고 앱부터 실행한다.
+
 ```powershell
-# 최소 환경 전체 시험
-uv run --locked --python 3.12 pytest -q
+# 평소 마우스 수정: 기존 .venv를 사용하므로 의존성 재설치·uv 캐시 재시도가 없다.
+pwsh -NoProfile -File tools/test.ps1
+# 특정 관련 시험만 실행 (한글 경로를 위한 UTF-8)
+./.venv/Scripts/python.exe -X utf8 -m pytest -q tests/unit/features/test_spatial_pose.py
+# 여러 기능을 가로지르는 변경이나 전체 점검이 필요할 때 명시적으로 실행
+pwsh -NoProfile -File tools/test.ps1 -Suite full
 # 구조와 계약을 별도로 확인
 uv run --locked --python 3.12 pytest -q tests/architecture tests/contract
 # Qt·손 인식·ONNX 의존성을 포함한 전체 시험
@@ -27,6 +36,10 @@ uv run --locked --python 3.12 --extra ui --extra vision --extra ml pytest -q
 # 웹캠 없이 번들 모델·라이브러리 자가 진단
 uv run --locked --python 3.12 --extra ui --extra vision --extra ml python -m manux --self-check "$env:TEMP/manux-self-check.json"
 ```
+
+빠른 검사 통과를 전체 시험 통과로 보고하지 않는다. 전체 시험은 CI·릴리스 검증에서도 유지한다.
+`tools/test.ps1 -Suite full`은 UTF-8과 저장소 밖 Windows 임시 폴더를 지정한다.
+PowerShell 7과 설치된 `.venv`를 사용하며, 테스트 결과의 종료 코드를 그대로 반환한다.
 
 최소 환경에서 선택 의존성 시험이 skip될 수 있으므로 개수·사유를 PR에 적는다. 합성·카메라 없는 시험과 실제 웹캠·Windows 마우스/키보드 확인을 구분한다. 실패를 숨기려고 시험을 삭제하거나 기대값만 맞추지 않는다. 인식률은 학습과 다른 시도·세션에서 오실행·지연과 함께 측정한다.
 

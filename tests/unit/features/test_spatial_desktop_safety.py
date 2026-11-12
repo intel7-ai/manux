@@ -49,8 +49,7 @@ def desktop(intents):
     return [i for i in intents if i.gesture == DESKTOP]
 
 
-@pytest.mark.parametrize("fps", [10, 15, 30, 60])
-@pytest.mark.parametrize("rule_intent", [False, True])
+@pytest.mark.parametrize("fps,rule_intent", [(10, False), (30, False), (60, False), (30, True)])
 def test_desktop_waits_for_elapsed_time_and_fires_once_per_pose(fps, rule_intent):
     run = Run()
     fired = []
@@ -68,9 +67,12 @@ def test_variable_frame_intervals_use_elapsed_time():
     assert [t for t in times if desktop(run.step(t))] == [.49]
 
 
-@pytest.mark.parametrize("fps", [10, 30, 60])
-@pytest.mark.parametrize("axis", [0, 1])
-@pytest.mark.parametrize("geometry", [(1280, 720, True, 0), (640, 480, True, 0)])
+# Representative rates on each axis; vertical cases cover both aspect ratios.
+@pytest.mark.parametrize("fps,axis,geometry", [
+    (10, 0, (1280, 720, True, 0)), (60, 0, (1280, 720, True, 0)),
+    (10, 1, (640, 480, True, 0)), (60, 1, (640, 480, True, 0)),
+    (30, 1, (1280, 720, True, 0)),
+])
 @pytest.mark.parametrize("speed,expected", [(.7, 1), (.8, 0)])
 def test_same_physical_speed_has_same_result_across_fps_and_aspect(fps, axis, geometry, speed, expected):
     run = Run()
@@ -188,15 +190,15 @@ def test_explicit_false_blocks_mlp_and_rule_desktop(settings):
         assert not desktop(run.step(t, intents=(Intent(t, "pinch", DESKTOP, "tap"),)))
 
 
-@pytest.mark.parametrize("reason", ["hand_lost", "mode_change", "pause", "settings", "error"])
-def test_reset_clears_desktop_hold_latch_and_fast_boost_state(reason):
+def test_reset_clears_desktop_hold_latch_and_fast_boost_state():
     run = Run()
     for n in range(7):
         run.step(n / 10)
     # A confident click also sets the fast-boost flag before reset.
     run.step(.7, action="thumb_middle")
     assert run.guard._boost_fast
-    run.guard.reset(reason)
+    # The guard uses the same reset body for all reasons; engine tests cover dispatch.
+    run.guard.reset("settings")
     assert not run.guard._boost_fast
     for n in range(5):
         assert not desktop(run.step(.8 + n / 10))

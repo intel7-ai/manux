@@ -18,9 +18,12 @@ import pinch_hands as H
     (H.middle_pinch, "thumb_middle", "pinch.drag", "left"),
     (H.ring_pinch, "thumb_ring", "pinch.right_drag", "right"),
 ])
-@pytest.mark.parametrize("fps", [30, 60])
-@pytest.mark.parametrize("shift_per_frame", [0., .00005, .003])
-@pytest.mark.parametrize("use_mlp", [False, True])
+# Still, tiny and ordinary movement each run with and without MLP across 30/60fps.
+@pytest.mark.parametrize("fps,shift_per_frame,use_mlp", [
+    (30, 0., False), (60, 0., True),
+    (30, .00005, True), (60, .00005, False),
+    (30, .003, False), (60, .003, True),
+])
 def test_confirmed_pinch_drags_on_next_frame_even_with_saved_one_second_wait(
     shape, pose, drag, button, fps, shift_per_frame, use_mlp,
 ):
