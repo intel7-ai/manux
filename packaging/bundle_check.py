@@ -12,11 +12,14 @@ from pathlib import Path
 import subprocess
 import sys
 
-NATIVE_MODULES = ("aiortc", "av", "pylibsrtp", "aiohttp", "qrcode", "onnxruntime")
+NATIVE_MODULES = ("aiortc", "av", "pylibsrtp", "aiohttp", "qrcode", "onnxruntime", "anthropic", "pyautogui")
 ENCODERS = ("libx264", "libvpx")
 ASSETS = {
     "qml_standard": "manux/ui/qml/dashboard.qml",
     "qml_studio": "manux/ui/qml/studio/dashboard.qml",
+    "qml_ai_original": "manux/ui/qml/AiCustomizationDialog.qml",
+    "qml_ai_draw": "manux/ui/qml/AiDrawOverlay.qml",
+    "qml_ai_theme": "manux/ui/qml/ai_theme/Studio.qml",
     "phone_page": "manux/link/static/phone.html",
     "internet_page": "manux/link/static/internet.html",
     "hand_model": "models/hand_landmarker.task",

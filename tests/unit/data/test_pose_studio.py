@@ -90,8 +90,10 @@ def test_spatial_mlp_trains_and_separates_pinch_classes(tmp_path: Path):
 
 
 def test_pose_snapshot_studio_stream_discrepancy_and_training(tmp_path: Path):
-    assert len(STUDIO_ACTIONS) == 10
-    assert len(ACTION_IDS) == 10
+    assert len(STUDIO_ACTIONS) == 9
+    assert len(ACTION_IDS) == 9
+    assert "rock_sign" not in ACTION_IDS  # retired default action is no longer offered for collection
+    assert "rock_sign" in STUDIO_CLASSES  # existing model class ordering remains compatible
 
     studio = make_pose_studio(tmp_path)
     studio.stream_throttle_ms = 0.0  # disable throttle for fast unit test

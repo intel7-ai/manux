@@ -7,7 +7,7 @@ TextField {
     color: Theme.Studio.ink
     placeholderTextColor: Theme.Studio.muted
     selectionColor: Theme.Studio.mint
-    selectedTextColor: Theme.Studio.ink
+    selectedTextColor: Theme.Studio.mintText
     font.family: Theme.Studio.font
     font.pixelSize: 13
     leftPadding: 12; rightPadding: 12

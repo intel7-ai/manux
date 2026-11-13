@@ -254,6 +254,12 @@ def test_a_failing_key_press_still_releases_the_pressed_modifiers():
 def test_catalog_actions_execute_at_their_owner_with_allowed_phases(action):
     s = sink()
     phases = [p for p in ("begin", "hold", "end", "tap") if p in CATALOG[action].phases]
+    if action == "custom.execute":
+        # No explicit connection / injected executor: fail closed, never emit input.
+        for phase in phases:
+            assert s.apply(cmd(action, phase)).reason == "blocked"
+        assert s.backend.events == []
+        return
     if action == "mouse.move":
         s.apply(cmd(action, "hold", (.5, .5), 0.0))
     for i, phase in enumerate(phases):

@@ -1,4 +1,5 @@
 import QtQuick
+import "../theme" as Theme
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -33,8 +34,23 @@ Dialog {
     title: "설정"
     modal: true
     focus: true
+    palette.window: Theme.Studio.paper
+    palette.windowText: Theme.Studio.ink
+    palette.base: Theme.Studio.surface
+    palette.alternateBase: Theme.Studio.soft
+    palette.text: Theme.Studio.ink
+    palette.placeholderText: Theme.Studio.muted
+    palette.button: Theme.Studio.soft
+    palette.buttonText: Theme.Studio.ink
+    palette.highlight: Theme.Studio.mint
+    palette.highlightedText: Theme.Studio.mintText
+    palette.mid: Theme.Studio.line
+    palette.dark: Theme.Studio.muted
+    palette.light: Theme.Studio.soft
+    palette.midlight: Theme.Studio.soft
+    palette.shadow: Theme.Studio.line
     padding: 20
-    background: Rectangle { color: "white"; radius: 14; border.color: "#DEE5EA" }
+    background: Rectangle { color: Theme.Studio.paper; radius: 14; border.color: Theme.Studio.line }
     onAboutToShow: reload()
     contentItem: ColumnLayout {
         spacing: 10
@@ -52,7 +68,7 @@ Dialog {
                 ? "손바닥 모드의 핀치·클릭 감도입니다. 수치를 직접 입력할 수도 있습니다."
                 : "기본 이동과 빠른 이동 감도를 따로 조절합니다. 주먹 가속·드래그 배율은 손바닥 모드에 적용됩니다."
             wrapMode: Text.Wrap
-            color: "#526575"
+            color: Theme.Studio.muted
         }
         ScrollView {
             id: scroll
@@ -72,7 +88,7 @@ Dialog {
                         visible: (tabs.currentIndex === 0 && modelData.group === "pinch")
                                  || (tabs.currentIndex === 1 && modelData.group === "cursor")
                         spacing: 2
-                        Label { text: modelData.label; font.bold: true; color: "#112331" }
+                        Label { text: modelData.label; font.bold: true; color: Theme.Studio.ink }
                         RowLayout {
                             Layout.fillWidth: true
                             Slider {
@@ -96,14 +112,14 @@ Dialog {
                         }
                         Label {
                             text: modelData.editable ? modelData.hint : "현재 프로필이 지정한 값입니다. 기본 프로필에서 변경하세요."
-                            Layout.fillWidth: true; wrapMode: Text.Wrap; color: "#526575"; font.pixelSize: 12
+                            Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.Studio.muted; font.pixelSize: 12
                         }
                     }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true
                     visible: tabs.currentIndex === 1
-                    Label { text: "검지 포인터 추가 감도 · " + settings.controller.pointerSensitivity + "%"; color: "#112331" }
+                    Label { text: "검지 포인터 추가 감도 · " + settings.controller.pointerSensitivity + "%"; color: Theme.Studio.ink }
                     Slider {
                         Layout.fillWidth: true
                         from: 50; to: 150; stepSize: 5
@@ -132,14 +148,14 @@ Dialog {
                     }
                     Label {
                         text: "이전 작업 가져오기와 별도 평가 검증도 데이터 관리에서 실행합니다."
-                        wrapMode: Text.Wrap; Layout.fillWidth: true; color: "#526575"
+                        wrapMode: Text.Wrap; Layout.fillWidth: true; color: Theme.Studio.muted
                     }
                 }
             }
         }
         Label {
             text: settings.controller.sensitivityStatus || "변경한 민감도는 ‘적용’을 누르면 저장됩니다. 적용 후 제어를 다시 시작하세요."
-            wrapMode: Text.Wrap; Layout.fillWidth: true; color: "#526575"; font.pixelSize: 12
+            wrapMode: Text.Wrap; Layout.fillWidth: true; color: Theme.Studio.muted; font.pixelSize: 12
         }
         RowLayout {
             Layout.fillWidth: true

@@ -14,15 +14,15 @@ Button {
         id: label
         text: control.text
         font.family: Theme.Studio.font
-        font.pixelSize: 13; font.bold: true
-        color: Theme.Studio.ink
+        font.pixelSize: Theme.Studio.body; font.weight: Font.DemiBold
+        color: control.down ? Theme.Studio.ink : control.primary ? Theme.Studio.primaryText : Theme.Studio.ink
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
     }
     background: Rectangle {
-        radius: 10
-        color: control.down ? "#BCEFE1" : control.primary ? Theme.Studio.mint
+        radius: Theme.Studio.radius
+        color: control.down ? Theme.Studio.mintWash : control.primary ? Theme.Studio.primaryBackground
                : control.hovered ? Theme.Studio.mintWash : control.flat ? "transparent" : Theme.Studio.surface
         border.width: control.activeFocus ? 2 : 1
         border.color: control.activeFocus ? Theme.Studio.mintDark : control.flat || control.primary ? "transparent" : Theme.Studio.line

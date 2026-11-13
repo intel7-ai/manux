@@ -74,6 +74,13 @@ apps/manux/
 | `ui` | `core`, `engine`, `settings` | |
 | `app.py`(헤드리스), `desktop.py`(데스크톱 앱), `__main__.py` | 전부 | |
 
+`compat`는 `feat/hand-mouse-20261112@a700452`의 AI 동작 추가 기능을 그대로 옮기는 격리 계층이다.
+`core`, `settings`, `platform`과 자기 패키지만 import한다. 원본의 판정·제안·저장 형식을 유지하고,
+키 입력·프로그램 실행·매크로는 `output/windows`, 영상 자르기는 `tracking`으로 옮긴다.
+이 기능의 `ui/ai_customization.py`, `features/custom_gestures/`, `output/windows/custom_*.py`에만
+`compat` import를 허용한다. 기존 계층의 일반 의존 규칙은 바꾸지 않는다.
+조립과 현재 엔진 연결은 `desktop.py`에서 주입한다. 상세 출처와 변경은 [이식 기록](ai-customization-port.md)을 따른다.
+
 외부 라이브러리 경계:
 
 | 라이브러리 | 쓸 수 있는 곳 |

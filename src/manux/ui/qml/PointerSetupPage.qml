@@ -96,7 +96,7 @@ Rectangle {
                     radius: width / 2
                     x: visible ? point[0] * arena.width - width / 2 : 0
                     y: visible ? point[1] * arena.height - height / 2 : 0
-                    color: page.setup.hand ? Theme.Studio.paper : Theme.Studio.muted
+                    color: page.setup.hand ? Theme.Studio.stageText : Theme.Studio.muted
                 }
             }
         }

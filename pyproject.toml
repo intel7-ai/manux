@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = ["numpy>=2"]
 
 [project.optional-dependencies]
+llm = ["anthropic>=2.7.0", "PyAutoGUI>=0.9.54"]
 link = ["aiohttp>=3.14.5,<4", "cryptography>=46,<50"]  # opt-in phone HTTPS transport
 internet = ["aiohttp>=3.14.5,<4", "cryptography>=46,<50", "aiortc>=1.14,<2"]  # opt-in Internet camera / WebRTC
 qr = ["qrcode>=8,<9"]  # optional terminal/window QR in phone_camera_demo

@@ -22,7 +22,7 @@ ComboBox {
         Rectangle { x: 5; y: 3; width: 6; height: 2; rotation: -45; color: Theme.Studio.muted }
     }
     background: Rectangle {
-        radius: 10; color: Theme.Studio.paper
+        radius: Theme.Studio.radius; color: Theme.Studio.paper
         border.width: control.activeFocus ? 2 : 1
         border.color: control.activeFocus ? Theme.Studio.mintDark : Theme.Studio.line
     }
@@ -54,6 +54,6 @@ ComboBox {
             currentIndex: control.highlightedIndex
             ScrollIndicator.vertical: ScrollIndicator {}
         }
-        background: Rectangle { radius: 12; color: Theme.Studio.paper; border.color: Theme.Studio.line }
+        background: Rectangle { radius: Theme.Studio.radius; color: Theme.Studio.paper; border.color: Theme.Studio.line }
     }
 }

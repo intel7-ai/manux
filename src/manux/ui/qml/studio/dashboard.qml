@@ -8,26 +8,33 @@ ApplicationWindow {
     id: window
     objectName: "raspJunStudio"
     readonly property bool learningDialogOpen: advancedSettings.visible || trainingCenter.visible || capturePlan.visible
-        || trainingProgressPage.visible || dataCenter.visible || studioSettings.visible || pointerSettings.visible
+        || trainingProgressPage.visible || dataCenter.visible || studioSettings.visible || pointerSettings.visible || aiCustomization.opened
     readonly property bool interactionBusy: learningDialogOpen || dashboard.currentPage === "studio"
     onInteractionBusyChanged: dashboard.setInteractionBusy(interactionBusy)
+    Current.AiCustomizationDialog { id: aiCustomization; dashboard: window.aiBridge }
+    readonly property var aiBridge: dashboard.aiCustomization
     width: 1140
-    height: 720
+    height: 820
     minimumWidth: 780
     minimumHeight: 560
     visible: true
     title: dashboard.appTitle
-    color: "#F4F6F8"
-    palette.window: "#FFFFFF"
-    palette.windowText: "#112331"
-    palette.base: "#F4F6F8"
-    palette.text: "#112331"
-    palette.button: "#EDF3F5"
-    palette.buttonText: "#112331"
-    palette.highlight: "#46E5BD"
-    palette.highlightedText: "#112331"
-    palette.mid: "#DEE5EA"
-    palette.dark: "#526575"
+    color: Theme.Studio.surface
+    palette.window: Theme.Studio.paper
+    palette.windowText: Theme.Studio.ink
+    palette.base: Theme.Studio.surface
+    palette.alternateBase: Theme.Studio.soft
+    palette.text: Theme.Studio.ink
+    palette.placeholderText: Theme.Studio.muted
+    palette.button: Theme.Studio.soft
+    palette.buttonText: Theme.Studio.ink
+    palette.highlight: Theme.Studio.mint
+    palette.highlightedText: Theme.Studio.mintText
+    palette.mid: Theme.Studio.line
+    palette.dark: Theme.Studio.muted
+    palette.light: Theme.Studio.soft
+    palette.midlight: Theme.Studio.soft
+    palette.shadow: Theme.Studio.line
     onClosing: function (close) {
         if (dashboard.hidesToTray) {
             close.accepted = false   // tray mode: keep running, quit from the tray menu
@@ -36,32 +43,34 @@ ApplicationWindow {
             dashboard.requestClose()
         }
     }
-    readonly property color navy: "#112331"
-    readonly property color muted: "#526575"
-    readonly property color mint: "#46E5BD"
-    readonly property color line: "#DEE5EA"
+    readonly property color navy: Theme.Studio.ink
+    readonly property color muted: Theme.Studio.muted
+    readonly property color mint: Theme.Studio.mint
+    readonly property color line: Theme.Studio.line
     font.family: Theme.Studio.font
 
     component TextLabel: Label {
         color: window.navy
-        font.pixelSize: 14
+        font.pixelSize: 13
     }
     component ActionButton: Button {
         id: button
         property bool accent: false
-        implicitHeight: 40
-        leftPadding: 16
-        rightPadding: 16
+        implicitHeight: 35
+        leftPadding: 12
+        rightPadding: 12
         contentItem: TextLabel {
             text: button.text
-            font.bold: true
+            color: button.accent ? Theme.Studio.primaryText : button.enabled ? window.navy : window.muted
+            font.pixelSize: 12
+            font.weight: Font.DemiBold
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }
         background: Rectangle {
-            radius: 10
-            color: button.down ? "#BCEFE1" : button.accent ? window.mint : "#F0F3F6"
-            border.color: button.activeFocus ? "#16846E" : "transparent"
+            radius: 6
+            color: button.accent ? (button.down ? Qt.darker(Theme.Studio.primaryBackground, 1.1) : Theme.Studio.primaryBackground) : button.down ? Theme.Studio.mintWash : Theme.Studio.surface
+            border.color: button.activeFocus ? Theme.Studio.mintDark : "transparent"
             border.width: 2
         }
     }
@@ -127,7 +136,7 @@ ApplicationWindow {
     Rectangle {
         anchors.fill: parent
         visible: dashboard.stage !== "main" && dashboard.stage !== "tutorial"
-        color: "#F4F6F8"
+        color: Theme.Studio.surface
         ColumnLayout {
             anchors.centerIn: parent
             width: Math.min(parent.width - 64, 670)
@@ -136,7 +145,7 @@ ApplicationWindow {
                 Layout.alignment: Qt.AlignHCenter
                 Layout.preferredWidth: dashboard.stage === "splash" ? 260 : 110
                 Layout.preferredHeight: dashboard.stage === "splash" ? 96 : 38
-                source: "assets/manux.svg"
+                source: Theme.Studio.logoSource
                 fillMode: Image.PreserveAspectFit
             }
             TextLabel {
@@ -169,7 +178,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.min(300, window.height * .45)
                 radius: 16
-                color: window.navy
+                color: Theme.Studio.stage
                 Image { anchors.fill: parent; source: dashboard.previewUrl; cache: false; fillMode: Image.PreserveAspectFit
                     Current.HandSkeleton { anchors.fill: parent; bridge: dashboard; imageWidth: parent.paintedWidth; imageHeight: parent.paintedHeight }
                 }
@@ -182,7 +191,7 @@ ApplicationWindow {
                 wrapMode: Text.Wrap
                 text: dashboard.tracking === "카메라 없음" ? dashboard.currentAction
                     : dashboard.handCandidate ? dashboard.handCandidate + " 감지됨 · " + dashboard.secondsRemaining + "초 남음" : "한 손을 기다리는 중"
-                color: dashboard.handCandidate ? "#08775E" : window.muted
+                color: dashboard.handCandidate ? Theme.Studio.mintDark : window.muted
                 font.bold: true
             }
             RowLayout {
@@ -243,15 +252,15 @@ ApplicationWindow {
                     text: option.modelData[1]
                     font.pixelSize: 12
                     font.bold: option.selected
-                    color: option.enabled ? (option.selected ? window.navy : window.muted) : "#A9B6C0"
+                    color: option.enabled ? (option.selected ? Theme.Studio.mintText : window.muted) : Theme.Studio.muted
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                 }
                 background: Rectangle {
                     radius: 8
-                    color: option.selected ? window.mint : option.down ? "#DDE7EC" : "#F0F3F6"
-                    border.color: option.activeFocus ? "#16846E" : "transparent"
+                    color: option.selected ? window.mint : option.down ? Theme.Studio.soft : Theme.Studio.surface
+                    border.color: option.activeFocus ? Theme.Studio.mintDark : "transparent"
                     border.width: 2
                 }
             }
@@ -262,75 +271,413 @@ ApplicationWindow {
         property alias text: chipLabel.text
         property bool warn: false
         implicitWidth: chipLabel.implicitWidth + 20
-        implicitHeight: 28
-        radius: 14
-        color: warn ? "#FFF1D6" : "#E8F7F2"
-        border.color: warn ? "#F2B544" : "transparent"
-        TextLabel { id: chipLabel; anchors.centerIn: parent; font.pixelSize: 12; color: chip.warn ? "#8A5A00" : window.navy }
+        implicitHeight: 24
+        radius: 4
+        color: warn ? Theme.Studio.amberWash : Theme.Studio.surface
+        border.color: warn ? Theme.Studio.amber : "transparent"
+        TextLabel { id: chipLabel; anchors.centerIn: parent; font.pixelSize: 12; color: chip.warn ? Theme.Studio.amber : window.navy }
     }
 
     ColumnLayout {
+        id: commandShell
+        objectName: "commandStudioMain"
         visible: dashboard.stage === "main"
         anchors.fill: parent
         spacing: 0
         Rectangle {
-            color: "white"
             Layout.fillWidth: true
-            Layout.preferredHeight: 72
+            Layout.preferredHeight: 50
+            color: Theme.Studio.paper
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 24
-                anchors.rightMargin: 24
-                spacing: 12
+                anchors.leftMargin: 20
+                anchors.rightMargin: 20
+                spacing: 16
                 Image {
                     objectName: "mainBrandLogo"
-                    source: "../assets/manux.svg"
-                    Layout.preferredWidth: window.width < 1000 ? Theme.Studio.navWidth : Theme.Studio.navWidth * 1.3
-                    Layout.preferredHeight: Theme.Studio.pad * 3
+                    source: Theme.Studio.logoSource
+                    Layout.preferredWidth: 132
+                    Layout.preferredHeight: 40
                     fillMode: Image.PreserveAspectFit
                     Accessible.name: dashboard.appName
                 }
-                TextLabel { visible: window.width >= 1000; text: "INPUT STUDIO"; font.pixelSize: 11; font.letterSpacing: 1.4; color: window.muted }
+                Rectangle { width: 1; height: 17; color: window.line }
+                TextLabel { text: "COMMAND"; font.pixelSize: 11; font.letterSpacing: 1.6; color: window.muted }
                 Item { Layout.fillWidth: true }
-                ActionButton { objectName: "openLearningCenter"; text: window.width < 1000 ? "학습" : "학습 센터"; onClicked: {dataCenter.pageIndex=0;dataCenter.open()} }
-                ActionButton { objectName: "openDataStudio"; text: window.width < 1000 ? "녹화" : "녹화 보관함"; onClicked: {dataCenter.pageIndex=0;dataCenter.recordingSubTab=1;dataCenter.open()} }
+                ComboBox {
+                    objectName: "commandThemeSelect"
+                    Layout.preferredWidth: 106
+                    implicitHeight: 32
+                    model: ["라이트", "다크"]
+                    currentIndex: Theme.Studio.themeName === "dark" ? 1 : 0
+                    onActivated: function(index) { Theme.Studio.setTheme(index ? "dark" : "light") }
+                    font.family: Theme.Studio.font
+                    font.pixelSize: 12
+                    Accessible.name: "화면 테마"
+                }
                 ActionButton {
                     text: window.width < 1000 ? (dashboard.chosenHand || "손 설정") : dashboard.chosenHand ? dashboard.chosenHand + " · 다시 설정" : "사용할 손 설정"
                     onClicked: dashboard.beginHandSetup()
                 }
-                ActionButton {
-                    text: "설정"
-                    enabled: !dashboard.calibratingPointer
-                    onClicked: {
-                        if (dashboard.pointerOnly) {
-                            dashboard.command(27)
-                            pointerSettings.open()
-                        } else {
-                            dashboard.command(111)
-                        }
-                    }
-                }
                 ActionButton { visible: window.width >= 1000; text: "고급 설정"; onClicked: { dashboard.command(27); advancedSettings.open() } }
-                ActionButton { objectName: "mainControlToggle"; text: dashboard.controlLabel; accent: true; onClicked: dashboard.command(32) }
             }
+            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: window.line }
         }
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.margins: 20
-            spacing: 16
+            Layout.minimumHeight: 0
+            spacing: 0
             Rectangle {
-                Layout.preferredWidth: 280
+                Layout.preferredWidth: window.width < 1000 ? 76 : 88
                 Layout.fillHeight: true
-                radius: 16
-                color: "white"
+                color: Theme.Studio.rail
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 7
+                    CommandNavButton { Layout.fillWidth: true; text: "컨트롤"; iconName: "control"; selected: true; enabled: false }
+                    CommandNavButton { objectName: "openAiCustomization"; Layout.fillWidth: true; text: "동작 제작"; iconName: "actions"; selected: aiCustomization.opened; onClicked: aiCustomization.open() }
+                    CommandNavButton { objectName: "openLearningCenter"; Layout.fillWidth: true; text: "학습 센터"; iconName: "learning"; selected: dataCenter.visible; onClicked: {dataCenter.pageIndex=0;dataCenter.open()} }
+                    Item { Layout.fillHeight: true }
+                    CommandNavButton { objectName: "openPhoneCamera"; Layout.fillWidth: true; text: "장치"; iconName: "device"; selected: phoneCameraDialog.visible; onClicked: phoneCameraDialog.open() }
+                    CommandNavButton {
+                        Layout.fillWidth: true
+                        text: "설정"
+                        iconName: "settings"
+                        selected: studioSettings.visible || pointerSettings.visible
+                        enabled: !dashboard.calibratingPointer
+                        onClicked: {
+                            if (dashboard.pointerOnly) {
+                                dashboard.command(27)
+                                pointerSettings.open()
+                            } else {
+                                dashboard.command(111)
+                            }
+                        }
+                    }
+                }
+            }
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumWidth: 0
+                Layout.minimumHeight: 0
+                spacing: 0
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 80
+                    color: Theme.Studio.paper
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 24
+                        anchors.rightMargin: 24
+                        spacing: 14
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 3
+                            TextLabel { text: "WORKSPACE"; font.pixelSize: 11; font.letterSpacing: 1.4; color: window.muted }
+                            TextLabel { text: "컨트롤"; font.pixelSize: 23; font.weight: Font.DemiBold }
+                            TextLabel { text: "손의 움직임을 명령으로."; font.pixelSize: 12; color: window.muted }
+                        }
+                        Rectangle {
+                            implicitWidth: controlState.implicitWidth + 23
+                            implicitHeight: 28
+                            radius: 4
+                            color: dashboard.controlLabel === "일시정지" ? Theme.Studio.mintWash : Theme.Studio.surface
+                            TextLabel { id: controlState; anchors.centerIn: parent; text: dashboard.controlLabel === "일시정지" ? "제어 켜짐" : "제어 꺼짐"; font.pixelSize: 11; color: dashboard.controlLabel === "일시정지" ? Theme.Studio.mintDark : window.muted }
+                        }
+                    }
+                    Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: window.line }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.minimumWidth: 0
+                    Layout.minimumHeight: 0
+                    spacing: 0
+                    ScrollView {
+                        id: commandCanvasScroll
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.minimumWidth: 0
+                        Layout.minimumHeight: 0
+                        clip: true
+                        contentWidth: availableWidth
+                        leftPadding: window.width < 1000 ? 16 : 22
+                        rightPadding: window.width < 1000 ? 16 : 22
+                        topPadding: 18
+                        bottomPadding: 18
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                        ColumnLayout {
+                            width: commandCanvasScroll.availableWidth
+                            spacing: 16
+            Rectangle {
+                Layout.fillWidth: true
+                objectName: "commandCameraCard"
+                Layout.preferredHeight: Math.max(360, commandCanvasScroll.availableHeight - commandActionGuide.implicitHeight - 16) + (dashboard.recActive ? 100 : 0) + (diagnostics.visible ? Math.min(160, diagnostics.implicitHeight) : 0)
+                radius: 8
+                color: Theme.Studio.paper
                 border.color: window.line
                 ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: 16
+                    spacing: 12
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        TextLabel { text: "카메라 프리뷰"; font.pixelSize: 13; font.weight: Font.DemiBold }
+                        Item { Layout.fillWidth: true }
+                        TextLabel { text: dashboard.tracking; color: window.muted; font.pixelSize: 11 }
+                    }
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Chip { visible: dashboard.cameraMode !== ""; text: dashboard.cameraMode }
+                        Chip { visible: dashboard.brightness >= 0; warn: dashboard.lowLight; text: (dashboard.lowLight ? "어두움 " : "밝기 ") + Math.round(dashboard.brightness / 2.55) + "%" }
+                    }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.minimumHeight: 200
+                        radius: 6
+                        color: Theme.Studio.stage
+                        clip: true
+                        Image {
+                            id: capturePreview
+                            anchors.fill: parent
+                            source: dashboard.previewUrl
+                            cache: false
+                            fillMode: Image.PreserveAspectFit
+
+                    Current.HandSkeleton { anchors.fill: parent; bridge: dashboard; imageWidth: parent.paintedWidth; imageHeight: parent.paintedHeight }
+                }
+                        Button {
+                            objectName: "refreshPcCamera"
+                            anchors { right: parent.right; top: parent.top; margins: 8 }
+                            text: "카메라 새로고침"
+                            enabled: dashboard.pcCameraAvailable && dashboard.recMode === "off" && !dashboard.recActive
+                                     && !dashboard.calibratingPointer && !dashboard.palmCalibrating && !dashboard.trackingActive
+                            onClicked: dashboard.reconnectCamera()
+                        }
+                        Item {
+                            visible: dashboard.recMode === "guided" && dashboard.recCondition !== ""
+                            x: (parent.width - capturePreview.paintedWidth) / 2
+                            y: (parent.height - capturePreview.paintedHeight) / 2
+                            width: capturePreview.paintedWidth
+                            height: capturePreview.paintedHeight
+                            Repeater {
+                                model: ["왼쪽 위", "위", "오른쪽 위", "왼쪽", "중앙", "오른쪽", "왼쪽 아래", "아래", "오른쪽 아래"]
+                                delegate: Rectangle {
+                                    required property int index
+                                    required property string modelData
+                                    x: (index % 3) * width; y: Math.floor(index / 3) * height
+                                    width: parent.width / 3; height: parent.height / 3
+                                    color: modelData === dashboard.recPosition ? Qt.rgba(Theme.Studio.mint.r, Theme.Studio.mint.g, Theme.Studio.mint.b, .125) : "transparent"
+                                    border.width: modelData === dashboard.recPosition ? 3 : 1
+                                    border.color: modelData === dashboard.recPosition ? Theme.Studio.mint : Qt.rgba(Theme.Studio.stageText.r, Theme.Studio.stageText.g, Theme.Studio.stageText.b, .38)
+                                    Label { visible: modelData === dashboard.recPosition; text: "위치 안내 · " + modelData; color: Theme.Studio.stageText; padding: 8; font.bold: true }
+                                }
+                            }
+                        }
+                        Rectangle {
+                            visible: dashboard.lowLight
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.margins: 12
+                            implicitHeight: lowLightText.implicitHeight + 16
+                            radius: 8
+                            color: Theme.Studio.amberWash
+                            TextLabel {
+                                id: lowLightText
+                                color: Theme.Studio.amber
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                text: "어두워요. 움직일 때 손을 놓치기 쉽습니다. 조명을 켜거나 모니터를 밝게 하고, 손을 카메라에 조금 더 가까이 두세요."
+                                wrapMode: Text.Wrap
+                                font.pixelSize: 12
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                    }
+                    RowLayout {
+                        visible: dashboard.calibratingPointer
+                        Layout.fillWidth: true
+                        TextLabel {
+                            Layout.fillWidth: true
+                            text: dashboard.calibrationHint
+                            wrapMode: Text.Wrap
+                        }
+                        ActionButton { text: "취소"; onClicked: dashboard.cancelPointerCalibration() }
+                    }
+                    RowLayout {
+                        visible: dashboard.recActive
+                        Layout.fillWidth: true
+                        spacing: 10
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+                            TextLabel {
+                                Layout.fillWidth: true
+                                visible: dashboard.recCondition !== ""
+                                text: dashboard.recCondition
+                                font.pixelSize: 12
+                                color: Theme.Studio.mintDark
+                                wrapMode: Text.Wrap
+                            }
+                            TextLabel {
+                                Layout.fillWidth: true
+                                visible: dashboard.recPrompt !== ""
+                                text: dashboard.recPrompt
+                                font.pixelSize: 22
+                                font.bold: true
+                                wrapMode: Text.Wrap
+                            }
+                            Rectangle {
+                                visible: dashboard.recMode === "guided" && dashboard.recPrompt !== ""
+                                Layout.fillWidth: true
+                                height: 6
+                                radius: 3
+                                color: Theme.Studio.line
+                                Rectangle {
+                                    width: parent.width * Math.max(0, Math.min(1, dashboard.recProgress))
+                                    height: parent.height
+                                    radius: 3
+                                    color: Theme.Studio.mintDark
+                                }
+                            }
+                            TextLabel {
+                                Layout.fillWidth: true
+                                text: dashboard.recSub
+                                font.pixelSize: 12
+                                color: window.muted
+                                wrapMode: Text.Wrap
+                            }
+                        }
+                        ActionButton { visible: dashboard.recWaiting; text: "시작"; onClicked: dashboard.recStart() }
+                        ActionButton { visible: dashboard.recMode === "guided" && !dashboard.recWaiting; text: dashboard.recPaused ? "계속" : "일시정지"; onClicked: dashboard.toggleRecordingPause() }
+                        ActionButton { visible: dashboard.recMode !== "off"; text: "녹화 끝"; onClicked: dashboard.setRecMode("off") }
+                    }
+                    RowLayout {
+                        visible: dashboard.palmCalibrating || (dashboard.palmAxesHint !== "" && !dashboard.calibratingPointer)
+                        Layout.fillWidth: true
+                        TextLabel {
+                            Layout.fillWidth: true
+                            text: dashboard.palmAxesHint
+                            wrapMode: Text.Wrap
+                        }
+                        ActionButton { visible: dashboard.palmCalibrating; text: "취소"; onClicked: dashboard.cancelPalmCalibration() }
+                    }
+                    RowLayout {
+                        visible: !dashboard.calibratingPointer && !dashboard.palmCalibrating
+                        Layout.fillWidth: true
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            TextLabel { text: dashboard.inputState; font.bold: true }
+                            TextLabel { Layout.fillWidth: true; text: dashboard.currentAction; color: window.muted; wrapMode: Text.Wrap }
+                            TextLabel {
+                                Layout.fillWidth: true
+                                text: dashboard.mlpBadge
+                                color: dashboard.mlpBadge.indexOf("적용 중") >= 0 ? Theme.Studio.mintDark : window.muted
+                                font.pixelSize: 12
+                                wrapMode: Text.Wrap
+                            }
+                        }
+                        ActionButton { text: diagnostics.visible ? "상세 닫기" : "상세 정보"; onClicked: diagnostics.visible = !diagnostics.visible }
+                    }
+                    TextLabel {
+                        id: diagnostics
+                        visible: false
+                        onVisibleChanged: dashboard.showFingertips(visible)
+                        Layout.fillWidth: true
+                        text: dashboard.details
+                        color: window.muted
+                        wrapMode: Text.Wrap
+                        font.pixelSize: 12
+                    }
+                }
+            }
+                            Rectangle {
+                                id: commandActionGuide
+                                objectName: "commandActionGuide"
+                                Layout.fillWidth: true
+                                implicitHeight: commandGuideContent.implicitHeight + 20
+                                color: Theme.Studio.paper
+                                radius: 8
+                                border.color: window.line
+                                ColumnLayout {
+                                    id: commandGuideContent
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    anchors.margins: 10
+                                    spacing: 3
+                            SectionLabel { text: "동작 안내" }
+                            GridLayout {
+                                Layout.fillWidth: true; columns: 2; columnSpacing: 12; rowSpacing: 2
+                            Repeater {
+                                model: dashboard.pointerOnly ? (dashboard.clickOff
+                                    ? [[dashboard.pointerAnchor === "palm" ? "손바닥 따라가기" : "검지 끝 따라가기", "포인터 이동"], ["클릭", "꺼짐"]]
+                                    : dashboard.triggerClick
+                                    ? [["검지만 펴기", "포인터 이동"], ["엄지로 검지 옆 짧게", "좌클릭"],
+                                       ["누른 채 가만히", "우클릭"], ["누른 채 움직이기", "드래그"]]
+                                    : [["검지만 펴기", "포인터 이동"], ["엄지 + 중지", "좌클릭"], ["엄지 + 약지", "우클릭"]]) : [
+                                    ["손 이동", "포인터 이동"], ["엄지 + 검지", "스크롤"],
+                                    ["엄지 + 중지", "좌클릭"], ["엄지 + 약지", "우클릭"],
+                                    ["엄지 + 새끼", "창 선택"]
+                                ]
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    readonly property bool active: dashboard.controlLabel === "일시정지" && dashboard.currentAction.indexOf(modelData[1]) >= 0
+                                    Layout.fillWidth: true
+                                    implicitHeight: 27
+                                    color: active ? Theme.Studio.mintWash : "transparent"
+                                    Rectangle { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; width: 2; height: 20; color: Theme.Studio.mintDark; visible: parent.active }
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 10
+                                        anchors.rightMargin: 10
+                                        spacing: 9
+                                        CommandIcon { name: "hand"; color: window.muted; Layout.preferredWidth: 15; Layout.preferredHeight: 15 }
+                                        TextLabel { text: modelData[0]; font.pixelSize: 11; Layout.fillWidth: true; Layout.minimumWidth: 0; elide: Text.ElideRight }
+                                        CommandIcon { name: "arrow"; color: Theme.Studio.mintDark; Layout.preferredWidth: 14; Layout.preferredHeight: 14 }
+                                        TextLabel { text: modelData[1]; font.pixelSize: 11; color: window.muted; Layout.preferredWidth: Math.min(76, commandActionGuide.width * .16); horizontalAlignment: Text.AlignRight; elide: Text.ElideRight }
+                                    }
+                                    Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: 1; color: window.line }
+                                }
+                            }
+                            }
+                            TextLabel {
+                                visible: dashboard.pointerOnly
+                                Layout.fillWidth: true
+                                text: dashboard.clickOff
+                                    ? "클릭을 판정하지 않습니다. 손이 보이면 손 모양과 관계없이 커서가 따라갑니다."
+                                    : dashboard.triggerClick
+                                    ? "엄지가 검지 옆에 다가오면 커서가 고정되고, 누르기 직전 위치에서 클릭합니다."
+                                    : "검지를 움직이는 동안에는 클릭하지 않습니다. 멈춘 뒤 엄지를 뗐다가 중지·약지에 대면 클릭합니다."
+                                color: window.muted
+                                wrapMode: Text.Wrap
+                                font.pixelSize: 11
+                            }
+
+                                }
+                            }
+                        }
+                    }
+            Rectangle {
+                id: commandInspector
+                Layout.preferredWidth: window.width < 1000 ? 248 : 276
+                Layout.fillHeight: true
+                radius: 0
+                color: Theme.Studio.paper
+                border.color: window.line
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 18
                     spacing: 8
-                    Current.QuickSpeedControls { Layout.fillWidth: true; controller: dashboard }
-                    ActionButton { text: "동작 다시 배우기"; Layout.fillWidth: true; onClicked: dashboard.beginTutorial() }
+                    TextLabel { text: "입력 속성"; font.pixelSize: 13; font.weight: Font.DemiBold }
+                    Divider {}
                     ScrollView {
                         id: sideScroll
                         Layout.fillWidth: true
@@ -339,8 +686,12 @@ ApplicationWindow {
                         contentWidth: availableWidth
                         ColumnLayout {
                             width: sideScroll.availableWidth
-                            spacing: 8
-                            TextLabel { text: "포인터"; font.pixelSize: 20; font.bold: true }
+                            spacing: 12
+                            SectionLabel { text: "이동 감도" }
+                    Current.QuickSpeedControls { Layout.fillWidth: true; controller: dashboard }
+                    ActionButton { text: "동작 다시 배우기"; Layout.fillWidth: true; onClicked: dashboard.beginTutorial() }
+                            Divider {}
+                            SectionLabel { text: "포인터 방식" }
                             Segmented {
                                 enabled: !dashboard.calibratingPointer && !dashboard.trackingActive
                                 options: [["index", "검지 포인터"], ["palm", "손바닥 (Dan)"]]
@@ -450,38 +801,6 @@ ApplicationWindow {
                                 font.pixelSize: 11
                             }
                             Divider {}
-                            SectionLabel { text: "동작 안내" }
-                            Repeater {
-                                model: dashboard.pointerOnly ? (dashboard.clickOff
-                                    ? [[dashboard.pointerAnchor === "palm" ? "손바닥 따라가기" : "검지 끝 따라가기", "포인터 이동"], ["클릭", "꺼짐"]]
-                                    : dashboard.triggerClick
-                                    ? [["검지만 펴기", "포인터 이동"], ["엄지로 검지 옆 짧게", "좌클릭"],
-                                       ["누른 채 가만히", "우클릭"], ["누른 채 움직이기", "드래그"]]
-                                    : [["검지만 펴기", "포인터 이동"], ["엄지 + 중지", "좌클릭"], ["엄지 + 약지", "우클릭"]]) : [
-                                    ["손 이동", "포인터 이동"], ["엄지 + 검지", "스크롤"],
-                                    ["엄지 + 중지", "좌클릭"], ["엄지 + 약지", "우클릭"],
-                                    ["엄지 + 새끼", "창 선택"]
-                                ]
-                                delegate: RowLayout {
-                                    required property var modelData
-                                    Layout.fillWidth: true
-                                    TextLabel { text: modelData[0]; font.pixelSize: 12; font.bold: true }
-                                    Item { Layout.fillWidth: true }
-                                    TextLabel { text: modelData[1]; font.pixelSize: 12; color: window.muted }
-                                }
-                            }
-                            TextLabel {
-                                visible: dashboard.pointerOnly
-                                Layout.fillWidth: true
-                                text: dashboard.clickOff
-                                    ? "클릭을 판정하지 않습니다. 손이 보이면 손 모양과 관계없이 커서가 따라갑니다."
-                                    : dashboard.triggerClick
-                                    ? "엄지가 검지 옆에 다가오면 커서가 고정되고, 누르기 직전 위치에서 클릭합니다."
-                                    : "검지를 움직이는 동안에는 클릭하지 않습니다. 멈춘 뒤 엄지를 뗐다가 중지·약지에 대면 클릭합니다."
-                                color: window.muted
-                                wrapMode: Text.Wrap
-                                font.pixelSize: 11
-                            }
                             TextLabel {
                                 visible: dashboard.pointerOnly && diagnostics.visible
                                 Layout.fillWidth: true
@@ -542,196 +861,47 @@ ApplicationWindow {
                     Divider {}
                     TextLabel {
                         Layout.fillWidth: true
-                        text: "Space 시작/정지 · Esc 정지 · N 다음 모니터 · F 실패 표시"
+                        text: "Space 시작/정지 · Esc 정지\nN 다음 모니터 · F 실패 표시\n창 숨기기/복귀 · " + (dashboard.shortcutLabels.hide || "")
                         font.pixelSize: 11
                         color: window.muted
                         wrapMode: Text.Wrap
                     }
                 }
             }
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                radius: 16
-                color: "white"
-                border.color: window.line
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 18
-                    spacing: 12
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        TextLabel { text: "카메라"; font.pixelSize: 20; font.bold: true }
-                        Button { text: "휴대폰 연결"; objectName: "openPhoneCamera"; onClicked: phoneCameraDialog.open() }
-                        Item { Layout.fillWidth: true }
-                        Chip { visible: dashboard.cameraMode !== ""; text: dashboard.cameraMode }
-                        Chip {
-                            visible: dashboard.brightness >= 0
-                            warn: dashboard.lowLight
-                            text: (dashboard.lowLight ? "어두움 " : "밝기 ") + Math.round(dashboard.brightness / 2.55) + "%"
-                        }
-                        Chip { text: dashboard.tracking }
-                    }
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        radius: 10
-                        color: window.navy
-                        clip: true
-                        Image {
-                            id: capturePreview
-                            anchors.fill: parent
-                            source: dashboard.previewUrl
-                            cache: false
-                            fillMode: Image.PreserveAspectFit
-
-                    Current.HandSkeleton { anchors.fill: parent; bridge: dashboard; imageWidth: parent.paintedWidth; imageHeight: parent.paintedHeight }
                 }
-                        Button {
-                            objectName: "refreshPcCamera"
-                            anchors { right: parent.right; top: parent.top; margins: 8 }
-                            text: "카메라 새로고침"
-                            enabled: dashboard.pcCameraAvailable && dashboard.recMode === "off" && !dashboard.recActive
-                                     && !dashboard.calibratingPointer && !dashboard.palmCalibrating && !dashboard.trackingActive
-                            onClicked: dashboard.reconnectCamera()
-                        }
-                        Item {
-                            visible: dashboard.recMode === "guided" && dashboard.recCondition !== ""
-                            x: (parent.width - capturePreview.paintedWidth) / 2
-                            y: (parent.height - capturePreview.paintedHeight) / 2
-                            width: capturePreview.paintedWidth
-                            height: capturePreview.paintedHeight
-                            Repeater {
-                                model: ["왼쪽 위", "위", "오른쪽 위", "왼쪽", "중앙", "오른쪽", "왼쪽 아래", "아래", "오른쪽 아래"]
-                                delegate: Rectangle {
-                                    required property int index
-                                    required property string modelData
-                                    x: (index % 3) * width; y: Math.floor(index / 3) * height
-                                    width: parent.width / 3; height: parent.height / 3
-                                    color: modelData === dashboard.recPosition ? "#2046E5BD" : "transparent"
-                                    border.width: modelData === dashboard.recPosition ? 3 : 1
-                                    border.color: modelData === dashboard.recPosition ? "#46E5BD" : "#60FFFFFF"
-                                    Label { visible: modelData === dashboard.recPosition; text: "위치 안내 · " + modelData; color: "white"; padding: 8; font.bold: true }
-                                }
-                            }
-                        }
-                        Rectangle {
-                            visible: dashboard.lowLight
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            anchors.margins: 12
-                            implicitHeight: lowLightText.implicitHeight + 16
-                            radius: 8
-                            color: "#F2B544"
-                            TextLabel {
-                                id: lowLightText
-                                anchors.fill: parent
-                                anchors.margins: 8
-                                text: "어두워요. 움직일 때 손을 놓치기 쉽습니다. 조명을 켜거나 모니터를 밝게 하고, 손을 카메라에 조금 더 가까이 두세요."
-                                wrapMode: Text.Wrap
-                                font.pixelSize: 12
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                        }
-                    }
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 66
+                    color: Theme.Studio.paper
+                    Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; height: 1; color: window.line }
                     RowLayout {
-                        visible: dashboard.calibratingPointer
-                        Layout.fillWidth: true
-                        TextLabel {
-                            Layout.fillWidth: true
-                            text: dashboard.calibrationHint
-                            wrapMode: Text.Wrap
-                        }
-                        ActionButton { text: "취소"; onClicked: dashboard.cancelPointerCalibration() }
-                    }
-                    RowLayout {
-                        visible: dashboard.recActive
-                        Layout.fillWidth: true
-                        spacing: 10
+                        anchors.fill: parent
+                        anchors.leftMargin: 22
+                        anchors.rightMargin: 22
+                        spacing: 12
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: 4
-                            TextLabel {
-                                Layout.fillWidth: true
-                                visible: dashboard.recCondition !== ""
-                                text: dashboard.recCondition
-                                font.pixelSize: 12
-                                color: "#16846E"
-                                wrapMode: Text.Wrap
-                            }
-                            TextLabel {
-                                Layout.fillWidth: true
-                                visible: dashboard.recPrompt !== ""
-                                text: dashboard.recPrompt
-                                font.pixelSize: 22
-                                font.bold: true
-                                wrapMode: Text.Wrap
-                            }
-                            Rectangle {
-                                visible: dashboard.recMode === "guided" && dashboard.recPrompt !== ""
-                                Layout.fillWidth: true
-                                height: 6
-                                radius: 3
-                                color: "#E3E9EE"
-                                Rectangle {
-                                    width: parent.width * Math.max(0, Math.min(1, dashboard.recProgress))
-                                    height: parent.height
-                                    radius: 3
-                                    color: "#45E0B4"
-                                }
-                            }
-                            TextLabel {
-                                Layout.fillWidth: true
-                                text: dashboard.recSub
-                                font.pixelSize: 12
-                                color: window.muted
-                                wrapMode: Text.Wrap
-                            }
+                            Layout.minimumWidth: 0
+                            spacing: 3
+                            TextLabel { Layout.fillWidth: true; text: dashboard.inputState; font.pixelSize: 12; font.weight: Font.DemiBold; elide: Text.ElideRight }
+                            TextLabel { Layout.fillWidth: true; text: "어느 앱에서든 제어 전환 · " + (dashboard.shortcutLabels.toggle || ""); font.pixelSize: 11; color: window.muted; elide: Text.ElideRight }
                         }
-                        ActionButton { visible: dashboard.recWaiting; text: "시작"; onClicked: dashboard.recStart() }
-                        ActionButton { visible: dashboard.recMode === "guided" && !dashboard.recWaiting; text: dashboard.recPaused ? "계속" : "일시정지"; onClicked: dashboard.toggleRecordingPause() }
-                        ActionButton { visible: dashboard.recMode !== "off"; text: "녹화 끝"; onClicked: dashboard.setRecMode("off") }
-                    }
-                    RowLayout {
-                        visible: dashboard.palmCalibrating || (dashboard.palmAxesHint !== "" && !dashboard.calibratingPointer)
-                        Layout.fillWidth: true
-                        TextLabel {
-                            Layout.fillWidth: true
-                            text: dashboard.palmAxesHint
-                            wrapMode: Text.Wrap
-                        }
-                        ActionButton { visible: dashboard.palmCalibrating; text: "취소"; onClicked: dashboard.cancelPalmCalibration() }
-                    }
-                    RowLayout {
-                        visible: !dashboard.calibratingPointer && !dashboard.palmCalibrating
-                        Layout.fillWidth: true
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            TextLabel { text: dashboard.inputState; font.bold: true }
-                            TextLabel { Layout.fillWidth: true; text: dashboard.currentAction; color: window.muted; wrapMode: Text.Wrap }
-                            TextLabel {
-                                Layout.fillWidth: true
-                                text: dashboard.mlpBadge
-                                color: dashboard.mlpBadge.indexOf("적용 중") >= 0 ? "#08775E" : window.muted
-                                font.pixelSize: 12
-                                wrapMode: Text.Wrap
-                            }
-                        }
-                        ActionButton { text: diagnostics.visible ? "상세 닫기" : "상세 정보"; onClicked: diagnostics.visible = !diagnostics.visible }
-                    }
-                    TextLabel {
-                        id: diagnostics
-                        visible: false
-                        onVisibleChanged: dashboard.showFingertips(visible)
-                        Layout.fillWidth: true
-                        text: dashboard.details
-                        color: window.muted
-                        wrapMode: Text.Wrap
-                        font.pixelSize: 12
+                        ActionButton { objectName: "mainControlToggle"; text: dashboard.controlLabel; accent: true; Layout.preferredWidth: 128; implicitHeight: 39; onClicked: dashboard.command(32) }
                     }
                 }
+            }
+        }
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 26
+            color: Theme.Studio.paper
+            Rectangle { anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right; height: 1; color: window.line }
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 16
+                anchors.rightMargin: 16
+                TextLabel { text: dashboard.profileLabel; color: window.muted; font.pixelSize: 11; Layout.fillWidth: true; elide: Text.ElideRight }
+                TextLabel { text: dashboard.chosenHand || "사용할 손 설정 필요"; color: window.muted; font.pixelSize: 11 }
             }
         }
     }
@@ -768,7 +938,7 @@ ApplicationWindow {
         onOpened: dashboard.openTraining()
         onClosed: dashboard.closeTraining()
         padding: 20
-        background: Rectangle { radius: 16; color: "white"; border.color: window.line }
+        background: Rectangle { radius: 16; color: Theme.Studio.paper; border.color: window.line }
         contentItem: ColumnLayout {
             spacing: 10
             RowLayout {
@@ -812,15 +982,15 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 implicitHeight: storageWarn.implicitHeight + 14
                 radius: 8
-                color: "#FFF1D6"
-                border.color: "#F2B544"
+                color: Theme.Studio.amberWash
+                border.color: Theme.Studio.amber
                 TextLabel {
                     id: storageWarn
                     anchors.fill: parent
                     anchors.margins: 7
                     text: dashboard.trainingStorage
                     font.pixelSize: 12
-                    color: "#8A5A00"
+                    color: Theme.Studio.amber
                     wrapMode: Text.Wrap
                 }
             }
@@ -885,8 +1055,8 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             implicitHeight: rowBody.implicitHeight + 24
                             radius: 12
-                            color: modelData.level === "need" ? "#FFF8EA" : "#F7FAFB"
-                            border.color: modelData.level === "need" ? "#F2B544" : window.line
+                            color: modelData.level === "need" ? Theme.Studio.amberWash : Theme.Studio.soft
+                            border.color: modelData.level === "need" ? Theme.Studio.amber : window.line
                             RowLayout {
                                 id: rowBody
                                 anchors.fill: parent
@@ -921,11 +1091,11 @@ ApplicationWindow {
                                         Rectangle {
                                             Layout.fillWidth: true
                                             Layout.maximumWidth: 260
-                                            height: 8; radius: 4; color: "#E3E9EE"
+                                            height: 8; radius: 4; color: Theme.Studio.line
                                             Rectangle {
                                                 width: parent.width * Math.max(0, Math.min(1, row.modelData.data_ratio))
                                                 height: parent.height; radius: 4
-                                                color: row.modelData.data_ratio >= 1 ? "#45E0B4" : "#F2B544"
+                                                color: row.modelData.data_ratio >= 1 ? Theme.Studio.mintDark : Theme.Studio.amber
                                             }
                                         }
                                         TextLabel { text: row.modelData.data_text; font.pixelSize: 12 }
@@ -969,7 +1139,7 @@ ApplicationWindow {
                                         Layout.fillWidth: true
                                         text: "→ " + row.modelData.advice
                                         font.pixelSize: 12
-                                        color: row.modelData.level === "need" ? "#8A5A00" : window.muted
+                                        color: row.modelData.level === "need" ? Theme.Studio.amber : window.muted
                                         wrapMode: Text.Wrap
                                     }
                                 }
@@ -1016,10 +1186,10 @@ ApplicationWindow {
                     Rectangle {
                         visible: dashboard.trainingRunning || dashboard.trainingProgress > 0
                         Layout.fillWidth: true
-                        height: 6; radius: 3; color: "#E3E9EE"
+                        height: 6; radius: 3; color: Theme.Studio.line
                         Rectangle {
                             width: parent.width * Math.max(0, Math.min(1, dashboard.trainingProgress))
-                            height: parent.height; radius: 3; color: "#45E0B4"
+                            height: parent.height; radius: 3; color: Theme.Studio.mintDark
                         }
                     }
                     TextLabel {
@@ -1054,7 +1224,7 @@ ApplicationWindow {
     RecordingPlanDialog { id: capturePlan; objectName: "recordingPlanDialog"; editor: dashboard.recordingPlan }
 
     // Shared primary learning center: same recording, model and sharing UI in both layouts.
-    Current.LearningCenter {
+    Current.CommandLearningCenter {
         id: dataCenter
         objectName: "studioDataManagement"
         controller: dashboard
@@ -1094,7 +1264,7 @@ ApplicationWindow {
             anchors.fill: parent
             implicitWidth: pillRow.implicitWidth + 24
             radius: height / 2
-            color: "#E6112331"
+            color: Theme.Studio.stage
             Row {
                 id: pillRow
                 anchors.centerIn: parent
@@ -1102,13 +1272,13 @@ ApplicationWindow {
                 Rectangle {
                     width: 10; height: 10; radius: 5
                     anchors.verticalCenter: parent.verticalCenter
-                    color: dashboard.receptionState === "ok" ? "#2FBF8F"
-                         : dashboard.receptionState === "weak" ? "#F2B544"
-                         : dashboard.receptionState === "none" ? "#8A9AA6" : "#526575"
+                    color: dashboard.receptionState === "ok" ? Theme.Studio.mint
+                         : dashboard.receptionState === "weak" ? Theme.Studio.amber
+                         : dashboard.receptionState === "none" ? Theme.Studio.railMuted : Theme.Studio.muted
                 }
                 Label {
                     text: "MANUX · " + dashboard.receptionText
-                    color: "#F5F7F8"
+                    color: Theme.Studio.stageText
                     font.pixelSize: 13
                     font.family: Theme.Studio.font
                 }
@@ -1139,9 +1309,9 @@ ApplicationWindow {
             anchors.fill: parent
             implicitWidth: badgeRow.implicitWidth + 32
             radius: height / 2
-            color: dashboard.motionBadgeOn ? "#F2B544" : "#E6112331"
+            color: dashboard.motionBadgeOn ? Theme.Studio.amberWash : Theme.Studio.stage
             border.width: 2
-            border.color: dashboard.motionBadgeOn ? "#FFF3D6" : "#526575"
+            border.color: dashboard.motionBadgeOn ? Theme.Studio.amber : Theme.Studio.railMuted
             Row {
                 id: badgeRow
                 anchors.centerIn: parent
@@ -1149,11 +1319,11 @@ ApplicationWindow {
                 Rectangle {
                     width: 12; height: 12; radius: 6
                     anchors.verticalCenter: parent.verticalCenter
-                    color: dashboard.motionBadgeOn ? "#112331" : "#F2B544"
+                    color: dashboard.motionBadgeOn ? Theme.Studio.amber : Theme.Studio.amber
                 }
                 Label {
                     text: dashboard.motionBadgeText
-                    color: dashboard.motionBadgeOn ? "#112331" : "#F5F7F8"
+                    color: dashboard.motionBadgeOn ? Theme.Studio.amber : Theme.Studio.stageText
                     font.pixelSize: 16
                     font.bold: true
                     font.family: Theme.Studio.font
@@ -1167,7 +1337,7 @@ ApplicationWindow {
         title: "MANUX 트래킹 측정"
         // Independent of the dashboard window: it stays usable while the dashboard is hidden in the tray
         transientParent: null
-        color: "#0E1B26"
+        color: Theme.Studio.stage
         visibility: dashboard.trackingActive ? Window.FullScreen : Window.Hidden
         flags: Qt.Window
         // Take keyboard focus when shown, so Space / Esc reach this window right away
@@ -1215,7 +1385,7 @@ ApplicationWindow {
             radius: width / 2
             x: dashboard.trackingTargetX * trackingWindow.width - width / 2
             y: dashboard.trackingTargetY * trackingWindow.height - height / 2
-            color: "#46E5BD"
+            color: Theme.Studio.mint
             opacity: .85
         }
         Rectangle {
@@ -1224,7 +1394,7 @@ ApplicationWindow {
             x: dashboard.trackingCursorX * trackingWindow.width - 8
             y: dashboard.trackingCursorY * trackingWindow.height - 8
             color: "transparent"
-            border.color: "#F5F7F8"
+            border.color: Theme.Studio.stageText
             border.width: 2
         }
         Column {
@@ -1235,7 +1405,7 @@ ApplicationWindow {
             Label {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: dashboard.trackingStatus
-                color: "#F5F7F8"
+                color: Theme.Studio.stageText
                 font.pixelSize: 20
                 font.bold: true
             }
@@ -1243,7 +1413,7 @@ ApplicationWindow {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: dashboard.trackingDone ? "Esc 닫기 · 결과는 hand-mouse/logs/tracking-*.csv"
                                              : "Space 제어 시작/일시정지 · Esc 그만두기 · 클릭은 하지 않습니다"
-                color: "#9FB3C2"
+                color: Theme.Studio.railMuted
                 font.pixelSize: 14
             }
         }
@@ -1252,7 +1422,7 @@ ApplicationWindow {
             anchors.centerIn: parent
             text: "일시정지됨\nSpace를 눌러 시작"
             horizontalAlignment: Text.AlignHCenter
-            color: "#F5F7F8"
+            color: Theme.Studio.stageText
             font.pixelSize: 40
             font.bold: true
         }

@@ -35,6 +35,7 @@ from manux.ui.finger import overlay_frame
 from manux.ui.tutorial import Tutorial, onboarding_steps
 from manux.ui.view import ViewFrame
 from manux.ui.studio import StudioBridge
+from manux.ui.ai_customization import AiCustomizationBridge
 
 QML = Path(__file__).with_name("qml") / "dashboard.qml"
 CLICK_STYLES = ("pinch", "trigger", "off")
@@ -164,9 +165,7 @@ _DEFAULT_STUDIO_ACTIONS = (
      "desc": "엄지만 손바닥 안으로 접고 네 손가락을 펴 손을 가로로 세워 모든 창을 최소화하는 자세"},
     {"id": "v_sign", "category": "window", "key": "3", "icon": "✌️", "label": "3. 제어 켜기·끄기 (V 손 모양)", "short": "제어 토글 (V자)",
      "desc": "검지와 중지만 V자로 펴고 나머지는 접어 마우스 제어를 토글하는 자세"},
-    {"id": "rock_sign", "category": "window", "key": "4", "icon": "🤘", "label": "4. 창 닫기 (검지·새끼 펴기)", "short": "창 닫기 (Rock)",
-     "desc": "검지와 새끼만 펴고 중지·약지를 접어 현재 창을 닫는(Alt+F4) 자세"},
-    {"id": "thumbs_up", "category": "window", "key": "5", "icon": "👍", "label": "5. 모션 모드 (엄지 위로)", "short": "모션 모드 (엄지척)",
+    {"id": "thumbs_up", "category": "window", "key": "4", "icon": "👍", "label": "4. 모션 모드 (엄지 위로)", "short": "모션 모드 (엄지척)",
      "desc": "네 손가락을 접고 엄지만 위로 세워 모션 제어 모드를 전환하는 자세"},
     # guard
     {"id": "none", "category": "guard", "key": "1", "icon": "✊", "label": "1. 이동·휴식 가드 (none)", "short": "이동·휴식",
@@ -464,6 +463,10 @@ class RecordingPlanEditor(QObject):
 
 
 class Bridge(QObject):
+    @Property(QObject, constant=True)
+    def aiCustomization(self):
+        return self.ai_customization
+
     stateChanged = Signal()
     sensitivityChanged = Signal()
     sensitivityApplied = Signal()
@@ -566,6 +569,7 @@ class Bridge(QObject):
         # dataset recording & training center
         self.tc = self.services.get("training_center") or _NullTrainingService(self.config_dir)
         self.studio = StudioBridge(self)
+        self.ai_customization = AiCustomizationBridge(self, self.services.get("ai_customization"))
         self.studio.changed.connect(self.trainingChanged.emit)
         self.rec_mode = "off"
         self.rec_view: Optional[Dict[str, Any]] = None
@@ -649,6 +653,7 @@ class Bridge(QObject):
         self.engine.addImageProvider("vision", self.provider)
         self.phone_qr_provider = CameraImage()
         self.engine.addImageProvider("phoneqr", self.phone_qr_provider)
+        self.engine.addImageProvider("probeshot", self.ai_customization.probe_shot)
         self.engine.rootContext().setContextProperty("dashboard", self)
         qml = QML.parent / "studio" / "dashboard.qml" if self.layout == "studio" else QML
         self.engine.load(QUrl.fromLocalFile(str(qml)))
@@ -1851,8 +1856,17 @@ class Bridge(QObject):
     def setPoseStudioVisible(self, visible):
         self._pose_studio_visible = bool(visible)
         if visible: self._pause()
-        else: self.pose_studio.stop_stream()
+        else:
+            self.pose_studio.stop_stream()
+            self.ai_customization.setPoseStudioVisible(False)
         self.studioChanged.emit()
+
+    @Slot(bool)
+    def setAiPoseStudioVisible(self, visible):
+        if visible:
+            self.pose_studio.stop_stream()
+            self.studioChanged.emit()
+        self.ai_customization.setPoseStudioVisible(visible)
 
     @Property(bool, notify=studioChanged)
     def spatialGuardEnabled(self): return self._spatial_guard_enabled
@@ -1864,6 +1878,8 @@ class Bridge(QObject):
         self.runtime.request(RuntimeRequest("spatial_guard", "off" if self._spatial_guard_enabled else "on"))
 
     def _studio_label(self, action_id: str) -> str:
+        if action_id == 'rock_sign':
+            return 'Rock sign (이전 모델 분류 · 기본 동작 없음)'
         for item in self._studio_actions:
             if item["id"] == action_id:
                 return item["short"]
@@ -2688,7 +2704,12 @@ class Bridge(QObject):
         if key == KEY_Q:
             self.closed = True
         elif self.stage_name == "main" and (self.page == "studio" or self._pose_studio_visible):
-            if key == KEY_SPACE:
+            if self.ai_customization.poseStudioVisible:
+                if key == KEY_SPACE:
+                    self.ai_customization.capturePoseStudioExample()
+                elif key == KEY_ESC:
+                    self.ai_customization.cancelPoseStudioCapture()
+            elif key == KEY_SPACE:
                 self.triggerStudioCapture()
             elif key == KEY_ESC and self.pose_studio.is_streaming:
                 self.pose_studio.stop_stream()
@@ -2907,6 +2928,7 @@ class Bridge(QObject):
             self.tip, self.tip_at = (tip[0], tip[1]), time.perf_counter()
             self.aspect = view.aspect
         if self.page == "studio" or self._pose_studio_visible:
+            self.ai_customization.observePoseStudioFrame(view.landmarks, view.aspect)
             sys_act = (self._studio_sys_fn(view.rule_preview or snap, view.actions) if self._studio_sys_fn is not None
                        else ("none" if not view.actions else view.actions[0]))
             if sys_act in ("none", "thumb_middle", "thumb_ring") and view.preview_guides:
@@ -3013,6 +3035,8 @@ class Bridge(QObject):
         self.previewChanged.emit()
 
     def close(self) -> None:
+        if getattr(self, "ai_customization", None) is not None:
+            self.ai_customization.close()
         if getattr(self, "_closed_qml", False):
             return
         self._closed_qml = True

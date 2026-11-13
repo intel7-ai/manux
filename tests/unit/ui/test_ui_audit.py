@@ -15,7 +15,7 @@ from test_studio_layout import studio, visual_child
 def test_all_qml_bridge_and_library_handler_targets_are_defined():
     ui = Path(__file__).resolve().parents[3] / "src/manux/ui"
     methods = {}
-    for file, owner in [("bridge.py", "Bridge"), ("studio.py", "StudioBridge")]:
+    for file, owner in [("bridge.py", "Bridge"), ("studio.py", "StudioBridge"), ("ai_customization.py", "AiCustomizationBridge")]:
         tree = ast.parse((ui / file).read_text(encoding="utf-8"))
         cls = next(
             node
@@ -39,7 +39,8 @@ def test_all_qml_bridge_and_library_handler_targets_are_defined():
             for method in re.findall(
                 r"(?:controller|dashboard)\.([A-Za-z_]\w*)\s*\(", line
             ):
-                assert method in methods["Bridge"], (path, line_no, method)
+                owner = "AiCustomizationBridge" if path.name in ("AiCustomizationDialog.qml", "AiDrawOverlay.qml") else "Bridge"
+                assert method in methods[owner], (path, line_no, method)
             for method in re.findall(
                 r"(?:library|learningStudio)\.([A-Za-z_]\w*)\s*\(", line
             ):
@@ -58,7 +59,7 @@ def test_every_learning_tab_opens_with_real_services_and_no_qml_errors(
     QTest.qWait(100)
     for width, height in [(780, 560), (1140, 720)]:
         bridge.window.resize(width, height)
-        for index in range(3):
+        for index in range(2):
             button = visual_child(bridge.window.contentItem(), f"studioTab_{index}")
             assert button is not None
             assert button.property("enabled")

@@ -35,6 +35,7 @@ class ActionSpec:
 
 
 _SPECS = (
+    ActionSpec("custom.execute", TAP | SPAN, params=("gesture_key", "native", "fallback_default")),
     ActionSpec("mouse.move", HOLD, params=("gain",), v03=("move_cursor",)),
     ActionSpec("mouse.left_click", TAP, v03=("left_click",)),
     ActionSpec("mouse.right_click", TAP, v03=("right_click",)),

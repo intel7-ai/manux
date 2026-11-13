@@ -1,0 +1,33 @@
+{
+  "repository": "https://github.com/intel7-ai/manux",
+  "branch": "feat/hand-mouse-20261112",
+  "commit": "a700452",
+  "sha256": {
+    "llm_binding": "4cea3b861885c140c4e6ad28e3e4a241c273cf7b72393d36c9561688256a691c",
+    "gesture_overlap": "906b6243979c7a450107ce9125ddc14a2efa4ee38e4607698d5c544f4db760c4",
+    "custom_postures": "9c7d015416d41ba0400fa06fe5dcc0c803788364e0deeea5b13ff40a10fe9e7c",
+    "posture_teach": "67c3f96bcf5801ea8d8e5773d6385266131c05be9ff3ad7ed1823bf151e56283",
+    "sequence": "5741035c221a8cac4eabddde2957b90e7e45c0406c0b2166696268cc49875dac",
+    "path_gesture": "84097502fe73e16935e603657fc1a89622133e1aca43b0da1694051f45ac6074",
+    "draw_mode": "611bdea5a97c9624f94612e248b7b72abeeeaa3a9f7fa551dae049ce31364314",
+    "stroke_recognizer": "9ad3e7187449d15123f057303b19bd3f41c92564ae65a07b169b867aab3a032a",
+    "virtual_hand": "c3e60733b9632592eb39a9910e5036b104033ff8a3e99ed5a5cf7f1816eea3d3",
+    "motion_mode": "fb9fa82ee18cc1542cfbe1d4183f784f45719fdebd157c22664ebc885ba84265",
+    "recorder": "e44a476992062f68d6c706ed2c7bc381debf6223abea0848e89ea1c0e5f07434",
+    "gesture_catalog": "37bc873812b9fbbab6d9bb06f2b501484d466a55702ab1dcaccf3d77a9a2a55b",
+    "gesture_presets": "e70593f5c0a71db8961fa396769be08e26d0e1e6f7b563d8060b791284864f06",
+    "gesture_preview": "854f170c8304dd10f49860c3ce25ac4cf1c721875b1c2e0dae64a12ce588a1b0",
+    "spatial_features": "4aee3d4ca9d202007d0cf73f9a7fbb5581c50d4f3560e356dcbd9e4bda0630d8",
+    "default_moves": "339657b87e80f6f8b178618565f4207d107317b4af24b6d23a48bdb888922adc",
+    "profiles": "c3db40a241f81483e9dec7a2ae8af06cf4d4f3107aeecbba16a7cbd4528fb36c",
+    "action_bindings": "da1fced850a07dcdab5e9e9b7785ba8b4967bdfa515d55f5c022feb2d93264a9",
+    "macro": "2225b67a830346e9f8a0269b204aaf87ad145de8bc3e40800269b6effb4ae592",
+    "pose_probe": "c7583704d85fc0c46179f6ae0d93d5ad2f650e9bf165bad33d06a474c774f484",
+    "qt_dashboard": "49d41ef263d2b07273a4e25c557fa12b70b1a9e427b3a26151cff7f50d6464ba",
+    "llm_providers": "e7a469c1e0c401defa834a9a3b631e922dc7234dfc1059693b260189808aff10",
+    "app_launch": "909c3d909f7c3c626bdb6b0080ae4614f3a02212cf8320b5031af600311f42fd",
+    "close_sign": "274e3bdbbc3235fc31c8e638ecde8758e195ae1f740efe8ed81e48497f6841b7",
+    "gesture_engine": "437547c4b49e4a05529bc35bd6c93935a9ccc63184bb16698165d29a8b02dae9"
+  },
+  "qml_dialog_sha256": "a36ee6146189e0a8491f8fa2ae29cafd5a8b2f21d6c08d2f2eee7f65e7acb9dd"
+}

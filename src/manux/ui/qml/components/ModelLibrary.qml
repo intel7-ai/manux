@@ -43,7 +43,7 @@ ScrollView {
                 }
             }
         }
-        Copy { Layout.fillWidth: true; visible: page.library.localModels.length===0; text: "아직 보관 모델이 없습니다. 동작 탭에서 학습을 실행하세요."; color: Theme.Studio.muted }
+        Copy { Layout.fillWidth: true; visible: page.library.localModels.length===0; text: "아직 보관 모델이 없습니다. 포즈 표본에서 MLP를 학습하세요."; color: Theme.Studio.muted }
         StudioField { objectName: "modelDisplayName"; Layout.fillWidth: true; text: page.draftName; onTextEdited: page.draftName=text; maximumLength: 80; placeholderText: "모델 이름 · 예: 책상 오른손 v2"; Accessible.name: "모델 표시 이름"; enabled: page.selectedId!=="" && page.idle }
         Flow {
             Layout.fillWidth: true; spacing: 6

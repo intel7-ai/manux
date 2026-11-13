@@ -14,19 +14,19 @@ Dialog {
     focus: true
     closePolicy: Popup.CloseOnEscape
     padding: 20
-    palette.window: "#FFFFFF"
-    palette.windowText: "#112331"
-    palette.base: "#F4F6F8"
-    palette.text: "#112331"
-    palette.button: "#EDF3F5"
-    palette.buttonText: "#112331"
-    palette.highlight: "#46E5BD"
-    palette.highlightedText: "#112331"
-    palette.mid: "#DEE5EA"
-    palette.dark: "#526575"
-    background: Rectangle { radius: 16; color: "white"; border.color: "#DEE5EA" }
+    palette.window: Theme.Studio.paper
+    palette.windowText: Theme.Studio.ink
+    palette.base: Theme.Studio.surface
+    palette.text: Theme.Studio.ink
+    palette.button: Theme.Studio.soft
+    palette.buttonText: Theme.Studio.ink
+    palette.highlight: Theme.Studio.mint
+    palette.highlightedText: Theme.Studio.mintText
+    palette.mid: Theme.Studio.line
+    palette.dark: Theme.Studio.muted
+    background: Rectangle { radius: 16; color: Theme.Studio.paper; border.color: Theme.Studio.line }
 
-    component Caption: Label { color: "#112331"; font.pixelSize: 13; wrapMode: Text.Wrap }
+    component Caption: Label { color: Theme.Studio.ink; font.pixelSize: 13; wrapMode: Text.Wrap }
     component Choice: ColumnLayout {
         id: choice
         property string field
@@ -66,7 +66,7 @@ Dialog {
             ColumnLayout {
                 Layout.fillWidth: true
                 Caption { text: dialog.editor.title; font.pixelSize: 21; font.bold: true; Layout.fillWidth: true }
-                Caption { text: "자세를 고르고 조건을 편집하세요. 동작마다 설정을 따로 저장합니다."; color: "#526575" }
+                Caption { text: "자세를 고르고 조건을 편집하세요. 동작마다 설정을 따로 저장합니다."; color: Theme.Studio.muted }
             }
             StudioButton { text: "닫기"; onClicked: dialog.close() }
         }
@@ -79,7 +79,7 @@ Dialog {
             StudioButton { objectName: "quickClickPreset"; text: "짧은 클릭 · 각도×속도"; visible: dialog.editor.clickGesture; onClicked: dialog.editor.usePreset("quick_click") }
             Item { Layout.fillWidth: true }
         }
-        Caption { text: dialog.editor.instruction; Layout.fillWidth: true; color: "#16846E" }
+        Caption { text: dialog.editor.instruction; Layout.fillWidth: true; color: Theme.Studio.mintDark }
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -104,8 +104,8 @@ Dialog {
                         width: poseList.width - 12
                         height: 64
                         radius: 8
-                        color: index === dialog.editor.selectedIndex ? "#DDF8EF" : "#F4F6F8"
-                        border.color: index === dialog.editor.selectedIndex ? "#16846E" : "#DEE5EA"
+                        color: index === dialog.editor.selectedIndex ? Theme.Studio.mintWash : Theme.Studio.surface
+                        border.color: index === dialog.editor.selectedIndex ? Theme.Studio.mintDark : Theme.Studio.line
                         RowLayout {
                             anchors.fill: parent; anchors.margins: 6
                             StudioCheck {
@@ -120,7 +120,7 @@ Dialog {
                                 onClicked: dialog.editor.select(index)
                                 contentItem: ColumnLayout {
                                     Caption { text: (index + 1) + ". " + modelData.name; font.bold: true; Layout.fillWidth: true; elide: Text.ElideRight; maximumLineCount: 1 }
-                                    Caption { text: modelData.coverage; color: "#526575"; font.pixelSize: 11 }
+                                    Caption { text: modelData.coverage; color: Theme.Studio.muted; font.pixelSize: 11 }
                                 }
                                 Accessible.name: modelData.name + " 편집"
                             }
@@ -185,7 +185,7 @@ Dialog {
                             onEdited: dialog.editor.setField("reps", value)
                             Accessible.name: "반복 횟수"
                         }
-                        Caption { text: "회 · 동작을 유지하다가 쉬기 안내에 맞춰 풀어주세요."; Layout.fillWidth: true; color: "#526575" }
+                        Caption { text: "회 · 동작을 유지하다가 쉬기 안내에 맞춰 풀어주세요."; Layout.fillWidth: true; color: Theme.Studio.muted }
                     }
                     GridLayout {
                         visible: !dialog.editor.neutral
@@ -209,17 +209,17 @@ Dialog {
                     Caption {
                         Layout.fillWidth: true
                         text: "방향·거리·자세는 직접 맞춰주세요. 녹화 화면에 조건과 위치 안내가 표시됩니다. 손의 3D 관절을 놓치면 타이머가 멈추고, 다시 잡히면 이어집니다."
-                        color: "#526575"; font.pixelSize: 12
+                        color: Theme.Studio.muted; font.pixelSize: 12
                     }
                 }
             }
         }
-        Rectangle { Layout.fillWidth: true; height: 1; color: "#DEE5EA" }
+        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.Studio.line }
         Caption { text: dialog.editor.summary; font.bold: true; Layout.fillWidth: true }
-        Caption { text: dialog.editor.message; visible: text !== ""; Layout.fillWidth: true; color: "#16846E"; font.pixelSize: 12 }
+        Caption { text: dialog.editor.message; visible: text !== ""; Layout.fillWidth: true; color: Theme.Studio.mintDark; font.pixelSize: 12 }
         RowLayout {
             Layout.fillWidth: true
-            Caption { text: "녹화 중 PC 마우스 제어 꺼짐"; color: "#526575"; Layout.fillWidth: true }
+            Caption { text: "녹화 중 PC 마우스 제어 꺼짐"; color: Theme.Studio.muted; Layout.fillWidth: true }
             StudioButton { text: "설정 저장"; onClicked: dialog.editor.save() }
             StudioButton {
                 text: "이 설정으로 녹화"

@@ -1,0 +1,9 @@
+{
+  "version": "0.5.0-command.20261113.7",
+  "pack_id": "MANUXPreview",
+  "channel": "preview",
+  "updates": false,
+  "source_sha": "f1a88ee+ai-original-a700452+command+live-judgement+retired-rock-guard+pose-capture-controls",
+  "with_trainer": true,
+  "data_profile": "MANUX-Command/v05-command-20261112"
+}

@@ -116,21 +116,29 @@ def test_spatial_pose_feature_hot_reload():
     assert feat.evidence.action in ("thumb_middle", "none")
 
 
-def test_rock_class_is_a_gesture_and_close_runs_once_via_binding():
+def test_rock_class_keeps_model_compatibility_but_requires_an_explicit_binding():
     from manux.actions.catalog import CATALOG
     from manux.features.spatial_pose import DEFAULT_BINDINGS
     assert CLASS_TO_GESTURE["rock_sign"] == "spatial_pose.rock_sign"
     assert not set(CLASS_TO_GESTURE.values()) & set(CATALOG)
-    assert DEFAULT_BINDINGS["spatial_pose.rock_sign"] == "window.close"
+    assert "spatial_pose.rock_sign" not in DEFAULT_BINDINGS
     model = SpatialMlpModel(np.zeros((4,96)), np.zeros(4), np.zeros((2,4)), np.array([-10.,10.]),
                             classes=("none","rock_sign"))
     feature = SpatialPoseFeature(model, mode="direct")
     frame = FrameInfo(1, 1., 640, 480, False)
     hand = HandObservation(frame, tuple(_dummy_hand()), "Right", .99)
     ctx = FrameContext(frame, "default", "none", "pointer")
+    # The shipping desktop is assist-only: the old advertised default never fired.
+    assist = SpatialPoseFeature(model, mode="assist")
+    assert assist.step(hand, ctx) == ()
+    assert assist.evidence.action == "rock_sign"
     first = feature.step(hand, ctx)
     assert [(i.gesture,i.phase) for i in first] == [("spatial_pose.rock_sign","tap")]
     assert feature.step(hand, ctx) == ()  # holding a pose must not close more windows
+    from manux.actions.router import Router
+    from manux.actions.bindings import Binding
+    assert Router(DEFAULT_BINDINGS).route(first[0]).reason == "unbound"
+    assert Router({"spatial_pose.rock_sign": Binding("window.close", {})}).route(first[0]).command.action == "window.close"
 
 
 def test_direct_mlp_v_is_evidence_only_so_it_cannot_bypass_control_hold():
@@ -143,6 +151,39 @@ def test_direct_mlp_v_is_evidence_only_so_it_cannot_bypass_control_hold():
     assert feature.step(hand, ctx) == ()
     assert feature.evidence.action == "v_sign"
     assert CLASS_TO_GESTURE["v_sign"] == "control.v_sign"
+
+
+@pytest.mark.parametrize('gesture', ['pinch.thumb_middle', 'pinch.thumb_ring', 'pointer.left_click', 'pointer.right_click'])
+def test_retired_rock_model_output_does_not_veto_current_clicks(gesture):
+    model = SpatialMlpModel(np.zeros((4,96)), np.zeros(4), np.zeros((2,4)), np.array([-10.,10.]),
+                            classes=('none', 'rock_sign'))
+    feature = SpatialPoseFeature(model, mode='assist')
+    guard = SpatialPoseGuard(feature)
+    frame = FrameInfo(1, 1., 640, 480, False)
+    ctx = FrameContext(frame, 'default', 'none', 'pinch')
+    hand = HandObservation(frame, tuple(_dummy_hand(12)), 'Right', .99)
+    guard.observe(hand, ctx)
+    raw = feature.evidence
+    request = Intent(frame.t, gesture.split('.')[0], gesture, 'tap')
+    result = guard.filter((request,), ctx)
+    assert any(i.gesture == gesture and i.phase == 'tap' for i in result)
+    assert guard.vetoed_count == 0 and guard.boosted_count == 0
+    assert feature.evidence is raw and raw.action == 'rock_sign' and raw.confidence > .99
+    # Ignoring a retired class must not promote the runner-up into a synthetic click.
+    assert not any(i.phase == 'tap' for i in guard.filter((), ctx))
+
+
+def test_retired_rock_keeps_accepted_drag_contact_and_releases_on_real_release():
+    model = SpatialMlpModel(np.zeros((4,96)), np.zeros(4), np.zeros((2,4)), np.array([-10.,10.]),
+                            classes=('none', 'rock_sign'))
+    guard = SpatialPoseGuard(SpatialPoseFeature(model))
+    for n, phase, target in ((0, 'begin', 12), (1, 'hold', 12), (2, 'end', None)):
+        frame = FrameInfo(n, 1. + n * .1, 640, 480, False)
+        ctx = FrameContext(frame, 'default', 'none', 'pinch')
+        guard.observe(HandObservation(frame, tuple(_dummy_hand(target)), 'Right', .99), ctx)
+        result = guard.filter((Intent(frame.t, 'pinch', 'pinch.drag', phase, point=(.5,.5)),), ctx)
+        assert any(i.gesture == 'pinch.drag' and i.phase == phase for i in result)
+    assert not guard._dragging
 
 
 def test_guard_boost_clicks_once_for_a_confident_pose_the_rules_missed(trained_mlp: SpatialMlpModel):

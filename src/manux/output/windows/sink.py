@@ -69,6 +69,7 @@ class WindowsOutputSink:
         self._clock = clock
         self._lock = threading.RLock()
         self._closed = False
+        self.custom_output = None  # injected by desktop.py for explicitly saved AI connections
         start = None
         try:
             start = backend.cursor_pos()
@@ -133,6 +134,8 @@ class WindowsOutputSink:
     def release_all(self, reason: str = "") -> None:
         """Release everything that is held. Safe to call any number of times; never raises."""
         with self._lock:
+            if self.custom_output is not None:
+                self.custom_output.cancel()
             self._holding_left = False
             self._holding_right = False
             steps = (
@@ -346,6 +349,9 @@ class WindowsOutputSink:
         return True
 
     # ------------------------------------------------------------------ actions
+    def _do_custom_execute(self, cmd: ActionCommand) -> OutputResult:
+        return self.custom_output.apply(cmd) if self.custom_output is not None else BLOCKED
+
     def _do_mouse_move(self, cmd: ActionCommand) -> OutputResult:
         # Releasing pinch contact releases held mouse button (Pure 1:1 Mouse Emulation)
         if getattr(self, "_holding_left", False):

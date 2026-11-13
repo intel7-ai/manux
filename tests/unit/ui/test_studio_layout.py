@@ -46,7 +46,7 @@ def test_pose_panel_button_collects_streams_stops_and_saves(studio, monkeypatch)
     bridge.timer.stop()
     monkeypatch.setattr(bridge.studio, "_run", lambda *args, **kwargs: None)
     center = bridge.window.findChild(QObject, "studioDataManagement")
-    center.setProperty("pageIndex", 2)
+    center.setProperty("pageIndex", 0)
     QMetaObject.invokeMethod(center, "open")
     QTest.qWait(100)
     bridge.setStudioDiscrepancyOnly(False)
@@ -97,7 +97,7 @@ def test_main_header_uses_existing_manux_ci_at_both_window_sizes(studio):
         QTest.qWait(80)
         logo = bridge.window.findChild(QQuickItem, "mainBrandLogo")
         assert logo is not None and logo.isVisible()
-        assert str(logo.property("source").toString()).endswith("/assets/manux.svg")
+        assert str(logo.property("source").toString()).endswith(("/assets/manux.svg", "/assets/manux-dark.svg"))
         image = grab_item(logo)
         assert not image.isNull()
         assert any(image.pixelColor(x, y).alpha() > 0
@@ -342,13 +342,12 @@ def test_small_window_keeps_control_and_tutorial_footer_inside_viewport(studio):
     assert not [m for m in messages if any(s in m for s in ("ReferenceError", "TypeError", "Error:", "Cannot assign", "Binding loop"))], messages
 
 
-def test_small_learning_center_can_scroll_to_all_six_tabs_and_player_controls(studio):
+def test_command_learning_has_two_tabs_and_reachable_mlp_training_at_small_size(studio):
     bridge, service, runtime, messages = studio
     bridge.timer.stop()
     bridge.window.resize(780, 560)
     center = bridge.window.findChild(QObject, "studioDataManagement")
     center.setProperty("pageIndex", 0)
-    center.setProperty("recordingSubTab", 1)
     QMetaObject.invokeMethod(center, "open")
     QTest.qWait(100)
     scroll = bridge.window.findChild(QQuickItem, "learningNavigationScroll")
@@ -356,17 +355,22 @@ def test_small_learning_center_can_scroll_to_all_six_tabs_and_player_controls(st
     max_y = max(0., flick.property("contentHeight") - flick.height())
     flick.setProperty("contentY", max_y)
     QTest.qWait(60)
-    tab = visual_child(bridge.window.contentItem(), "studioTab_2")
+    assert bridge.window.findChild(QObject, "openDataStudio") is None
+    assert visual_child(bridge.window.contentItem(), "studioTab_2") is None
+    assert visual_child(bridge.window.contentItem(), "studioTab_0").property("text") == "포즈 표본"
+    tab = visual_child(bridge.window.contentItem(), "studioTab_1")
     assert tab is not None
+    assert tab.property("text") == "모델 관리"
     top = tab.mapToScene(QPointF(0, 0)).y()
     bottom = tab.mapToScene(QPointF(0, tab.height())).y()
     viewport_top = scroll.mapToScene(QPointF(0, 0)).y()
     assert viewport_top <= top and bottom <= viewport_top + scroll.height()
-    detail = bridge.window.findChild(QQuickItem, "recordingDetailScroll")
+    detail = bridge.window.findChild(QQuickItem, "learningPosePage")
     flick = detail.property("contentItem")
     assert flick.property("contentHeight") > flick.height()
-    play = visual_child(bridge.window.contentItem(), "studioPlay")
-    # Scroll the actual content, then verify the playback button fits the viewport.
+    play = visual_child(bridge.window.contentItem(), "trainPoseModel")
+    assert play.property("text") == "MLP 학습"
+    # The reduced window must still expose the retained capture/train controls by scrolling.
     viewport_top = detail.mapToScene(QPointF(0, 0)).y()
     play_top = play.mapToScene(QPointF(0, 0)).y()
     target_y = flick.property("contentY") + play_top - viewport_top

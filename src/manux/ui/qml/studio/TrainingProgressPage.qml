@@ -1,4 +1,5 @@
 import QtQuick
+import "../theme" as Theme
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -13,14 +14,29 @@ Popup {
     height: Math.min(820, parent.height - 32)
     modal: true
     focus: true
+    palette.window: Theme.Studio.paper
+    palette.windowText: Theme.Studio.ink
+    palette.base: Theme.Studio.surface
+    palette.alternateBase: Theme.Studio.soft
+    palette.text: Theme.Studio.ink
+    palette.placeholderText: Theme.Studio.muted
+    palette.button: Theme.Studio.soft
+    palette.buttonText: Theme.Studio.ink
+    palette.highlight: Theme.Studio.mint
+    palette.highlightedText: Theme.Studio.mintText
+    palette.mid: Theme.Studio.line
+    palette.dark: Theme.Studio.muted
+    palette.light: Theme.Studio.soft
+    palette.midlight: Theme.Studio.soft
+    palette.shadow: Theme.Studio.line
     padding: 22
     closePolicy: Popup.CloseOnEscape
     onOpened: controller.openTrainingProgress()
     onClosed: controller.closeTrainingProgress()
-    background: Rectangle { radius: 16; color: "#FFFFFF"; border.color: "#DEE5EA" }
+    background: Rectangle { radius: 16; color: Theme.Studio.paper; border.color: Theme.Studio.line }
 
     component Caption: Label {
-        color: "#112331"
+        color: Theme.Studio.ink
         font.pixelSize: 13
         wrapMode: Text.Wrap
     }
@@ -31,13 +47,14 @@ Popup {
         leftPadding: 16; rightPadding: 16
         contentItem: Caption {
             text: action.text; font.bold: true
+            color: action.accent && !action.down ? Theme.Studio.mintText : Theme.Studio.ink
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }
         background: Rectangle {
             radius: 9
-            color: action.down ? "#BCEFE1" : action.accent ? "#46E5BD" : "#F0F3F6"
-            border.color: action.activeFocus ? "#16846E" : "transparent"
+            color: action.down ? Theme.Studio.mintWash : action.accent ? Theme.Studio.mint : Theme.Studio.surface
+            border.color: action.activeFocus ? Theme.Studio.mintDark : "transparent"
         }
     }
     component Stat: Rectangle {
@@ -48,10 +65,10 @@ Popup {
         Layout.fillWidth: true
         implicitHeight: 91
         radius: 12
-        color: accent ? "#E5F8F2" : "#F4F6F8"
+        color: accent ? Theme.Studio.mintWash : Theme.Studio.surface
         ColumnLayout {
             anchors.fill: parent; anchors.margins: 14; spacing: 7
-            Caption { text: stat.label; color: "#526575"; font.pixelSize: 12 }
+            Caption { text: stat.label; color: Theme.Studio.muted; font.pixelSize: 12 }
             Caption {
                 text: stat.value
                 font.pixelSize: 24; font.bold: true
@@ -69,7 +86,7 @@ Popup {
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 3
                 Caption { text: "학습 진행"; font.pixelSize: 24; font.bold: true; Layout.fillWidth: true }
-                Caption { text: "선택한 동작의 학습부터 모델 적용까지"; color: "#526575"; font.pixelSize: 12; Layout.fillWidth: true }
+                Caption { text: "선택한 동작의 학습부터 모델 적용까지"; color: Theme.Studio.muted; font.pixelSize: 12; Layout.fillWidth: true }
             }
             Action {
                 objectName: "progress-back"
@@ -93,13 +110,13 @@ Popup {
                     Rectangle {
                         implicitWidth: statusLabel.implicitWidth + 22
                         implicitHeight: 30; radius: 15
-                        color: page.details.status === "error" ? "#FFF0EA" : "#E5F8F2"
+                        color: page.details.status === "error" ? Qt.rgba(Theme.Studio.danger.r, Theme.Studio.danger.g, Theme.Studio.danger.b, .12) : Theme.Studio.mintWash
                         Caption {
                             id: statusLabel
                             anchors.centerIn: parent
                             text: page.details.statusText
                             font.bold: true
-                            color: page.details.status === "error" ? "#AD3B20" : "#167C64"
+                            color: page.details.status === "error" ? Theme.Studio.danger : Theme.Studio.mintDark
                         }
                     }
                     Caption {
@@ -124,29 +141,29 @@ Popup {
                     Stat { label: page.details.status === "success" ? "완료 시각" : "완료 예상 시각"; value: page.details.finish }
                     Stat { label: "경과 시간"; value: page.details.elapsed }
                 }
-                Caption { text: page.details.etaHint; color: "#526575"; font.pixelSize: 12; Layout.fillWidth: true }
+                Caption { text: page.details.etaHint; color: Theme.Studio.muted; font.pixelSize: 12; Layout.fillWidth: true }
                 Rectangle {
                     Layout.fillWidth: true
                     implicitHeight: targetBody.implicitHeight + 28
-                    color: "#F7FAFB"; radius: 12; border.color: "#DEE5EA"
+                    color: Theme.Studio.soft; radius: 12; border.color: Theme.Studio.line
                     ColumnLayout {
                         id: targetBody
                         anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
                         anchors.margins: 14; spacing: 7
                         Caption { text: "이번 학습 동작"; font.bold: true }
                         Caption { text: page.details.tasks; Layout.fillWidth: true }
-                        Caption { text: page.details.data; color: "#526575"; Layout.fillWidth: true; font.pixelSize: 12 }
+                        Caption { text: page.details.data; color: Theme.Studio.muted; Layout.fillWidth: true; font.pixelSize: 12 }
                         Caption {
                             visible: page.details.skipped > 0
                             text: "완료되지 않았거나 읽을 수 없어 제외한 녹화 " + page.details.skipped + "개"
-                            color: "#8A5A00"; Layout.fillWidth: true; font.pixelSize: 12
+                            color: Theme.Studio.amber; Layout.fillWidth: true; font.pixelSize: 12
                         }
                     }
                 }
                 Rectangle {
                     Layout.fillWidth: true
                     implicitHeight: graphBody.implicitHeight + 28
-                    radius: 12; color: "#FFFFFF"; border.color: "#DEE5EA"
+                    radius: 12; color: Theme.Studio.paper; border.color: Theme.Studio.line
                     ColumnLayout {
                         id: graphBody
                         anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
@@ -154,11 +171,11 @@ Popup {
                         RowLayout {
                             Layout.fillWidth: true
                             Caption { text: "현재 단계 학습 손실"; font.bold: true; Layout.fillWidth: true }
-                            Caption { text: "학습 단계 " + page.details.stageCount + "  ·  반복 " + page.details.epoch; color: "#526575" }
+                            Caption { text: "학습 단계 " + page.details.stageCount + "  ·  반복 " + page.details.epoch; color: Theme.Studio.muted }
                         }
                         Caption {
                             text: "최근 " + page.details.loss + "   ·   최저 " + page.details.bestLoss + "   ·   낮을수록 학습 데이터에 더 잘 맞습니다"
-                            color: "#526575"; font.pixelSize: 12; Layout.fillWidth: true
+                            color: Theme.Studio.muted; font.pixelSize: 12; Layout.fillWidth: true
                         }
                         Canvas {
                             id: lossChart
@@ -167,6 +184,7 @@ Popup {
                             property var values: page.details.losses
                             onValuesChanged: requestPaint()
                             onWidthChanged: requestPaint()
+                            Connections { target: Theme.Studio; function onThemeNameChanged() { lossChart.requestPaint() } }
                             onPaint: {
                                 var ctx = getContext("2d")
                                 ctx.reset()
@@ -174,13 +192,13 @@ Popup {
                                 if (points.length < 2) return
                                 var hi = Math.max.apply(null, points), lo = Math.min.apply(null, points)
                                 var span = Math.max(0.0001, hi - lo)
-                                ctx.strokeStyle = "#E5EBEF"
+                                ctx.strokeStyle = Theme.Studio.line
                                 ctx.lineWidth = 1
                                 for (var line = 0; line < 4; line++) {
                                     var yy = 10 + line / 3 * (height - 20)
                                     ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(width, yy); ctx.stroke()
                                 }
-                                ctx.strokeStyle = "#16846E"; ctx.lineWidth = 2.5
+                                ctx.strokeStyle = Theme.Studio.mintDark; ctx.lineWidth = 2.5
                                 ctx.beginPath()
                                 for (var i = 0; i < points.length; i++) {
                                     var x = 4 + i / (points.length - 1) * (width - 8)
@@ -193,7 +211,7 @@ Popup {
                                 anchors.centerIn: parent
                                 visible: lossChart.values.length < 2
                                 text: "학습이 진행되면 손실 그래프가 나타납니다"
-                                color: "#526575"
+                                color: Theme.Studio.muted
                             }
                         }
                     }
@@ -201,13 +219,13 @@ Popup {
                 Caption {
                     visible: page.details.error !== ""
                     text: page.details.error
-                    Layout.fillWidth: true; color: "#AD3B20"; font.bold: true
+                    Layout.fillWidth: true; color: Theme.Studio.danger; font.bold: true
                 }
                 Caption { text: "진행 기록 · 최신순"; font.bold: true }
                 Caption {
                     visible: page.details.events.length === 0
                     text: "학습을 시작하면 단계별 진행 기록이 표시됩니다."
-                    color: "#526575"
+                    color: Theme.Studio.muted
                 }
                 Repeater {
                     model: page.details.events.slice().reverse()
@@ -228,17 +246,17 @@ Popup {
                     text: page.details.log
                     readOnly: true; selectByMouse: true
                     wrapMode: TextEdit.WrapAnywhere
-                    font.pixelSize: 11; color: "#526575"
-                    background: Rectangle { color: "#F4F6F8"; radius: 8 }
+                    font.pixelSize: 11; color: Theme.Studio.muted
+                    background: Rectangle { color: Theme.Studio.surface; radius: 8 }
                 }
             }
         }
-        Rectangle { Layout.fillWidth: true; height: 1; color: "#DEE5EA" }
+        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.Studio.line }
         RowLayout {
             Layout.fillWidth: true
             Caption {
                 text: "이 페이지를 닫거나 학습센터로 돌아가도 진행 중인 학습은 계속됩니다."
-                color: "#526575"; font.pixelSize: 12; Layout.fillWidth: true
+                color: Theme.Studio.muted; font.pixelSize: 12; Layout.fillWidth: true
             }
             Action {
                 objectName: "progress-stop"

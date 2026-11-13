@@ -40,7 +40,9 @@ CLASS_TO_GESTURE: Mapping[str, str] = {
     "rock_sign": "spatial_pose.rock_sign",
 }
 
-DEFAULT_BINDINGS = {"spatial_pose.rock_sign": "window.close"}
+# The desktop uses assist mode, which never emits the advertised Rock close action.
+# Keep the pose ID for existing models; closing a window now requires an explicit binding.
+DEFAULT_BINDINGS = {}
 GESTURE_PHASES = {"spatial_pose.rock_sign": frozenset({"tap"})}
 
 GESTURE_TO_CLASS: Mapping[str, str] = {v: k for k, v in CLASS_TO_GESTURE.items()}
@@ -293,6 +295,16 @@ class SpatialPoseGuard(IntentFilter):
     def id(self) -> str:
         return GUARD_ID
 
+    def _control_evidence(self) -> Optional[SpatialPoseEvidence]:
+        """Retain old model output for diagnostics, but retired Rock is not guard evidence.
+
+        Do not re-rank/renormalize another class into a confident click. Treat it as
+        unavailable evidence while keeping normal rule input and held-contact checks.
+        Explicit custom Rock bindings run in their own detector, outside this guard.
+        """
+        ev = self.feature.evidence
+        return replace(ev, action='', confidence=0.0) if ev is not None and ev.action == 'rock_sign' else ev
+
     def observe(self, hand: Optional[HandObservation], ctx: FrameContext) -> None:
         # Only this frame's hand may fill a missing rule coordinate. Never extrapolate
         # a lost hand or let pinch recovery create cursor movement in motion mode.
@@ -320,10 +332,10 @@ class SpatialPoseGuard(IntentFilter):
                     else self._last_boosted_class if self._boost_done else None)
             if held in ("thumb_middle", "thumb_ring") and self._circle_score(hand, held) >= .60:
                 self._held_contact = held
-        ev = self.feature.evidence
+        ev = self._control_evidence()
         if ev is None or ev.t != ctx.frame.t:
             self.feature.step(hand, ctx)
-            ev = self.feature.evidence
+            ev = self._control_evidence()
 
         if ev is not None and ev.action == "none" and ev.confidence >= self.tau_veto:
             self._idle_run += 1
@@ -374,7 +386,7 @@ class SpatialPoseGuard(IntentFilter):
         old_vetoes = self.vetoed_count
         old_boost = self._boost_t, self._boost_done, self._last_boosted_class
         out = list(self._filter_intents(intents, ctx))
-        ev = self.feature.evidence
+        ev = self._control_evidence()
         if (not self.enabled or self.feature.model is None or ctx.active_mode != "pinch"
                 or ev is None or ev.t != ctx.frame.t):
             return tuple(out)
@@ -460,7 +472,7 @@ class SpatialPoseGuard(IntentFilter):
         if not self.enabled or self.feature.model is None:
             return intents
 
-        ev = self.feature.evidence
+        ev = self._control_evidence()
         if ev is None or ev.t != ctx.frame.t:
             self._clear_desktop_observation()
             return tuple(i for i in intents if i.gesture != "pinch.thumb_tucked_open")

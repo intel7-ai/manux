@@ -1,3 +1,6 @@
+> **MANUX Command r7 · 0.5.0-command.20261113.7**
+> 별도 검증된 최신 Command 버전입니다. [버전 설명·변경 범위·검증·빌드 방법](docs/command-r7.md)
+
 # MANUX (v0.5)
 
 Android 휴대폰 연결 앱: [APK 빌드 및 Bluetooth 연결 안내](android/README.md).

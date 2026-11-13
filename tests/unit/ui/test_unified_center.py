@@ -36,7 +36,7 @@ def test_common_tabs_keep_header_and_named_model_actions(tmp_path,monkeypatch,la
             if not b.studio.busy and not b.training_busy:break
         for width,height in ((780,560),(1140,720)):
             b.window.setWidth(width);b.window.setHeight(height)
-            for index in range(3):
+            for index in ((1, 0) if layout == "studio" else range(3)):
                 popup.setProperty("pageIndex",index);QTest.qWait(30)
                 alias=b.window.findChild(QQuickItem,"trainingAlias")
                 point=alias.mapToScene(QPointF(0,0))

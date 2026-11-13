@@ -62,6 +62,48 @@ CURSOR_BASE_KEYS = ("relative_gain_min", "relative_gain_max", "smoothing")
 PHONE_PREVIEW_GRACE = 2.0  # display only; Engine.frame_missing still runs on every empty read
 
 
+def attach_ai_customization(runtime):
+    """Compose the source feature beside the existing pipeline; no host defaults are replaced."""
+    from manux.compat.hand_mouse import ports
+    from manux.compat.hand_mouse.action_bindings import DEFAULT_GESTURE_BINDINGS
+    from manux.compat.hand_mouse.llm_binding import History
+    from manux.compat.hand_mouse.session import CustomizationSession
+    from manux.engine.ai_customization import CustomPipeline
+    from manux.features.custom_gestures import CustomGestureFeature, CustomGestureFilter, gesture_id
+    from manux.tracking.custom_probe import hand_shot
+    pipeline = CustomPipeline(runtime.engine, CustomGestureFeature, CustomGestureFilter, gesture_id,
+                              DEFAULT_GESTURE_BINDINGS,
+                              lambda reg: {r["gesture_key"] for r in History().rows(reg) if r.get("current") and not r.get("app_match")})
+    runtime.ai_pipeline = pipeline
+    voice = lambda: None
+    sink = runtime.engine.sinks.get(OutputTarget.WINDOWS)
+    if sink is not None:
+        from manux.output.windows.custom_actions import execute_resolved_action
+        from manux.output.windows.custom_launch import start
+        from manux.output.windows import custom_macro
+        from manux.output.windows.custom_sink import CustomOutput, voice_typing
+        from manux.platform.custom_foreground import identity
+        ports.execute, ports.launch = execute_resolved_action, start
+        ports.macro_start, ports.macro_cancel = custom_macro.start, custom_macro.cancel_all
+        ports.macro_running = custom_macro.running
+        from manux.output.windows.custom_commands import runner
+        ports.command_status, ports.command_cancel = runner.status, runner.cancel
+
+        def system_action(action):
+            if action == "toggle_control":
+                runtime.engine.commands.put(SetControl(not runtime.engine.state.control_on))
+            elif action == "toggle_motion":
+                runtime.engine.commands.put(RequestMode(
+                    runtime.engine.arbiter.base_mode if runtime.engine.arbiter.mode == "motion" else "motion"))
+            elif action == "toggle_draw" and pipeline.feature is not None:
+                pipeline.feature.draw.set_active(not pipeline.feature.draw.active)
+        sink.custom_output = CustomOutput(sink, identity, system_action)
+        voice = voice_typing
+    runtime.ai_customization = CustomizationSession(pipeline.install, hand_shot, voice=voice,
+        draw_view=lambda: pipeline.feature.draw.view(time.perf_counter()) if pipeline.feature else {"on": False})
+    return runtime.ai_customization
+
+
 def create_internet_link(data_dir):
     """Choose the configured address only when Internet connection is requested."""
     from manux.link.internet import InternetLink
@@ -252,6 +294,8 @@ class DesktopRuntime:
     def __init__(self, engine: Engine, source, settings: Settings, *, model_store=None, model_token=None,
                  model_status="", policy_store=None, current_model=None) -> None:
         self.engine = engine
+        self.ai_customization = None
+        self.ai_pipeline = None
         self.source = source
         self.settings = settings
         self.control_hand = settings.get("tracking.control_hand")
@@ -687,6 +731,8 @@ class DesktopRuntime:
         except Exception:
             pass
         self.engine.shutdown()
+        if self.ai_customization is not None:
+            self.ai_customization.close()
         if self._pose_preview is not None:
             self._pose_preview.shutdown()
             self._pose_preview = None
@@ -725,6 +771,10 @@ class DesktopRuntime:
         self._tracking_requests()
         self.reload_model()
         self._sync_control_model()
+        if self.ai_customization is not None:
+            self.ai_customization.drain()
+            from manux.compat.hand_mouse.action_bindings import get_action_registry
+            self.ai_pipeline.ensure_attached(get_action_registry())
         if self._stop.is_set():
             return
         item = self.source.read(self.control_hand, self.use_crop)
@@ -732,6 +782,8 @@ class DesktopRuntime:
             now = time.perf_counter()
             self._recording_step(now, None, None)
             self.engine.frame_missing(now)
+            if self.ai_customization is not None:
+                self.ai_customization.observe(now)
             if self._pose_preview is not None:
                 self._pose_preview.frame_missing(now)
             if getattr(self.source, "error", ""):
@@ -740,6 +792,8 @@ class DesktopRuntime:
                 time.sleep(0.05)
             return
         frame, image, hand, hands, detect_ms = item
+        if self.ai_customization is not None:
+            self.ai_customization.observe(frame.t, hand, image)
         self._recording_step(frame.t, frame, hand)
         sink = self.engine.sinks.get(OutputTarget.WINDOWS)
         pitch = palm_pitch(hand.world) if hand is not None else None
@@ -1346,8 +1400,10 @@ def main(argv=None) -> int:
                               snapshots_dir=paths.pose_snapshots_dir,
                               models_dir=paths.spatial_models_dir)
     from manux.perception.palm_axes import PalmAxesCalibration, valid_axes, palm_point
+    ai_customization = attach_ai_customization(runtime)
     return run(runtime, settings, paths, tray=not args.no_tray, screenshot=args.screenshot, layout=args.ui,
                services={
+                   "ai_customization": ai_customization,
                    "palm_calibration": PalmAxesCalibration,
                    "valid_palm_axes": valid_axes,
                    "palm_point": palm_point,

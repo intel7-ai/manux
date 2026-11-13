@@ -78,6 +78,7 @@ Popup {
                     property var values: page.state.losses || []
                     onValuesChanged: requestPaint()
                     onWidthChanged: requestPaint()
+                    Connections { target: Theme.Studio; function onThemeNameChanged() { graph.requestPaint() } }
                     Copy { anchors.centerIn: parent; text: "학습이 진행되면 손실 그래프가 나타납니다"; visible: graph.values.length < 2; color: Theme.Studio.muted }
                     onPaint: {
                         const ctx = getContext("2d")

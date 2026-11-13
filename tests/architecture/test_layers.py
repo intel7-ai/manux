@@ -28,6 +28,7 @@ ALLOWED = {
     "output": {"core", "actions", "platform"},
     "engine": {"core", "perception", "actions", "settings"},
     "ui": {"core", "engine", "settings"},
+    "compat": {"core", "settings", "platform"},
 }
 ROOT_MODULES = {"__init__.py", "app.py", "desktop.py", "__main__.py"}  # composition roots: may import every layer
 
@@ -96,6 +97,12 @@ def test_imports_follow_the_rules(path: Path, rel: Path):
             target = parts[1]
             if target in ("app", "__main__"):
                 problems.append(f"{line}: only the composition root may be imported by nobody ({name})")
+            elif target == "compat" and (
+                rel.as_posix() == "ui/ai_customization.py"
+                or rel.as_posix().startswith("features/custom_gestures/")
+                or rel.as_posix().startswith("output/windows/custom_")
+            ):
+                pass  # documented a700452 compatibility boundary, not a general layer exemption
             elif target != layer and target not in ALLOWED[layer]:
                 problems.append(f"{line}: {layer} may not import manux.{target}")
             elif layer == "features" == target and len(parts) > 2 and feature and parts[2] != feature:

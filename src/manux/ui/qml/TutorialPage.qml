@@ -67,13 +67,13 @@ Rectangle {
                             width: 44; height: 44; radius: 22
                             x: modelData.x * parent.width - width / 2
                             y: modelData.y * parent.height - height / 2
-                            color: modelData.done ? Theme.Studio.mintDark : Theme.Studio.paper
+                            color: modelData.done ? Theme.Studio.mint : Theme.Studio.paper
                             border.color: Theme.Studio.mint; border.width: 2
-                            Label { anchors.centerIn: parent; text: parent.modelData.done ? "✓" : String(parent.index + 1); color: Theme.Studio.ink; font.bold: true }
+                            Label { anchors.centerIn: parent; text: parent.modelData.done ? "✓" : String(parent.index + 1); color: parent.modelData.done ? Theme.Studio.mintText : Theme.Studio.ink; font.bold: true }
                         }
                     }
                     Rectangle {
-                        width: 14; height: 14; radius: 7; color: Theme.Studio.mint; border.color: Theme.Studio.ink
+                        width: 14; height: 14; radius: 7; color: Theme.Studio.mint; border.color: Theme.Studio.mintText
                         visible: page.controller.tutorialCursor.length === 2
                         x: (page.controller.tutorialCursor[0] || 0) * parent.width - width / 2
                         y: (page.controller.tutorialCursor[1] || 0) * parent.height - height / 2
@@ -82,7 +82,7 @@ Rectangle {
                 Label {
                     visible: page.controller.tutorialSucceeded
                     anchors.centerIn: parent; padding: Theme.Studio.pad
-                    text: "성공했어요"; color: Theme.Studio.ink; font.bold: true; font.pixelSize: Theme.Studio.title
+                    text: "성공했어요"; color: Theme.Studio.mintText; font.bold: true; font.pixelSize: Theme.Studio.title
                     background: Rectangle { color: Theme.Studio.mint; radius: Theme.Studio.radius }
                 }
             }

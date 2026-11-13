@@ -33,7 +33,7 @@ function Invoke-Freezer([string]$Spec, [string]$WorkPath) {
         if ($PythonExecutable) {
             & $launcher -m PyInstaller @freezeArgs
         } else {
-            $extras = @('--extra', 'ui', '--extra', 'vision', '--extra', 'ml', '--extra', 'internet', '--extra', 'qr', '--extra', 'package')
+            $extras = @('--extra', 'ui', '--extra', 'vision', '--extra', 'ml', '--extra', 'internet', '--extra', 'qr', '--extra', 'llm', '--extra', 'package')
             if ($WithTrainer) { $extras += @('--extra', 'train', '--extra', 'hub') }
             & $launcher run --locked --python 3.12 @extras pyinstaller @freezeArgs
         }

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "theme" as Theme
 
 Dialog {
     id: dialog
@@ -16,7 +17,7 @@ Dialog {
     modal: true
     focus: true
     padding: 18
-    background: Rectangle { color: "white"; radius: 14; border.color: "#DEE5EA" }
+    background: Rectangle { color: Theme.Studio.paper; radius: 14; border.color: Theme.Studio.line }
     onOpened: controller.setPhoneDialogOpen(true)
     onClosed: controller.setPhoneDialogOpen(false)
     contentItem: ColumnLayout {
@@ -35,7 +36,7 @@ Dialog {
                 Label {
                     visible: dialog.internet && !!dialog.phone.media_mode
                     text: dialog.phone.media_mode === "webrtc" ? "영상 전송: WebRTC" : "영상 전송: 인터넷 중계"
-                    color: "#2364AA"
+                    color: Theme.Studio.mintDark
                     Layout.fillWidth: true
                 }
                 Label {
@@ -44,7 +45,7 @@ Dialog {
                     text: "휴대폰에서 선택할 PC: " + (dialog.phone.local_name || "")
                     font.bold: true
                     font.pixelSize: 18
-                    color: "#2364AA"
+                    color: Theme.Studio.mintDark
                     wrapMode: Text.Wrap
                     Layout.fillWidth: true
                 }
@@ -118,7 +119,7 @@ Dialog {
                         : "1. 휴대폰 카메라로 QR을 스캔해 Chrome에서 엽니다.\n2. PC 주소를 확인하고 인증서 경고를 통과합니다.\n3. 연결 코드를 입력하고 카메라 권한을 허용하세요."
                     wrapMode: Text.Wrap
                     Layout.fillWidth: true
-                    color: "#526575"
+                    color: Theme.Studio.muted
                 }
                 RowLayout {
                     visible: dialog.phone.enabled
@@ -145,7 +146,7 @@ Dialog {
                 }
                 Label {
                     text: "연결이 끝나면 이 창을 닫고 제어 시작을 누르세요."
-                    color: "#526575"; wrapMode: Text.Wrap; Layout.fillWidth: true
+                    color: Theme.Studio.muted; wrapMode: Text.Wrap; Layout.fillWidth: true
                 }
             }
         }

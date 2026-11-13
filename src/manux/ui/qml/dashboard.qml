@@ -23,8 +23,10 @@ ApplicationWindow {
     readonly property color muted: "#526575"
     readonly property color mint: "#46E5BD"
     readonly property color line: "#DEE5EA"
-    readonly property bool learningDialogOpen: advancedSettings.visible || settingsDialog.visible || trainingCenter.visible || capturePlan.visible || trainingProgress.visible
+    readonly property bool learningDialogOpen: advancedSettings.visible || settingsDialog.visible || trainingCenter.visible || capturePlan.visible || trainingProgress.visible || aiCustomization.opened
     readonly property bool interactionBusy: learningDialogOpen || dashboard.currentPage === "studio"
+    AiCustomizationDialog { id: aiCustomization; dashboard: window.aiBridge }
+    readonly property var aiBridge: dashboard.aiCustomization
     onInteractionBusyChanged: dashboard.setInteractionBusy(interactionBusy)
     font.family: "Malgun Gothic"
 
@@ -512,6 +514,7 @@ ApplicationWindow {
                 Item { Layout.fillWidth: true }
                 ActionButton { text: "고급 설정"; onClicked: { dashboard.command(27); advancedSettings.open() } }
                 ActionButton { text: "학습 센터"; onClicked: trainingCenter.open() }
+                ActionButton { objectName: "openAiCustomization"; text: "동작 추가 (AI)"; onClicked: aiCustomization.open() }
                 TextLabel { text: dashboard.chosenHand; color: window.muted; font.pixelSize: 13 }
                 ActionButton {
                     text: dashboard.controlLabel === "일시정지" ? "끄기" : "켜기"
