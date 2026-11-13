@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="description" content="MANUX의 인식 안정성, 포인터 조작, 실제 과제, TCN, 개인화, 환경 변화에 대한 벤치마크 실험 계획.">
+<title>MANUX — 벤치마크 실험 계획</title>
+<style>
+:root{--paper:#f7f8f4;--white:#fff;--ink:#172c29;--muted:#566962;--line:#d8e1d8;--green:#246b50;--soft:#eaf1e6;--amber:#815215;--amber-bg:#fff4df;--radius:18px}
+*{box-sizing:border-box}html{scroll-behavior:auto;scroll-padding-top:30px}body{margin:0;background:var(--paper);color:var(--ink);font-family:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",sans-serif;font-size:15px;line-height:1.8;word-break:keep-all;overflow-wrap:anywhere}a{color:var(--green);text-underline-offset:4px}button{font:inherit;cursor:pointer}a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid #b27518;outline-offset:5px}button:disabled{cursor:default}::selection{background:#cde1be}h1,h2,h3,p{margin-top:0}h1,h2,h3{line-height:1.3;letter-spacing:-.045em}h1{font-size:clamp(34px,4.5vw,60px);margin-bottom:24px}h2{font-size:29px;margin-bottom:14px}h3{font-size:20px;margin-bottom:10px}p{margin-bottom:14px}strong{font-weight:750}small,.small{font-size:12px;color:var(--muted)}code{font-family:Consolas,monospace;font-size:.88em;background:#eef1ed;padding:2px 6px;border-radius:5px;overflow-wrap:anywhere}ul,ol{padding-left:22px;margin:10px 0}li+li{margin-top:7px}svg{max-width:100%}
+.skip{position:absolute;left:20px;top:-100px;background:#fff;padding:12px;z-index:5}.skip:focus{top:12px}.layout{display:grid;grid-template-columns:238px minmax(0,1fr);max-width:1510px;margin:auto}.sidebar{position:sticky;top:0;height:100vh;padding:38px 28px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:32px}.brand{font-size:25px;letter-spacing:.14em;font-weight:850;text-decoration:none;color:var(--ink)}.brand-caption{font-size:10px;font-weight:700;letter-spacing:.14em;color:var(--muted);margin-top:1px}.nav-title,.eyebrow{font-size:11px;letter-spacing:.13em;font-weight:800;color:var(--green);text-transform:uppercase}.nav-title{margin-bottom:12px}.sidebar nav a{display:flex;gap:12px;text-decoration:none;color:var(--muted);padding:8px 0;font-size:13px}.sidebar nav a:hover{color:var(--green)}.sidebar nav span{font-size:11px;color:#8a9990}.side-bottom{margin-top:auto;border-top:1px solid var(--line);padding-top:18px}.side-bottom p{font-size:12px;margin:0 0 12px;color:var(--muted)}.button{border:1px solid var(--line);border-radius:9px;background:var(--white);color:var(--ink);padding:9px 14px;font-size:12px;line-height:1.4}.button:hover{background:var(--soft)}.main{min-width:0;padding:38px clamp(24px,4.5vw,74px) 50px}.topline{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--muted);padding-bottom:28px}.badge{display:inline-flex;align-items:center;gap:7px;font-weight:750;color:var(--green)}.badge:before{content:"";height:6px;width:6px;border-radius:50%;background:var(--green)}.hero{padding:24px 0 46px;border-bottom:1px solid var(--line)}.hero .eyebrow{margin-bottom:20px}.hero h1 em{font-style:normal;color:var(--green)}.lead{max-width:720px;font-size:17px;color:var(--muted);line-height:1.9}.hero-foot{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:32px}.hero-foot div{padding-top:16px;border-top:2px solid var(--ink)}.hero-foot b{display:block;font-size:14px}.hero-foot span{font-size:12px;color:var(--muted)}.section{padding:44px 0;border-bottom:1px solid var(--line);scroll-margin-top:24px}.section .eyebrow{margin-bottom:12px}.section-intro{color:var(--muted);max-width:800px}.note{padding:18px 22px;background:var(--soft);border-left:3px solid var(--green);border-radius:0 12px 12px 0;margin:22px 0}.note p:last-child{margin-bottom:0}.note.warn{background:var(--amber-bg);border-color:var(--amber);color:#674813}.note strong{color:inherit}.flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:15px;align-items:center;margin:26px 0}.flow>div{border:1px solid var(--line);border-radius:12px;padding:18px;background:#fff}.flow b{display:block;font-size:15px}.flow span{font-size:12px;color:var(--muted)}.flow .arrow{font-size:20px;color:var(--green)}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px;margin:22px 0}table{width:100%;border-collapse:collapse;text-align:left;font-size:13px}th{background:#e9eee6;font-size:11px;letter-spacing:.03em}th,td{padding:15px 16px;border-bottom:1px solid var(--line);vertical-align:top}tr:last-child td{border-bottom:0}tbody tr{background:#fff}tbody tr:nth-child(even){background:#fbfcf9}td strong{display:block;font-size:14px;margin-bottom:4px}.num{font-family:Consolas,monospace;font-weight:700;color:var(--green)}.nowrap{white-space:nowrap}.priority{display:inline-block;background:var(--soft);border:1px solid #cfddc7;color:var(--green);border-radius:20px;padding:2px 9px;font-size:11px;white-space:nowrap}.benchmarks{display:grid;gap:16px}.bench{background:#fff;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}.bench summary{padding:22px 26px;cursor:pointer;display:flex;gap:16px;align-items:flex-start;list-style:none}.bench summary::-webkit-details-marker{display:none}.bench summary .num{font-size:24px;line-height:1.3}.summary-text{flex:1}.summary-text h3{font-size:20px;margin:0 0 5px}.summary-text p{font-size:13px;color:var(--muted);margin:0}.bench summary:after{content:"+";font-size:23px;color:var(--green);line-height:1.3}.bench[open] summary:after{content:"−"}.bench-body{padding:0 26px 24px}.bench-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px 30px;border-top:1px solid var(--line);padding-top:22px}.field-label{font-size:11px;font-weight:800;color:var(--green);margin-bottom:7px;letter-spacing:.04em}.bench-grid p,.bench-grid ul,.bench-grid ol{font-size:13px;margin-bottom:0}.decision{border-top:1px dashed var(--line);margin-top:22px;padding-top:16px;font-size:13px}.decision strong{color:var(--green)}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:18px;margin:26px 0 18px;flex-wrap:wrap}.toolbar p{margin:0;font-size:12px;color:var(--muted)}.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:26px 0}.step{padding:23px;border:1px solid var(--line);border-radius:14px;background:#fff}.step .num{font-size:12px;display:block;margin-bottom:16px}.step h3{font-size:18px}.step p{font-size:13px;color:var(--muted);margin:0}.checklist{display:grid;grid-template-columns:1fr 1fr;gap:0 28px;margin:24px 0}.checklist label{display:flex;align-items:flex-start;gap:11px;padding:13px 0;border-bottom:1px solid var(--line);font-size:13px;cursor:pointer}.checklist input{accent-color:var(--green);width:17px;height:17px;flex:0 0 17px;margin-top:4px}.definitions{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin:24px 0}.definition{background:white;border:1px solid var(--line);border-radius:12px;padding:20px}.definition h3{font-size:15px;margin-bottom:8px}.definition p{font-size:13px;color:var(--muted);margin:0}.formula{display:block;margin-bottom:8px;color:var(--ink);font-weight:750;font-size:13px}.example{background:var(--ink);color:#f1f5eb;border-radius:var(--radius);padding:28px 30px;margin:25px 0}.example .eyebrow{color:#b8d3a6}.example p{font-size:17px;line-height:1.9;margin-bottom:12px}.example small{color:#c6d5ca}.blank{color:#718071;font-style:italic}.sources{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px}.sources>div{border-top:1px solid var(--line);padding-top:18px}.sources h3{font-size:14px}.sources p,.sources li{font-size:12px;color:var(--muted)}.sources code{background:transparent;padding:0}.footer{display:flex;justify-content:space-between;gap:20px;padding-top:26px;font-size:11px;color:var(--muted)}.print-only{display:none}
+.sidebar nav span{flex:0 0 16px}
+@media(min-width:1450px){body{font-size:16px}.bench-grid p,.bench-grid ul,.bench-grid ol{font-size:14px}}
+@media(max-width:1000px){.layout{grid-template-columns:190px minmax(0,1fr)}.sidebar{padding:28px 20px}.main{padding:28px}.flow{gap:8px}.flow>div{padding:14px}.steps{grid-template-columns:1fr}.step{display:block}.hero-foot{gap:12px}th,td{padding:12px}}
+@media(max-width:720px){html{scroll-padding-top:14px}.layout{display:block}.sidebar{position:relative;height:auto;padding:20px;border-right:0;border-bottom:1px solid var(--line);gap:18px}.brand{font-size:21px}.brand-caption{font-size:9px}.sidebar nav{display:flex;gap:16px;overflow:auto;padding-bottom:3px}.sidebar nav a{white-space:nowrap;padding:0;font-size:12px}.sidebar nav span,.nav-title,.side-bottom{display:none}.main{padding:24px 20px 36px}.topline{padding-bottom:18px;font-size:10px}.hero{padding:16px 0 30px}.hero h1{font-size:36px;line-height:1.35}.lead{font-size:15px}.hero-foot{grid-template-columns:1fr;gap:14px;margin-top:25px}.hero-foot div{padding-top:10px}.hero-foot b{display:inline-block;margin-right:10px}.hero-foot span{font-size:11px}.section{padding:32px 0}h2{font-size:25px}.flow{grid-template-columns:1fr;gap:5px}.flow>div{padding:13px 18px}.flow .arrow{transform:rotate(90deg);justify-self:center;line-height:1.3}.bench-grid,.definitions,.checklist,.sources{grid-template-columns:1fr}.bench summary{padding:20px 18px;gap:12px}.summary-text h3{font-size:18px}.bench-body{padding:0 18px 22px}.bench-grid{gap:20px}.note{padding:15px 17px}.example{padding:22px}.example p{font-size:15px}.footer{flex-direction:column;gap:3px}.table-wrap table{min-width:700px}.toolbar{align-items:flex-start}.section-intro{font-size:14px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+@page{size:A4;margin:15mm 14mm}
+@media print{html{scroll-behavior:auto}body{background:white;color:#172c29;font-size:10pt;line-height:1.65}.layout{display:block}.sidebar,.skip,.toolbar,.screen-only{display:none!important}.main{padding:0;max-width:none}.topline{padding-bottom:12px}.hero{padding:12px 0 20px}h1{font-size:30pt;margin-bottom:14px}h2{font-size:19pt}h3{font-size:13pt}.lead{font-size:11pt}.hero-foot{margin-top:18px}.section{padding:22px 0}.flow{gap:8px}.flow>div{padding:12px}.steps{gap:10px}.step{padding:16px}.bench{break-inside:avoid;margin-bottom:12px}.bench summary{padding:16px 20px}.bench-body{padding:0 20px 18px}.bench summary:after{display:none}.bench-grid{gap:14px 24px;padding-top:14px}.bench-grid p,.bench-grid ul,.bench-grid ol,.decision,.definition p,.step p{font-size:9pt}.bench details{display:block}.table-wrap{overflow:visible}.table-wrap table{min-width:0;font-size:9pt}th,td{padding:9px 10px}.note,.definition,.step,.example,.hero-foot{break-inside:avoid}.sources{break-inside:avoid}.note,.example,th,.step,.definition{print-color-adjust:exact;-webkit-print-color-adjust:exact}.example{background:#eaf1e6;color:#172c29}.example small,.example .eyebrow{color:#466044}.print-only{display:block}.footer{font-size:8pt}a{color:inherit}h2,h3{break-after:avoid}thead{display:table-header-group}tr{break-inside:avoid}.checklist{gap:0 20px}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 바로가기</a>
+<div class="layout">
+<aside class="sidebar" aria-label="문서 탐색">
+  <div><a class="brand" href="#main">MANUX</a><div class="brand-caption">BENCHMARK / STUDY PLAN</div></div>
+  <div><div class="nav-title">CONTENTS</div><nav aria-label="목차">
+    <a href="#purpose"><span>01</span> 무엇을 증명할 것인가</a>
+    <a href="#matrix"><span>02</span> 벤치마크 한눈에 보기</a>
+    <a href="#protocols"><span>03</span> 6개 실험 프로토콜</a>
+    <a href="#execution"><span>04</span> 실행 순서와 공통 규칙</a>
+    <a href="#metrics"><span>05</span> 지표와 결과 기록</a>
+    <a href="#evidence"><span>06</span> 현재 도구와 근거</a>
+  </nav></div>
+  <div class="side-bottom"><p>실험 전 설계안<br>측정 결과 · 개선 수치 없음</p><button class="button" id="print-button" type="button">인쇄 / PDF로 저장</button></div>
+</aside>
+<main class="main" id="main">
+  <div class="topline"><span class="badge">실험 계획 · 실측 전</span><span>2026.11.13 &nbsp; / &nbsp; 단일 HTML · 오프라인 열람</span></div>
+  <header class="hero">
+    <p class="eyebrow">FROM TECHNOLOGY TO MEASURABLE BENEFIT</p>
+    <h1>무엇을 도입했고,<br><em>얼마나 더 쓸 만해졌는가.</em></h1>
+    <p class="lead">MANUX의 개선 효과를 직접 검증하기 위한 벤치마크 계획.<br>인식 정확도에서 끝내지 않고, 오작동·반응 지연·실제 작업 성과까지 연결한다.</p>
+    <div class="hero-foot"><div><b>비교 조건을 고정한다</b><span>변경 전후에 같은 데이터와 과제</span></div><div><b>실패도 함께 센다</b><span>누락 · 오작동 · 재시도 · 복구</span></div><div><b>실제 이득을 확인한다</b><span>독립 시도 → 다음 세션 → 사용자 과제</span></div></div>
+  </header>
+
+  <section class="section" id="purpose">
+    <p class="eyebrow">01 / RESEARCH QUESTION</p><h2>기술 이름보다, 줄어든 불편을 증명한다.</h2>
+    <p class="section-intro">“MLP를 넣었다”, “TCN을 적용했다”가 결론이 되어서는 안 된다. 각 변경이 어떤 실패를 줄이는지 가설을 먼저 세우고, 그 이득을 얻기 위해 다른 성능을 희생하지 않았는지 확인한다.</p>
+    <div class="flow" aria-label="변경에서 실제 사용 가치로 이어지는 검증 흐름"><div><b>기술 변경</b><span>특징 · 판정기 · 필터 · 개인화</span></div><span class="arrow" aria-hidden="true">→</span><div><b>동작 수준의 개선</b><span>오작동 감소 · 안정성 · 반응</span></div><span class="arrow" aria-hidden="true">→</span><div><b>사용자에게 생긴 이득</b><span>작업 성공 · 시간 · 부담</span></div></div>
+    <div class="note"><p><strong>우선 실행할 세 가지:</strong> 제스처 인식·오작동 → 포인터 안정성·조작 → 실제 작업 수행. 모델의 점수가 올랐다는 주장과 사용성이 나아졌다는 주장을 구분해 연결한다.</p></div>
+    <div class="note warn"><p><strong>접근성 효과는 대상 사용자 시험이 필요하다.</strong> 현재 MANUX가 요구하는 손 추적과 움직임이 가능한 사람 중, 마우스 사용에 어려움이 있는 사용자를 대상으로 확인한다. 손이 없거나 특정 손가락이 없는 사람까지 지원한다고 일반화하지 않는다. 비교 대상은 그 사람이 실제로 사용할 수 있는 기존 입력 수단이다.</p></div>
+  </section>
+
+  <section class="section" id="matrix">
+    <p class="eyebrow">02 / BENCHMARK MATRIX</p><h2>먼저 해야 할 3개, 이어서 확인할 3개.</h2>
+    <p class="section-intro">각 실험은 주요 지표와, 함께 지켜야 할 지표를 정한다. 아래의 효과는 검증할 가설이며 확인된 결과가 아니다.</p>
+    <div class="table-wrap"><table><caption class="print-only">MANUX 벤치마크 비교 조건과 주요 측정값</caption><thead><tr><th scope="col">순서</th><th scope="col">벤치마크 / 비교</th><th scope="col">주요 지표</th><th scope="col">함께 확인할 지표</th></tr></thead><tbody>
+      <tr><td class="nowrap"><span class="priority">우선 01</span></td><td><strong>제스처 인식·오작동</strong>Rules / Spatial MLP / 판정 보호 로직</td><td>중립 상태의 명령 오작동/분</td><td>동작별 성공률 · 누락 · p95 인식 지연</td></tr>
+      <tr><td><span class="priority">우선 02</span></td><td><strong>포인터 안정성·조작</strong>보정 전 / 현재 / 개선 필터</td><td>목표 클릭 시간과 실패율</td><td>정지 흔들림 · 드래그 이탈 · 지연</td></tr>
+      <tr><td><span class="priority">우선 03</span></td><td><strong>실제 작업 수행</strong>이전 안정 버전 / 개선 버전</td><td>도움 없이 과제를 완료한 비율</td><td>완료 시간 · 오류 · 복구 · 불편감</td></tr>
+      <tr><td class="num">04</td><td><strong>TCN의 추가 효과</strong>MLP / TCN / 역할을 나눈 조합</td><td>동작별 동적 제스처 성공률</td><td>일상 움직임 오인식 · 중복 실행 · 지연</td></tr>
+      <tr><td class="num">05</td><td><strong>개인화 학습 효과</strong>기본 / 개인화 · 학습량별 비교</td><td>별도 세션에서의 성공률 변화</td><td>오작동 · 사용자 등록 시간 · 계산 시간</td></tr>
+      <tr><td class="num">06</td><td><strong>환경 변화·입력 중단</strong>기본 / 조건 변화 / 추적 소실</td><td>조건별 오작동과 복구 시간</td><td>사용 가능 시간 · 버튼 해제 · 재진입</td></tr>
+    </tbody></table></div>
+    <p class="small">지연은 평균만 보지 않고 중앙값과 p95를 함께 기록한다. p95는 측정값의 95%가 그 이하인 지점이며, 표본이 적으면 변동이 크므로 시도 수를 함께 표시한다.</p>
+  </section>
+
+  <section class="section" id="protocols">
+    <p class="eyebrow">03 / EXPERIMENT PROTOCOLS</p><h2>하나의 변경, 하나의 가설부터.</h2>
+    <div class="toolbar"><p>카드를 눌러 실험 조건을 접거나 펼칠 수 있다. 인쇄 시 모든 내용이 펼쳐진다.</p><button class="button" id="toggle-details" type="button" aria-controls="benchmark-list" aria-expanded="true">모두 접기</button></div>
+    <div class="benchmarks" id="benchmark-list">
+      <details class="bench" open><summary><span class="num">01</span><div class="summary-text"><h3>제스처 인식·오작동</h3><p>Spatial MLP가 줄이는 실제 실패는 무엇인가?</p></div></summary><div class="bench-body"><div class="bench-grid">
+        <div><div class="field-label">가설</div><p>기존 규칙이 손 각도와 개인차 때문에 잘못 내보내던 명령을 MLP가 줄인다. 의도한 동작의 성공률과 반응 속도는 유지되어야 한다.</p></div>
+        <div><div class="field-label">비교 조건</div><p>A. 기존 Rules / B. Spatial MLP / C. B에 판정 보호 로직 적용. 특징 비교는 동일한 MLP 학습 설정에서 angles33과 spatial96을 별도로 비교한다. 특징 변화와 판정기 변화를 한 번에 묶지 않는다.</p></div>
+        <div><div class="field-label">실행 방법</div><ol><li>별도 평가 세션에서 정상 자세·손 기울임·일부 가림을 수집한다.</li><li>손 쉬기·자세 고치기·얼굴 만지기 등 명령 의도가 없는 구간을 별도로 라벨링한다.</li><li>동일한 평가 녹화를 각 후보에 연속 재생한다.</li><li>동작별 혼동표와 중복 실행도 남긴다.</li></ol></div>
+        <div><div class="field-label">측정과 판정</div><p><strong>주요:</strong> 중립 구간의 잘못된 명령 시작/분.<br><strong>함께:</strong> 독립 시도 성공률, 누락, 잘못된 명령, 인식 지연 중앙값·p95.<br>오작동이 줄어도 필요한 동작을 지나치게 놓치거나 늦게 반응하면 개선으로 단정하지 않는다.</p></div>
+      </div><div class="decision"><strong>측정 경계:</strong> 기존 평가 도구의 rules_mlp_veto는 제한된 오프라인 후보다. 앱의 전체 보호·중재·모드·바인딩·누름/해제 동작과 같지 않다. 전체 앱 효과는 통합 시험으로 추가 확인한다. Rules와 학습 판정기의 확정 정책 차이도 보고한다. 33↔96 특징 비교에는 좌표계·정규화 차이도 포함되므로 차원 수만의 효과로 해석하지 않는다.</div></div></details>
+
+      <details class="bench" open><summary><span class="num">02</span><div class="summary-text"><h3>포인터 안정성·조작</h3><p>덜 떨리는 커서가 실제로 더 잘 눌리는가?</p></div></summary><div class="bench-body"><div class="bench-grid">
+        <div><div class="field-label">가설</div><p>필터와 보간이 정지 떨림과 목표 이탈을 줄이면서 작은 버튼 선택과 드래그를 더 쉽게 만든다. 흔들림 감소에 비해 지연이 과도하게 늘지 않아야 한다.</p></div>
+        <div><div class="field-label">비교 조건</div><p>A. 보정 전 / B. 현재 설정 / C. 개선 설정. 카메라·해상도·감도·화면 배율·클릭 방식은 고정한다. 필터와 감도 등 여러 변경을 동시에 적용하지 않는다.</p></div>
+        <div><div class="field-label">실행 방법</div><ol><li>한 지점을 가리키고 유지해 커서 좌표를 기록한다.</li><li>크기와 거리가 다른 목표를 클릭한다.</li><li>오브젝트를 정해진 영역으로 드래그하고 놓는다.</li><li>같은 참가자가 모든 설정을 쓰되 순서를 교차 배치한다.</li></ol></div>
+        <div><div class="field-label">측정과 판정</div><p><strong>주요:</strong> 목표 클릭 시간과 실패율.<br><strong>함께:</strong> 정지 위치 RMS 흔들림(px), 드래그 이탈·실패, 목표 통과·수정 움직임, 반응 지연.<br>정지 흔들림만 줄고 클릭 시간이 늘어난 설정은 사용성 향상으로 주장하지 않는다.</p></div>
+      </div><div class="decision"><strong>확장:</strong> 정식 포인팅 비교는 Fitts’ law 기반의 크기·거리 변화 과제를 사용한다. 처리량(throughput)을 보고하려면 유효 너비·오류 처리 등 해당 평가 절차를 따라 계산한다. 간이 클릭 과제를 표준 시험으로 부르지 않는다.</div></div></details>
+
+      <details class="bench" open><summary><span class="num">03</span><div class="summary-text"><h3>실제 작업 수행</h3><p>기술 개선이 사용자의 작업을 바꾸는가?</p></div></summary><div class="bench-body"><div class="bench-grid">
+        <div><div class="field-label">가설</div><p>개선 버전에서 사용자가 더 많은 과제를 스스로 완료하고, 오류와 복구에 드는 시간·신체 부담이 줄어든다.</p></div>
+        <div><div class="field-label">비교 조건</div><p>A. 고정한 이전 안정 버전 / B. 개선 버전. 두 버전의 실제 커밋·모델·설정과 차이를 기록한다. 접근성 시험은 참여자가 사용할 수 있는 기존 입력 수단과도 비교한다.</p></div>
+        <div><div class="field-label">과제</div><ol><li>크기가 다른 버튼을 선택한다.</li><li>파일이나 오브젝트를 지정 위치로 옮긴다.</li><li>문서를 스크롤해 특정 항목을 찾는다.</li><li>링크·탭을 오가며 간단한 정보를 찾는다.</li></ol></div>
+        <div><div class="field-label">측정과 판정</div><p><strong>주요:</strong> 도움 없이 완료한 과제/전체 과제.<br><strong>함께:</strong> 오류·복구 포함 완료 시간, 오클릭, 재시도, 도움 요청, 불편감·선호.<br>성공·중단·시간 초과를 모두 남기고, 완료 시간은 완료율과 나란히 보고한다.</p></div>
+      </div><div class="decision"><strong>대상과 절차:</strong> 연습을 제공하고 버전 순서를 교차 배치한다. 예비시험은 팀 내부 문제 탐색, 대상 사용자 시험은 실제 효용 확인으로 구분한다. 사용 불가능한 마우스 과제를 억지로 비교시키지 않으며, 참여 동의·휴식·중단 선택을 제공한다. 불편감 감소를 의학적 개선으로 표현하지 않는다.</div></div></details>
+
+      <details class="bench" open><summary><span class="num">04</span><div class="summary-text"><h3>TCN의 추가 효과</h3><p>시간 정보를 넣어야 구분되는 동작인가?</p></div></summary><div class="bench-body"><div class="bench-grid">
+        <div><div class="field-label">가설</div><p>정적 자세만으로 구별하기 어려운 동적 제스처에서 시간 정보가 적중률을 높이고 오인식을 줄인다. 정적 동작의 안정성도 유지되어야 한다.</p></div>
+        <div><div class="field-label">비교 조건</div><p>A. MLP / B. TCN / C. 정적 자세는 MLP, 동적 제스처는 TCN이 담당하는 조합. 비교할 동작 목록과 학습 노출량을 고정한다.</p></div>
+        <div><div class="field-label">실행 방법</div><ol><li>의도한 동적 제스처와 비슷한 비명령 움직임을 함께 수집한다.</li><li>속도·크기를 바꾼 별도 시도를 평가한다.</li><li>연속 동작, 중립 복귀, 중간 추적 소실을 포함한다.</li><li>정적 제스처도 넣어 조합의 부작용을 확인한다.</li></ol></div>
+        <div><div class="field-label">측정과 판정</div><p><strong>주요:</strong> 동작별 독립 시도 성공률.<br><strong>함께:</strong> 비명령 움직임의 잘못된 명령/분, 중복 실행, 인식 지연 중앙값·p95.<br>동적 클래스가 없는 데이터로 TCN의 필요성이나 조합의 이점을 주장하지 않는다.</p></div>
+      </div><div class="decision"><strong>측정 경계:</strong> 현재 오프라인 도구의 TCN은 15개 유효 프레임을 쌓은 뒤 확정한다. 모델 호출 시간만으로 반응 속도를 설명하지 않는다. 첫 명령까지의 지연과 놓친 시도를 함께 기록한다.</div></div></details>
+
+      <details class="bench" open><summary><span class="num">05</span><div class="summary-text"><h3>개인화 학습 효과</h3><p>사용자가 등록에 시간을 쓸 만큼 이득이 있는가?</p></div></summary><div class="bench-body"><div class="bench-grid">
+        <div><div class="field-label">가설</div><p>개인의 움직임으로 학습한 모델이 기본 모델보다 다음 세션에서도 잘 작동한다. 개선 효과가 등록 시간과 관리 부담에 비해 충분해야 한다.</p></div>
+        <div><div class="field-label">비교 조건</div><p>A. 기본 모델 / B. 개인 모델. 학습 노출량은 클래스별 10·30·60초 등 단계로 비교하되 실제 확보량을 기록한다. 이 값은 학습량 조건이며 사용자가 등록을 끝내는 총시간이 아니다.</p></div>
+        <div><div class="field-label">실행 방법</div><ol><li>학습 세션과 평가 세션을 분리한다.</li><li>학습 직후와 다음 날 또는 별도 재접속 세션에서 평가한다.</li><li>기본·개인 모델에 같은 평가 입력을 넣는다.</li><li>중립 데이터도 평가해 과적합에 따른 오작동을 확인한다.</li></ol></div>
+        <div><div class="field-label">측정과 판정</div><p><strong>주요:</strong> 별도 세션의 동작별 성공률 변화.<br><strong>함께:</strong> 오작동/분, 사용자 등록 총시간, 학습·검증·내보내기 시간, 실패·재등록 횟수.<br>학습 직후의 인접 프레임 점수 상승만으로 개인화 효과를 주장하지 않는다.</p></div>
+      </div><div class="decision"><strong>서로 다른 질문:</strong> 같은 사람의 다음 세션 성능은 개인화 유지 효과, 학습에 없는 사람의 성능은 다인 일반화다. 두 결과를 구분한다. GPU로 학습 시간이 줄어도 다음 세션의 품질 이득을 대신 증명하지는 못한다.</div></div></details>
+
+      <details class="bench" open><summary><span class="num">06</span><div class="summary-text"><h3>환경 변화·입력 중단</h3><p>환경이 달라지거나 손이 사라져도 제어 가능한가?</p></div></summary><div class="bench-body"><div class="bench-grid">
+        <div><div class="field-label">가설</div><p>일상적인 조건 변화에서도 오작동이 급증하지 않고, 추적이 끊기면 누른 입력이 해제되며 복귀 후 의도하지 않은 명령이 발생하지 않는다.</p></div>
+        <div><div class="field-label">비교 조건</div><p>기본 조명·거리에서 기준을 만들고 조명, 거리, 손 각도, 배경, 두 번째 손 등 한 조건씩 바꾼다. 모든 조합을 한꺼번에 시험하기보다 예비시험에서 취약 조건을 찾고 재검증한다.</p></div>
+        <div><div class="field-label">실행 방법</div><ol><li>조건별로 동일한 동작·중립 과제를 반복한다.</li><li>클릭·드래그 중 손을 화면 밖으로 뺐다가 복귀한다.</li><li>일시정지·모드 전환·오류 시 누름 해제를 확인한다.</li><li>두 번째 손이 등장할 때 조작 손 선택을 확인한다.</li></ol></div>
+        <div><div class="field-label">측정과 판정</div><p><strong>주요:</strong> 조건별 오작동/분, 추적 소실부터 버튼 해제까지 시간, 정상 조작 복구 시간.<br><strong>함께:</strong> 유효 추적 시간 비율, 동작 성공률, 입력 고착 횟수·지속 시간, 재진입 오작동.</p></div>
+      </div><div class="decision"><strong>시험 경계:</strong> 합성·재생 시험과 실제 웹캠·Windows 입력 시험을 분리한다. 실제 입력 시험은 시험용 창과 환경에서 수행한다. 등록·검증·일시정지 중 입력 금지와 기존 해제 정책을 유지한다.</div></div></details>
+    </div>
+  </section>
+
+  <section class="section" id="execution">
+    <p class="eyebrow">04 / EXECUTION</p><h2>예비시험으로 기준을 잡고, 평가 전에 고정한다.</h2>
+    <div class="steps"><div class="step"><span class="num">PHASE 01</span><h3>예비시험</h3><p>소수 참가자로 수집·라벨·과제·계측이 작동하는지 확인한다. 현재 실패 수준과 변동을 파악한다. 이 데이터로 최종 성능을 주장하지 않는다.</p></div><div class="step"><span class="num">PHASE 02</span><h3>가설·설정 고정</h3><p>주요 지표, 최소 개선 목표, 허용할 부작용, 제외 기준을 정한다. 버전·모델·임계값·학습/평가 분할을 기록한다. 최종 참가자·시도 수는 예비시험의 변동과 필요한 정밀도를 보고 결정한다.</p></div><div class="step"><span class="num">PHASE 03</span><h3>독립 평가·사용자 과제</h3><p>새 평가 세션에서 고정한 계획대로 비교한다. 참가자별 변화와 실패 사례를 포함한다. 모델·앱·사용자 과제의 결과를 서로 다른 증거로 보고한다.</p></div></div>
+    <div class="note"><p><strong>의미 있는 개선의 기준:</strong> 예비시험 후 “오작동을 얼마나 줄여야 쓸 만한가”, “성공률 저하와 지연 증가는 어디까지 허용할 것인가”를 정한다. 숫자가 잘 나오는 지표를 사후에 골라 대표 결과로 삼지 않는다.</p></div>
+    <h3>실험 시작 전 확인</h3><p class="small screen-only">체크는 이 화면에서만 유지되며 파일에 저장되지 않는다.</p>
+    <div class="checklist" aria-label="실험 전 확인 목록">
+      <label><input type="checkbox"><span>비교 버전·실제 커밋·모델 해시·설정을 기록했다.</span></label>
+      <label><input type="checkbox"><span>각 비교에서 바뀌는 요소와 고정 요소를 구분했다.</span></label>
+      <label><input type="checkbox"><span>학습·튜닝·최종 평가 데이터를 분리했다.</span></label>
+      <label><input type="checkbox"><span>동작 시작·종료와 중립 구간의 정답 라벨 기준을 정했다.</span></label>
+      <label><input type="checkbox"><span>카메라·화면 배율·감도·조명·거리·PC 상태를 기록한다.</span></label>
+      <label><input type="checkbox"><span>동일 참가자의 비교 순서를 교차 배치하고 연습을 제공한다.</span></label>
+      <label><input type="checkbox"><span>시도·세션·참가자 수와 실패·제외 사유를 기록한다.</span></label>
+      <label><input type="checkbox"><span>주요 지표·목표·허용 악화·중단 기준을 미리 고정했다.</span></label>
+    </div>
+    <p class="small" id="check-status" role="status" aria-live="polite">준비 확인 0 / 8</p>
+    <div class="note warn"><p><strong>프레임 수는 독립 시도 수가 아니다.</strong> 동작을 한 번 수행하고 중립으로 돌아오는 것을 한 시도로 정의한다. 재시도는 별도 시도로 기록한다. 같은 세션의 인접 프레임을 학습과 평가로 나누거나 복제한 데이터를 평가 표본 수로 부풀리지 않는다.</p></div>
+  </section>
+
+  <section class="section" id="metrics">
+    <p class="eyebrow">05 / METRICS & REPORTING</p><h2>분모와 측정 구간까지 적어야 비교가 된다.</h2>
+    <div class="definitions">
+      <div class="definition"><h3>동작별 시도 성공률</h3><p><span class="formula">정답 명령이 나온 시도 ÷ 전체 독립 시도</span>일차 적중 여부와 별개로 잘못된 명령·중복 시작을 기록한다. “한 번 맞혔지만 여러 번 잘못 눌렀던 시도”가 숨지 않게 한다.</p></div>
+      <div class="definition"><h3>중립 상태 오작동/분</h3><p><span class="formula">중립 구간 명령 시작 수 ÷ 실제 중립 노출 시간(분)</span>추적 불가·의도 불명 구간을 중립으로 임의 처리하지 않는다. 중립 노출이 없으면 0이 아니라 측정 불가다. 과제 중 잘못된 명령은 별도 센다.</p></div>
+      <div class="definition"><h3>인식 지연과 전체 반응 지연</h3><p><span class="formula">인식: 정답 시작 시점 → 첫 정답 명령 시작</span>모델 호출 시간, 앱 프레임 수신→상태 발행, 실제 움직임→화면 반응은 다른 값이다. 실제 전체 반응은 고속 촬영 등 외부 계측으로 확인하고, 놓친 시도는 성공률에 남긴다.</p></div>
+      <div class="definition"><h3>포인터 흔들림과 사용 가능 시간</h3><p><span class="formula">정지 흔들림: 평균 위치로부터 거리의 RMS(px)</span>해상도·배율·목표 위치·유지 시간을 고정한다. 사용 가능 시간은 전체 측정 구간 중 유효 추적·조작 가능한 시간으로 정의하고, 불가 사유를 별도 기록한다.</p></div>
+    </div>
+    <p class="small">기존 평가 도구의 “떨림”은 한 시도에서 첫 시작을 제외한 추가 명령 시작 수다. 위의 커서 위치 흔들림과 다른 지표이므로 이름을 구분한다.</p>
+    <h3>결과 기록 양식</h3><p class="section-intro">아래는 빈 양식이다. 실측 값과 조건을 채우고, 참가자별 변화와 불확실성을 함께 제시한다. 불확실성 구간을 구할 때도 프레임이 아닌 독립 참가자·세션 구조를 고려한다.</p>
+    <div class="table-wrap"><table><thead><tr><th scope="col">항목</th><th scope="col">기준 A</th><th scope="col">개선 B</th><th scope="col">변화 / 보고할 내용</th></tr></thead><tbody>
+      <tr><td>버전·설정·모델</td><td class="blank">미측정</td><td class="blank">미측정</td><td>실제 SHA·모델 해시·차이</td></tr>
+      <tr><td>시도 성공률</td><td class="blank">적중 / 전체</td><td class="blank">적중 / 전체</td><td>퍼센트포인트(pp) 차이 · 동작별 결과</td></tr>
+      <tr><td>중립 오작동</td><td class="blank">건 / 노출 분</td><td class="blank">건 / 노출 분</td><td>건/분 차이 · 상대 감소율</td></tr>
+      <tr><td>인식·전체 반응 지연</td><td class="blank">중앙값 / p95</td><td class="blank">중앙값 / p95</td><td>측정 경계 · 유효 표본 수 · 누락 수</td></tr>
+      <tr><td>과제 완료율·시간</td><td class="blank">완료 / 전체 · 시간</td><td class="blank">완료 / 전체 · 시간</td><td>오류·복구 포함 · 중단·도움 요청</td></tr>
+      <tr><td>불편감·선호</td><td class="blank">사전 정의 척도</td><td class="blank">사전 정의 척도</td><td>참가자별 변화 · 주요 이유</td></tr>
+    </tbody></table></div>
+    <p class="small">감소율 = (A − B) / A × 100. 기준 A가 0이면 상대 감소율을 계산하지 않는다. 성공률의 절대 차이(pp)와 상대 변화율(%)을 혼동하지 않는다.</p>
+    <div class="example"><p class="eyebrow">측정 후 사용할 결론 문장 양식</p><p>“동일한 독립 평가 세션에서 <strong>[변경]</strong>을 적용했을 때, <strong>[문제 지표]</strong>가 <strong>[A]</strong>에서 <strong>[B]</strong>로 변했다. 동작 성공률과 p95 지연은 <strong>[함께 관측한 변화]</strong>였다. 실제 과제에서는 <strong>[완료율·시간·부담 결과]</strong>를 확인했다.”</p><small>참가자 수 · 독립 시도 수 · 중립 노출 시간 · 조건 · 실패 사례 · 적용 범위를 함께 적는다.</small></div>
+  </section>
+
+  <section class="section" id="evidence">
+    <p class="eyebrow">06 / TOOLS & EVIDENCE</p><h2>이미 있는 도구와, 추가로 필요한 측정.</h2>
+    <div class="table-wrap"><table><thead><tr><th scope="col">구분</th><th scope="col">현재 활용할 수 있는 것</th><th scope="col">추가로 필요한 것</th></tr></thead><tbody>
+      <tr><td class="nowrap">판정 비교</td><td><code>tools/eval_judges.py</code><br>Rules·MLP·TCN·veto·역할 조합, 세션 분리, 클래스별 학습량, 명령 시작 지표</td><td>독립적인 실제 평가 녹화와 라벨. 전체 앱 중재·바인딩·누름/해제·Windows 출력 검증</td></tr>
+      <tr><td>포인터·지연</td><td>카메라·추론·앱 내 지연의 경계를 설명한 성능 문서</td><td>좌표 기록·목표 클릭/드래그 과제, 출력 경로 계측, 실제 움직임→화면 외부 측정</td></tr>
+      <tr><td>사용성</td><td>기존 30분 과제 안내와 오작동·불편감 기록 기준</td><td>이전/개선 버전의 동일 과제 비교, 실제 대상 사용자 참여와 독립 세션 결과</td></tr>
+    </tbody></table></div>
+    <div class="note"><p><strong>현재 자료의 해석:</strong> 정지 이미지 반복 추적 시간, 합성 데이터의 학습 시간, 모델의 내부 평가 점수는 각각 제한된 측정이다. Rules→MLP의 실제 개선률, 실제 웹캠 반응 속도, 대상 사용자의 과제 성과를 대신하지 않는다.</p></div>
+    <div class="sources"><div><h3>프로젝트 내부 근거</h3><ul><li><code>apps/manux/docs/eval-judges.md</code> — 후보·분할·지표·측정 경계</li><li><code>apps/manux/docs/usability-catalog.md</code> — 사용자 과제·실패·불편감 기록</li><li><code>apps/manux/docs/cursor-performance.md</code> — 추적 비용과 전체 지연 구분</li></ul><p>경로는 저장소에서 확인하는 참고 위치다. 이 HTML의 열람에는 저장소나 위 파일이 필요하지 않다.</p></div><div><h3>평가 방법 참고</h3><ul><li><a href="https://www.nist.gov/programs-projects/usability-testing" target="_blank" rel="noopener noreferrer">NIST — Usability Testing</a><br>과제 성공·시간·오류와 만족도를 함께 평가</li><li><a href="https://www.yorku.ca/mack/ijhcs2004.pdf" target="_blank" rel="noopener noreferrer">Soukoreff & MacKenzie (2004)</a><br>포인팅 장치의 Fitts’ law 기반 평가 방법</li></ul><p>외부 링크는 참고 자료다. 본문·스타일·동작은 이 파일에 포함되어 네트워크 없이도 열람할 수 있다.</p></div></div>
+  </section>
+  <footer class="footer"><span>MANUX · 벤치마크 실험 계획 · 2026.11.13</span><span>실험 설계안 / 실측 결과 없음 / 외부 리소스 없음</span></footer>
+</main>
+</div>
+<script>
+(() => {
+  const cards = [...document.querySelectorAll('.bench')];
+  const toggle = document.getElementById('toggle-details');
+  const updateToggle = () => {
+    const allOpen = cards.every(card => card.open);
+    toggle.textContent = allOpen ? '모두 접기' : '모두 펼치기';
+    toggle.setAttribute('aria-expanded', String(allOpen));
+  };
+  toggle.addEventListener('click', () => {
+    const open = !cards.every(card => card.open);
+    cards.forEach(card => { card.open = open; });
+    updateToggle();
+  });
+  cards.forEach(card => card.addEventListener('toggle', updateToggle));
+  document.getElementById('print-button').addEventListener('click', () => window.print());
+  let previousState;
+  window.addEventListener('beforeprint', () => {
+    previousState = cards.map(card => card.open);
+    cards.forEach(card => { card.open = true; });
+  });
+  window.addEventListener('afterprint', () => {
+    if (previousState) cards.forEach((card, i) => { card.open = previousState[i]; });
+    previousState = undefined;
+    updateToggle();
+  });
+  const checks = [...document.querySelectorAll('.checklist input')];
+  const updateChecks = () => {
+    document.getElementById('check-status').textContent = `준비 확인 ${checks.filter(check => check.checked).length} / ${checks.length}`;
+  };
+  checks.forEach(check => check.addEventListener('change', updateChecks));
+  updateChecks();
+  updateToggle();
+})();
+</script>
+</body>
+</html>

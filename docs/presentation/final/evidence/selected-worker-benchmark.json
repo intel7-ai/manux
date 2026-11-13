@@ -1,0 +1,161 @@
+{
+  "synthetic": true,
+  "copies_are_not_independent_trials": true,
+  "seed": 0,
+  "epochs": 30,
+  "copies": 8,
+  "threads": 4,
+  "scope": "worker_with_eval_install",
+  "training": [
+    {
+      "requested": "cpu",
+      "runs": [
+        {
+          "run": 1,
+          "total_s": 10.294316999999864,
+          "passed": true,
+          "execution": {
+            "requested": "cpu",
+            "actual": "cpu",
+            "runtime": "torch 2.15.0+cu132",
+            "name": "CPU",
+            "reason": ""
+          },
+          "timings": {
+            "data_prepare_ms": 221.64190000330564,
+            "batch_transfer_ms": 51.82339996099472,
+            "training_ms": 4916.909899999155,
+            "export_check_ms": 386.71200000317185
+          },
+          "export_max_abs_error": 2.5254573987609774e-08
+        },
+        {
+          "run": 2,
+          "total_s": 9.899523399999453,
+          "passed": true,
+          "execution": {
+            "requested": "cpu",
+            "actual": "cpu",
+            "runtime": "torch 2.15.0+cu132",
+            "name": "CPU",
+            "reason": ""
+          },
+          "timings": {
+            "data_prepare_ms": 327.8067999999621,
+            "batch_transfer_ms": 50.89399999269517,
+            "training_ms": 4742.251899999246,
+            "export_check_ms": 212.35779999915394
+          },
+          "export_max_abs_error": 2.5254573987609774e-08
+        },
+        {
+          "run": 3,
+          "total_s": 10.104642300000705,
+          "passed": true,
+          "execution": {
+            "requested": "cpu",
+            "actual": "cpu",
+            "runtime": "torch 2.15.0+cu132",
+            "name": "CPU",
+            "reason": ""
+          },
+          "timings": {
+            "data_prepare_ms": 354.07649999979185,
+            "batch_transfer_ms": 51.26919999383972,
+            "training_ms": 4996.0218999985955,
+            "export_check_ms": 229.58640000069863
+          },
+          "export_max_abs_error": 2.5254573987609774e-08
+        }
+      ],
+      "median_total_s": 10.104642300000705
+    },
+    {
+      "requested": "cuda",
+      "runs": [
+        {
+          "run": 1,
+          "total_s": 6.879424500002642,
+          "passed": true,
+          "execution": {
+            "requested": "cuda",
+            "actual": "cuda",
+            "runtime": "torch 2.15.0+cu132",
+            "name": "NVIDIA GeForce RTX 3050",
+            "reason": ""
+          },
+          "timings": {
+            "data_prepare_ms": 339.62009999959264,
+            "batch_transfer_ms": 133.69999999486026,
+            "training_ms": 1296.8805999989854,
+            "export_check_ms": 240.39999999877182
+          },
+          "export_max_abs_error": 3.8984907191341733e-08
+        },
+        {
+          "run": 2,
+          "total_s": 6.7315347000003385,
+          "passed": true,
+          "execution": {
+            "requested": "cuda",
+            "actual": "cuda",
+            "runtime": "torch 2.15.0+cu132",
+            "name": "NVIDIA GeForce RTX 3050",
+            "reason": ""
+          },
+          "timings": {
+            "data_prepare_ms": 349.0294000002905,
+            "batch_transfer_ms": 136.50520000373945,
+            "training_ms": 1311.8672000018705,
+            "export_check_ms": 237.08900000201538
+          },
+          "export_max_abs_error": 3.8984907191341733e-08
+        },
+        {
+          "run": 3,
+          "total_s": 6.651975299999322,
+          "passed": true,
+          "execution": {
+            "requested": "cuda",
+            "actual": "cuda",
+            "runtime": "torch 2.15.0+cu132",
+            "name": "NVIDIA GeForce RTX 3050",
+            "reason": ""
+          },
+          "timings": {
+            "data_prepare_ms": 349.04440000173054,
+            "batch_transfer_ms": 133.76139998217695,
+            "training_ms": 1282.2612000018125,
+            "export_check_ms": 223.47359999912442
+          },
+          "export_max_abs_error": 3.8984907191341733e-08
+        }
+      ],
+      "median_total_s": 6.7315347000003385
+    }
+  ],
+  "inference": [
+    {
+      "requested": "cpu",
+      "execution": {
+        "requested": "cpu",
+        "actual": "cpu",
+        "runtime": "onnxruntime 1.31.1",
+        "name": "CPUExecutionProvider",
+        "reason": ""
+      },
+      "execution_devices": [
+        "CPUExecutionProvider"
+      ],
+      "startup_ms": 6.722800000716234,
+      "p50_ms": 0.04149999949731864,
+      "p95_ms": 0.0500949994602706,
+      "max_abs_probability_error": 0.0,
+      "probability_tolerance": 0.001,
+      "events_equal": true,
+      "event_count": 4,
+      "passed": true
+    }
+  ],
+  "model_sha256": "c4b112b16cdc33fa63263a84f582de3ff8da7a212ee6269e1653d5423e6ece87"
+}

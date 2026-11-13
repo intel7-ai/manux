@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>MANUX · Spatial MLP 레이어 &amp; Guard 아키텍처</title>
+<style>
+  :root {
+    --ink: #05090c;
+    --panel: #0b161c;
+    --panel-border: #1e353d;
+    --mint: #5ae6c3;
+    --lavender: #c8bef3;
+    --coral: #ff8a9a;
+    --amber: #ffd27a;
+    --text: #f4f8f7;
+    --muted: #8ea5ad;
+    --s: 1;
+    color-scheme: dark;
+    font-family: 'Noto Sans KR', 'Malgun Gothic', 'Apple SD Gothic Neo', Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #040709;
+    color: var(--text);
+  }
+  button {
+    font: inherit;
+    color: inherit;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    user-select: none;
+  }
+  button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
+
+  #stage {
+    position: absolute;
+    inset: 0 0 54px;
+    overflow: hidden;
+  }
+  #deck {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 1600px;
+    height: 900px;
+    transform: translate(-50%, -50%) scale(var(--s));
+    transform-origin: center center;
+  }
+  .slide {
+    position: relative;
+    width: 1600px;
+    height: 900px;
+    padding: 34px 80px 22px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 14px;
+    overflow: hidden;
+    background: var(--ink);
+  }
+  @keyframes drift {
+    to { transform: translate3d(5%, -4%, 0) rotate(6deg) scale(1.08); }
+  }
+  .slide::before {
+    content: "";
+    position: absolute;
+    inset: -20%;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(38% 38% at 18% 28%, #5ae6c322, transparent),
+      radial-gradient(35% 35% at 84% 72%, #c8bef322, transparent);
+    animation: drift 16s ease-in-out infinite alternate;
+  }
+
+  /* Header */
+  .header {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+    flex-shrink: 0;
+  }
+  .eyebrow {
+    margin: 0 0 6px;
+    font: 700 14px/1.2 Arial, sans-serif;
+    letter-spacing: 0.18em;
+    color: var(--mint);
+  }
+  h1 {
+    margin: 0;
+    font-size: 44px;
+    line-height: 1.15;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    word-break: keep-all;
+  }
+  h1 em { font-style: normal; color: var(--mint); }
+  .subtitle {
+    margin: 8px 0 0;
+    font-size: 18px;
+    color: var(--muted);
+    letter-spacing: -0.02em;
+  }
+
+  .kpi-strip {
+    display: flex;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .kpi {
+    padding: 12px 18px;
+    background: #0b161dcc;
+    border: 1px solid #223d46;
+    border-radius: 14px;
+    min-width: 148px;
+    backdrop-filter: blur(8px);
+  }
+  .kpi strong {
+    display: block;
+    font: 700 27px/1.05 Arial, sans-serif;
+    letter-spacing: -0.04em;
+    color: var(--mint);
+  }
+  .kpi.lav strong { color: var(--lavender); }
+  .kpi span {
+    display: block;
+    margin-top: 5px;
+    font-size: 12.5px;
+    color: #9bb3bb;
+    letter-spacing: -0.01em;
+  }
+
+  /* Main interactive canvas container */
+  .canvas-wrap {
+    position: relative;
+    z-index: 3;
+    width: 1440px;
+    height: 515px;
+    flex-shrink: 0;
+    border-radius: 22px;
+    background: linear-gradient(180deg, #091318ee, #060d11ee);
+    border: 1px solid #213942;
+    box-shadow: 0 28px 70px #0008;
+    overflow: hidden;
+  }
+  #mlCv {
+    display: block;
+    width: 1440px;
+    height: 515px;
+    cursor: pointer;
+  }
+
+  /* Step selector pills overlaid cleanly at bottom of canvas */
+  .step-bar {
+    position: absolute;
+    left: 28px;
+    right: 28px;
+    bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    pointer-events: none;
+  }
+  .step-pills {
+    display: flex;
+    gap: 8px;
+    pointer-events: auto;
+  }
+  .step-pill {
+    padding: 8px 15px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #8ea6ae;
+    background: #0e1d24cc;
+    border: 1px solid #26404a;
+    transition: all .2s ease;
+  }
+  .step-pill:hover {
+    color: #fff;
+    border-color: #4f7f8a;
+  }
+  .step-pill.active {
+    background: #143632;
+    border-color: var(--mint);
+    color: #e9fff8;
+    box-shadow: 0 0 18px #5ae6c328;
+  }
+  .step-hint {
+    font-size: 13px;
+    color: #7ea3ab;
+    background: #081217cc;
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid #1b3038;
+  }
+
+  /* Guard & Engineering Improvement Strip */
+  .guard-grid {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    flex-shrink: 0;
+  }
+  .guard-card {
+    padding: 13px 16px;
+    border-radius: 14px;
+    background: #0a151b;
+    border: 1px solid #1e353e;
+    transition: border-color .35s, background .35s, transform .35s;
+  }
+  .guard-card.highlight {
+    border-color: #5ae6c388;
+    background: #0e2426;
+    transform: translateY(-2px);
+  }
+  .guard-tag {
+    display: inline-block;
+    font: 700 10.5px/1 Arial, sans-serif;
+    letter-spacing: 0.08em;
+    padding: 4px 8px;
+    border-radius: 6px;
+    margin-bottom: 7px;
+    background: #5ae6c320;
+    color: var(--mint);
+  }
+  .guard-card.lav .guard-tag { background: #c8bef320; color: var(--lavender); }
+  .guard-card.amb .guard-tag { background: #ffd27a20; color: var(--amber); }
+  .guard-card h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #eef7f5;
+  }
+  .guard-card p {
+    margin: 5px 0 0;
+    font-size: 13px;
+    line-height: 1.42;
+    color: #93aab2;
+    word-break: keep-all;
+  }
+
+  .fine {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 12.5px;
+    color: #6f868f;
+    z-index: 2;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 680px) {
+    .brand { display: none; }
+    #toolbar { justify-content: flex-end; padding: 0 12px; }
+  }
+
+  /* Bottom Control Bar */
+  #toolbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 54px;
+    background: #0a1014;
+    border-top: 1px solid #ffffff14;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    font-size: 13px;
+    color: #b7c6cc;
+    z-index: 30;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font: 700 12px Arial, sans-serif;
+    letter-spacing: 0.16em;
+  }
+  .brand i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--mint);
+    display: inline-block;
+  }
+  .tool-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .tool-btn {
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid #2b434c;
+    background: #101e25;
+    font-size: 13px;
+    transition: background .15s, border-color .15s;
+  }
+  .tool-btn:hover { background: #183039; border-color: #4f7b87; }
+  .tool-btn.primary {
+    background: var(--mint);
+    color: #06211a;
+    border-color: var(--mint);
+    font-weight: 700;
+  }
+  .tool-btn.primary:hover { background: #75efd0; }
+
+  /* Presenter Cheat Sheet Dialog */
+  dialog {
+    padding: 36px 40px;
+    max-width: 820px;
+    width: calc(100vw - 40px);
+    max-height: calc(100vh - 70px);
+    border-radius: 20px;
+    border: 1px solid #35525c;
+    background: #0e1a21;
+    color: #eef5f4;
+    box-shadow: 0 40px 120px #000b;
+    overflow: auto;
+  }
+  dialog::backdrop { background: #000a; backdrop-filter: blur(8px); }
+  .dlg-close {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    font-size: 26px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    color: #9bb3bb;
+  }
+  .dlg-close:hover { background: #ffffff15; color: #fff; }
+  dialog h2 { margin: 0 0 18px; font-size: 26px; letter-spacing: -0.03em; }
+  .qa-box {
+    border-top: 1px solid #263e47;
+    padding: 16px 0;
+  }
+  .qa-box h4 { margin: 0 0 8px; color: var(--mint); font-size: 16px; }
+  .qa-box p { margin: 0; font-size: 14.5px; line-height: 1.7; color: #c7d6db; word-break: keep-all; }
+</style>
+<style>#toolbar{display:none!important}#stage{bottom:0!important}</style><style>.metrics,.kpis,.stats,.head-metrics{display:none!important}.guard-card p,.guard p{display:none!important}.guard-card h3{font-size:24px!important}.subtitle{font-size:22px!important}.note,.footer-note{display:none!important}</style><style>.kpi-strip{display:none!important}.header{display:block!important}.header h1{font-size:48px!important;max-width:none!important}.guard-card p{display:none!important}.guard-grid{margin-top:22px!important}.fine{display:none!important}</style><style>.subtitle,.guard-grid,.step-hint{display:none!important}.canvas-wrap{margin-top:35px!important}.step-pill{font-size:19px!important}.header h1{font-size:52px!important}</style><style>.mlp-v12-sub{font-size:29px;color:#b2c5ca;margin:15px 0 0}.header h1{font-size:58px!important}</style><style>.slide{justify-content:flex-start!important}.canvas-wrap{position:absolute!important;left:50%;top:50%;transform:translate(-50%,-50%);margin:0!important}.header{flex:none!important}</style></head>
+<body>
+<div id="stage">
+  <main id="deck">
+    <section class="slide">
+      <header class="header">
+        <div>
+          <p class="eyebrow">SPATIAL MLP · 2-LAYER ARCHITECTURE &amp; POSE GUARD</p>
+          <h1>Spatial MLP</h1><p class="mlp-v12-sub">프레임당 손 모양을 추론</p>
+          <p class="subtitle">21개 손 랜드마크 → 96차원 기하학 특징 → 초경량 NumPy MLP(96→64→10) + SpatialPoseGuard</p>
+        </div>
+        <div class="kpi-strip">
+          <div class="kpi">
+            <strong>내부 분할 확인 98.84%</strong>
+            <span>테스트 정확도 (17,689표본)</span>
+          </div>
+          <div class="kpi lav">
+            <strong>6,858</strong>
+            <span>총 파라미터 (곱셈 6,784회)</span>
+          </div>
+          <div class="kpi">
+            <strong>환경에 따라 달라지는 짧은 시간</strong>
+            <span>저장 모델 학습 기록 1.39초 (11.09)</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="canvas-wrap">
+        <canvas id="mlCv" width="1440" height="515" title="클릭하여 다음 학습 단계 보기"></canvas>
+        <div class="step-bar">
+          <div class="step-pills" id="stepPills">
+            <button class="step-pill active" data-step="0">① 학습 전</button>
+            <button class="step-pill" data-step="1">② 내 손 표본</button>
+            <button class="step-pill" data-step="2">③ 빠른 학습</button>
+            <button class="step-pill" data-step="3">④ 학습 후</button>
+          </div>
+          <div class="step-hint">캔버스 클릭 또는 스페이스바로 단계 전환</div>
+        </div>
+      </div>
+
+      <div class="guard-grid" id="guardGrid">
+        <div class="guard-card" data-guard="veto">
+          <span class="guard-tag">VETO · 오작동 차단</span>
+          <h3>헛클릭 즉시 거부</h3>
+          <p>규칙이 클릭을 내도 MLP가 <code>none</code>(대기)을 0.80↑ 확신(2프레임)하면 클릭 차단</p>
+        </div>
+        <div class="guard-card lav" data-guard="boost">
+          <span class="guard-tag">BOOST · 각도 보정</span>
+          <h3>기울어진 손 인식 구제</h3>
+          <p>핀치 원 근접도(0.45) + MLP 확신도(0.55) 융합으로 2D 규칙이 놓친 클릭 보강</p>
+        </div>
+        <div class="guard-card amb" data-guard="hold">
+          <span class="guard-tag">HOLD · 연속 제어</span>
+          <h3>드래그·스크롤 끊김 방지</h3>
+          <p>중간 이탈 시 포즈 유지 보정, 손을 펴면(<code>none ≥ 0.65</code>) 지연 없이 즉시 해제</p>
+        </div>
+        <div class="guard-card" data-guard="hot">
+          <span class="guard-tag">HOT-RELOAD · 무중단</span>
+          <h3>앱 재시작 없는 즉시 반영</h3>
+          <p>스튜디오에서 환경에 따라 달라지는 짧은 시간 재학습 완료 즉시 엔진 가중치 원자적 교체(프레임 단위 추론)</p>
+        </div>
+      </div>
+
+      <footer class="fine">
+        <span>실제 코드 구조 반영: 2-Layer Spatial MLP (입력 96 → 은닉 64 LeakyReLU(0.05) → 출력 10 Softmax) · PyTorch 미사용 순수 NumPy</span>
+        <span>files: perception/spatial_features.py · ml/spatial_mlp.py · features/spatial_pose/__init__.py</span>
+      </footer>
+    </section>
+  </main>
+</div>
+
+<div id="toolbar">
+  <div class="brand"><i></i>MANUX · SPATIAL MLP LAYER SLIDE PREVIEW</div>
+  <div class="tool-actions">
+    <button class="tool-btn" id="autoBtn">자동 재생: ON</button>
+    <button class="tool-btn primary" id="notesBtn">발표 대본 &amp; Q&amp;A 보기</button>
+  </div>
+</div>
+
+<dialog id="notesDialog">
+  <button class="dlg-close" id="closeDlg" aria-label="닫기">×</button>
+  <p class="eyebrow" style="margin-bottom:8px;">PRESENTER CHEAT SHEET</p>
+  <h2>8페이지 발표 대본 &amp; 예상 질문 방어</h2>
+  <div class="qa-box">
+    <h4>🎤 15초 핵심 발표 멘트</h4>
+    <p>"저희는 기존 2D 거리 규칙의 헛클릭과 TCN 시계열 모델의 클릭 지연을 해결하기 위해 <strong>Spatial MLP</strong>를 도입했습니다. 웹캠 손 관절 21개 좌표에 핀치 거리·3D 각도·직선도를 더해 만든 <strong>96차원 특징</strong>을, 단 하나의 은닉층(64뉴런)을 가진 초경량 <strong>2-Layer NumPy MLP</strong>에 통과시켜 프레임 단위 지연으로 정지 포즈를 판별하고, <strong>SpatialPoseGuard</strong>로 헛클릭 차단·각도 보정·드래그 유지를 구현했습니다."</p>
+  </div>
+  <div class="qa-box">
+    <h4>Q1. 96차원 입력 특징은 은닉층인가요? 뭘 뽑은 건가요?</h4>
+    <p>"아닙니다. 은닉층이 아니라 신경망에 넣기 전에 사람이 설계한 <strong>입력(Feature Engineering)</strong>입니다. 생 좌표 63개(21관절×xyz)를 손목·손바닥 크기로 정규화해 크기·거리 영향을 없애고, 여기에 엄지-손가락 간 핀치 거리(13개), 손바닥 고유축 기준 3D 관절 각도(12개), 손가락 굽힘 직선도(8개)를 더해 총 96차원으로 만들었습니다."</p>
+  </div>
+  <div class="qa-box">
+    <h4>Q2. 왜 가중치 층이 2개(96→64→10)이고, 왜 NumPy로 짰나요?</h4>
+    <p>"앞단에서 96차원 특징을 잘 추출했기 때문에 은닉층 64개 1층(파라미터 6,858개)만으로도 저장 모델의 내부 분할에서 <strong>테스트 정확도 내부 분할 확인 98.84%</strong>를 얻었습니다. 프레임당 곱셈이 6,784번뿐이라 PyTorch 없이 순수 NumPy만으로도 추론 프레임 단위, <strong>17,689표본 환경에 따라 달라지는 짧은 시간 즉석 재학습</strong>이 가능합니다."</p>
+  </div>
+  <div class="qa-box">
+    <h4>Q3. MLP만 쓰지 않고 왜 SpatialPoseGuard로 규칙과 섞었나요?</h4>
+    <p>"마우스 클릭과 드래그는 1%의 프레임 튐도 치명적입니다. 물리적 핀치 거리 규칙의 직관적인 경계와 MLP의 전체 3D 포즈 문맥을 결합해 헛클릭은 <strong>Veto</strong>로 막고, 기울어져 놓친 클릭은 <strong>Boost</strong>로 살리며, 드래그·스크롤 끊김까지 방어하도록 고도화했습니다."</p>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  const stage = document.getElementById('stage');
+  const deck = document.getElementById('deck');
+  function fit() {
+    const r = stage.getBoundingClientRect();
+    const s = Math.min(r.width / 1600, r.height / 900);
+    deck.style.setProperty('--s', String(Math.max(0.1, s)));
+  }
+  new ResizeObserver(fit).observe(stage);
+  window.addEventListener('resize', fit);
+  fit();
+
+  // Notes dialog
+  const dlg = document.getElementById('notesDialog');
+  document.getElementById('notesBtn').onclick = () => dlg.showModal();
+  document.getElementById('closeDlg').onclick = () => dlg.close();
+  dlg.onclick = (e) => { if (e.target === dlg) dlg.close(); };
+
+  // Canvas Setup
+  const cv = document.getElementById('mlCv');
+  const c = cv.getContext('2d');
+  const W = 1440, H = 515;
+
+  // Exact 2-Layer MLP visual topology: 3 node columns (Input 96 -> Hidden 64 -> Output 10)
+  const L = [12, 9, 10]; // Visual representative nodes: Input(96), Hidden(64), Output(10)
+  const X = [536, 766, 996];
+  const TOP_Y = 90, BOT_Y = 398;
+  const ny = (l, i) => TOP_Y + (BOT_Y - TOP_Y) * (i + 0.5) / L[l];
+
+  const hs = (a, b, l) => {
+    const v = Math.sin(a * 12.9898 + b * 78.233 + l * 37.7) * 43758.5453;
+    return v - Math.floor(v);
+  };
+
+  // Two weight matrices: l=0 (W1: 96->64), l=1 (W2: 64->10)
+  const E = [];
+  for (let l = 0; l < 2; l++) {
+    for (let i = 0; i < L[l]; i++) {
+      for (let j = 0; j < L[l + 1]; j++) {
+        let w1 = hs(j, i, l + 11) * 2 - 1;
+        if (l === 1) {
+          w1 = (j === 1) ? 0.96 : (hs(i, j, 7) - 0.72);
+        }
+        E.push({ l, i, j, w0: hs(i, j, l) * 2 - 1, w1 });
+      }
+    }
+  }
+
+  // Hand skeleton geometry (thumb touching middle tip = thumb_middle)
+  const ang = [-1.0, -0.26, -0.05, 0.18, 0.4];
+  const len = [0.62, 0.85, 0.95, 0.85, 0.65];
+  const bx = [-0.48, -0.27, 0.0, 0.27, 0.48];
+  const by = [0.1, -0.28, -0.34, -0.28, -0.12];
+  const ch = k => [1, 2, 3, 4].map(j => [bx[k] + Math.sin(ang[k]) * len[k] * j / 4, by[k] - Math.cos(ang[k]) * len[k] * j / 4]);
+  const F = [0, 1, 2, 3, 4].map(ch);
+  const mt = F[2][3];
+  F[0] = [1, 2, 3, 4].map(j => [bx[0] + (mt[0] - 0.04 - bx[0]) * j / 4, by[0] + (mt[1] + 0.06 - by[0]) * j / 4]);
+  const hx = p => [138 + p[0] * 128, 322 + p[1] * 128];
+
+  const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  const cl = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+
+  // Output 10 classes (showing exact 10 MANUX classes!)
+  const outLabels = [
+    'none (이동/대기)',
+    'thumb_middle (좌클릭)',
+    'thumb_ring (우클릭)',
+    'thumb_index (스크롤)',
+    'thumb_pinky (창 선택)',
+    'palm_side (바탕화면)',
+    'thumbs_up (모션 모드)',
+    'v_sign (제어 토글)',
+    'thumb_middle_ring (양쪽)',
+    'rock_sign (창 닫기)'
+  ];
+
+  // 4 Feature engineering blocks between Hand and Input 96
+  const featBlocks = [
+    { dim: '63', title: '정규화 3D 좌표', sub: '21 관절×xyz (z×0.45)', col: '#5ae6c3' },
+    { dim: '13', title: '핀치·손가락 거리', sub: '엄지↔각 손끝 간격', col: '#7ce9ce' },
+    { dim: '12', title: '3D 각도·손바닥 축', sub: 'Gram-Schmidt 직교화', col: '#c8bef3' },
+    { dim: '8',  title: '직선도·비율', sub: '굽힘/수평 정밀 판별', col: '#ffd27a' }
+  ];
+
+  let st = 0;
+  let t0 = null, tE = null;
+  let autoPlay = true;
+  let autoTimer = 0;
+  const stepPills = Array.from(document.querySelectorAll('.step-pill'));
+  const guardCards = Array.from(document.querySelectorAll('.guard-card'));
+
+  function setStep(nextStep) {
+    st = ((nextStep % 4) + 4) % 4;
+    tE = null;
+    autoTimer = 0;
+    stepPills.forEach((b, i) => b.classList.toggle('active', i === st));
+    guardCards.forEach(card => card.classList.toggle('highlight', st === 3));
+  }
+
+  stepPills.forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      setStep(Number(b.dataset.step));
+    };
+  });
+  cv.onclick = () => setStep(st + 1);
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' || e.code === 'ArrowRight') {
+      if (!dlg.open) { e.preventDefault(); setStep(st + 1); }
+    } else if (e.code === 'ArrowLeft') {
+      if (!dlg.open) { e.preventDefault(); setStep(st - 1); }
+    }
+  });
+
+  const autoBtn = document.getElementById('autoBtn');
+  autoBtn.onclick = () => {
+    autoPlay = !autoPlay;
+    autoBtn.textContent = '자동 재생: ' + (autoPlay ? 'ON' : 'OFF');
+  };
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  let lastTs = null;
+  function frame(ts) {
+    requestAnimationFrame(frame);
+    if (t0 === null) t0 = ts;
+    if (tE === null) tE = ts;
+    if (lastTs !== null && autoPlay && !dlg.open) {
+      autoTimer += (ts - lastTs) / 1000;
+      const limit = st === 2 ? 4.4 : 3.2;
+      if (autoTimer >= limit) setStep(st + 1);
+    }
+    lastTs = ts;
+
+    const T = (ts - t0) / 1000;
+    const el = (ts - tE) / 1000;
+    const ph = st;
+    const tr = ph < 2 ? 0 : (ph === 2 ? ease(cl(el / 3.6)) : 1);
+
+    c.clearRect(0, 0, W, H);
+    c.lineCap = 'round';
+
+    // Top status headline inside canvas
+    c.font = '700 22px "Noto Sans KR", "Malgun Gothic", sans-serif';
+    c.fillStyle = ph === 3 ? '#5ae6c3' : ph === 0 ? '#ff8a9a' : '#f2fcf9';
+    const headlines = [
+      '① 학습 전: "엄지 + 중지" 포즈를 none(이동)으로 오판  ✕',
+      '② 표본 수집: "엄지 + 중지" 96차원 스냅샷을 JSON 데이터셋에 추가',
+      '③ 빠른 학습: 정답과의 오차를 줄이도록 W1(96×64), W2(64×10) 수정 중…',
+      '④ 학습 완료 + Guard 적용: 엄지+중지 → thumb_middle(좌클릭) 94% 확신  ✓'
+    ];
+
+    // 1. Hand Skeleton (Left side)
+    c.save();
+    roundRect(c, 26, 56, 232, 384, 16);
+    c.fillStyle = '#0c1920';
+    c.fill();
+    c.strokeStyle = '#1e3841';
+    c.lineWidth = 1;
+    c.stroke();
+    c.restore();
+
+    c.strokeStyle = '#5a7f86';
+    c.lineWidth = 2.4;
+    const wPt = hx([0, 0.55]);
+    F.forEach(finger => {
+      c.beginPath();
+      c.moveTo(wPt[0], wPt[1]);
+      finger.forEach(p => {
+        const q = hx(p);
+        c.lineTo(q[0], q[1]);
+      });
+      c.stroke();
+    });
+    c.fillStyle = '#d8fff0';
+    [[0, 0.55], ...F.flat()].forEach(p => {
+      const q = hx(p);
+      c.beginPath();
+      c.arc(q[0], q[1], 4.2, 0, Math.PI * 2);
+      c.fill();
+    });
+    // Glow on pinch point
+    const tp = hx(F[0][3]);
+    const pu = 0.5 + 0.5 * Math.sin(T * 6);
+    const grd = c.createRadialGradient(tp[0], tp[1], 0, tp[0], tp[1], 40);
+    grd.addColorStop(0, 'rgba(90,230,195,' + (0.45 + 0.35 * pu) + ')');
+    grd.addColorStop(1, '#0000');
+    c.fillStyle = grd;
+    c.fillRect(tp[0] - 44, tp[1] - 44, 88, 88);
+
+    c.fillStyle = '#d8fff0';
+    c.font = '700 15px "Malgun Gothic", sans-serif';
+    c.fillText('손 모양', 72, 92);
+    c.fillStyle = '#8aa8b0';
+    c.font = '600 13px Arial, sans-serif';
+
+    // 2. 96-Dim Feature Engineering Zone (between Hand and Input 96)
+    const fxX = 278, fxW = 220;
+    c.fillStyle = '#7ba8b0';
+    c.font = '700 12px Arial, sans-serif';
+
+    featBlocks.forEach((b, idx) => {
+      const by0 = 86 + idx * 86;
+      roundRect(c, fxX, by0, fxW, 72, 11);
+      c.fillStyle = ph === 1 ? '#172834' : '#0c181f';
+      c.fill();
+      c.strokeStyle = ph === 1 ? '#c8bef3aa' : '#1f3a44';
+      c.lineWidth = 1.2;
+      c.stroke();
+
+      // Dimension badge
+      roundRect(c, fxX + 10, by0 + 13, 42, 46, 8);
+      c.fillStyle = b.col + '22';
+      c.fill();
+      c.fillStyle = b.col;
+      c.font = '700 17px Arial, sans-serif';
+      c.textAlign = 'center';
+      c.fillText(b.dim, fxX + 31, by0 + 42);
+      c.textAlign = 'left';
+
+      c.fillStyle = '#edf7f5';
+      c.font = '700 14.5px "Malgun Gothic", sans-serif';
+      c.fillText(b.title, fxX + 62, by0 + 32);
+      c.fillStyle = '#85a2aa';
+      c.font = '400 12px "Malgun Gothic", sans-serif';
+
+      // Dashed connectors into INPUT 96
+      c.strokeStyle = '#5ae6c344';
+      c.setLineDash([4, 5]);
+      c.beginPath();
+      c.moveTo(fxX + fxW, by0 + 36);
+      c.lineTo(X[0] - 20, ny(0, Math.min(L[0] - 1, idx * 3 + 1)));
+      c.stroke();
+      c.setLineDash([]);
+    });
+
+    // Packet animation when collecting snapshots (Step 1)
+    if (ph === 1) {
+      for (let k = 0; k < 14; k++) {
+        const p = cl(el / 1.4 - k * 0.045);
+        if (p > 0 && p < 1) {
+          c.fillStyle = '#c8bef3';
+          roundRect(c, 240 + p * (X[0] - 265), 140 + (k % 4) * 70, 20, 7, 3);
+          c.fill();
+        }
+      }
+    }
+
+    // 3. Draw 2-Layer Neural Network Edges (W1 & W2)
+    for (const e of E) {
+      const wv = e.w0 + (e.w1 - e.w0) * tr;
+      const a = 0.09 + 0.46 * Math.abs(wv);
+      c.strokeStyle = wv > 0 ? 'rgba(90,230,195,' + a + ')' : 'rgba(200,190,243,' + a + ')';
+      c.lineWidth = 0.5 + Math.abs(wv) * 2.1;
+      c.beginPath();
+      c.moveTo(X[e.l], ny(e.l, e.i));
+      c.lineTo(X[e.l + 1], ny(e.l + 1, e.j));
+      c.stroke();
+    }
+
+    // Signal particles (forward during inference, backward during training!)
+    if (ph !== 1) {
+      for (let k = 0; k < 56; k++) {
+        const e = E[(k * 29) % E.length];
+        const dir = ph === 2 ? -0.65 : 0.75; // Backward flow on step 2 (Backprop!)
+        const p = (((dir * T + k * 0.173) % 1) + 1) % 1;
+        c.fillStyle = ph === 2 ? '#c8bef3' : '#e6fff7';
+        c.beginPath();
+        c.arc(
+          X[e.l] + (X[e.l + 1] - X[e.l]) * p,
+          ny(e.l, e.i) + (ny(e.l + 1, e.j) - ny(e.l, e.i)) * p,
+          3.0, 0, Math.PI * 2
+        );
+        c.fill();
+      }
+    }
+
+    // Weight matrix labels between layers
+    c.textAlign = 'center';
+    c.font = '600 13px Arial, sans-serif';
+    c.fillStyle = ph === 2 ? '#c8bef3' : '#7ba0a8';
+
+
+    c.textAlign = 'left';
+
+    // Output probabilities transition
+    const probs = [
+      0.72 - 0.69 * tr, // 0: none
+      0.11 + 0.83 * tr, // 1: thumb_middle (target!)
+      0.04, 0.03, 0.02, 0.02, 0.02, 0.01, 0.02, 0.01
+    ];
+
+    // 4. Draw 3 Layer Node Columns (Input 96, Hidden 64, Output 10)
+    for (let l = 0; l < 3; l++) {
+      for (let i = 0; i < L[l]; i++) {
+        const py = ny(l, i);
+        let alpha = 0.35 + 0.4 * (0.5 + 0.5 * Math.sin(T * 3 + i * 1.1 + l * 2));
+        if (l === 2) alpha = 0.18 + 0.82 * probs[i];
+        c.fillStyle = (l === 2 && i === 0 && ph === 0)
+          ? 'rgba(255, 138, 154, 0.9)'
+          : 'rgba(90, 230, 195, ' + alpha + ')';
+        c.strokeStyle = (l === 2 && i === 0 && ph === 0) ? '#ff8a9a' : (l === 1 ? '#c8bef3' : '#5ae6c3');
+        c.lineWidth = l === 1 ? 1.8 : 1.5;
+        c.beginPath();
+        c.arc(X[l], py, l === 2 ? 10.5 : (l === 1 ? 10 : 8.5), 0, Math.PI * 2);
+        c.fill();
+        c.stroke();
+      }
+    }
+
+    // Layer Column Headers
+    c.textAlign = 'center';
+    c.font = '700 15px Arial, sans-serif';
+    c.fillStyle = '#9bc4bb';
+    c.fillText('INPUT 96', X[0], 56);
+    c.fillStyle = '#c8bef3';
+    c.fillText('HIDDEN 64', X[1], 56);
+    c.fillStyle = '#9bc4bb';
+    c.fillText('OUTPUT 10', X[2], 56);
+
+    c.font = '500 11.5px Arial, sans-serif';
+    c.fillStyle = '#6f8e96';
+
+
+
+    c.textAlign = 'left';
+
+    // 5. Output Class Bars (Right side: all 10 classes clearly shown!)
+    const topIdx = probs.indexOf(Math.max(...probs));
+    const isCorrect = topIdx === 1;
+    for (let j = 0; j < 10; j++) {
+      const y = ny(2, j);
+      const hi = (j === topIdx) && ph !== 1 && ph !== 2;
+      c.fillStyle = hi ? (isCorrect ? '#5ae6c3' : '#ff8a9a') : '#7b959d';
+      c.font = (hi ? '700' : '500') + ' 14px "Malgun Gothic", sans-serif';
+      c.fillText(outLabels[j], X[2] + 24, y + 4);
+
+      // Probability track + bar
+      c.fillStyle = '#15272e';
+      roundRect(c, X[2] + 236, y - 4, 122, 8, 4);
+      c.fill();
+      if (ph !== 1 && ph !== 2) {
+        c.fillStyle = hi ? (isCorrect ? '#5ae6c3' : '#ff8a9a') : '#456a73';
+        roundRect(c, X[2] + 236, y - 4, Math.max(4, probs[j] * 122), 8, 4);
+        c.fill();
+        if (hi) {
+          c.fillStyle = isCorrect ? '#5ae6c3' : '#ff8a9a';
+          c.font = '700 13px Arial, sans-serif';
+          c.fillText(Math.round(probs[j] * 100) + '%', X[2] + 366, y + 4);
+        }
+      }
+    }
+
+    // Training progress bar during Step 2
+    if (ph === 2) {
+      c.fillStyle = '#14262e';
+      roundRect(c, X[0] - 18, 440, 496, 8, 4);
+      c.fill();
+      c.fillStyle = '#c8bef3';
+      roundRect(c, X[0] - 18, 440, 496 * tr, 8, 4);
+      c.fill();
+      c.fillStyle = '#c8bef3';
+      c.font = '700 13px "Malgun Gothic", Arial, sans-serif';
+
+    }
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

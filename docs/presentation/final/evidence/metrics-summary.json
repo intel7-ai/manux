@@ -1,0 +1,35 @@
+{
+  "hand_tracking": {
+    "before_ms": [
+      33.523,
+      31.451,
+      30.957
+    ],
+    "after_ms": [
+      15.929,
+      14.76,
+      13.991
+    ],
+    "reduction_pct": 53.0698546946043,
+    "scope": "Official static image repeated processing; median of run medians, no webcam/OS latency claim",
+    "source": "apps/manux/docs/cursor-performance.md"
+  },
+  "tcn_worker": {
+    "before_s": 10.104642300000705,
+    "after_s": 6.7315347000003385,
+    "reduction_pct": 33.3817615691367,
+    "synthetic": true,
+    "runs_each": 3,
+    "scope": "TCN selected-training worker incl eval/install",
+    "source": "docs/presentation/final/evidence/selected-worker-benchmark.json"
+  },
+  "mlp_saved_record": {
+    "date": "2026-11-09",
+    "samples": 17689,
+    "internal_test_accuracy_pct": 98.84,
+    "training_ms": 1394.3,
+    "independent_user_evaluation": false,
+    "source": "Historical local saved-model metadata; summary only. Personal model weights and recordings are not included.",
+    "source_metadata_sha256": "48455c5a57ec790b06a55d0403721f85c95725e1ce46ec50cf9342447ec4707b"
+  }
+}
