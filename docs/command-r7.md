@@ -33,7 +33,9 @@ r6 대비 실행 코드 변경은 위 두 문제와 관련된 세 파일뿐입�
 
 검증 정보는 [command-r7-validation.json](command-r7-validation.json),
 빌드 메타데이터는 [command-r7-build.json](../packaging/command-r7-build.json)에 있습니다.
-ZIP·EXE·개인 표본·API 키·로컬 설정은 Git 커밋에 포함하지 않습니다.
+최초 r7 게시 시에는 ZIP·EXE·개인 표본·API 키·로컬 설정을 포함하지 않았습니다.
+2026-11-18에는 사용자의 요청으로 MLP 표본·학습 모델을 추가했습니다.
+[데이터 구성과 검증](command-r7-mlp-data.md)을 참고하십시오. ZIP·EXE·API 키·개인 연결 설정은 포함하지 않습니다.
 
 ## 빌드
 
